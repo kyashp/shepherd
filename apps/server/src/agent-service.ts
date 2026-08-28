@@ -104,16 +104,16 @@ export class AgentService {
     return updated;
   }
 
-  async deleteAgent(id: string): Promise<{ archivedWorkspace: string }> {
+  async deleteAgent(id: string): Promise<{ deleted: true }> {
     const agent = this.getAgent(id);
     await this.cancelExecution(id);
-    const archivedWorkspace = await this.workspaces.archive(agent);
+    await this.workspaces.archive(agent);
     await this.store.mutate((database) => {
       database.agents = database.agents.filter((item) => item.id !== id);
       database.messages = database.messages.filter((item) => item.agentId !== id);
       database.runs = database.runs.filter((item) => item.agentId !== id);
     });
-    return { archivedWorkspace };
+    return { deleted: true };
   }
 
   async startAgent(id: string): Promise<Agent> {

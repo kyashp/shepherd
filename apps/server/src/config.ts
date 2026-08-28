@@ -2,8 +2,12 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 
+const booleanEnvironmentValue = z
+  .enum(["true", "false"])
+  .transform((value) => value === "true");
+
 const envSchema = z.object({
-  HOST: z.string().default("0.0.0.0"),
+  HOST: z.string().trim().min(1).default("127.0.0.1"),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   LOG_LEVEL: z.string().default("info"),
   APP_DATA_DIR: z.string().default(path.resolve(".data")),
@@ -40,25 +44,62 @@ const envSchema = z.object({
     .optional(),
   ARK_API_KEY: z.string().optional(),
   ARK_MODEL: z.string().optional(),
+  SHEPHERD_MODEL: z.string().optional(),
   ARK_BASE_URL: z
     .string()
     .url()
     .default("https://ark.cn-beijing.volces.com/api/v3"),
+  SHEPHERD_ROOT: z.string().optional(),
+  SHEPHERD_DEMO_MODE: booleanEnvironmentValue.default(false),
+  SHEPHERD_AUTO_RESOLUTION: booleanEnvironmentValue.default(true),
+  SHEPHERD_DELETE_COMPLETED_PLANES: booleanEnvironmentValue.default(false),
+  SHEPHERD_MAX_PARALLEL_PLANES: z.coerce.number().int().min(1).max(16).default(4),
+  SHEPHERD_CONTRACT_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .default(600_000),
+  SHEPHERD_CANDIDATE_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .default(600_000),
+  SHEPHERD_VERIFICATION_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .default(120_000),
+  SHEPHERD_VERIFIER_IMAGE: z.string().min(1).optional(),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });
 
 export type AppConfig = ReturnType<typeof loadConfig>;
 
+function isLoopbackHost(host: string): boolean {
+  const normalized = host.toLowerCase().replace(/^\[|\]$/gu, "");
+  if (normalized === "localhost" || normalized === "::1") return true;
+  const octets = normalized.split(".");
+  return (
+    octets.length === 4 &&
+    octets[0] === "127" &&
+    octets.every((octet) => /^\d{1,3}$/u.test(octet) && Number(octet) <= 255)
+  );
+}
+
+function isStrongNonPlaceholderToken(token: string): boolean {
+  if (token.length < 24) return false;
+  return !/^(?:replace|change[-_.]?me|placeholder|your[-_.]|example[-_.])/iu.test(
+    token,
+  );
+}
+
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
   const env = envSchema.parse(environment);
   const authToken = env.APP_AUTH_TOKEN?.trim() ?? "";
-  const loopbackHosts = new Set(["127.0.0.1", "::1", "localhost"]);
-  if (env.NODE_ENV === "production" && !loopbackHosts.has(env.HOST)) {
-    if (authToken.length < 24 || authToken.startsWith("replace-")) {
-      throw new Error(
-        "APP_AUTH_TOKEN must contain at least 24 characters for a non-loopback production server",
-      );
-    }
+  if (!isLoopbackHost(env.HOST) && !isStrongNonPlaceholderToken(authToken)) {
+    throw new Error(
+      "APP_AUTH_TOKEN must be a non-placeholder token of at least 24 characters for a non-loopback server",
+    );
   }
   const defaultContainerUser =
     typeof process.getuid === "function" && typeof process.getgid === "function"
@@ -86,7 +127,20 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
     authToken,
     arkApiKey: env.ARK_API_KEY?.trim() ?? "",
     arkModel: env.ARK_MODEL?.trim() ?? "",
+    shepherdModel: env.SHEPHERD_MODEL?.trim() || env.ARK_MODEL?.trim() || "",
     arkBaseUrl: env.ARK_BASE_URL.replace(/\/+$/, ""),
+    shepherdRoot: path.resolve(
+      env.SHEPHERD_ROOT ?? path.join(env.APP_DATA_DIR, "shepherd"),
+    ),
+    shepherdDemoMode: env.SHEPHERD_DEMO_MODE,
+    shepherdAutoResolution: env.SHEPHERD_AUTO_RESOLUTION,
+    shepherdDeleteCompletedPlanes: env.SHEPHERD_DELETE_COMPLETED_PLANES,
+    shepherdMaxParallelPlanes: env.SHEPHERD_MAX_PARALLEL_PLANES,
+    shepherdContractTimeoutMs: env.SHEPHERD_CONTRACT_TIMEOUT_MS,
+    shepherdCandidateTimeoutMs: env.SHEPHERD_CANDIDATE_TIMEOUT_MS,
+    shepherdVerificationTimeoutMs: env.SHEPHERD_VERIFICATION_TIMEOUT_MS,
+    shepherdVerifierImage:
+      env.SHEPHERD_VERIFIER_IMAGE?.trim() || env.CONTAINER_RUNTIME_IMAGE,
     nodeEnv: env.NODE_ENV,
   };
 }
