@@ -65,7 +65,7 @@ describe("Agent lifecycle", () => {
       .toBe("Builds apps");
     expect((await service.stopAgent(agent.id)).status).toBe("stopped");
     expect((await service.startAgent(agent.id)).status).toBe("ready");
-    await service.deleteAgent(agent.id);
+    await expect(service.deleteAgent(agent.id)).resolves.toEqual({ deleted: true });
     expect(service.listAgents()).toHaveLength(0);
   });
 

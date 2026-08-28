@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "agents": [
+    {
+      "id": "legacy-agent-1",
+      "name": "Legacy Builder",
+      "description": "Created before Shepherd",
+      "instructions": "Preserve this exact value.",
+      "status": "stopped",
+      "workspacePath": "/captured/workspaces/legacy-agent-1",
+      "codexThreadId": "legacy-thread-17",
+      "lastError": null,
+      "createdAt": "2026-08-01T01:02:03.000Z",
+      "updatedAt": "2026-08-02T02:03:04.000Z"
+    }
+  ],
+  "messages": [
+    {
+      "id": "legacy-message-1",
+      "agentId": "legacy-agent-1",
+      "runId": "legacy-run-1",
+      "role": "user",
+      "content": "Keep my historic conversation",
+      "createdAt": "2026-08-02T02:03:04.000Z"
+    }
+  ],
+  "runs": [
+    {
+      "id": "legacy-run-1",
+      "agentId": "legacy-agent-1",
+      "status": "completed",
+      "prompt": "Keep my historic conversation",
+      "output": "Historic output",
+      "error": null,
+      "usage": {
+        "inputTokens": 11,
+        "cachedInputTokens": 3,
+        "outputTokens": 7
+      },
+      "startedAt": "2026-08-02T02:03:05.000Z",
+      "completedAt": "2026-08-02T02:03:06.000Z",
+      "createdAt": "2026-08-02T02:03:04.000Z"
+    }
+  ]
+}
