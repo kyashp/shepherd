@@ -7,6 +7,45 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## E2E-01 stopped at Create Agent overflow defect
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Branch/base:** `work/mock-main` / `ace01ae0a6875f102ea0fec30e871a0e2f6d60a8`
+
+The Worker extended only the deterministic test composition toward PRD 11.6.1,
+then stopped at the first reproduced production defect as required. Before the
+browser stage, the real web/server production build passed and the existing
+isolated harness causal tests passed 2/2. No `.env` was read and no external/model
+request was made.
+
+The focused command drove the built authenticated application with Playwright
+`1.62.1` / Chromium `151.0.7922.34`:
+
+```sh
+npm run test:e2e:starter-kit
+# build passed; harness unit 2/2 passed
+# browser 0/2: Create Agent overflow assertion failed at both viewports
+# 1280x800: document scrollWidth 2299, clientWidth 1280
+# 1440x900: document scrollWidth 2579, clientWidth 1440
+```
+
+The earliest divergence occurs after the four recommended authority radios render,
+before creating an Agent, calling fake Codex, changing workspace files, or testing
+restart continuity. A one-project diagnostic rerun at `1280x800` enumerated every
+overflowing element. Each transparent absolute `.preset-grid input` retained the
+global `input { width: 100%; min-height: 38px; ... }` sizing: all four inputs had
+`clientWidth=1280`, and their static grid positions produced right edges `1589`,
+`1826`, `2063`, and `2299`. The accepted visible form looked clipped only because
+the main content surface hides X overflow; the document geometry was still invalid.
+
+This establishes `UI-03` causally. The minimal correction belongs to the Fixer:
+bound only the visually hidden native radio dimensions while preserving labels,
+selection, keyboard semantics, and all accepted styling. The Worker did not edit
+React, CSS, or any production file, did not weaken the no-overflow gate, and did not
+attempt the separately labelled sparse live acceptance while deterministic E2E-01
+was red. Live call count: **0**. E2E-01 remains blocked with no acceptance gate
+claimed.
+
 ## E2E-HARNESS deterministic browser foundation
 
 **Date:** 2026-08-29 (Asia/Singapore)

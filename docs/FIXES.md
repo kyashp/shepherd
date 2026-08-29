@@ -68,6 +68,36 @@ that limitation is explicit.
 - **Owner/status:** first Fixer task after `TST-02` / `READY`; **25%**, 0/5
   gates, not audited.
 
+### `UI-03` — invisible authority radios create document-wide horizontal overflow
+
+- **Evidence class:** reproduced by the E2E-01 real-browser journey at both required
+  viewports on `ace01ae`; the first Create Agent no-overflow assertion failed before
+  Agent creation or any Runtime/model turn.
+- **Failure contract:** after the authenticated user opens Create Agent and the four
+  recommended authority presets render, `document.documentElement.scrollWidth` is
+  `2299` at `1280x800` and `2579` at `1440x900`, rather than remaining within the
+  viewport. The page looks clipped because `.main-content` hides X overflow, but
+  the document invariant and keyboard/browser geometry remain incorrect.
+- **Supported root cause:** the global `input { width: 100%; min-height: 38px; ... }`
+  rule also applies to `.preset-grid input`. That narrower rule makes the radios
+  absolute and transparent but does not reset their size. Browser diagnostics
+  observed four invisible `INPUT` elements, each exactly one viewport wide, with
+  right edges at `1589`, `1826`, `2063`, and `2299` in the 1280 case. Their grid
+  static positions cumulatively expand the root scroll area.
+- **Minimal correction:** in the existing `.preset-grid input` rule, bound the
+  visually hidden native radios (for example, explicit one-pixel width/height and
+  zero margin) while preserving the label hit target, native radio semantics,
+  checked selection, keyboard order, and accepted appearance. Do not hide the
+  symptom by weakening the document-overflow assertion or redesigning the form.
+- **Acceptance:** reproduce RED first; then Create Agent at `1280x800` and
+  `1440x900` has document/body X/Y scroll sizes within client sizes, all four labels
+  remain clickable, Generalist remains the checked recommended preset, keyboard
+  focus/selection works, screenshots preserve the current theme, E2E-01 proceeds
+  beyond its first gate, and literal `npm run check` passes. Independent UI review
+  and integrated Auditor rerun remain required.
+- **Owner/status:** Fixer / `READY`; **100% causal diagnosis, 0% correction**; no
+  production change made by the Worker.
+
 ### `OPS-06` — macOS Docker Desktop live Shepherd preflight fails opaquely
 
 - **Evidence class:** strong collaborator report from macOS with a complete bounded
@@ -115,6 +145,7 @@ that limitation is explicit.
 | `SCH-02` | Cycles are rejected during scheduling rather than before graph persistence. | Call existing DAG validator before durable Contract creation. | Worker / ready |
 | `UI-01` | Current detailed failure panel is attention-focused; ordinary failed Missions may hide typed detail. | Reuse existing failure/attention primitives; no visual redesign. | Worker / blocked by typed failures |
 | `UI-02` | Current web type has optional `estimatedDurationMs`, but no server/domain producer exists. | Persist and serve trusted estimates, clearly distinct from actuals; preserve timeline design. | Worker / ready |
+| `UI-03` | E2E-01 reproduced document widths of 2299/2579 on Create Agent because four transparent absolute preset radios retain global viewport-wide input sizing. | Bound only the visually hidden preset-radio dimensions; preserve native semantics, labels, keyboard behavior, and accepted form visuals. | Fixer / ready; blocks E2E-01 |
 | `TEST-TS` | Current server tsconfig explicitly excludes `src/**/*.test.ts`. | Add a separate no-emit test typecheck without changing production emit. | Worker / ready |
 | `CI-01` | Repository contains no `.github/workflows` required check. | Network/model-free Node install/typecheck/test/build workflow; preserve protected-main policy. | Integrator / ready |
 
