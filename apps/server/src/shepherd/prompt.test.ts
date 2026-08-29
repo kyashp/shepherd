@@ -151,5 +151,20 @@ describe("Shepherd execution prompt envelopes", () => {
     expect(envelope.payload.candidate).toEqual(candidate);
     expect(envelope.payload.authority).toEqual(authority);
     expect(envelope.payload.declaredCanonicalClaimKeys).toEqual(["auth.transport"]);
+    expect(envelope.resultManifest).toEqual({
+      path: ".shepherd/result.json",
+      required: false,
+      forbidden: true,
+      reason: "Resolution candidates are verified from their immutable Git diff",
+    });
+    expect(envelope.executionRules.join(" ")).toContain(
+      "Do not write .shepherd/result.json",
+    );
+    expect(envelope.executionRules.join(" ")).toContain(
+      "not an Agent manifest",
+    );
+    expect(envelope.executionRules.join(" ")).not.toContain(
+      "only permitted .shepherd/** write",
+    );
   });
 });
