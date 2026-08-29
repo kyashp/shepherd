@@ -51,11 +51,14 @@ that limitation is explicit.
 
 ### `TST-03` — F-03 blocked-sibling regression is schedule-sensitive in hosted CI
 
-- **Evidence class:** reproduced once on the required hosted Node 22 gate at exact
+- **Evidence class:** reproduced on the required hosted Node 22 gate at exact
   head `2ba5cb9`, run [`33261198788`](https://github.com/kyashp/shepherd/actions/runs/33261198788),
-  job `99123330844`. The same integrated local gate passed 563/563 with one opt-in
-  skip; five subsequent isolated thrown-verifier runs passed 5/5, establishing an
-  intermittent schedule boundary rather than a UI regression or a correction.
+  job `99123330844`, then reproduced deterministically with a disposable local fault
+  probe that held only the backend immediately before verifier entry and shortened
+  only the temporary test budget to one second. The probe produced the same timeout
+  and unhandled rejection. The unmodified integrated local gate passed 563/563 with
+  one opt-in skip and five subsequent isolated thrown-verifier runs passed 5/5,
+  establishing the schedule boundary rather than a UI regression or correction.
 - **Failure contract:** the hosted full suite timed out
   `atomically interrupts a blocked sibling after 'thrown verifier exception'` at
   its explicit 30-second budget. Vitest also reported an unhandled

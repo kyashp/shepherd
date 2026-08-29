@@ -204,6 +204,14 @@ temporarily unhandled. The test has no unconditional sibling release/join when a
 timeout or assertion wins. Five isolated local repetitions subsequently passed 5/5,
 which confirms intermittency and does not correct the hosted RED.
 
+A disposable controlled fault probe then held the backend only at
+`contract_verification_snapshot_ready`, immediately before verifier entry, and
+shortened only that temporary test's budget to one second. The thrown-verifier row
+deterministically timed out and Vitest reported the same unhandled
+`ContractVerificationInfrastructureError`. The mutation lived only in the Auditor's
+temporary worktree and was not integrated. This separates the orchestration race
+from machine speed and directly validates the supported root cause.
+
 `TST-03` now owns the smallest test-only correction: deterministic two-arrival
 coordination, immediate rejection handling, and unconditional bounded release/join;
 no sleep, timeout increase, swallowed rejection, weakened F-03 assertion, or product
