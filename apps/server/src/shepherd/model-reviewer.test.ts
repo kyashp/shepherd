@@ -90,6 +90,26 @@ function validFinding(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function manifestContentFinding() {
+  return validFinding({
+    kind: "likely_incompatibility",
+    reason: "The manifest summaries describe incompatible authentication transports.",
+    evidence_refs: [
+      ...validEvidence(),
+      {
+        contract_id: "contract-a",
+        source: "manifest",
+        ref: "Adds the server authentication boundary.",
+      },
+      {
+        contract_id: "contract-b",
+        source: "manifest",
+        ref: "Adds the browser login workflow.",
+      },
+    ],
+  });
+}
+
 function providerEnvelope(
   review: unknown = { findings: [] },
   overrides: Record<string, unknown> = {},
@@ -299,6 +319,18 @@ describe("ArkModelReviewer request contract", () => {
       additionalProperties: false,
       required: ["contract_id", "source", "ref"],
     });
+  });
+
+  it("requires literal stable selectors instead of field contents", async () => {
+    const fetchImpl = makeFetch(completedResponse());
+
+    await makeReviewer(fetchImpl).review(baseInput());
+
+    const init = fetchImpl.mock.calls[0]?.[1];
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    expect(body.instructions).toContain(
+      "For objective, manifest, and diff_summary sources, use the literal ref selectors objective, manifest_summary, and diff_summary respectively; never copy field contents into ref.",
+    );
   });
 
   it("returns disabled without validating configuration, input, or calling fetch", async () => {
@@ -1099,6 +1131,54 @@ describe("ArkModelReviewer strict semantic output validation", () => {
   ])("rejects $name under the strict local schema", async ({ review }) => {
     const fetchImpl = makeFetch(completedResponse(review));
     const result = await makeReviewer(fetchImpl).review(baseInput());
+    expectDegraded(result, "invalid_response", false);
+  });
+
+  it("returns a partial completion for the exact manifest-content selector shape", async () => {
+    const fetchImpl = makeFetch(
+      completedResponse({
+        findings: [validFinding(), manifestContentFinding()],
+      }),
+    );
+
+    const result = await makeReviewer(fetchImpl).review(baseInput());
+
+    expect(result).toStrictEqual({
+      status: "completed",
+      findings: [
+        {
+          kind: "equivalent_key",
+          leftContractId: "contract-a",
+          rightContractId: "contract-b",
+          leftKey: "auth.transport",
+          rightKey: "auth.method",
+          confidence: "high",
+          reason: "Both claims select the application authentication transport.",
+          evidenceRefs: [
+            { contractId: "contract-a", source: "claim", ref: "auth.transport" },
+            { contractId: "contract-b", source: "claim", ref: "auth.method" },
+          ],
+        },
+      ],
+      droppedFindingCount: 1,
+    });
+    expect(JSON.stringify(result)).not.toContain(
+      "Adds the server authentication boundary.",
+    );
+  });
+
+  it("degrades when every claimed finding fails semantic validation", async () => {
+    const fetchImpl = makeFetch(
+      completedResponse({
+        findings: [
+          manifestContentFinding(),
+          validFinding({ right_key: "auth.forged" }),
+        ],
+      }),
+    );
+
+    const result = await makeReviewer(fetchImpl).review(baseInput());
+
     expectDegraded(result, "invalid_response", false);
   });
 
