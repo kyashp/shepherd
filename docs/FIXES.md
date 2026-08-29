@@ -28,6 +28,31 @@ that limitation is explicit.
 
 ## Immediate queue
 
+### `TST-10` — E2E-02 promotion stage screenshot does not show promotion
+
+- **Evidence class:** independently reproduced from unintegrated candidate
+  `85550e0a6c6c8f2263375943b22271d72c814c05` after two focused runs at both
+  required viewports.
+- **Failure contract:** `05-candidate-outcomes.png` and
+  `06-promotion-reverifying.png` are byte-identical at 1280x800
+  (`66159d4f...`) and at 1440x900 (`f35e34c3...`). The Playwright assertion finds
+  “Started final authority and independent verification gate,” but that event is
+  below the internally scrollable contract pane, so capture 06 does not visibly
+  evidence its named stage. There are 24 distinct images, not 26.
+- **Impact:** functional/API/Git/store/security assertions pass, but the visual
+  evidence and BUILD_LOG phrase “13 material stages” overclaim the screenshot
+  corpus. E2E-02 remains unintegrated.
+- **Supported cause:** the test captures immediately after a DOM visibility check
+  without scrolling the promotion event into the visible contract-pane region.
+- **Minimal correction:** test only. Scroll the exact promotion event card into
+  view and assert its rectangle intersects the contract pane before capture 06.
+  Do not change production UI/CSS/theme, introduce sleeps/retries, weaken the event
+  assertion, or fake a state. Preserve the truthful `GC-06` and `UI-02` exclusions.
+- **Acceptance/status:** **OPEN / READY for Fixer.** Captures 05 and 06 must differ
+  in both viewports; run the hero journey twice at each viewport and inspect all
+  52 observations, then full Chromium/harness, strict test typecheck, literal
+  `npm run check`, cleanup/security/UI fallback and hosted integrated gate.
+
 ### `UI-04` — promotion surfaces display candidate verification evidence
 
 - **Evidence class:** fresh deterministic browser/API reproduction on integrated

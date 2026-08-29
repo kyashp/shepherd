@@ -7,6 +7,31 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — E2E-02 candidate audit blocked by TST-10 visual evidence
+
+The Auditor reviewed exact candidate
+`85550e0a6c6c8f2263375943b22271d72c814c05` without pushing it to
+`mock-main`. Its diff is five test/harness/docs files (+420/-2) and contains no
+production or UI change. Two focused invocations passed harness unit 14/14 and
+Chromium 4/4 across 1280x800 and 1440x900. Full harness passed unit 7/7 plus
+Chromium 12/12. Literal `npm run check` passed launcher 3/3, Server 592/592 plus
+two explicit opt-in skips, Web 17/17, strict typechecks and both builds; dependency
+audit reported zero vulnerabilities. API/Git/store assertions prove the immutable
+base, two verified Contracts, exact semantic collision, cookie selection, bearer
+rejection, distinct final evidence, protected-main output, preserved loser,
+Shepherd-authored Project Group lifecycle, 401 boundary, no network/model use,
+source/outside-canary safety and exact reset/process/port/container/root cleanup.
+
+Independent review found `TST-10`: stage 05 and stage 06 are byte-identical at
+both viewports (1280 hash `66159d4f...`; 1440 hash `f35e34c3...`). Although the DOM
+assertion proves the promotion-start event exists, it is below the internally
+scrollable contract pane and is absent from the named stage-06 capture. Therefore
+only 24/26 screenshots are distinct, and “13 material stages” is not yet supported
+visually. The minimal correction is confined to scrolling and intersection-proof
+inside `shepherd-hero.spec.mjs`; no product/UI/theme change, wait inflation or
+assertion weakening is authorized. E2E-02 remains blocked and unintegrated. No
+live/model request ran.
+
 ## 2026-08-30 — UI-04 and verifier fixture integrated audit
 
 The Auditor integrated the bounded verifier fixture, UI-04 frontend correction and
