@@ -2,6 +2,11 @@
 
 This log records commands actually executed and evidence actually observed. Secrets, raw prompts, and unbounded process output are intentionally excluded.
 
+This is a chronological evidence record, not the current task/status authority.
+Branch and phase statements remain true only for the commit named in their entry.
+Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
+pending checks, and workflow.
+
 ## Phase 0 — Baseline Lock
 
 **Date:** 2026-08-29 (Asia/Singapore)

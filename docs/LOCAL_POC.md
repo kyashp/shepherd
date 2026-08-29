@@ -1,5 +1,10 @@
 # Local POC
 
+> For the current Shepherd deterministic run command, `.env` caveats, known
+> startup defects, and exact manual acceptance flow, use
+> [`HANDOVER.md`](HANDOVER.md#run-and-test-the-current-solution). The generic
+> Starter Kit commands below remain useful for the legacy Agent flow.
+
 The local profile runs the React/Fastify control plane on macOS or Linux and
 starts every Codex turn in a disposable Docker, Colima, or Podman container.
 Only the Volcengine Ark model API is remote.

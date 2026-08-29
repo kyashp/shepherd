@@ -1,5 +1,9 @@
 # Three-day hackathon guide
 
+> This is the original Starter Kit extension guide. Shepherd is the selected
+> Track 1 implementation. Start with [`HANDOVER.md`](HANDOVER.md) for its current
+> status and [`PRD.md`](PRD.md) for its requirements.
+
 Teams receive a working Agent platform and build exactly one middleware track.
 Rebuilding the UI, control plane, local Runtime, or ECS setup is out of scope.
 

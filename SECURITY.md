@@ -3,6 +3,11 @@
 Volc Agent Launchpad is a hackathon proof of concept. Only the latest revision
 on the default branch is supported.
 
+Shepherd adds stricter authority, Git Plane, verifier, redaction, and promotion
+boundaries for its managed demo project. These do not turn the broader Starter
+Kit into a production identity or tenant-isolation system. Current security
+evidence and pending review are tracked in [docs/HANDOVER.md](docs/HANDOVER.md).
+
 ## Report a vulnerability
 
 Send the repository owner or event organizer the affected revision,

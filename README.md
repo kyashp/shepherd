@@ -1,4 +1,11 @@
-# Volc Agent Launchpad
+# Volc Agent Launchpad + Shepherd
+
+> [!IMPORTANT]
+> Start with [the Shepherd engineering handover](docs/HANDOVER.md). It is the
+> authoritative current-state, defect, remaining-work, runbook, and multi-agent
+> workflow entry point. [The PRD](docs/PRD.md) remains the requirement authority.
+> This README still preserves much of the Starter Kit setup material and is not
+> the final PRD Phase 9 project report.
 
 A minimal Agent platform for three-day middleware hackathons. It provides Agent
 CRUD, a browser Playground, persistent workspaces, and Codex CLI backed by the
@@ -8,9 +15,11 @@ Run it locally with Docker, Colima, or rootless Podman, or deploy it to
 Volcengine ECS.
 
 > [!WARNING]
-> This is a single-user proof of concept. It intentionally has no identity,
-> tracing, audit, or hardened sandbox middleware. Do not use production data or
-> credentials. See [SECURITY.md](SECURITY.md).
+> This is a single-user proof of concept. It has no production identity,
+> multi-tenant authorization, or hardened tenant-isolation boundary. Shepherd
+> adds a scoped execution/audit kernel for its managed demo project, but this is
+> not a production security claim. Do not use production data or credentials.
+> See [SECURITY.md](SECURITY.md).
 
 ## Screenshots
 
@@ -24,6 +33,11 @@ Volcengine ECS.
 
 ## Features
 
+- Shepherd Execution Contracts, Git-backed Planes, independent verification,
+  deterministic semantic collision detection, speculative resolution, and
+  protected promotion for the managed authentication fixture
+- Shepherd Mission Control, Project Group, timeline, Plane Tree, Agent role and
+  authority configuration, and settings UI (with known gaps itemized in the handover)
 - React and TypeScript Web UI
 - Agent create, edit, start, stop, delete, and multi-turn chat
 - Fastify control plane with asynchronous Run state
@@ -41,6 +55,11 @@ Volcengine ECS.
 Codex CLI is included in the Runtime image and is not required on the host.
 
 ## Local browser SOP
+
+For the currently verified deterministic Shepherd command and exact manual test
+walkthrough, use [the HANDOVER runbook](docs/HANDOVER.md#run-and-test-the-current-solution).
+It also records the current `.env` startup and clean-reset defects so a failed
+first attempt is not mistaken for user error.
 
 ### 1. Check the local tools
 
@@ -239,6 +258,9 @@ docker compose config
 
 ## Documentation
 
+- [Current engineering handover and task ledger](docs/HANDOVER.md)
+- [Shepherd product requirements](docs/PRD.md)
+- [Shepherd design and trust boundaries](docs/SHEPHERD.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Local POC](docs/LOCAL_POC.md)
 - [Deployment](docs/DEPLOYMENT.md)

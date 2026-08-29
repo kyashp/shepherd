@@ -1,71 +1,28 @@
 # Shepherd: Multi-Agent Kernel
 
-This is the as-built operating document for Shepherd. It will be updated at every implementation phase. Statements under **Implemented and verified** are backed by `docs/BUILD_LOG.md`; statements under **Accepted design contract** describe the approved target until their phase gate passes.
+This document describes Shepherd's as-built design and trust boundaries.
+
+For current implementation status, defects, confidence, pending tests, task IDs,
+run instructions, and agent workflow, use [`docs/HANDOVER.md`](HANDOVER.md). If a
+status statement here conflicts with the handover, the handover wins. The product
+requirements remain authoritative in [`docs/PRD.md`](PRD.md), while
+[`docs/BUILD_LOG.md`](BUILD_LOG.md) is immutable historical evidence for the commit
+and phase named in each entry.
 
 ## Implementation status
 
-### Implemented and verified
+The current `main` contains the deterministic kernel, strict persistence and API
+boundaries, live isolated Agent runtime adapter, cancellation/retry/selection/reset
+controls, Project Group storage/routing foundations, Agent roles/authority, and the
+six requested UI surfaces. The deterministic backend demo path was rerun at the
+snapshot recorded in the handover.
 
-- Starter Agent CRUD/control-plane baseline builds and tests.
-- Real Responses API access for the configured Agent and Shepherd models.
-- Real disposable-container Agent execution, same-thread follow-up, and restart/workspace persistence.
-- Repository-local test/browser scratch roots and tracked credential-example hygiene.
-- Rendered starter UI baselines at 1440×900 and 1280×800.
-- Version-2 JSON persistence with lossless version-1 migration, serialized atomic writes, monotonic Shepherd events, and whole-state sensitive-string scrubbing.
-- Typed Shepherd Projects, Missions, Contracts, authorities, Planes, claims, collisions, resolution candidates, verification evidence, events, group messages, and settings.
-- Structurally checked Mission/Contract transitions; only the independent verifier may certify a Contract, and mandatory evidence must match the target.
-- Managed authentication fixture repository plus real Git contract, integration, and resolution worktrees.
-- Executors receive authority-filtered, Git-free exports rather than trusted Plane worktrees. Trusted import derives the actual diff and rejects path escapes, symlinks, special files, protected metadata, and out-of-scope writes before changing a Plane.
-- Actual-diff authority enforcement at import, commit, merge, and promotion boundaries, with always-protected `.git/**`, `.shepherd/**`, and secret paths. The exact Agent-written `.shepherd/result.json` ingestion exception is schema-validated and never staged.
-- Credential-free, no-network Docker verification against a fresh, read-only snapshot of an exact trusted commit—not a mutable executor workspace—with trusted command profiles and bounded CPU, memory, PIDs, time, and output.
-- Deterministic claim normalization/collision detection, concurrent speculative candidates from one integration SHA, evidence-derived winner selection, final re-verification, and compare-and-swap promotion.
-- Independent claim corroboration before semantic claims become collision inputs; a forged manifest value fails closed with durable rejected-claim evidence.
-- A deterministic end-to-end demo Mission that chooses the HttpOnly-cookie design under the default security policy and flips to bearer JWT when the declared invariant is reversed.
-- Authenticated read APIs for state, Mission detail, and cursor events, plus a demo-mode-only asynchronous Mission start endpoint with strict input validation and public path stripping.
-- Loopback-safe default binding; non-loopback binding requires a strong non-placeholder application token. Public DTO allowlists and bounded redacted errors prevent host-path and credential disclosure.
-- Checked compare-and-swap rollback if protected-ref/worktree synchronization fails, with distinct failure evidence when rollback itself cannot be proven.
-- Real HTTP, restart, Git, persistence, and container verification of the complete deterministic chain.
-- Strict bounded V1/V2 database validation on both load and publish, including canonical paths/refs, complete references, lifecycle proofs, exact evidence-to-Plane diffs, collision-source validity, promotion proof, and false-green completion rejection.
-- Bounded no-follow/non-blocking state and sentinel reads; exclusive synced temporary writes; atomic store publication; and fail-closed handling for symlinks, FIFOs, oversized state, invalid outgoing state, and persistence errors.
-- Startup reconciliation at five real process-kill boundaries. In-flight work becomes evidenced `interrupted/attention_required`, private artifacts are cleaned, Agents are released, and a second restart is cursor-idempotent.
-- A durable pre-CAS promotion proof containing the exact final frontend/backend/project-security verification suite. Only an exact `promoting` record with Git/worktree/ancestry corroboration can ratify a post-CAS crash; `reverifying` is never sufficient.
-- Fail-closed protected branch/index/worktree reconciliation, including detached or alternate checkout, dirty state, unregistered/substituted resolution worktrees, external movement, and the update-ref/read-tree gap.
-- Restart-stable installation-scoped verifier ownership, exact-label orphan cleanup, strict Agent workspace rebinding, and refusal to adopt old managed repositories after database loss.
-- Versioned, bounded, secret-scanned Contract and resolution-candidate prompt envelopes assembled only by trusted code. Contracts receive exact declared canonical claim keys and semantic scopes; resolution candidates receive an exact target strategy and are forbidden from writing `.shepherd/**`.
-- Canonical semantic-scope enforcement during Contract manifest ingestion. Undeclared scopes fail with invalid semantic evidence instead of bypassing collision detection.
-- Trusted resolution target corroboration: independently observed acceptance facts must equal a candidate's persisted canonical target as well as pass the mandatory suite. A substituted target cannot tie, win, or promote.
-- Configurable deterministic/live execution selection. `auto` resolves to live only with a usable Ark Agent configuration and the container Runtime; explicit `live` fails closed without those prerequisites or the required `workspace-write` sandbox.
-- Fresh per-Plane Codex turns using Git-free exports, unique execution identities, private per-run `CODEX_HOME` directories, stdin-only prompts, no resumed thread, create-before-attach container identity, and exact-owner cleanup.
-- Hardened live Runtime containers: non-root, read-only root, dedicated tmpfs, dropped capabilities, no-new-privileges, bounded CPU/memory/PIDs/time/output, and only the execution export plus its private home mounted.
-- Startup live-Runtime preflight for the pinned Codex CLI, positive workspace-write proof, negative private-home-write proof, and sandboxed TCP listen/connect denial. The generated model-shell environment does not inherit the Ark credential.
-- Raw Codex thread IDs remain transient. Only unique SHA-256 session fingerprints are persisted; public DTOs expose a boolean session-established fact and never the fingerprint, raw ID, or prompt.
-- Two fresh live-model Missions completed end to end with eight unique isolated sessions, the expected semantic collision and evidence-derived winner, promoted Git state, no persisted secret/prompt/raw-session material, and no remaining Runtime or verifier container.
-
-### Implemented modules awaiting orchestration
-
-The following modules are implemented and focused-test-backed, but current
-`ShepherdService`, HTTP routes, and UI do not yet invoke or expose them:
-
-- The deterministic DAG validator/scheduler detects malformed graphs and selects a
-  stable safe batch subject to dependency state, per-Agent exclusion, the mutation
-  lock, and global Plane capacity.
-- The bounded Project Group parser routes plain messages to Shepherd and one leading
-  name/ID mention to an Agent while rejecting malformed, unknown, ambiguous, or
-  multiple targets. It interprets no commands or paths.
-- The bounded Ark Responses reviewer canonicalizes structured Contract facts, makes
-  at most one non-persistent strict-schema request, validates/cross-references every
-  returned finding, and degrades explicitly on any unsafe or unavailable result. Its
-  output is advisory only and cannot alter deterministic collision, verification,
-  selection, or promotion.
-
-### Not yet implemented
-
-Remaining work includes generic structured/free-form Mission planning, wiring the DAG
-scheduler into orchestration, connecting the advisory reviewer and its degraded event,
-Project Group persistence/API dispatch, Mission cancellation, bounded candidate retry,
-human tie resolution, demo reset, the remaining named failure-matrix journeys, all six
-UI surfaces, and full browser/rehearsal evidence. Standalone modules above are not
-described as product-functional until those integration gates pass.
+This is not a full-PRD completion claim. The current blocking areas are specifically
+the Project Group end-to-end behavior, advisory model composition, general service
+DAG waves, several typed failure/recovery paths, full browser/visual/accessibility
+evidence, repeated stability and demo timing, and Phase 9 deliverables. Use the
+requirement matrix and task ledger in the handover rather than deriving status from
+this summary.
 
 ## Accepted design contract
 
@@ -219,10 +176,10 @@ Real secrets belong only in ignored `.env`.
 | `SHEPHERD_ROOT` | Sentinel-guarded managed fixture repositories and Plane worktrees; defaults below `APP_DATA_DIR`. |
 | `SHEPHERD_CODEX_HOME_ROOT` | Sentinel-guarded parent for one private, ephemeral live-Plane `CODEX_HOME` per execution; must be inside `APP_DATA_DIR` and separate from shared Agent and managed Shepherd roots. |
 | `SHEPHERD_EXECUTION_MODE` | `auto`, `live`, or `deterministic`. `auto` selects live only with usable Ark configuration plus the container Runtime; explicit live fails closed otherwise. |
-| `SHEPHERD_DEMO_MODE` | Enables the fixed, path-free demo Mission start control. Demo reset is not yet implemented. |
-| `SHEPHERD_AUTO_RESOLUTION` | Parsed future control setting. The fixed demo currently performs evidence-derived automatic selection; HTTP control wiring is pending. |
-| `SHEPHERD_DELETE_COMPLETED_PLANES` | Parsed future retention setting; service cleanup wiring is pending and completed Planes remain inspectable. |
-| `SHEPHERD_MAX_PARALLEL_PLANES` | Parsed 1–16 Plane-capacity setting used by the standalone scheduler module; Mission-service wiring is pending. |
+| `SHEPHERD_DEMO_MODE` | Enables the fixed, path-free demo Mission and reset controls. Clean-start reset currently has a known defect recorded in `HANDOVER.md`. |
+| `SHEPHERD_AUTO_RESOLUTION` | Intended startup default for evidence-derived automatic selection. Current composition does not pass it into `ShepherdService`; see `ST-01`. |
+| `SHEPHERD_DELETE_COMPLETED_PLANES` | Retention startup control. The current UI/service keeps completed Planes inspectable; final cleanup behavior remains subject to evidence-retention requirements. |
+| `SHEPHERD_MAX_PARALLEL_PLANES` | Intended startup Plane-capacity setting. Current composition does not pass it into `ShepherdService`; persisted settings do control the service after update. See `ST-01`. |
 | `SHEPHERD_CONTRACT_TIMEOUT_MS` | Maximum contract execution duration. |
 | `SHEPHERD_CANDIDATE_TIMEOUT_MS` | Maximum candidate execution duration. |
 | `SHEPHERD_VERIFICATION_TIMEOUT_MS` | Maximum duration accepted by the independent verifier. |
@@ -235,7 +192,7 @@ No configured secret value is documented, persisted into Shepherd state, sent to
 
 - `docs/BUILD_LOG.md` — executed commands and bounded observations.
 - `docs/DEVIATIONS.md` — accepted clarifications and material deviations.
+- `docs/HANDOVER.md` — authoritative current status, tasks, runbook, and agent workflow.
 - `docs/ui-review/` — inspected UI evidence by viewport and journey.
 - `docs/SHEPHERD_ARCHITECTURE.md` — generated after the implementation freezes.
 - `docs/SHEPHERD_TEST_REPORT.md` — generated from final executed suites.
-- `HANDOFF.md` — final continuation guide.
