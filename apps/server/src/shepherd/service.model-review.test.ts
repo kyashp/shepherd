@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { toPublicMissionDetail } from "../app.js";
 import { JsonStore } from "../store.js";
 import { BEARER_TRANSPORT, COOKIE_TRANSPORT } from "./auth-fixture.js";
-import type { VerificationCheckResult, VerificationEvidence } from "./domain.js";
 import type {
   ModelReviewFinding,
   ModelReviewInput,
@@ -18,14 +17,8 @@ import {
   MODEL_REVIEW_MAX_INPUT_BYTES,
   type ModelReviewerFetch,
 } from "./model-reviewer.js";
-import {
-  AUTH_BACKEND_PROFILE_ID,
-  AUTH_FRONTEND_PROFILE_ID,
-  AUTH_PROJECT_PROFILE_ID,
-  ShepherdService,
-  type ShepherdIndependentVerifier,
-} from "./service.js";
-import type { VerificationRequest } from "./verifier.js";
+import { ShepherdService } from "./service.js";
+import { HostTrustedFixtureVerifier } from "./test-fixtures/host-trusted-verifier.js";
 
 /**
  * Each test drives a full deterministic Mission with real Git worktrees and real
@@ -55,110 +48,6 @@ afterEach(async () => {
     if (root) await rm(root, { recursive: true, force: true });
   }
 });
-
-function executeNodeScript(
-  cwd: string,
-  script: string,
-): Promise<{ exitCode: number; stdout: string; stderr: string; durationMs: number }> {
-  const startedAt = Date.now();
-  return new Promise((resolve) => {
-    execFile(
-      process.execPath,
-      [script],
-      {
-        cwd,
-        env: {
-          PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin",
-          HOME: cwd,
-          LANG: "C",
-          LC_ALL: "C",
-          CI: "1",
-        },
-        encoding: "utf8",
-        timeout: 15_000,
-        maxBuffer: 262_144,
-        windowsHide: true,
-      },
-      (error, stdout, stderr) => {
-        const candidate = error as (NodeJS.ErrnoException & { code?: number | string }) | null;
-        resolve({
-          exitCode:
-            candidate === null ? 0 : typeof candidate.code === "number" ? candidate.code : 1,
-          stdout,
-          stderr,
-          durationMs: Math.max(0, Date.now() - startedAt),
-        });
-      },
-    );
-  });
-}
-
-/** Runs the real trusted fixture checks in-process. Needs no container runtime. */
-class HostTrustedFixtureVerifier implements ShepherdIndependentVerifier {
-  private sequence = 0;
-
-  async verify(request: VerificationRequest): Promise<VerificationEvidence> {
-    const startedAt = new Date();
-    const scripts: Record<string, string> = {
-      [AUTH_FRONTEND_PROFILE_ID]: "checks/frontend.cjs",
-      [AUTH_BACKEND_PROFILE_ID]: "checks/backend.cjs",
-      [AUTH_PROJECT_PROFILE_ID]: "checks/project-security.cjs",
-    };
-    const checks: VerificationCheckResult[] = [];
-    for (const check of request.checks) {
-      const script = scripts[check.profileId];
-      if (!script) {
-        checks.push({
-          id: check.id,
-          name: check.name,
-          profileId: check.profileId,
-          mandatory: check.mandatory,
-          status: "infrastructure_error",
-          passed: false,
-          exitCode: null,
-          durationMs: 0,
-          stdout: "",
-          stderr: "",
-          error: "Unknown trusted fixture profile",
-        });
-        continue;
-      }
-      const result = await executeNodeScript(request.planePath, script);
-      const passed = result.exitCode === 0;
-      checks.push({
-        id: check.id,
-        name: check.name,
-        profileId: check.profileId,
-        mandatory: check.mandatory,
-        status: passed ? "passed" : "failed",
-        passed,
-        exitCode: result.exitCode,
-        durationMs: result.durationMs,
-        stdout: result.stdout,
-        stderr: result.stderr,
-        error: passed ? null : "Trusted fixture check exited non-zero",
-      });
-    }
-    const completedAt = new Date();
-    const mandatory = checks.filter((check) => check.mandatory);
-    const mandatoryPassed = mandatory.filter((check) => check.passed).length;
-    return {
-      id: `host-evidence-${++this.sequence}`,
-      targetType: request.targetType,
-      targetId: request.targetId,
-      runner: "independent",
-      passed: mandatoryPassed === mandatory.length,
-      checks,
-      startedAt: startedAt.toISOString(),
-      completedAt: completedAt.toISOString(),
-      durationMs: Math.max(0, completedAt.getTime() - startedAt.getTime()),
-      changedFiles: [...request.changedFiles],
-      summary: `${mandatoryPassed}/${mandatory.length} mandatory checks passed`,
-    };
-  }
-
-  async reconcileInterrupted(): Promise<void> {}
-}
 
 async function gitOutput(cwd: string, args: string[]): Promise<string> {
   return await new Promise<string>((resolve, reject) => {

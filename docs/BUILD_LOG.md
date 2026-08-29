@@ -892,8 +892,48 @@ secret never reaches the outbound request body.
   injected `runAdvisoryModelReview` returns on its first line, so it cannot slow a
   Mission; what the new file adds is roughly 110 s of parallel Mission load, which
   pushes an already-marginal suite further past its timing budget.
-- No live `SHEPHERD_MODEL` request has been made. The provider response shape is
-  exercised only through `fetchImpl` fixtures. The opt-in live smoke remains pending.
+### Opt-in live `SHEPHERD_MODEL` gate
+
+HANDOVER pending-ledger item 5 was executed after item 4 passed, via the new
+`npm run test:shepherd:model-review:live` script and
+`apps/server/src/shepherd/live-model-review.integration.test.ts`. The suite is behind
+a double gate (`SHEPHERD_LIVE_TEST` **and** `SHEPHERD_LIVE_MODEL_REVIEW`) so the
+existing `test:shepherd:live` script cannot trigger it; both the default run and a
+`SHEPHERD_LIVE_TEST=true`-only run were confirmed to skip it. The Mission itself stays
+deterministic and container-free, so the gate costs exactly one provider request.
+
+```sh
+npm run test:shepherd:model-review:live
+# Test Files  1 passed (1)
+#      Tests  1 passed (1)
+#   Duration  14.55s
+# observed outcome: degraded reason=invalid_response retryable=false
+```
+
+The composition is proven against the real provider: one request was sent, a response
+was received, the degradation was recorded durably, and the deterministic collision,
+winner, and promoted head were unchanged. **The review itself did not succeed**, and
+that is reported as a defect rather than as a pass.
+
+Bounded diagnosis using the adapter's own schema and instructions with a two-contract
+payload: HTTP 200, `object: "response"`, `status: "completed"`, `store: false`,
+`error: null`, `incomplete_details: null`, one `reasoning` item followed by one
+assistant `output_text` message whose text parses as schema-valid JSON. The envelope
+contract in `extractOutputText` is therefore satisfied, and the model produced a
+genuinely correct review naming the real `auth.transport` conflict with high
+confidence.
+
+The rejection happens later. `evidenceReferenceExists` requires
+`source: "manifest"` refs to equal the literal sentinel `manifest_summary`, while the
+model supplied the manifest summary text; and `validateAndNormalizeFindings` returns
+`null` when any single finding fails, so one ambiguous reference discards the entire
+review including its valid findings. Tracked as `MR-03`. `ArkModelReviewer` is
+deliberately unmodified by this change.
+
+### Recorded limitations
+
+- The live gate has never observed a `completed` review; only the degradation path is
+  live-proven. Until `MR-03` is fixed, the advisory reviewer is safe but silent.
 - `apps/server/src/index.ts` is a top-level-`await` entrypoint with no export, so its
   composition is build-verified rather than test-verified.
 - No container runtime was available, so the two container-gated suites skipped as

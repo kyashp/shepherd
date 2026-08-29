@@ -19,6 +19,7 @@
     "poc": "node --env-file-if-exists=.env --run=poc:inner",
     "poc:inner": "./scripts/start-local-poc.sh",
     "test:shepherd:live": "SHEPHERD_LIVE_TEST=true node --env-file=.env ./node_modules/vitest/vitest.mjs run --config apps/server/vitest.config.ts apps/server/src/shepherd/live-runtime.integration.test.ts --no-file-parallelism --maxWorkers=1 --bail=1 --retry=0 --testTimeout=1800000 --hookTimeout=120000",
+    "test:shepherd:model-review:live": "SHEPHERD_LIVE_TEST=true SHEPHERD_LIVE_MODEL_REVIEW=true node --env-file=.env ./node_modules/vitest/vitest.mjs run --config apps/server/vitest.config.ts apps/server/src/shepherd/live-model-review.integration.test.ts --no-file-parallelism --maxWorkers=1 --bail=1 --retry=0 --testTimeout=600000 --hookTimeout=120000",
     "start": "npm run start -w @launchpad/server"
   },
   "devDependencies": {
