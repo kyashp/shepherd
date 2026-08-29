@@ -19,6 +19,12 @@ export interface GitClientOptions {
     beforeWorktreeSynchronization?: () => void | Promise<void>;
     afterWorktreeSynchronizationFailure?: () => void | Promise<void>;
   };
+  /** Narrow fault seam used only to verify conflict-cleanup precedence. */
+  mergeFaults?: {
+    beforeConflictEnumeration?: () => void | Promise<void>;
+    beforeAbort?: () => void | Promise<void>;
+    beforePostAbortInspection?: () => void | Promise<void>;
+  };
 }
 
 export interface GitWorktree {
@@ -77,6 +83,14 @@ export class GitCommandError extends Error {
     this.stderr = input.stderr;
     this.timedOut = input.timedOut;
     this.outputExceeded = input.outputExceeded;
+  }
+}
+
+/** A merge conflict whose cleanup could not be proved safe and complete. */
+export class GitMergeCleanupError extends Error {
+  constructor() {
+    super("Git merge conflict cleanup could not be verified");
+    this.name = "GitMergeCleanupError";
   }
 }
 
@@ -210,6 +224,7 @@ export class GitClient {
   private readonly timeoutMs: number;
   private readonly maxOutputBytes: number;
   private readonly promotionFaults: NonNullable<GitClientOptions["promotionFaults"]>;
+  private readonly mergeFaults: NonNullable<GitClientOptions["mergeFaults"]>;
   private initialization: Promise<void> | null = null;
   private canonicalRepositoryPath: string | null = null;
   private canonicalWorktreeRoot: string | null = null;
@@ -222,6 +237,7 @@ export class GitClient {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.maxOutputBytes = options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
     this.promotionFaults = options.promotionFaults ?? {};
+    this.mergeFaults = options.mergeFaults ?? {};
     if (this.timeoutMs < 100 || this.timeoutMs > 120_000) {
       throw new Error("Git timeout must be between 100 and 120000 ms");
     }
@@ -600,10 +616,19 @@ export class GitClient {
     directory: string,
     sourceCommit: string,
     message: string,
+    expectedBranch: string,
   ): Promise<{ headCommit: string; conflictFiles: string[] }> {
     const source = assertFullObjectId(sourceCommit);
+    const branch = assertSafeGitBranch(expectedBranch);
     if (message.trim().length === 0 || message.length > 512) throw new Error("Invalid merge message");
-    await this.inPlaneDirectory(directory, "merge authoring", ["status", "--porcelain=v1", "-z"]);
+    const initialStatus = await this.inPlaneDirectory(
+      directory,
+      "merge authoring",
+      ["status", "--porcelain=v1", "-z"],
+    );
+    if (initialStatus.stdout.length > 0) {
+      throw new Error("Merge target worktree is not clean");
+    }
     const before = await this.currentHead(directory);
     try {
       await this.inPlaneDirectory(directory, "merge authoring", [
@@ -613,22 +638,59 @@ export class GitClient {
         source,
       ]);
     } catch (error) {
-      const conflictsResult = await this.inDirectory(
-        directory,
-        ["diff", "--name-only", "-z", "--diff-filter=U", "--"],
-        { allowedExitCodes: [0, 1] },
-      );
-      const conflictFiles = conflictsResult.stdout
-        .split("\0")
-        .filter(Boolean)
-        .map(assertSafeProjectPath)
-        .sort();
-      await this.inPlaneDirectory(
-        directory,
-        "merge abort",
-        ["merge", "--abort"],
-        { allowedExitCodes: [0, 1, 128] },
-      );
+      let conflictOutput: string | null = null;
+      let cleanupFailed = false;
+      try {
+        await this.mergeFaults.beforeConflictEnumeration?.();
+        const conflictsResult = await this.inDirectory(
+          directory,
+          ["diff", "--name-only", "-z", "--diff-filter=U", "--"],
+          { allowedExitCodes: [0, 1] },
+        );
+        conflictOutput = conflictsResult.stdout;
+      } catch {
+        cleanupFailed = true;
+      } finally {
+        try {
+          await this.mergeFaults.beforeAbort?.();
+          await this.inPlaneDirectory(directory, "merge abort", ["merge", "--abort"]);
+        } catch {
+          cleanupFailed = true;
+        }
+      }
+      let conflictFiles: string[] = [];
+      try {
+        await this.mergeFaults.beforePostAbortInspection?.();
+        const mergeHead = await this.inDirectory(
+          directory,
+          ["rev-parse", "--verify", "--quiet", "MERGE_HEAD"],
+          { allowedExitCodes: [0, 1] },
+        );
+        const status = await this.inDirectory(directory, ["status", "--porcelain=v1", "-z"]);
+        const head = await this.currentHead(directory);
+        const checkedOutBranch = await this.inDirectory(
+          directory,
+          ["symbolic-ref", "--quiet", "--short", "HEAD"],
+          { allowedExitCodes: [0, 1] },
+        );
+        if (
+          mergeHead.exitCode !== 1 ||
+          status.stdout.length > 0 ||
+          head !== before ||
+          checkedOutBranch.exitCode !== 0 ||
+          checkedOutBranch.stdout.trim() !== branch
+        ) {
+          cleanupFailed = true;
+        }
+        if (conflictOutput !== null) {
+          const rawFiles = conflictOutput.split("\0").filter(Boolean);
+          if (rawFiles.length > 1_024) throw new Error("Conflict path limit exceeded");
+          conflictFiles = rawFiles.map(assertSafeProjectPath).sort();
+        }
+      } catch {
+        cleanupFailed = true;
+      }
+      if (cleanupFailed) throw new GitMergeCleanupError();
       if (conflictFiles.length > 0) return { headCommit: before, conflictFiles };
       throw error;
     }

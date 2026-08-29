@@ -2431,7 +2431,10 @@ describe("Shepherd deterministic walking skeleton", () => {
     }
   }, 30_000);
 
-  it("persists an actual textual integration conflict without moving protected HEAD", async () => {
+  it.each([
+    ["clean abort", false],
+    ["unproved cleanup", true],
+  ] as const)("persists an actual textual integration conflict with %s", async (_case, cleanupFault) => {
     const caseRoot = await makeCaseRoot();
     const outsideCanary = path.join(caseRoot, "outside-conflict-canary.txt");
     await writeFile(outsideCanary, "outside unchanged\n", "utf8");
@@ -2449,6 +2452,9 @@ describe("Shepherd deterministic walking skeleton", () => {
       managedRoot: path.join(caseRoot, "managed"),
       agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
       verifier: new HostTrustedFixtureVerifier(),
+      ...(cleanupFault
+        ? { gitMergeFaults: { beforePostAbortInspection: () => { throw new Error("TST18_PRIVATE /Users/private EPERM Darwin"); } } }
+        : {}),
       faultCheckpoint: async (checkpoint, context) => {
         if (checkpoint !== "integration_merge_start" || injected) return;
         injected = true;
@@ -2491,11 +2497,35 @@ describe("Shepherd deterministic walking skeleton", () => {
 
     const { missionId } = await startTrackedTestMission(service);
     await vi.waitFor(
-      () => expect(service.missionDetail(missionId)?.mission.state).toBe("failed"),
+      () => expect(service.missionDetail(missionId)?.mission.state).toBe(cleanupFault ? "attention_required" : "failed"),
       { timeout: 10_000 },
     );
     const detail = service.missionDetail(missionId);
     if (!detail) throw new Error("Git conflict Mission detail disappeared");
+    if (cleanupFault) {
+      expect(detail.mission).toMatchObject({
+        state: "attention_required",
+        failure: { code: "git_conflict", stage: "integration_cleanup" },
+      });
+      expect(detail.project.activeMissionId).toBe(missionId);
+      expect(detail.contracts.every((contract) => contract.state === "verified")).toBe(true);
+      expect(detail.agents.every((agent) => agent.currentContractId === null && agent.status !== "busy")).toBe(true);
+      expect(detail.planes.find((plane) => plane.kind === "integration")).toMatchObject({
+        state: "failed", error: { code: "git_conflict", stage: "integration_cleanup" },
+      });
+      expect(detail.candidates).toEqual([]);
+      expect(detail.collisions).toEqual([]);
+      const surfaces = JSON.stringify([detail, toPublicMissionDetail(detail, []), service.state()]);
+      expect(surfaces).not.toMatch(/TST18_PRIVATE|\/Users\/private|EPERM|Darwin/);
+      expect(detail.events.some((event) => event.details.stage === "integration_cleanup")).toBe(true);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      backgroundTestMissions.pop();
+      const integrationPlane = detail.planes.find((plane) => plane.kind === "integration");
+      if (!integrationPlane) throw new Error("Attention integration Plane disappeared");
+      await expect(access(integrationPlane.worktreePath)).resolves.toBeUndefined();
+      expect(await readFile(outsideCanary, "utf8")).toBe("outside unchanged\n");
+      return;
+    }
     expect(detail.mission.failure).toMatchObject({
       code: "git_conflict",
       message: "Verified Contract changes conflict during integration",

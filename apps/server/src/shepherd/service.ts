@@ -73,6 +73,7 @@ import {
 import { parseProjectGroupMessage } from "./group-routing.js";
 import { GitClient, type GitClientOptions } from "./git-client.js";
 import {
+  GitConflictCleanupError,
   GitMergeConflictError,
   PlaneAuthorityViolationError,
   PlaneCreationError,
@@ -414,6 +415,8 @@ export interface ShepherdServiceOptions {
   ) => void | Promise<void>;
   /** Internal test-only seam around the protected-ref/worktree CAS boundary. */
   gitPromotionFaults?: GitClientOptions["promotionFaults"];
+  /** Internal test-only seam around merge-conflict cleanup and inspection. */
+  gitMergeFaults?: GitClientOptions["mergeFaults"];
   now?: () => Date;
   idFactory?: (prefix: string) => string;
   contractTimeoutMs?: number;
@@ -737,6 +740,7 @@ export class ShepherdService {
     | ShepherdServiceOptions["faultCheckpoint"]
     | undefined;
   private readonly gitPromotionFaults: GitClientOptions["promotionFaults"];
+  private readonly gitMergeFaults: GitClientOptions["mergeFaults"];
   private readonly now: () => Date;
   private readonly idFactory: (prefix: string) => string;
   private readonly contractTimeoutMs: number;
@@ -765,6 +769,7 @@ export class ShepherdService {
     );
     this.faultCheckpoint = options.faultCheckpoint;
     this.gitPromotionFaults = options.gitPromotionFaults;
+    this.gitMergeFaults = options.gitMergeFaults;
     this.now = options.now ?? (() => new Date());
     this.idFactory =
       options.idFactory ??
@@ -2132,6 +2137,15 @@ export class ShepherdService {
         retryable: false,
       };
     }
+    if (error instanceof GitConflictCleanupError) {
+      return {
+        code: "git_conflict",
+        message: "Git conflict cleanup requires operator attention",
+        stage: "integration_cleanup",
+        at,
+        retryable: false,
+      };
+    }
     return {
       code: "unknown",
       message: this.safeText(raw),
@@ -2363,6 +2377,7 @@ export class ShepherdService {
         ...(this.gitPromotionFaults === undefined
           ? {}
           : { promotionFaults: this.gitPromotionFaults }),
+        ...(this.gitMergeFaults === undefined ? {} : { mergeFaults: this.gitMergeFaults }),
       }),
       now: this.now,
     });
@@ -3897,10 +3912,40 @@ export class ShepherdService {
     }
     for (const contractPlane of contractPlanes) {
       this.ensureMissionRunnable(prepared.missionId);
-      const merged = await prepared.planeManager.mergePlane(
-        integration,
-        contractPlane,
-      );
+      let merged;
+      try {
+        merged = await prepared.planeManager.mergePlane(integration, contractPlane);
+      } catch (error) {
+        if (!(error instanceof GitConflictCleanupError)) throw error;
+        const failedAt = this.timestamp();
+        const failure = this.makeFailure(error, "integration_cleanup", failedAt);
+        await this.store.mutate((database) => {
+          const persistedIntegration = database.shepherd.planes.find(
+            (plane) => plane.id === integration.id,
+          );
+          const mission = database.shepherd.missions.find(
+            (item) => item.id === prepared.missionId,
+          );
+          if (!persistedIntegration || !mission) {
+            throw new Error("Integration state disappeared before cleanup failure persistence");
+          }
+          persistedIntegration.state = "failed";
+          persistedIntegration.error = failure;
+          persistedIntegration.updatedAt = failedAt;
+          if (mission.state !== "attention_required") {
+            transitionMissionAndRecord(database, mission.id, "attention_required", {
+              actor: "control_plane",
+              eventActor: SHEPHERD_ACTOR,
+              timestamp: failedAt,
+              attentionReason: failure.message,
+              failure,
+              summary: failure.message,
+              details: { failureCode: failure.code, stage: failure.stage },
+            });
+          }
+        });
+        throw error;
+      }
       this.ensureMissionRunnable(prepared.missionId);
       if (!merged.merged || merged.conflictFiles.length > 0) {
         const error = new GitMergeConflictError(merged.conflictFiles);

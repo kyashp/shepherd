@@ -51,8 +51,13 @@ that limitation is explicit.
   protected HEAD/canary, verified Contracts, released Agents, no downstream work,
   exact reset cleanup, ordinary ten-file/cap/path tests, adjacent/full/security and
   hosted gates pass.
-- **Status:** **OPEN / Medium blocker.** Injected abort failure reproduced 1/1 and
-  surfaced the planted exception from `mergePlane`. F-05 is not integrated.
+- **Status:** **FIXER CANDIDATE / Auditor pending.** The correction always attempts
+  abort before validating bounded paths, accepts only a successful abort, and proves
+  quiet `MERGE_HEAD` absence, clean status and unchanged HEAD. Real enumeration,
+  abort and post-inspection fault rows return a fixed cause-free boundary; the
+  service retains `git_conflict/integration_cleanup` Plane evidence and transitions
+  the Mission to `attention_required` without candidates or promotion. Focused
+  real-Git/service rows pass locally; full gate evidence is in `BUILD_LOG.md`.
 
 ### `TST-17` — Second initial Plane creation failure leaves the first Plane live
 

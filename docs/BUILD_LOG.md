@@ -7,6 +7,26 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — TST-18 Fixer candidate
+
+The preserved implementation RED showed conflict enumeration/path validation before
+abort, accepted abort exit 128, and no combined proof of absent `MERGE_HEAD`, clean
+status and unchanged integration HEAD. The candidate makes abort mandatory, validates
+and caps paths only afterward, and requires all three post-abort facts. Injected real
+conflict rows cover enumeration, abort and inspection failures: each returns the fixed
+cause-free cleanup boundary; enumeration/inspection faults leave a clean worktree,
+while abort failure truthfully leaves it dirty for operator recovery. The service
+persists `git_conflict/integration_cleanup`, a failed integration Plane and an
+`attention_required` Mission with active project, verified Contracts, released Agents,
+no collision/candidate/promotion and no planted diagnostics. Auditor integration is
+still pending. Focused conflict rows passed 4/4, service clean/attention rows 2/2,
+and adjacent Git/service/recovery passed 67/67. The final literal `npm run check`
+passed launcher 3/3, Server 671 passed plus two opt-in skips, Web 17/17 and both
+builds. `npm audit --omit=dev` reported zero vulnerabilities. A read-only security
+fallback's initial Medium branch-integrity finding was corrected by also proving the
+persisted symbolic branch. Final read-only re-review reported 0 High / 0 Medium and
+passed the scoped security boundary.
+
 ## 2026-08-30 — F-05 integration blocked by TST-18 merge-abort precedence
 
 Candidate `0208713` was replayed onto canonical F-04 docs as `a7b669b`. Auditor
