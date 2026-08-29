@@ -28,6 +28,28 @@ that limitation is explicit.
 
 ## Immediate queue
 
+### `UI-04` — promotion surfaces display candidate verification evidence
+
+- **Evidence class:** fresh deterministic browser/API reproduction on integrated
+  `mock-main` `3846591`, using the bounded verifier fixture rebased as `d09e445`.
+- **Failure contract:** the selected candidate has distinct non-null
+  `verificationEvidence.id` and `promotionEvidence.id`. A promotion-completed event
+  rendered **UI04 VERIFICATION EVIDENCE MARKER** and omitted the distinct promotion
+  marker. Screenshot: ignored repo-local
+  `.tmp/playwright-evidence/ui-04/promotion-shows-verification.png`.
+- **Supported cause:** `EventEvidence` unconditionally chooses
+  `candidate.verificationEvidence`, including promotion events, and
+  `PlaneDetailDrawer` also renders only candidate verification evidence. The API
+  already supplies both evidence objects; no backend/schema change is required.
+- **Minimal correction:** UI data selection only. Promotion-started/completed
+  events and the appropriate candidate/Plane promotion detail must use
+  `promotionEvidence`; candidate verification events retain `verificationEvidence`.
+  Reuse `EvidenceSummary`; do not change layout, styling, theme or backend evidence.
+- **Acceptance/status:** Fixer **READY**. Add distinct-marker component/browser
+  regressions for event and drawer, inspect both required viewports, verify no
+  overflow/theme/accessibility regression, run Web/full/hosted gates and UI review.
+
+
 ### `MR-02` — Settings implies an unavailable reviewer will run
 
 - **Evidence class:** reproduced in the real deterministic E2E harness on local

@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  testMatch: ["harness.spec.mjs", "starter-kit.spec.mjs", "settings-model-review.spec.mjs"],
+  testMatch: ["harness.spec.mjs", "starter-kit.spec.mjs", "settings-model-review.spec.mjs", "ui04-audit.spec.mjs"],
   outputDir: ".tmp/playwright-results",
   fullyParallel: false,
   workers: 1,

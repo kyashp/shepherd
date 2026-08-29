@@ -7,6 +7,20 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — UI-04 promotion evidence misbinding reproduced
+
+After final hosted run `33270319210` passed on `3846591`, the Auditor rebased the
+bounded fake-container verifier fixture onto an isolated ownership branch and ran
+a fresh 1280x800 browser/API reproduction. The real completed candidate contained
+distinct verification and promotion evidence IDs. A route-scoped public-response
+decoration assigned safe distinct summaries; expanding the real
+`promotion_completed` event displayed the verification marker and omitted the
+promotion marker. Screenshot inspection confirmed the wrong evidence under the
+promotion card without unrelated theme/layout damage. Source inspection confirms
+the same unconditional verification selection in `EventEvidence` and
+`PlaneDetailDrawer`. Product code was not changed; UI-04 is ready for a minimal UI
+selection fix and two-viewport regression.
+
 ## 2026-08-30 — MR-01/MR-03/TST-08/TST-09 integrated audit
 
 Auditor gates passed at `35ec268`: config 27/27 plus one default live skip,

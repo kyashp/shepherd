@@ -128,6 +128,7 @@ without an open issue/PR are not active ownership claims.
 | `SCH-02` | 8.3 | `READY`; Worker | Reject DAG cycles before Contract graph persistence using the existing validator; `T,A,C,I`. | **50%**; 0/4; not audited |
 | `SCH-01` | 4.1.6, 8.3 | `BLOCKED` by `SCH-02`; Worker | Service schedules only one fixed initial batch. Implement dependency waves using real Agent occupancy, mutation lock, active Plane count/capacity, failure blocking and downstream re-evaluation; prove overlap. `T,A,C,S,I`. | **35%**; 0/5; not audited |
 | `UI-01` | 11.2, 12 | `BLOCKED` by typed failure work; Worker | Ordinary failed Missions need the same bounded failure evidence clarity as attention states. Reuse current components; no redesign. `T,C,B,U,I`. | **40%**; 0/5; not audited |
+| `UI-04` | 11.1–11.3, 12 | `READY`; Fixer | Fresh browser/API evidence proves promotion events and candidate Plane detail select `verificationEvidence` despite a distinct `promotionEvidence`. Select evidence by lifecycle surface, reuse `EvidenceSummary`, preserve theme/layout; `T,C,B,U,I`. | **30%**; 0/5; not audited |
 | `UI-02` | 4.1.16, 11.3, 14 | `READY`; Worker | UI has an optional estimate renderer but backend produces no `estimatedDurationMs`. Persist/serve a trusted clearly labelled estimate distinct from actual timing. `T,A,C,B,U,I`. | **20%**; 0/6; not audited |
 
 ## P1 — browser, cross-surface and assurance gates
@@ -167,7 +168,7 @@ without an open issue/PR are not active ownership claims.
 
 ## Count and current verdict
 
-- **53 tracked work items:** 19 audited and 34 other incomplete; no external hold
+- **54 tracked work items:** 19 audited and 35 other incomplete; no external hold
   items across P0/P1/P2.
 - **Next ready worker assignment:** `F-01/02` unless the integrator selects another
   non-overlapping ready row.
