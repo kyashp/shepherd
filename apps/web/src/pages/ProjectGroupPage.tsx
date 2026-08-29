@@ -4,7 +4,7 @@ import { Link } from "../router";
 import { useShepherdPolling } from "../shepherd-hooks";
 import type { Agent, ProjectGroupMessage } from "../types";
 import { EmptyState, ErrorState, Icon, LoadingPanel, PageHeader, Spinner, StatePill, formatTime, shortId } from "../ui";
-import { formatProjectGroupMention } from "./project-group-mention";
+import { prependProjectGroupMention } from "./project-group-mention";
 
 function senderName(message: ProjectGroupMessage, agents: Agent[]): string {
   if (message.senderType === "human") return "You";
@@ -25,8 +25,7 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
   const inFlight = useRef(false);
 
   const insertMention = (agentName: string) => {
-    const leadingMention = `${formatProjectGroupMention(agentName)} `;
-    setContent((current) => `${leadingMention}${current}`);
+    setContent((current) => prependProjectGroupMention(agentName, current));
     window.requestAnimationFrame(() => {
       const composer = messageComposer.current;
       if (!composer) return;

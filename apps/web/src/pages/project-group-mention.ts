@@ -5,3 +5,10 @@ export function formatProjectGroupMention(agentName: string): string {
     ? `@${agentName}`
     : `@${JSON.stringify(agentName)}`;
 }
+
+export function prependProjectGroupMention(
+  agentName: string,
+  composerContent: string,
+): string {
+  return `${formatProjectGroupMention(agentName)} ${composerContent}`;
+}

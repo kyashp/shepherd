@@ -687,3 +687,35 @@ unrelated UI or Phase 4 behavior.
 demo Mission are proven across two fresh end-to-end Missions. Scheduler, Project
 Group parser, and Ark advisory-reviewer modules exist and are focused-test-backed, but
 their service/API integration remains Phase 4 work and is not claimed here.
+
+## 2026-08-29 — GC-01 and OPS-03 draft corrections
+
+[Draft PR #9](https://github.com/kyashp/shepherd/pull/9) implements two bounded
+corrections discovered while verifying `GC-01`:
+
+- Project Group mention buttons generate the parser's JSON-quoted syntax for Agent
+  names containing whitespace or unsafe token characters. The pure prepend contract
+  preserves existing multiline composer content; the page retains its existing
+  request-animation-frame focus/caret restoration.
+- An empty `SHEPHERD_VERIFIER_IMAGE`, as documented in `.env.example`, is accepted
+  so `loadConfig()` can fall back to the validated `CONTAINER_RUNTIME_IMAGE`.
+
+Strict TDD evidence:
+
+- Mention formatting RED received `@Frontend Agent` instead of
+  `@"Frontend Agent"`; focused GREEN passed 2/2.
+- Draft preservation RED reported a missing prepend contract; focused GREEN passed
+  3/3 after the helper and page integration.
+- Verifier fallback RED reproduced the `SHEPHERD_VERIFIER_IMAGE` Zod `too_small`
+  failure; focused GREEN passed 16/16 config tests.
+
+The final `npm run check` passed with 25 test files passed and 2 skipped, 544 tests
+passed and 2 skipped, and successful web/server typechecks and production builds.
+An isolated deterministic local-PoC run loaded the main-worktree `.env` without a
+verifier-image override and reached `Server listening at http://127.0.0.1:3000`.
+No `.env` value was printed or copied.
+
+Browser interaction and screenshots are not claimed: the browser runtime exposed no
+attachable browser. `docs/HANDOVER.md` records the remaining `GC-01` keyboard,
+focus/caret, and `1280x800`/`1440x900` gates plus separate `GC-02..06`, `OPS-01`,
+and `OPS-02` work.
