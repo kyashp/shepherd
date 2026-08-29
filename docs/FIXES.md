@@ -206,10 +206,19 @@ that limitation is explicit.
   the production reviewer configuration predicate/filter. Do not weaken production
   non-loopback auth, edit `.env`, hide fatal reviewer configuration/auth, or add an
   automatic retry. Add causal environment-precedence coverage if practical.
-- **Acceptance/status:** Fixer **READY**. Preflight/config regression, strict/full
-  deterministic and security gates pass; then Auditor may execute the corrected
-  command exactly once. Total external reviewer requests must be one overall
-  (currently zero).
+- **Observed correction:** test-only. The reviewer gate passes `loadConfig` a
+  cloned environment whose only override is loopback `HOST`; real Ark key/model/
+  base URL, SHEPHERD model resolution and all other config remain intact. The
+  source environment is not mutated. Causal coverage proves production still
+  rejects the original non-loopback weak-token input and the isolated clone passes
+  the same reviewer predicate. Package-script gating, one worker, fatal reviewer
+  handling, retry 0 and the production sensitive-value filter are unchanged.
+- **Acceptance/status:** Fixer **CANDIDATE**, **90% scoped**, `T,C,S` 3/4.
+  Focused config/default-skip passed 27 plus one skip, TST-08 passed 20/20 and
+  40/40, MR-03 matrix 165/165, strict tests and two literal checks passed (Server
+  592/592 plus two live skips; Web 13/13). Independent security review passed
+  with no finding, as did dependency/diff/secret/artifact scans. The single
+  Auditor-authorized live `L` remains pending. External calls remain zero.
 
 ### `TST-08` — returned verifier evidence can race fixture teardown
 

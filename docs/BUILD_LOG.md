@@ -7,6 +7,31 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — TST-09 reviewer-only environment isolation candidate
+
+Without making another live request, the Fixer corrected only the reviewer live
+test and causal config coverage. The test now calls `loadConfig` with a clone of
+the real process environment whose sole override is loopback `HOST`. This isolated
+test never starts HTTP; actual Ark credentials/model/base URL, SHEPHERD model
+resolution, all other configuration, the production reviewer predicate and
+sensitive-value filter, and fatal authentication/configuration handling remain
+unchanged. The source environment and ignored `.env` are not mutated.
+
+Observed local gates:
+
+- causal config plus default-skipped live file: 27 passed, one live test skipped;
+  the package script still has both opt-in gates, exact test path, one worker,
+  `bail=1` and retry 0;
+- TST-08 exact row 20/20 and paired infrastructure rows 40/40;
+- MR-03 reviewer/service/config matrix 165/165 and strict Server test typecheck;
+- two literal `npm run check` passes: launcher 3/3, Server 592/592 with two
+  opt-in live skips, Web 13/13, strict test projects and both builds.
+
+External reviewer/model/network calls by the Fixer remain **0**. Independent
+read-only security review passed with no finding; diff, dependency, credential and
+live-artifact scans also passed. Auditor integration and the one explicitly
+authorized live gate remain pending; this entry makes no audited or 100% claim.
+
 ## 2026-08-30 — TST-09: MR-03 live gate blocked before egress
 
 The Auditor independently passed the TST-08 returned row 20/20, paired

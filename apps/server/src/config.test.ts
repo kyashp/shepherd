@@ -329,6 +329,35 @@ describe("Shepherd advisory model review configuration", () => {
     expect(isShepherdModelReviewConfigured(config)).toBe(true);
   });
 
+  it("allows a reviewer-only loopback clone without mutating unsafe source hosting", () => {
+    const sourceEnvironment: NodeJS.ProcessEnv = {
+      HOST: "0.0.0.0",
+      APP_AUTH_TOKEN: "short",
+      ARK_API_KEY: "ark-key-value-123456",
+      ARK_MODEL: "ep-agent-model",
+      SHEPHERD_MODEL: "ep-review-model",
+      ARK_BASE_URL: "https://ark.example.test/api/v3",
+    };
+
+    expect(() => loadConfig(sourceEnvironment)).toThrow(/APP_AUTH_TOKEN/u);
+    const reviewerEnvironment = {
+      ...sourceEnvironment,
+      HOST: "127.0.0.1",
+    };
+    const config = loadConfig(reviewerEnvironment);
+
+    expect(sourceEnvironment.HOST).toBe("0.0.0.0");
+    expect(sourceEnvironment.APP_AUTH_TOKEN).toBe("short");
+    expect(config).toMatchObject({
+      host: "127.0.0.1",
+      arkApiKey: sourceEnvironment.ARK_API_KEY,
+      arkModel: sourceEnvironment.ARK_MODEL,
+      shepherdModel: sourceEnvironment.SHEPHERD_MODEL,
+      arkBaseUrl: sourceEnvironment.ARK_BASE_URL,
+    });
+    expect(isShepherdModelReviewConfigured(config)).toBe(true);
+  });
+
   it("is unconfigured without a usable Ark credential", () => {
     expect(isShepherdModelReviewConfigured(loadConfig({ ARK_MODEL: "ep-agent-model" }))).toBe(
       false,
