@@ -7,6 +7,28 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## TST-03 independent integration audit and hosted closeout
+
+**Date:** 2026-08-30 (Asia/Singapore)
+
+**Integrated implementation:** `0b1c4017f01d37823b13c5da7360f00a8d8e7814`
+
+Auditor inspected the exact candidate diff and confirmed it changes only the test
+fixture and evidence docs: no product, service, verifier, API, persistence, UI,
+workflow, dependency, timeout, sleep, retry, rejection suppression, or weakened
+assertion. Both parameter rows passed 40/40 across 20 independent invocations; the
+service/container-verifier slice passed 43/43; strict test-source typecheck passed;
+the literal repository gate passed locally in 39 seconds with launcher 3/3, server
+563/563 plus one opt-in live skip, and both production builds; integrated focused
+rows passed 2/2. `git diff --check` passed.
+
+Required hosted Node 22 run
+[`33262227553`](https://github.com/kyashp/shepherd/actions/runs/33262227553)
+passed on `0b1c401` in 1m38s, including locked install, Docker availability and the
+literal repository gate. TST-03 is **AUDITED at scoped 100%**, `T,C,I` 3/3. This
+restores UI-03 to **AUDITED at scoped 100%**, `T,C,B,U,I` 5/5, and unblocks E2E-01.
+No live/model call occurred.
+
 ## TST-03 deterministic concurrent-verifier regression candidate
 
 **Date:** 2026-08-30 (Asia/Singapore)

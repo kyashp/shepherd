@@ -1,6 +1,6 @@
 # Shepherd Defect Queue
 
-**Assessed branch/SHA:** `mock-main` / `2ba5cb92f27dc25e31f1f6766445de6d06b585a4`
+**Assessed branch/SHA:** `mock-main` / `0b1c4017f01d37823b13c5da7360f00a8d8e7814`
 
 **Audited:** 2026-08-29, Asia/Singapore
 
@@ -94,10 +94,14 @@ that limitation is explicit.
   40s with launcher 3/3, server 563/563 plus one opt-in live skip, and both builds.
   No timeout, sleep/retry, suppressed rejection, production/UI edit, or weakened
   assertion was introduced. Unmodified hosted run `33261491905` also passed and
-  corroborates intermittency, but candidate hosted evidence remains pending.
-- **Owner/status:** Fixer / `RESOLVED — PENDING INTEGRATED/HOSTED AUDIT`; **100%
-  scoped candidate**, `T,C` passed 2/3 and `I` remains pending; UI-03 final hosted
-  closeout and E2E-01 remain blocked until integration.
+  corroborates intermittency. Auditor independently repeated both rows 40/40,
+  passed the 43/43 service/container-verifier slice, strict test-source typecheck,
+  the literal local repository gate, and integrated focused 2/2. Hosted Node 22 run
+  [`33262227553`](https://github.com/kyashp/shepherd/actions/runs/33262227553)
+  passed on integrated implementation `0b1c401`.
+- **Owner/status:** `RESOLVED + AUDITED` at integrated implementation `0b1c401`;
+  **100% scoped**, `T,C,I` passed 3/3. UI-03 hosted closeout is restored and E2E-01
+  is ready.
 
 ### `F-03` — Contract verifier infrastructure failure strands active-looking state
 
@@ -189,11 +193,11 @@ that limitation is explicit.
   server 563/563 with one opt-in live skip, both typechecks, and both builds.
   Screenshots `docs/ui-review/ui-03-create-agent/{1280x800,1440x900}.png` preserve
   the accepted theme. No live/model call occurred.
-- **Owner/status:** integrated and independently browser-audited at `83954f7`;
-  **98% scoped**, `T,B,U,I` passed 4/5. Focused 2/2 and full 4/4 browser gates plus
+- **Owner/status:** `RESOLVED + AUDITED` at integrated implementation `83954f7`;
+  **100% scoped**, `T,C,B,U,I` passed 5/5. Focused 2/2 and full 4/4 browser gates plus
   harness unit 2/2 passed; screenshots matched and the local strict/full gate
-  passed. Hosted `C` remains pending only because unrelated `TST-03` failed the
-  final required workflow. E2E-01 waits for that baseline correction.
+  passed. Unrelated TST-03 was corrected test-only at `0b1c401`, and hosted Node 22
+  run `33262227553` passed. E2E-01 is ready.
 
 ### `OPS-06` — macOS Docker Desktop live Shepherd preflight fails opaquely
 

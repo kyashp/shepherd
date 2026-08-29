@@ -1,7 +1,7 @@
 # Shepherd Completion Task Ledger
 
 **Canonical implementation snapshot:** `mock-main` at
-`83954f7fbb34cacf23ac406765e626f3dd910a57`
+`0b1c4017f01d37823b13c5da7360f00a8d8e7814`
 
 **Audited:** 2026-08-29, Asia/Singapore
 
@@ -94,7 +94,7 @@ without an open issue/PR are not active ownership claims.
 | ID | PRD ref | Status / owner / dependencies | Evidence and required acceptance | Confidence; gates passed; audit |
 |---|---|---|---|---|
 | `TST-02` | 0.2, 16 Phase 9B, 17 | **AUDITED** at integrated implementation `0cb431a`; test fixture only | Worker and Auditor reproduced the fixed-clock cause. Auditor verified candidate and integrated trees: isolated test 1/1, full recovery 17/17, literal `npm run check` with launcher 3/3, server 555/555 plus one opt-in skip, and both production builds. Exact diff is one test clock injection plus evidence docs; production/UI/security files and lifecycle validation are unchanged. | **100% scoped**; `T,A,C,I` passed (4/4); audited |
-| `TST-03` | 0.2, 12, 16 Phase 9B, 17 | **FIXED — pending integrated Auditor/hosted rerun; blocks UI-03 final `C`** | Hosted Node 22 run `33261198788` timed out the F-03 thrown-verifier blocked-sibling case at 30s with an unhandled typed rejection; a controlled pre-verifier hold reproduced it in 1s. A later unmodified hosted run `33261491905` passed, confirming schedule sensitivity without closing it. The test-only candidate now makes both Contract verifier arrivals deterministic, observes `run` rejection before any gate, and releases/joins in `finally`. Both rows passed 40/40 across 20 independent repeats in 37s, the full service/verifier slice passed 43/43, strict test typecheck passed, and literal `npm run check` passed twice with 563/563 server tests plus one opt-in skip. No timeout, sleep/retry, assertion weakening, rejection suppression, or product/UI change. `T,C,I`. | **100% scoped candidate**; `T,C` passed (2/3), `I`/hosted pending; not audited |
+| `TST-03` | 0.2, 12, 16 Phase 9B, 17 | **AUDITED** at integrated implementation `0b1c401`; test fixture only | Hosted RED run `33261198788` and a controlled pre-verifier hold proved the scheduling race. The two-arrival barrier, early rejection observer, and unconditional release/join preserve the typed failure and durable reload/late-return/no-promotion assertions. Auditor independently passed both rows 40/40, the service/container-verifier slice 43/43, strict test typecheck, the literal local gate (launcher 3/3, server 563/563 plus one opt-in skip, both builds), and integrated focused 2/2. Hosted Node 22 run `33262227553` passed the final implementation gate. No timeout, sleep/retry, assertion weakening, rejection suppression, or product/UI change. | **100% scoped**; `T,C,I` passed (3/3); audited |
 
 ## P0 — failure and recovery correctness
 
@@ -127,9 +127,9 @@ without an open issue/PR are not active ownership claims.
 
 | ID | PRD ref | Status / dependencies | Required acceptance | Confidence; gates passed; audit |
 |---|---|---|---|---|
-| `UI-03` | 0.4, 11.1–11.2, 11.7 | **INTEGRATED + BROWSER-AUDITED** at `83954f7`; final hosted `C` awaits `TST-03` candidate audit | Create Agent's transparent preset radios inherited global viewport-wide input sizing, expanding document width to 2299/1280 and 2579/1440. The integrated correction bounds only the hidden radio box and adds a theme-matched visible card focus outline. Auditor independently passed focused Chromium 2/2, full browser 4/4 and harness unit 2/2 at both required viewports; document/body X/Y, exact neutralized 1x1 boxes, accessible group/names, Generalist default, one Tab stop, arrow focus/selection, visible 2px outline, all label clicks and exactly one checked radio passed. Regenerated screenshot hashes matched the committed images; visual review preserved layout/theme. Integrated local check passed. Hosted run `33261198788` failed only schedule-sensitive `TST-03`; later unmodified run `33261491905` passed but does not replace deterministic correction/audit. The test-only TST-03 candidate is locally green twice and changes no UI. `T,C,B,U,I`. | **98% scoped**; `T,B,U,I` passed (4/5), candidate hosted `C` pending; review required |
+| `UI-03` | 0.4, 11.1–11.2, 11.7 | **AUDITED** at integrated implementation `83954f7`; hosted closeout restored by `TST-03` at `0b1c401` | Create Agent's transparent preset radios inherited global viewport-wide input sizing, expanding document width to 2299/1280 and 2579/1440. The integrated correction bounds only the hidden radio box and adds a theme-matched visible card focus outline. Auditor independently passed focused Chromium 2/2, full browser 4/4 and harness unit 2/2 at both required viewports; document/body X/Y, exact neutralized 1x1 boxes, accessible group/names, Generalist default, one Tab stop, arrow focus/selection, visible 2px outline, all label clicks and exactly one checked radio passed. Regenerated screenshot hashes matched the committed images; visual review preserved layout/theme. Integrated local check passed. Hosted run `33262227553` passed after the unrelated schedule-sensitive TST-03 fixture was corrected without touching UI code. | **100% scoped**; `T,C,B,U,I` passed (5/5); audited |
 | `E2E-HARNESS` | 0.4, 16 Phase 6 | **AUDITED** at integrated implementation `5b152a0` | Auditor independently verified the candidate and integrated SHA: allowlisted child environment with no `.env` or ambient Ark/model ingress; required bearer auth; bounded fake Codex/container fixtures, readiness, logs, termination, port and run-root cleanup; ignored artifacts; no production debug route or UI/runtime change. Node harness passed 2/2 and Chromium passed 2/2 at exact `1280x800` and `1440x900`; regenerated screenshot hashes matched, document/body X/Y overflow was absent, and both images preserved the accepted clean-shell UI. Literal `npm run check` passed launcher 3/3, server 555/555 with one opt-in live skip, typechecks and both builds. This foundation does not satisfy `E2E-01`–`08`, populated/composer states, accessibility, or `UI-GATE`. `T,C,B,S,I`. | **100% scoped**; `T,C,B,S,I` passed (5/5); audited |
-| `E2E-01` | 11.6.1, 17 baseline | **BLOCKED by `TST-03` integration/hosted audit**; UI-03 browser gate cleared | After the deterministic TST-03 candidate passes the integrated hosted gate, resume the authenticated create → fake Playground artifact/test → follow-up/session → server restart continuity journey at both required viewports. The Create Agent no-overflow and radio accessibility prerequisite is independently browser-audited; retain it as the first regression gate. No live call is permitted until deterministic acceptance is green. `C,B,L,S,U,I`. | **35%**; 0/6 journey gates; not audited |
+| `E2E-01` | 11.6.1, 17 baseline | `READY`; Worker | Resume the authenticated create → fake Playground artifact/test → follow-up/session → server restart continuity journey at both required viewports. The Create Agent no-overflow and radio accessibility prerequisite is independently browser-audited; retain it as the first regression gate. Deterministic acceptance is green; perform no live call until the deterministic journey passes. `C,B,L,S,U,I`. | **35%**; 0/6 journey gates; not audited |
 | `E2E-02` | 11.6.2, 15 | `BLOCKED` by harness/P0 | Full hero chain with every intermediate Contract/Plane/collision/candidate/promotion state and real backend data; `C,B,S,U,I`. | **50%**; 0/5; not audited |
 | `E2E-03` | 11.6.3 | `BLOCKED` by Group Chat work | Targeted Project Group Contract from click/type through Agent summary; `C,B,S,U,I`. | **10%**; 0/5; not audited |
 | `E2E-04` | 11.6.4, 12 | `BLOCKED` by failure UI | Unauthorized diff visibly denied with evidence and no promotion; `C,B,S,U,I`. | **45%**; 0/5; not audited |
@@ -158,11 +158,11 @@ without an open issue/PR are not active ownership claims.
 
 ## Count and current verdict
 
-- **46 tracked work items:** 5 audited, 4 externally held, and 37 other incomplete
+- **46 tracked work items:** 7 audited, 4 externally held, and 35 other incomplete
   items across P0/P1/P2.
 - **Next ready worker assignment:** `F-01/02` unless the integrator selects another
   non-overlapping ready row.
-- **First fixer assignment:** `TST-03`; it blocks the hosted baseline and UI-03 closeout.
+- **First fixer assignment:** none unconditional; `OPS-06` requires collaborator/macOS evidence.
 - **Current completion verdict:** incomplete. Strong kernel evidence exists, but the
   current deterministic full gate is green and all remaining rows above still
   require their stated integration/audit evidence.
