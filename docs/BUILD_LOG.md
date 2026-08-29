@@ -7,6 +7,24 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — TST-19 Fixer candidate
+
+The source-confirmed RED allowed a clean integration checkout on the wrong persisted
+branch/head to reach `git merge`. The candidate passes the persisted Plane branch and
+head into the Git boundary and, before mutation, proves no `MERGE_HEAD`, clean
+porcelain, the exact symbolic branch and exact HEAD. Real-Git rows for detached HEAD,
+sibling branch at the same OID, moved head, dirty worktree and preexisting MERGE_HEAD
+all return the fixed cause-free cleanup boundary while preserving integration
+HEAD/status/all head refs, exact `MERGE_HEAD` metadata and source HEAD. The existing service maps this typed result
+to failed integration Plane plus active-project Mission attention, with released
+Agents and no candidate/promotion. Independent review reported 0 High / 0 Medium;
+the remaining Low local-host TOCTOU window requires an actor with independent write
+access and is not a new privilege boundary. Auditor integration remains pending.
+Focused identity rows passed 25/25 across five repeats, combined conflict/identity
+passed 9/9, and adjacent Git/service/recovery passed 72/72. Two literal final
+`npm run check` gates each passed launcher 3/3, Server 676 passed plus two opt-in
+skips, Web 17/17 and both builds.
+
 ## 2026-08-30 — TST-18 passes locally; F-05 blocked by TST-19
 
 Auditor replayed exact `53c8415`. Focused Git/service passed 67/67; the two service

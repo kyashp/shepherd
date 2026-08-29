@@ -1146,6 +1146,7 @@ export class PlaneManager {
         sourceHead,
         "Integrate Plane " + sourcePlane.id,
         integrationPlane.branch,
+        integrationPlane.headCommit ?? "",
       );
     } catch (error) {
       if (error instanceof GitMergeCleanupError) throw new GitConflictCleanupError();

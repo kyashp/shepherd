@@ -617,19 +617,45 @@ export class GitClient {
     sourceCommit: string,
     message: string,
     expectedBranch: string,
+    expectedHead: string,
   ): Promise<{ headCommit: string; conflictFiles: string[] }> {
     const source = assertFullObjectId(sourceCommit);
     const branch = assertSafeGitBranch(expectedBranch);
+    const persistedHead = assertFullObjectId(expectedHead);
     if (message.trim().length === 0 || message.length > 512) throw new Error("Invalid merge message");
-    const initialStatus = await this.inPlaneDirectory(
-      directory,
-      "merge authoring",
-      ["status", "--porcelain=v1", "-z"],
-    );
-    if (initialStatus.stdout.length > 0) {
-      throw new Error("Merge target worktree is not clean");
+    let before: string;
+    try {
+      const mergeHead = await this.inDirectory(
+        directory,
+        ["rev-parse", "--verify", "--quiet", "MERGE_HEAD"],
+        { allowedExitCodes: [0, 1] },
+      );
+      const initialStatus = await this.inPlaneDirectory(
+        directory,
+        "merge inspection",
+        ["status", "--porcelain=v1", "-z"],
+      );
+      const checkedOutBranch = await this.inDirectory(
+        directory,
+        ["symbolic-ref", "--quiet", "--short", "HEAD"],
+        { allowedExitCodes: [0, 1] },
+      );
+      before = await this.currentHead(directory);
+      if (
+        mergeHead.exitCode !== 1 ||
+        initialStatus.stdout.length > 0 ||
+        checkedOutBranch.exitCode !== 0 ||
+        checkedOutBranch.stdout.trim() !== branch ||
+        before !== persistedHead
+      ) {
+        throw new GitMergeCleanupError();
+      }
+    } catch (error) {
+      if (error instanceof GitMergeCleanupError || error instanceof ProtectedGitMutationError) {
+        throw error;
+      }
+      throw new GitMergeCleanupError();
     }
-    const before = await this.currentHead(directory);
     try {
       await this.inPlaneDirectory(directory, "merge authoring", [
         "merge",

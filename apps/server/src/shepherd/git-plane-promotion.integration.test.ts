@@ -350,6 +350,64 @@ describe("GitClient and PlaneManager integration", () => {
     }
   }, 15_000);
 
+  it.each(["detached", "wrong-branch", "wrong-head", "dirty", "merge-in-progress"] as const)(
+    "rejects a %s integration identity before merge mutation",
+    async (fault) => {
+      const fixture = await createFixture();
+      try {
+        const source = await fixture.manager.createPlane({
+          id: "identity-source", projectId: "project", missionId: "mission", kind: "contract",
+          contractId: "identity-source", baseCommit: fixture.baseCommit, purpose: "identity source",
+          executionIdentity: "exec-identity-source", authority,
+        });
+        await writeFile(path.join(source.worktreePath, "source.txt"), "source\n", "utf8");
+        const committed = await fixture.manager.commitPlane(source, "Finalize identity source");
+        const integration = await fixture.manager.createIntegrationPlane({
+          id: "identity-integration", projectId: "project", missionId: "mission",
+          baseCommit: fixture.baseCommit, purpose: "identity target",
+          executionIdentity: "exec-identity-integration", authority,
+        });
+        if (fault === "detached") {
+          await fixtureGit(integration.worktreePath, ["checkout", "--detach", integration.headCommit!]);
+        } else if (fault === "wrong-branch") {
+          await fixtureGit(integration.worktreePath, ["switch", "-c", "identity-sibling"]);
+        } else if (fault === "wrong-head") {
+          await writeFile(path.join(integration.worktreePath, "unexpected.txt"), "unexpected\n", "utf8");
+          await fixtureGit(integration.worktreePath, ["add", "--", "unexpected.txt"]);
+          await fixtureGit(integration.worktreePath, ["commit", "-m", "unexpected integration head"]);
+        } else if (fault === "dirty") {
+          await writeFile(path.join(integration.worktreePath, "dirty.txt"), "dirty\n", "utf8");
+        } else {
+          const mergeHeadPath = await fixtureGit(integration.worktreePath, ["rev-parse", "--git-path", "MERGE_HEAD"]);
+          await writeFile(path.resolve(integration.worktreePath, mergeHeadPath), committed.headCommit! + "\n", "utf8");
+        }
+        const integrationBefore = {
+          head: await fixtureGit(integration.worktreePath, ["rev-parse", "HEAD"]),
+          status: await fixtureGit(integration.worktreePath, ["status", "--porcelain=v1"]),
+          refs: await fixtureGit(fixture.repositoryPath, ["show-ref", "--heads"]),
+        };
+        const mergeHeadPath = await fixtureGit(integration.worktreePath, ["rev-parse", "--git-path", "MERGE_HEAD"]);
+        const mergeHeadBefore = await readFile(path.resolve(integration.worktreePath, mergeHeadPath), "utf8").catch(() => null);
+        const sourceBefore = await fixtureGit(source.worktreePath, ["rev-parse", "HEAD"]);
+        const error = await fixture.manager.mergePlane(integration, committed).catch((value: unknown) => value);
+        expect(error).toMatchObject({
+          name: "GitConflictCleanupError",
+          message: "Git conflict cleanup requires operator attention",
+        });
+        expect((error as Error & { cause?: unknown }).cause).toBeUndefined();
+        expect(await fixtureGit(integration.worktreePath, ["rev-parse", "HEAD"])).toBe(integrationBefore.head);
+        expect(await fixtureGit(integration.worktreePath, ["status", "--porcelain=v1"])).toBe(integrationBefore.status);
+        expect(await fixtureGit(fixture.repositoryPath, ["show-ref", "--heads"])).toBe(integrationBefore.refs);
+        expect(await readFile(path.resolve(integration.worktreePath, mergeHeadPath), "utf8").catch(() => null)).toBe(mergeHeadBefore);
+        expect(await fixtureGit(source.worktreePath, ["rev-parse", "HEAD"])).toBe(sourceBefore);
+        await fixture.manager.resetManagedPlanes();
+      } finally {
+        await destroyFixture(fixture);
+      }
+    },
+    15_000,
+  );
+
   it("rejects ref injection, boundary escapes, non-sentinel adoption, and sentinel tampering", async () => {
     const fixture = await createFixture();
     try {
@@ -454,6 +512,7 @@ describe("GitClient and PlaneManager integration", () => {
           committed.headCommit!,
           "Attempt protected merge",
           "main",
+          fixture.baseCommit,
         ),
       ).rejects.toBeInstanceOf(ProtectedGitMutationError);
       await expect(fixture.manager.git.deleteBranch("main")).rejects.toBeInstanceOf(

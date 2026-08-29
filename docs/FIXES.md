@@ -44,7 +44,11 @@ that limitation is explicit.
   all managed branches/refs/worktrees, protected HEAD/canary and durable/downstream
   state remain byte/identity unchanged; ordinary TST-18 conflict/cleanup/reset,
   adjacent/full/security and hosted gates pass.
-- **Status:** **OPEN / Medium blocker.** Candidate is not integrated.
+- **Status:** **FIXER CANDIDATE / Auditor pending.** The Git boundary now proves
+  absent `MERGE_HEAD`, clean porcelain, exact persisted symbolic branch and exact
+  persisted head before `git merge`. Five real-Git identity rows preserve target
+  HEAD/status/all head refs and source HEAD byte-for-byte while returning the fixed
+  cause-free cleanup/attention boundary.
 
 ### `TST-18` — Merge-abort cleanup failure masks a detected Git conflict
 
