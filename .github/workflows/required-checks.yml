@@ -1,0 +1,48 @@
+name: Required checks
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - mock-main
+  merge_group:
+    types:
+      - checks_requested
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Node 22 / npm run check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: true
+      SHEPHERD_LIVE_TEST: "false"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Verify Docker runtime
+        run: docker version
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run repository gate
+        run: npm run check

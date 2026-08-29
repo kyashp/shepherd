@@ -7,6 +7,70 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## CI-01 required-check workflow candidate
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Branch/base:** `work/mock-main` / `7217c1c055df76ace392d3804bc6517df85ce768`
+
+The repository had no workflow capable of reporting the stable required status
+named `Required checks / Node 22 / npm run check`. This candidate adds one workflow
+and changes no product, UI, server, test, package, lockfile, dependency, or runtime
+configuration.
+
+The workflow follows the current official GitHub Actions contracts reviewed on
+2026-08-29: every `pull_request` runs; `push` is limited to `main` and `mock-main`;
+and `merge_group` is limited to `checks_requested`, which GitHub documents as
+necessary for merge-queue required checks. Workflow concurrency is scoped by the
+workflow name and event ref, so a newer run cancels only an older run for the same
+workflow/ref. The job runs on `ubuntu-latest`, installs Node 22 through
+`actions/setup-node@v7`, caches npm's download cache against the checked-in
+`package-lock.json`, verifies the hosted Docker client/daemon, executes `npm ci`,
+and then executes the literal `npm run check`. The job has a 20-minute timeout.
+
+Security and isolation are explicit:
+
+- top-level token permission is only `contents: read`; all unspecified permissions
+  are `none` under GitHub's workflow permission semantics;
+- `actions/checkout@v6` uses `persist-credentials: false`;
+- no `pull_request_target`, write permission, secret reference, `.env` loader,
+  artifact upload, custom/privileged action, deployment, or external/live/model
+  command exists;
+- `SHEPHERD_LIVE_TEST` is fixed to `false`, and repository secrets are not mapped
+  into the job environment.
+
+No Action-specific linter was installed on this host. The available PyYAML 6.0.1
+parser loaded the workflow with `BaseLoader`, and custom structural assertions
+verified the exact events/branches, merge-group activity, permission, runner,
+timeout, official action versions, and command sequence:
+
+```sh
+python3 -c '<YAML parse and structural assertions>'
+# workflow YAML and required structure: pass
+
+docker version --format '{{.Client.Version}} {{.Server.Version}}'
+# client 29.7.2; server 29.7.2
+
+npm run check
+# Node 24.17.0 / npm 11.17.0 local evidence
+# both workspace typechecks passed
+# launcher tests: 3/3 passed
+# server: 26 files passed, 1 opt-in file skipped;
+# 555 tests passed, 1 opt-in test skipped
+# web and server production builds passed
+
+git diff --check
+# passed
+```
+
+The Worker branch is intentionally not a `push` trigger, and the user prohibited a
+PR for this campaign. After pushing the candidate, the authenticated read-only
+query `gh run list --repo kyashp/shepherd --branch work/mock-main ...` returned
+`[]`, confirming no hosted run exists for that branch. CI-01 remains below 100%
+until the Auditor integrates it into `mock-main`, observes the real hosted Node
+22/Docker run, records the resulting check identity, and confirms the
+protected/merge-queue rule consumes that stable status. No external model request
+was made.
+
 ## E2E-01 stopped at Create Agent overflow defect
 
 **Date:** 2026-08-29 (Asia/Singapore)
