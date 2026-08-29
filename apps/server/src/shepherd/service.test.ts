@@ -130,20 +130,24 @@ async function startTrackedTestMission(
   return started;
 }
 
-afterEach(async () => {
-  while (backgroundTestMissions.length > 0) {
-    const tracked = backgroundTestMissions.pop();
-    if (!tracked) continue;
+async function quiesceTrackedTestMissions(): Promise<void> {
+  while (true) {
+    const tracked = backgroundTestMissions.at(-1);
+    if (!tracked) return;
     const state = tracked.service.missionDetail(tracked.missionId)?.mission.state;
     const terminal =
       state === "completed" ||
       state === "failed" ||
-      state === "attention_required" ||
       state === "cancelled";
     if (!terminal) {
       await tracked.service.cancelMission(tracked.missionId);
     }
+    backgroundTestMissions.pop();
   }
+}
+
+afterEach(async () => {
+  await quiesceTrackedTestMissions();
   while (cleanupRoots.length > 0) {
     const root = cleanupRoots.pop();
     if (root) await removeServiceCaseRoot(root);
@@ -536,6 +540,7 @@ class BlockingPromotionVerifier extends HostTrustedFixtureVerifier {
   private markEntered!: () => void;
   private readonly released: Promise<void>;
   private releaseVerification!: () => void;
+  private isReleased = false;
 
   constructor() {
     super();
@@ -559,10 +564,13 @@ class BlockingPromotionVerifier extends HostTrustedFixtureVerifier {
 
   async cancel(targetId: string): Promise<boolean> {
     this.cancelledIds.push(targetId);
+    this.release();
     return true;
   }
 
   release(): void {
+    if (this.isReleased) return;
+    this.isReleased = true;
     this.releaseVerification();
   }
 }
@@ -581,6 +589,23 @@ async function waitForTerminalMission(
     await new Promise<void>((resolve) => setTimeout(resolve, 10));
   }
   throw new Error("Background Mission did not complete before the test deadline");
+}
+
+async function settleWithin<T>(promise: Promise<T>, timeoutMs = 5_000): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error("Background Mission did not quiesce before teardown")),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 async function gitOutput(cwd: string, args: string[]): Promise<string> {
@@ -1609,6 +1634,12 @@ describe("Shepherd deterministic walking skeleton", () => {
     const reached = new Promise<void>((resolve) => {
       promotionReached = resolve;
     });
+    let promotionReleased = false;
+    const releaseBlockedPromotion = (): void => {
+      if (promotionReleased) return;
+      promotionReleased = true;
+      releasePromotion();
+    };
     const service = new ShepherdService({
       store,
       managedRoot: path.join(caseRoot, "managed"),
@@ -1621,17 +1652,20 @@ describe("Shepherd deterministic walking skeleton", () => {
       },
     });
     const { missionId } = await startTrackedTestMission(service);
-    await reached;
-    expect(
-      service
-        .missionDetail(missionId)
-        ?.candidates.some((candidate) => candidate.promotionState === "promoting"),
-    ).toBe(true);
-    await expect(service.cancelMission(missionId)).rejects.toMatchObject({
-      code: "conflict",
-    });
-    releasePromotion();
-    await waitForTerminalMission(service, missionId);
+    try {
+      await reached;
+      expect(
+        service
+          .missionDetail(missionId)
+          ?.candidates.some((candidate) => candidate.promotionState === "promoting"),
+      ).toBe(true);
+      await expect(service.cancelMission(missionId)).rejects.toMatchObject({
+        code: "conflict",
+      });
+    } finally {
+      releaseBlockedPromotion();
+      await waitForTerminalMission(service, missionId);
+    }
     expect(service.missionDetail(missionId)?.mission.state).toBe("completed");
   }, 30_000);
 
@@ -1647,32 +1681,96 @@ describe("Shepherd deterministic walking skeleton", () => {
       verifier,
     });
     const { missionId } = await startTrackedTestMission(service);
+    let cancellation: Promise<unknown> | undefined;
+    try {
+      await verifier.entered;
+      const before = service.missionDetail(missionId);
+      expect(
+        before?.candidates.some(
+          (candidate) => candidate.promotionState === "reverifying",
+        ),
+      ).toBe(true);
+      const protectedHead = before?.project.protectedHeadCommit;
+      const selectedId = before?.candidates.find(
+        (candidate) => candidate.selectionState === "selected",
+      )?.id;
+      cancellation = service.cancelMission(missionId);
+      await vi.waitFor(
+        () => expect(service.missionDetail(missionId)?.mission.state).toBe("cancelled"),
+        { timeout: 10_000 },
+      );
+      await cancellation;
+      const after = service.missionDetail(missionId);
+      expect(verifier.cancelledIds).toEqual([selectedId]);
+      expect(after?.mission.state).toBe("cancelled");
+      expect(after?.project.protectedHeadCommit).toBe(protectedHead);
+      expect(await gitOutput(after?.project.repositoryPath ?? "", ["rev-parse", "HEAD"]))
+        .toBe(protectedHead);
+      expect(
+        after?.events.some((event) => event.type === "promotion_completed"),
+      ).toBe(false);
+    } finally {
+      cancellation ??= service.cancelMission(missionId);
+      try {
+        await cancellation;
+      } finally {
+        verifier.release();
+      }
+    }
+  }, 30_000);
+
+  it("releases a blocked promotion verifier before tracked fixture teardown", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const verifier = new BlockingPromotionVerifier();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier,
+    });
+
+    const { missionId } = await startTrackedTestMission(service);
     await verifier.entered;
-    const before = service.missionDetail(missionId);
-    expect(
-      before?.candidates.some(
-        (candidate) => candidate.promotionState === "reverifying",
-      ),
-    ).toBe(true);
-    const protectedHead = before?.project.protectedHeadCommit;
-    const selectedId = before?.candidates.find(
-      (candidate) => candidate.selectionState === "selected",
-    )?.id;
-    const cancellation = service.cancelMission(missionId);
+    const quiescence = quiesceTrackedTestMissions();
+    try {
+      await expect(settleWithin(quiescence)).resolves.toBeUndefined();
+    } finally {
+      verifier.release();
+      await quiescence;
+    }
+    expect(service.missionDetail(missionId)?.mission.state).toBe("cancelled");
+    expect(backgroundTestMissions).toHaveLength(0);
+    await removeServiceCaseRoot(caseRoot);
+    const cleanupRootIndex = cleanupRoots.indexOf(caseRoot);
+    if (cleanupRootIndex >= 0) cleanupRoots.splice(cleanupRootIndex, 1);
+    await expect(access(caseRoot)).rejects.toMatchObject({ code: "ENOENT" });
+  }, 30_000);
+
+  it("cancels tracked attention-required Missions before fixture cleanup", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+    });
+    await service.initialize();
+    await service.updateSettings({ autoResolution: false });
+
+    const { missionId } = await startTrackedTestMission(service);
     await vi.waitFor(
-      () => expect(service.missionDetail(missionId)?.mission.state).toBe("cancelled"),
+      () =>
+        expect(service.missionDetail(missionId)?.mission.state).toBe(
+          "attention_required",
+        ),
       { timeout: 10_000 },
     );
-    verifier.release();
-    await cancellation;
-    const after = service.missionDetail(missionId);
-    expect(verifier.cancelledIds).toEqual([selectedId]);
-    expect(after?.mission.state).toBe("cancelled");
-    expect(after?.project.protectedHeadCommit).toBe(protectedHead);
-    expect(await gitOutput(after?.project.repositoryPath ?? "", ["rev-parse", "HEAD"]))
-      .toBe(protectedHead);
-    expect(
-      after?.events.some((event) => event.type === "promotion_completed"),
-    ).toBe(false);
+    await quiesceTrackedTestMissions();
+    expect(service.missionDetail(missionId)?.mission.state).toBe("cancelled");
+    expect(backgroundTestMissions).toHaveLength(0);
   }, 30_000);
 });
