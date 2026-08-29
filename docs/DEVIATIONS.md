@@ -1,48 +1,58 @@
-# Shepherd Deviations and Accepted Clarifications
+# Shepherd Deviations, Clarifications, and Environment Limits
 
-This file records material interpretations of `docs/PRD.md`. A clarification is not evidence that its implementation is complete.
+This is the hard completion ledger for material interpretations of
+[`PRD.md`](PRD.md). It does not narrow the PRD and it does not convert missing
+evidence into accepted behavior. Exact implementation status and ownership remain
+canonical in [`TASKS.md`](TASKS.md); reproduced defects remain canonical in
+[`FIXES.md`](FIXES.md).
 
-## Accepted product clarifications
+## Status contract
 
-### Manifest ingestion exception
+- **Clarification** resolves an ambiguity without reducing required behavior.
+- **Actual deviation** means required behavior or required acceptance evidence is
+  absent. Every actual deviation must name an open TASKS/FIXES row.
+- **Environment limitation** identifies evidence that cannot honestly be claimed in
+  the current environment. It remains open when the PRD requires that evidence.
+- **Permanent scope statement** restates an explicit PRD exclusion and is not work
+  to “fix.”
+- **Resolved** requires implementation and the tests named by the owning task. A
+  backend-only or hosted-only gate cannot close a browser, live, or second-machine
+  requirement.
 
-The PRD simultaneously protects `.shepherd/**` and requires an Agent to write `.shepherd/result.json`. The accepted contract permits only that exact per-Plane file as an ingestion channel. Trusted code validates and removes it before staging. No `.shepherd/**` content may be integrated or promoted.
+The project is not complete while any row below is **OPEN** or **PARTIAL**.
 
-### Interrupted work
+## Product-contract interpretations
 
-The documented Mission enum is retained. Startup reconciliation maps interrupted active Missions to `attention_required` with an `execution_interrupted` reason and event. Contracts and candidates may use explicit `interrupted` terminal execution states.
-
-### Managed project boundary
-
-The hackathon fixture uses a separately managed Git repository under the configured application data root, never this source repository. Browser/model input can select trusted project or check identifiers but can never submit filesystem paths or shell commands.
-
-### Supported isolation profile
-
-Shepherd's Plane, verifier, and no-network guarantees apply to the local Docker/Colima/Podman container path. Existing host-process and ECS starter behavior remains available, but Shepherd must report unsupported isolation rather than imply equivalent guarantees there.
-
-### Completed Plane cleanup
-
-Completed-Plane cleanup may remove validated worktree directories only after evidence capture. Persisted Plane metadata, Git lineage, safe diff summary, verification evidence, and branch inspection remain available.
-
-### Visual fidelity
-
-`docs/UI.jpeg` is treated as a six-surface visual/product reference, not a literal composite viewport. Fidelity is evaluated by human-visible hierarchy, colors, typography, density, spacing, and interactions at the required desktop viewports plus representative laptop and responsive sizes.
+| Topic | Classification | Current status and evidence | Owning task(s) |
+|---|---|---|---|
+| Manifest ingestion exception | Clarification | **PARTIAL.** The PRD both protects `.shepherd/**` and requires the exact per-Plane `.shepherd/result.json` ingestion channel. Trusted code schema-validates and removes that file before staging; no `.shepherd/**` content may integrate or promote. Valid-path parser/service tests exist, but the required durable missing/malformed/omitted-key failure states and browser evidence remain incomplete. | `FM-01`, `E2E-04/05`, `SEC-REVIEW` |
+| Interrupted work | Clarification | **PARTIAL.** The Mission enum remains authoritative. Startup reconciliation maps active work to `attention_required` with `execution_interrupted`; Contracts/candidates may use explicit terminal `interrupted` states. Backend recovery coverage exists, but the required kill/restart-mid-Mission browser journey and full failure-matrix evidence are open. | `E2E-08`, `FM-01`, `SEC-REVIEW` |
+| Managed project boundary | Clarification | **PARTIAL.** The demo uses a separately managed Git repository beneath configured application data, never this source repository. Public browser/model input does not accept filesystem paths or shell commands. Kernel/path tests exist, but final mutation checks, full DOM/store/repository scans, and independent review remain open. | `SEC-REVIEW`, `E2E-02`, `DEMO-REHEARSAL` |
+| Supported isolation profile | Clarification plus environment limitation | **PARTIAL.** Shepherd's Plane/verifier/no-network guarantees apply only to the local Docker/Colima/Podman path; host-process and ECS starter paths must report unsupported isolation rather than imply parity. Linux Docker gates are green. The reported macOS preflight failure still lacks stage-specific diagnosis and a passing collaborator rerun. | `OPS-06`, `LIVE-01`, `SEC-REVIEW` |
+| Completed Plane cleanup | Clarification | **RESOLVED AS POLICY, NOT AS AN IMPLEMENTED CLEANER.** Cleanup is permitted only after evidence capture and must retain persisted Plane metadata, Git lineage, bounded diff/verification evidence, and branch inspection. The current product does not ship automatic completed-Plane cleanup, and this document must not imply it does. The PRD does not require an automatic cleaner; `retainCompletedPlanes` remains the truthful current behavior. | No implementation task unless scope changes; recheck in `SEC-REVIEW`/final docs |
+| Visual fidelity | Clarification plus actual evidence deviation | **OPEN.** `UI.jpeg` is a six-surface product reference rather than one literal composite viewport. Human-visible hierarchy, palette, typography, density, spacing and interactions still require the full six-surface/state review. Audited E2E-01 and GC-01 evidence at 1280x800/1440x900 is only a subset, not full visual acceptance or “all laptop aspect ratios.” | `UI-GATE`, `E2E-02`–`E2E-08`, `DEMO-REHEARSAL` |
 
 ## Sequencing interpretations
 
-### Failure matrix
+| Topic | Classification | Current status and evidence | Owning task(s) |
+|---|---|---|---|
+| Failure matrix sequencing | Clarification | **OPEN.** Backend-available cases may be implemented before their UI/model surfaces, but the PRD's complete named failure matrix is not complete until durable state/event/API behavior and the required browser representation pass. Existing kernel tests do not close missing manifest, Git conflict, persistence, timeout/retry, tie, polling, and model-degradation rows. | `F-01/02`, `F-04`–`F-09`, `FM-01`, `UI-01`, `E2E-04`–`E2E-08`, `MR-01/03`, `SEC-REVIEW` |
+| Browser-journey sequencing | Clarification | **OPEN.** Backend paths can precede UI implementation, but no PRD journey is complete without its real browser assertions and screenshots. Only `E2E-01` is currently audited; harness/shell tests and source inspection do not close `E2E-02`–`E2E-08`. | `E2E-02`–`E2E-08`, `UI-GATE` |
 
-PRD Phase 4 requests the complete failure matrix before later UI polling and model-reviewer work exists. Backend-available failure cases are gated in the kernel phase; the complete named 22-condition backend-and-UI matrix is gated after those surfaces exist.
+## Environment and assurance limitations
 
-### Browser journeys
+| Limitation | Classification | Current status and honest reporting rule | Owning task(s) |
+|---|---|---|---|
+| Second environment / machine | Environment limitation | **OPEN.** Hosted GitHub Node 22/Docker runs are valid cross-environment evidence only for the exact `npm run check` workflow executed there. They are not a second-machine full demo rehearsal. Claim the latter only after a real second machine/state runs the judge flow. | `DEMO-REHEARSAL`, `DEL-02` |
+| Ordinary-container tenancy | Permanent scope statement | **ACCEPTED.** Ordinary containers are not hardened hostile multi-tenant isolation; production OAuth/RBAC/multi-tenancy are explicitly out of scope in PRD 2.2 and 13. Do not market the local PoC as a multi-tenant security boundary. | Final `SEC-REVIEW` wording only |
+| Live-model network egress | Clarification plus environment limitation | **OPEN FOR FINAL LIVE GATE.** Live Agent/model-review calls necessarily reach the configured Responses API. This is distinct from deterministic verifier isolation, which must remain no-network and secret-free. Default tests stay model/network-free; only bounded explicit live gates may use credentials. | `LIVE-01`, `MR-01/03`, `SEC-REVIEW`, `DEL-02` |
+| Secret-scan certainty | Clarification | **OPEN FOR FINAL ASSURANCE.** Scans can prove absence of configured secrets, planted canaries, exact known values, and recognized credential/private-path patterns—not unknowable arbitrary strings. This epistemic limit does not relax the PRD prohibition on secrets in source, store, prompts, logs, events, or DOM. | `SEC-REVIEW`, `DEMO-REHEARSAL`, `DEL-02` |
+| Laptop coverage | Environment/evidence limitation and actual deviation | **OPEN.** The two required audit viewports are green only for audited rows; they do not prove all laptop aspect ratios or the full six-surface matrix. “All laptop aspect ratios” is operationalized by a documented representative matrix, which must be defined and executed before final visual claims. | `UI-GATE`, `DEMO-REHEARSAL`, `DEL-02` |
 
-The PRD requests some Playwright journeys before UI completion. Their backend state paths are tested first; browser journey gates run when the required UI is implemented. No journey is considered complete until its real browser assertions and screenshots pass.
+## Completion rule
 
-## Environment limitations to retain in final reporting
-
-- Only one local machine/environment is presently available; a second-machine rehearsal cannot be claimed without another environment.
-- Ordinary containers are not hardened multi-tenant isolation.
-- Live model execution necessarily uses network egress to the configured Responses API; deterministic fixture verification remains network-free.
-- Secret scans can prove absence of configured secrets, planted canaries, and recognized patterns, not unknowable arbitrary strings.
-- “All laptop aspect ratios” is operationalized as a documented representative viewport matrix.
-
+Before submission, the Auditor must reconcile this file against current code,
+`TASKS.md`, `FIXES.md`, final browser/live/security evidence, and the generated test
+report. No OPEN/PARTIAL row may be silently relabelled as an accepted limitation.
+If an actual PRD deviation remains, the project remains incomplete unless the user
+explicitly revises the PRD.

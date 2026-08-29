@@ -7,6 +7,24 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — deviations hard-ledger reconciliation
+
+The Auditor reconciled every section of `docs/DEVIATIONS.md` against the PRD,
+current `mock-main`, exact tested evidence and the canonical task/defect ledgers.
+Each item is now classified as a clarification, actual deviation, environment
+limitation or permanent PRD scope statement, with explicit OPEN/PARTIAL/RESOLVED
+status and existing task IDs. No new task ID was required. The correction prevents
+backend-only or hosted-only evidence from closing browser/live/second-machine
+requirements, identifies completed-Plane cleanup as an allowed future policy rather
+than a shipped automatic cleaner, and makes every actual deviation completion-
+blocking until its named gates pass.
+
+A fresh GitHub/ref audit also found PR #16 (`MR-01`) merged to current `main` as
+`403fc095b07d60e17de1cb3f82b4e16b6a778919`; it is therefore no longer externally
+held, but it is not yet an ancestor of `mock-main` and remains unaudited integration
+work. Draft PR #25 (`MR-03`) remains the sole external hold. This was a read-only
+ownership check; no product branch was merged and no live/model request was made.
+
 ## 2026-08-30 — GC-01 and TST-07 integrated audit
 
 The Auditor merged current `main` `662a7e7` into the previously audited

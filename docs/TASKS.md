@@ -63,14 +63,15 @@ scrolling.
 No model request was made during these audits. The literal full gate and the
 deterministic clean-shell browser harness are green at the snapshot named above.
 
-## External ownership holds — do not assign
+## Integration and external ownership holds — do not assign
 
 | ID | PRD | Status / owner | Current external work | Integration requirement |
 |---|---|---|---|---|
-| `MR-01` | 4.1.13, 8.6, 12 | `HELD_EXTERNAL` | Issue #12 / PR #16 / `feat/12-mr-01-compose-model-reviewer` | Preserve advisory-only authority; integrate and run fake-reviewer Mission matrix before one sparse live review. |
+| `MR-01` | 4.1.13, 8.6, 12 | `MERGED_MAIN_AWAITING_INTEGRATION`; Integrator | PR #16 merged to current `main` as `403fc09`; it is not yet an ancestor of `mock-main` | Preserve advisory-only authority; integrate current main and run fake-reviewer Mission/degradation/security gates before one sparse live review. |
 | `MR-03` | 8.6, 12 | `HELD_EXTERNAL`, stacked on `MR-01` | Issue #21 / draft PR #25 / `fix/21-mr-03-partial-review-findings` | Integrate after MR-01; validate partial valid findings survive one rejected evidence reference. |
 
-These two workstreams are dependencies, not available tasks. Historical
+These two workstreams are dependencies, not available tasks. Only `MR-03` remains
+externally held; `MR-01` is merged-main integration work. Historical
 `feature/shepherd-phase-*`, merged startup/reset/UI branches, and remote branches
 without an open issue/PR are not active ownership claims.
 
@@ -162,7 +163,7 @@ without an open issue/PR are not active ownership claims.
 
 ## Count and current verdict
 
-- **50 tracked work items:** 14 audited, 2 externally held, and 34 other incomplete
+- **50 tracked work items:** 14 audited, 1 externally held, and 35 other incomplete
   items across P0/P1/P2.
 - **Next ready worker assignment:** `F-01/02` unless the integrator selects another
   non-overlapping ready row.
