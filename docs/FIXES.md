@@ -51,22 +51,40 @@ that limitation is explicit.
 
 ### `F-03` — Contract verifier infrastructure failure strands active-looking state
 
-- **Evidence class:** strongly source-evidenced and recorded in the PRD failure
-  audit; no current causal service regression closes it.
-- **Failure contract:** a verifier exception during Contract verification can let
-  the Mission fail generically while Contract remains `verifying`, Plane remains
-  `inspecting`, and Agent remains `busy`.
+- **Evidence class:** causally reproduced on `fix/mock-main`. The planted verifier
+  exception surfaced its raw diagnostic while the Mission failed with code
+  `unknown`; both Contracts remained `verifying`, both Planes `inspecting`, and
+  both Agents `busy` with Contract ownership retained. A production-shaped returned
+  mandatory `infrastructure_error` reproduced a second path: both Contracts were
+  misclassified `failed_independent_acceptance`, Planes remained `inspecting`,
+  Agents remained owned/busy, and the Mission again failed as `unknown`.
+- **Supported root cause:** the Contract verifier await had no infrastructure-error
+  boundary after durable verification state was entered, and the container verifier
+  intentionally represents launch/cancel/exit infrastructure failures as returned
+  evidence. Cancellation was also non-sticky between sequential checks and during
+  reserved container creation, allowing later work to start after terminalization.
 - **Impact:** durable API/UI state lies about ongoing work and blocks safe recovery.
-- **Minimal correction:** at the existing service error boundary, atomically map
-  the exact Contract, Plane, Agent and Mission into a bounded non-green terminal or
-  attention state, release ownership, persist a typed safe event, and prove no
-  integration/promotion occurs. Do not collapse all verifier results or weaken
-  independent verification.
-- **Acceptance:** causal service fault test asserts every entity, event, public DTO,
-  recovery state and no-promotion invariant; adjacent service/API/recovery tests,
-  full gate, security review, integrated auditor gate.
-- **Owner/status:** first Fixer task after `TST-02` / `READY`; **25%**, 0/5
-  gates, not audited.
+- **Minimal correction implemented:** the existing Contract verification boundary
+  now maps thrown errors and only returned mandatory `infrastructure_error` checks
+  to typed, bounded evidence; ordinary mandatory `failed` checks retain acceptance
+  failure semantics.
+  One store transaction fails the throwing Contract/Plane, interrupts every active
+  sibling Contract/Plane, releases all mission Agent/project ownership, and fails
+  the Mission. The Contract batch fails fast, makes bounded best-effort cancellation
+  calls, and rejects late sibling completion without allowing integration,
+  candidate creation, or promotion. Independent verification success remains owned
+  exclusively by the independent verifier. Target cancellation is sticky across
+  sequential checks and reserved create-to-start, repeated cancellation cannot
+  poison bounded ID reuse, and a terminalized sibling cannot invoke the verifier.
+- **Observed acceptance:** focused service/verifier tests 8/8; adjacent service/API/
+  verifier/executor/store/state-machine/recovery tests 185/185; literal
+  `npm run check` passed with launcher 3/3 and server 563/563 plus one opt-in live
+  skip. Fresh store reloads contained no active child ownership; late successful
+  returns produced no `verification_passed` event. Delayed-create/removal tests
+  proved no post-cancel container start and safe exact-ID reuse. Planted private
+  diagnostics were absent from durable state, public DTOs, and the store file.
+- **Owner/status:** `IMPLEMENTED + FIXER-VERIFIED` on `fix/mock-main`; **96% scoped**,
+  `T,A,C,S` passed 4/5, Auditor integration gate `I` pending; not audited.
 
 ### `UI-03` — invisible authority radios create document-wide horizontal overflow
 

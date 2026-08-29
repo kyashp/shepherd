@@ -17,6 +17,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { toPublicMissionDetail } from "../app.js";
 import { JsonStore } from "../store.js";
 import { WorkspaceManager } from "../workspace.js";
 import {
@@ -531,6 +532,206 @@ class PromotionThrowingVerifier extends HostTrustedFixtureVerifier {
       throw new Error("Synthetic promotion verifier infrastructure failure");
     }
     return await super.verify(request);
+  }
+}
+
+class ContractThrowingVerifier extends HostTrustedFixtureVerifier {
+  constructor(
+    private readonly canary: string,
+    private readonly privatePath: string,
+  ) {
+    super();
+  }
+
+  override async verify(
+    request: VerificationRequest,
+  ): Promise<VerificationEvidence> {
+    if (request.targetType === "contract") {
+      throw new Error(
+        `Synthetic Contract verifier failure ${this.canary} at ${this.privatePath}`,
+      );
+    }
+    return await super.verify(request);
+  }
+}
+
+function returnedContractInfrastructureEvidence(
+  evidence: VerificationEvidence,
+  canary: string,
+  privatePath: string,
+): VerificationEvidence {
+  return {
+    ...evidence,
+    passed: false,
+    checks: evidence.checks.map((check, index) =>
+      index === 0
+        ? {
+            ...check,
+            status: "infrastructure_error",
+            passed: false,
+            exitCode: 125,
+            stderr: `Synthetic returned verifier failure ${canary}`,
+            error: `Verifier launch failed at ${privatePath}`,
+          }
+        : check,
+    ),
+    summary: `Synthetic returned verifier failure ${canary} at ${privatePath}`,
+  };
+}
+
+class ContractInfrastructureEvidenceVerifier extends HostTrustedFixtureVerifier {
+  constructor(
+    private readonly canary: string,
+    private readonly privatePath: string,
+  ) {
+    super();
+  }
+
+  override async verify(
+    request: VerificationRequest,
+  ): Promise<VerificationEvidence> {
+    const evidence = await super.verify(request);
+    if (request.targetType !== "contract") return evidence;
+    return returnedContractInfrastructureEvidence(
+      evidence,
+      this.canary,
+      this.privatePath,
+    );
+  }
+}
+
+class ContractAcceptanceFailureEvidenceVerifier extends HostTrustedFixtureVerifier {
+  override async verify(
+    request: VerificationRequest,
+  ): Promise<VerificationEvidence> {
+    const evidence = await super.verify(request);
+    if (request.targetType !== "contract") return evidence;
+    return {
+      ...evidence,
+      passed: false,
+      checks: evidence.checks.map((check, index) =>
+        index === 0
+          ? {
+              ...check,
+              status: "failed",
+              passed: false,
+              exitCode: 1,
+              error: "Trusted verification check exited non-zero",
+            }
+          : check,
+      ),
+      summary: "A mandatory Contract acceptance check failed",
+    };
+  }
+}
+
+class OneContractThrowingVerifier extends HostTrustedFixtureVerifier {
+  readonly siblingEntered: Promise<void>;
+  private markSiblingEntered!: () => void;
+  readonly siblingExited: Promise<void>;
+  private markSiblingExited!: () => void;
+  private readonly siblingReleased: Promise<void>;
+  private releaseSiblingVerification!: () => void;
+
+  constructor() {
+    super();
+    this.siblingEntered = new Promise<void>((resolve) => {
+      this.markSiblingEntered = resolve;
+    });
+    this.siblingExited = new Promise<void>((resolve) => {
+      this.markSiblingExited = resolve;
+    });
+    this.siblingReleased = new Promise<void>((resolve) => {
+      this.releaseSiblingVerification = resolve;
+    });
+  }
+
+  override async verify(
+    request: VerificationRequest,
+  ): Promise<VerificationEvidence> {
+    if (request.targetType !== "contract") {
+      return await super.verify(request);
+    }
+    if (request.targetId.includes("front")) {
+      throw new Error("Synthetic frontend Contract verifier failure");
+    }
+    this.markSiblingEntered();
+    await this.siblingReleased;
+    const evidence = await super.verify(request);
+    this.markSiblingExited();
+    return evidence;
+  }
+
+  releaseSibling(): void {
+    this.releaseSiblingVerification();
+  }
+}
+
+class OneContractInfrastructureEvidenceVerifier extends HostTrustedFixtureVerifier {
+  readonly siblingEntered: Promise<void>;
+  private markSiblingEntered!: () => void;
+  readonly siblingExited: Promise<void>;
+  private markSiblingExited!: () => void;
+  private readonly siblingReleased: Promise<void>;
+  private releaseSiblingVerification!: () => void;
+
+  constructor() {
+    super();
+    this.siblingEntered = new Promise<void>((resolve) => {
+      this.markSiblingEntered = resolve;
+    });
+    this.siblingExited = new Promise<void>((resolve) => {
+      this.markSiblingExited = resolve;
+    });
+    this.siblingReleased = new Promise<void>((resolve) => {
+      this.releaseSiblingVerification = resolve;
+    });
+  }
+
+  override async verify(
+    request: VerificationRequest,
+  ): Promise<VerificationEvidence> {
+    if (request.targetType !== "contract") {
+      return await super.verify(request);
+    }
+    if (request.targetId.includes("front")) {
+      return returnedContractInfrastructureEvidence(
+        await super.verify(request),
+        "concurrent-returned-canary",
+        "/private/concurrent-returned-path",
+      );
+    }
+    this.markSiblingEntered();
+    await this.siblingReleased;
+    const evidence = await super.verify(request);
+    this.markSiblingExited();
+    return evidence;
+  }
+
+  releaseSibling(): void {
+    this.releaseSiblingVerification();
+  }
+}
+
+class RecordingFrontendInfrastructureVerifier extends HostTrustedFixtureVerifier {
+  readonly targetIds: string[] = [];
+
+  override async verify(
+    request: VerificationRequest,
+  ): Promise<VerificationEvidence> {
+    this.targetIds.push(request.targetId);
+    const evidence = await super.verify(request);
+    if (
+      request.targetType === "contract" &&
+      request.targetId.includes("front")
+    ) {
+      return returnedContractInfrastructureEvidence(
+        evidence,
+        "pre-invocation-canary",
+        "/private/pre-invocation-path",
+      );
+    }
+    return evidence;
   }
 }
 
@@ -1311,6 +1512,402 @@ describe("Shepherd deterministic walking skeleton", () => {
         ?.contracts.every((contract) => contract.state === "execution_failed"),
     ).toBe(true);
   });
+
+  it("terminalizes Contract verification infrastructure failures without promotion or sensitive diagnostics", async () => {
+    const caseRoot = await makeCaseRoot();
+    const canary = "F03-CANARY-verifier-secret-443322";
+    const privatePath = path.join(caseRoot, "private-verifier-diagnostic.txt");
+    const storePath = path.join(caseRoot, "state.json");
+    const store = new JsonStore(storePath, { sensitiveValues: [canary] });
+    await store.initialize();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new ContractThrowingVerifier(canary, privatePath),
+      sensitiveValues: [canary],
+    });
+
+    let thrownMessage = "";
+    try {
+      await service.runDeterministicDemo();
+    } catch (error) {
+      thrownMessage = error instanceof Error ? error.message : String(error);
+    }
+
+    const mission = service.state().missions.at(-1);
+    const detail = service.missionDetail(mission?.id ?? "missing");
+    if (!detail) throw new Error("Failed Mission detail disappeared");
+    const contractPlanes = detail.planes.filter((plane) => plane.kind === "contract");
+    expect({
+      thrownMessage,
+      mission: {
+        state: detail.mission.state,
+        failureCode: detail.mission.failure?.code,
+        failureStage: detail.mission.failure?.stage,
+        activeMissionId: detail.project.activeMissionId,
+      },
+      contractStates: detail.contracts.map((contract) => contract.state).sort(),
+      contractFailureCodes: detail.contracts
+        .map((contract) => contract.failure?.code)
+        .sort(),
+      planeStates: contractPlanes.map((plane) => plane.state).sort(),
+      planeFailureCodes: contractPlanes.map((plane) => plane.error?.code).sort(),
+      agentStatuses: detail.agents.map((agent) => agent.status).sort(),
+      agentContractIds: detail.agents.map((agent) => agent.currentContractId),
+    }).toEqual({
+      thrownMessage: "Contract independent verification infrastructure failed",
+      mission: {
+        state: "failed",
+        failureCode: "verification_infrastructure_error",
+        failureStage: "contract_verification",
+        activeMissionId: null,
+      },
+      contractStates: ["interrupted", "verification_failed"],
+      contractFailureCodes: [
+        "verification_infrastructure_error",
+        "verification_infrastructure_error",
+      ],
+      planeStates: ["failed", "interrupted"],
+      planeFailureCodes: [
+        "verification_infrastructure_error",
+        "verification_infrastructure_error",
+      ],
+      agentStatuses: ["error", "error"],
+      agentContractIds: [null, null],
+    });
+    expect(detail.collisions).toEqual([]);
+    expect(detail.candidates).toEqual([]);
+    expect(detail.planes.some((plane) => plane.kind !== "contract")).toBe(false);
+    expect(detail.project.protectedHeadCommit).toBe(detail.mission.baseCommit);
+    const verificationFailures = detail.events.filter(
+      (event) => event.type === "verification_failed",
+    );
+    expect(verificationFailures).toHaveLength(1);
+    expect(verificationFailures).toSatisfy((events) =>
+      events.every(
+        (event) =>
+          event.summary ===
+            "Contract independent verification infrastructure failed" &&
+          event.details.failureCode === "verification_infrastructure_error" &&
+          event.details.stage === "contract_verification",
+      ),
+    );
+    expect(
+      detail.events.filter((event) => event.type === "execution_interrupted"),
+    ).toHaveLength(1);
+    expect(
+      detail.events.some((event) =>
+        [
+          "collision_detected",
+          "candidate_created",
+          "candidate_selected",
+          "promotion_started",
+          "promotion_completed",
+        ].includes(event.type),
+      ),
+    ).toBe(false);
+
+    const publicDetail = toPublicMissionDetail(detail, [canary]);
+    const durableDetailText = JSON.stringify(detail);
+    const publicText = JSON.stringify(publicDetail);
+    const persistedText = await readFile(storePath, "utf8");
+    for (const output of [durableDetailText, publicText, persistedText]) {
+      expect(output).not.toContain(canary);
+      expect(output).not.toContain(privatePath);
+      expect(output).not.toContain("Synthetic Contract verifier failure");
+    }
+    expect(publicDetail.mission.failure).toMatchObject({
+      code: "verification_infrastructure_error",
+      stage: "contract_verification",
+    });
+    expect(publicDetail.contracts).toSatisfy((contracts) =>
+      contracts.every(
+        (contract) =>
+          contract.failure?.code === "verification_infrastructure_error",
+      ),
+    );
+    expect(publicDetail.planes).toSatisfy((planes) =>
+      planes.every((plane) => !("worktreePath" in plane)),
+    );
+  }, 30_000);
+
+  it("terminalizes returned Contract verification infrastructure evidence", async () => {
+    const caseRoot = await makeCaseRoot();
+    const canary = "F03-RETURNED-CANARY-775533";
+    const privatePath = path.join(caseRoot, "private-returned-diagnostic.txt");
+    const storePath = path.join(caseRoot, "state.json");
+    const store = new JsonStore(storePath, { sensitiveValues: [canary] });
+    await store.initialize();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new ContractInfrastructureEvidenceVerifier(canary, privatePath),
+      sensitiveValues: [canary],
+    });
+
+    let thrownMessage = "";
+    try {
+      await service.runDeterministicDemo();
+    } catch (error) {
+      thrownMessage = error instanceof Error ? error.message : String(error);
+    }
+
+    const missionId = service.state().missions.at(-1)?.id;
+    const detail = service.missionDetail(missionId ?? "missing");
+    if (!detail) throw new Error("Failed Mission detail disappeared");
+    expect({
+      thrownMessage,
+      mission: {
+        state: detail.mission.state,
+        code: detail.mission.failure?.code,
+        stage: detail.mission.failure?.stage,
+        activeMissionId: detail.project.activeMissionId,
+      },
+      contracts: detail.contracts.map((contract) => contract.state).sort(),
+      contractCodes: detail.contracts
+        .map((contract) => contract.failure?.code)
+        .sort(),
+      planes: detail.planes.map((plane) => plane.state).sort(),
+      planeCodes: detail.planes.map((plane) => plane.error?.code).sort(),
+      agents: detail.agents.map((agent) => ({
+        status: agent.status,
+        currentContractId: agent.currentContractId,
+      })),
+    }).toEqual({
+      thrownMessage: "Contract independent verification infrastructure failed",
+      mission: {
+        state: "failed",
+        code: "verification_infrastructure_error",
+        stage: "contract_verification",
+        activeMissionId: null,
+      },
+      contracts: ["interrupted", "verification_failed"],
+      contractCodes: [
+        "verification_infrastructure_error",
+        "verification_infrastructure_error",
+      ],
+      planes: ["failed", "interrupted"],
+      planeCodes: [
+        "verification_infrastructure_error",
+        "verification_infrastructure_error",
+      ],
+      agents: [
+        { status: "error", currentContractId: null },
+        { status: "error", currentContractId: null },
+      ],
+    });
+    expect(detail.collisions).toEqual([]);
+    expect(detail.candidates).toEqual([]);
+    expect(detail.planes.every((plane) => plane.kind === "contract")).toBe(true);
+    expect(
+      detail.events.some((event) =>
+        [
+          "verification_passed",
+          "collision_detected",
+          "candidate_created",
+          "promotion_started",
+          "promotion_completed",
+        ].includes(event.type),
+      ),
+    ).toBe(false);
+
+    const publicText = JSON.stringify(toPublicMissionDetail(detail, [canary]));
+    const durableText = JSON.stringify(detail);
+    const persistedText = await readFile(storePath, "utf8");
+    for (const output of [publicText, durableText, persistedText]) {
+      expect(output).not.toContain(canary);
+      expect(output).not.toContain(privatePath);
+      expect(output).not.toContain("Synthetic returned verifier failure");
+    }
+  }, 30_000);
+
+  it("preserves ordinary failed mandatory Contract acceptance semantics", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new ContractAcceptanceFailureEvidenceVerifier(),
+    });
+
+    await expect(service.runDeterministicDemo()).rejects.toThrow(
+      /failed independent verification/u,
+    );
+    const missionId = service.state().missions.at(-1)?.id;
+    const detail = service.missionDetail(missionId ?? "missing");
+    if (!detail) throw new Error("Failed Mission detail disappeared");
+    expect(detail.contracts.map((contract) => contract.failure?.code)).toEqual([
+      "failed_independent_acceptance",
+      "failed_independent_acceptance",
+    ]);
+    expect(
+      detail.events.filter((event) => event.type === "verification_failed"),
+    ).toHaveLength(2);
+    expect(detail.mission.failure?.code).not.toBe(
+      "verification_infrastructure_error",
+    );
+    expect(detail.planes.every((plane) => plane.kind === "contract")).toBe(true);
+    expect(detail.collisions).toEqual([]);
+    expect(detail.candidates).toEqual([]);
+  }, 30_000);
+
+  it.each([
+    {
+      boundary: "thrown verifier exception",
+      createVerifier: () => new OneContractThrowingVerifier(),
+    },
+    {
+      boundary: "returned infrastructure evidence",
+      createVerifier: () => new OneContractInfrastructureEvidenceVerifier(),
+    },
+  ])("atomically interrupts a blocked sibling after $boundary", async ({
+    createVerifier,
+  }) => {
+    const caseRoot = await makeCaseRoot();
+    const storePath = path.join(caseRoot, "state.json");
+    const store = new JsonStore(storePath);
+    await store.initialize();
+    const verifier = createVerifier();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier,
+    });
+
+    const run = service.runDeterministicDemo();
+    await verifier.siblingEntered;
+    await expect(run).rejects.toThrow(
+      "Contract independent verification infrastructure failed",
+    );
+
+    const missionId = service.state().missions.at(-1)?.id;
+    if (!missionId) throw new Error("Failed Mission identity disappeared");
+    const detailBeforeRelease = service.missionDetail(missionId);
+    if (!detailBeforeRelease) throw new Error("Failed Mission detail disappeared");
+    expect({
+      mission: detailBeforeRelease.mission.state,
+      activeMissionId: detailBeforeRelease.project.activeMissionId,
+      contracts: detailBeforeRelease.contracts
+        .map((contract) => contract.state)
+        .sort(),
+      planes: detailBeforeRelease.planes.map((plane) => plane.state).sort(),
+      agents: detailBeforeRelease.agents.map((agent) => ({
+        status: agent.status,
+        currentContractId: agent.currentContractId,
+      })),
+    }).toEqual({
+      mission: "failed",
+      activeMissionId: null,
+      contracts: ["interrupted", "verification_failed"],
+      planes: ["failed", "interrupted"],
+      agents: [
+        { status: "error", currentContractId: null },
+        { status: "error", currentContractId: null },
+      ],
+    });
+
+    const reloadedStore = new JsonStore(storePath);
+    await reloadedStore.initialize();
+    const reloaded = reloadedStore.snapshot();
+    expect({
+      mission: reloaded.shepherd.missions.find((item) => item.id === missionId)
+        ?.state,
+      activeMissionId: reloaded.shepherd.projects.find(
+        (project) => project.id === detailBeforeRelease.project.id,
+      )?.activeMissionId,
+      contracts: reloaded.shepherd.contracts
+        .filter((contract) => contract.missionId === missionId)
+        .map((contract) => contract.state)
+        .sort(),
+      planes: reloaded.shepherd.planes
+        .filter((plane) => plane.missionId === missionId)
+        .map((plane) => plane.state)
+        .sort(),
+      activeAgentContracts: reloaded.agents
+        .filter((agent) => agent.currentContractId !== null)
+        .map((agent) => agent.currentContractId),
+    }).toEqual({
+      mission: "failed",
+      activeMissionId: null,
+      contracts: ["interrupted", "verification_failed"],
+      planes: ["failed", "interrupted"],
+      activeAgentContracts: [],
+    });
+
+    verifier.releaseSibling();
+    await verifier.siblingExited;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const detailAfterRelease = service.missionDetail(missionId);
+    expect(
+      detailAfterRelease?.contracts.map((contract) => contract.state).sort(),
+    ).toEqual(["interrupted", "verification_failed"]);
+    expect(
+      detailAfterRelease?.events.filter(
+        (event) => event.type === "verification_passed",
+      ),
+    ).toEqual([]);
+    expect(detailAfterRelease?.collisions).toEqual([]);
+    expect(detailAfterRelease?.candidates).toEqual([]);
+    expect(detailAfterRelease?.planes.every((plane) => plane.kind === "contract"))
+      .toBe(true);
+  }, 30_000);
+
+  it("does not invoke a sibling verifier after infrastructure terminalization", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const verifier = new RecordingFrontendInfrastructureVerifier();
+    let markBackendReady!: () => void;
+    const backendReady = new Promise<void>((resolve) => {
+      markBackendReady = resolve;
+    });
+    let releaseBackend!: () => void;
+    const backendReleased = new Promise<void>((resolve) => {
+      releaseBackend = resolve;
+    });
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier,
+      faultCheckpoint: async (checkpoint, context) => {
+        if (
+          checkpoint === "contract_verification_snapshot_ready" &&
+          context.contractId?.includes("back")
+        ) {
+          markBackendReady();
+          await backendReleased;
+        }
+      },
+    });
+
+    const run = service.runDeterministicDemo();
+    await backendReady;
+    await expect(run).rejects.toThrow(
+      "Contract independent verification infrastructure failed",
+    );
+    expect(verifier.targetIds).toHaveLength(1);
+    expect(verifier.targetIds[0]).toContain("front");
+
+    releaseBackend();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(verifier.targetIds).toHaveLength(1);
+    const missionId = service.state().missions.at(-1)?.id;
+    const detail = service.missionDetail(missionId ?? "missing");
+    expect(detail?.contracts.map((contract) => contract.state).sort()).toEqual([
+      "interrupted",
+      "verification_failed",
+    ]);
+    expect(
+      detail?.events.filter((event) => event.type === "verification_passed"),
+    ).toEqual([]);
+    expect(detail?.planes.every((plane) => plane.kind === "contract")).toBe(true);
+  }, 30_000);
 
   it("archives one transient candidate attempt and retries from the same integration commit", async () => {
     const caseRoot = await makeCaseRoot();

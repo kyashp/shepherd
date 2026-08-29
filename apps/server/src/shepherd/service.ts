@@ -476,6 +476,13 @@ class AuthorityViolationError extends Error {
   }
 }
 
+class ContractVerificationInfrastructureError extends Error {
+  constructor() {
+    super("Contract independent verification infrastructure failed");
+    this.name = "ContractVerificationInfrastructureError";
+  }
+}
+
 class MissionCancelledError extends Error {
   constructor() {
     super("Mission was cancelled");
@@ -1731,12 +1738,32 @@ export class ShepherdService {
     );
   }
 
+  private missionHasContractVerificationInfrastructureFailure(
+    missionId: string,
+  ): boolean {
+    const mission = this.store
+      .snapshot()
+      .shepherd.missions.find((item) => item.id === missionId);
+    return (
+      mission?.state === "failed" &&
+      mission.failure?.code === "verification_infrastructure_error" &&
+      mission.failure.stage === "contract_verification"
+    );
+  }
+
   private ensureMissionRunnable(missionId: string): void {
     const mission = this.store
       .snapshot()
       .shepherd.missions.find((item) => item.id === missionId);
     if (!mission) throw new Error("Mission was not found");
     if (mission.state === "cancelled") throw new MissionCancelledError();
+    if (
+      mission.state === "failed" &&
+      mission.failure?.code === "verification_infrastructure_error" &&
+      mission.failure.stage === "contract_verification"
+    ) {
+      throw new ContractVerificationInfrastructureError();
+    }
   }
 
   private assertMissionRunnable(database: Database, missionId: string): Mission {
@@ -1745,6 +1772,13 @@ export class ShepherdService {
     );
     if (!mission) throw new Error("Mission was not found");
     if (mission.state === "cancelled") throw new MissionCancelledError();
+    if (
+      mission.state === "failed" &&
+      mission.failure?.code === "verification_infrastructure_error" &&
+      mission.failure.stage === "contract_verification"
+    ) {
+      throw new ContractVerificationInfrastructureError();
+    }
     return mission;
   }
 
@@ -2423,15 +2457,32 @@ export class ShepherdService {
     for (const input of scheduledInputs) {
       contractPlanes.push(await this.createContractPlane(prepared, input.contractId));
     }
-    const contractResults = await allSettledBounded(
+    let rejectInfrastructureFailure!: (reason: unknown) => void;
+    const infrastructureFailure = new Promise<PromiseSettledResult<void>[]>(
+      (_resolve, reject) => {
+        rejectInfrastructureFailure = reject;
+      },
+    );
+    const contractResultsPromise = allSettledBounded(
       scheduledInputs,
       this.settings().maxConcurrentPlanes,
       async (input, index) => {
         const plane = contractPlanes[index];
         if (!plane) throw new Error("Contract Plane was not created");
-        await this.executeContract(prepared, input, plane);
+        try {
+          await this.executeContract(prepared, input, plane);
+        } catch (error) {
+          if (error instanceof ContractVerificationInfrastructureError) {
+            rejectInfrastructureFailure(error);
+          }
+          throw error;
+        }
       },
     );
+    const contractResults = await Promise.race([
+      contractResultsPromise,
+      infrastructureFailure,
+    ]);
     const contractFailure = contractResults.find(
       (result): result is PromiseRejectedResult => result.status === "rejected",
     );
@@ -2766,13 +2817,29 @@ export class ShepherdService {
       );
       initialPlane.runtimeSessionFingerprint = runtimeSessionFingerprint;
     } catch (error) {
-      if (error instanceof MissionCancelledError || this.missionIsCancelled(prepared.missionId)) {
+      if (
+        error instanceof MissionCancelledError ||
+        this.missionIsCancelled(prepared.missionId)
+      ) {
         if (executionWorkspace) {
           await prepared.planeManager
             .destroyExecutionWorkspace(executionWorkspace)
             .catch(() => undefined);
         }
         throw new MissionCancelledError();
+      }
+      if (
+        error instanceof ContractVerificationInfrastructureError ||
+        this.missionHasContractVerificationInfrastructureFailure(
+          prepared.missionId,
+        )
+      ) {
+        if (executionWorkspace) {
+          await prepared.planeManager
+            .destroyExecutionWorkspace(executionWorkspace)
+            .catch(() => undefined);
+        }
+        throw new ContractVerificationInfrastructureError();
       }
       const failedAt = this.timestamp();
       const failure = this.makeFailure(error, "contract_execution", failedAt);
@@ -3058,24 +3125,51 @@ export class ShepherdService {
     });
 
     if (!plane.headCommit) throw new Error("Contract Plane has no immutable commit");
-    const evidence = this.sanitizeEvidence(
-      await prepared.planeManager.withVerificationSnapshot(
-        plane.headCommit,
-        async (snapshot) => {
-          await this.checkpoint("contract_verification_snapshot_ready", {
-            missionId: prepared.missionId,
-            contractId: input.contractId,
-          });
-          return await this.verifier.verify({
-            targetType: "contract",
-            targetId: input.contractId,
-            planePath: snapshot.path,
-            checks: contract.acceptance.checks,
-            changedFiles: plane.changedFiles,
-          });
-        },
-      ),
-    );
+    let evidence: VerificationEvidence;
+    try {
+      evidence = this.sanitizeEvidence(
+        await prepared.planeManager.withVerificationSnapshot(
+          plane.headCommit,
+          async (snapshot) => {
+            await this.checkpoint("contract_verification_snapshot_ready", {
+              missionId: prepared.missionId,
+              contractId: input.contractId,
+            });
+            this.ensureMissionRunnable(prepared.missionId);
+            return await this.verifier.verify({
+              targetType: "contract",
+              targetId: input.contractId,
+              planePath: snapshot.path,
+              checks: contract.acceptance.checks,
+              changedFiles: plane.changedFiles,
+            });
+          },
+        ),
+      );
+    } catch (error) {
+      if (
+        error instanceof MissionCancelledError ||
+        this.missionIsCancelled(prepared.missionId)
+      ) {
+        throw new MissionCancelledError();
+      }
+      evidence = await this.persistContractVerificationInfrastructureFailure(
+        prepared.missionId,
+        input.contractId,
+        plane.id,
+      );
+    }
+    if (
+      evidence.checks.some(
+        (check) => check.mandatory && check.status === "infrastructure_error",
+      )
+    ) {
+      evidence = await this.persistContractVerificationInfrastructureFailure(
+        prepared.missionId,
+        input.contractId,
+        plane.id,
+      );
+    }
     this.ensureMissionRunnable(prepared.missionId);
     const verifiedAt = this.timestamp();
     if (!evidence.passed) {
@@ -3180,6 +3274,182 @@ export class ShepherdService {
         agent.updatedAt = verifiedAt;
       }
     });
+  }
+
+  private async persistContractVerificationInfrastructureFailure(
+    missionId: string,
+    contractId: string,
+    planeId: string,
+  ): Promise<never> {
+    const failedAt = this.timestamp();
+    const failure: FailureInfo = {
+      code: "verification_infrastructure_error",
+      message: "Contract independent verification infrastructure failed",
+      stage: "contract_verification",
+      at: failedAt,
+      retryable: true,
+    };
+    let cancelled = false;
+    const executorIds: string[] = [];
+    const verifierIds: string[] = [];
+    await this.store.mutate((database) => {
+      const mission = database.shepherd.missions.find(
+        (item) => item.id === missionId,
+      );
+      const contract = database.shepherd.contracts.find(
+        (item) => item.id === contractId,
+      );
+      const plane = database.shepherd.planes.find((item) => item.id === planeId);
+      if (!mission || !contract || !plane) {
+        throw new Error(
+          "Contract verification records disappeared before failure persistence",
+        );
+      }
+      if (mission.state === "cancelled") {
+        cancelled = true;
+        return;
+      }
+      if (
+        mission.state === "failed" &&
+        mission.failure?.code === failure.code &&
+        mission.failure.stage === failure.stage
+      ) {
+        return;
+      }
+      if (contract.state !== "verifying") {
+        throw new Error(
+          "Contract left verification before infrastructure failure persistence",
+        );
+      }
+      const missionContractIds = new Set(mission.contractIds);
+      for (const affectedContract of database.shepherd.contracts) {
+        if (
+          affectedContract.missionId !== missionId ||
+          !missionContractIds.has(affectedContract.id)
+        ) {
+          continue;
+        }
+        if (affectedContract.state === "verifying") {
+          verifierIds.push(affectedContract.id);
+        }
+        if (affectedContract.id === contractId) {
+          transitionContractAndRecord(
+            database,
+            affectedContract.id,
+            "verification_failed",
+            {
+              actor: "control_plane",
+              eventActor: SHEPHERD_ACTOR,
+              timestamp: failedAt,
+              failure: { ...failure },
+              summary: failure.message,
+              details: {
+                failureCode: failure.code,
+                stage: failure.stage,
+              },
+            },
+          );
+        } else if (
+          canTransitionContract(
+            affectedContract.state,
+            "interrupted",
+            "control_plane",
+          )
+        ) {
+          transitionContractAndRecord(
+            database,
+            affectedContract.id,
+            "interrupted",
+            {
+              actor: "control_plane",
+              eventActor: SHEPHERD_ACTOR,
+              timestamp: failedAt,
+              failure: { ...failure },
+              summary:
+                "Contract interrupted after independent verification infrastructure failed",
+              details: {
+                failureCode: failure.code,
+                stage: failure.stage,
+              },
+            },
+          );
+        }
+      }
+      for (const affectedPlane of database.shepherd.planes) {
+        if (
+          affectedPlane.missionId !== missionId ||
+          affectedPlane.kind !== "contract" ||
+          !affectedPlane.contractId ||
+          !missionContractIds.has(affectedPlane.contractId)
+        ) {
+          continue;
+        }
+        if (
+          affectedPlane.state === "creating" ||
+          affectedPlane.state === "ready" ||
+          affectedPlane.state === "running" ||
+          affectedPlane.state === "inspecting"
+        ) {
+          executorIds.push(affectedPlane.executionIdentity);
+          affectedPlane.state =
+            affectedPlane.id === planeId ? "failed" : "interrupted";
+          affectedPlane.error = { ...failure };
+          affectedPlane.updatedAt = failedAt;
+        }
+      }
+      for (const agent of database.agents) {
+        if (
+          agent.currentContractId &&
+          missionContractIds.has(agent.currentContractId)
+        ) {
+          agent.status = "error";
+          agent.currentContractId = null;
+          agent.lastError = failure.message;
+          agent.updatedAt = failedAt;
+        }
+      }
+      if (
+        mission.state !== "failed" &&
+        canTransitionMission(mission.state, "failed", "control_plane")
+      ) {
+        transitionMissionAndRecord(database, missionId, "failed", {
+          actor: "control_plane",
+          eventActor: SHEPHERD_ACTOR,
+          timestamp: failedAt,
+          failure: { ...failure },
+          summary: failure.message,
+          details: {
+            failureCode: failure.code,
+            stage: failure.stage,
+          },
+        });
+      }
+      const project = database.shepherd.projects.find(
+        (item) => item.id === mission.projectId,
+      );
+      if (project?.activeMissionId === missionId) {
+        project.activeMissionId = null;
+        project.updatedAt = failedAt;
+      }
+    });
+    if (cancelled) throw new MissionCancelledError();
+    const verifierCancel = this.verifier.cancel;
+    const cancellationTasks: Promise<boolean>[] = [
+      ...new Set(executorIds),
+    ].map((id) =>
+      Promise.resolve().then(async () => await this.executor.cancel(id)),
+    );
+    if (verifierCancel) {
+      cancellationTasks.push(
+        ...[...new Set(verifierIds)].map((id) =>
+          Promise.resolve().then(
+            async () => await verifierCancel.call(this.verifier, id),
+          ),
+        ),
+      );
+    }
+    void Promise.allSettled(cancellationTasks);
+    throw new ContractVerificationInfrastructureError();
   }
 
   private async integrateContracts(prepared: PreparedMission): Promise<Plane> {

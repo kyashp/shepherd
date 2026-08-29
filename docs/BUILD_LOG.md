@@ -379,6 +379,76 @@ trust-boundary code did not change. This verdict covers only the deterministic
 authenticated clean-shell foundation. `E2E-01` through `E2E-08`, populated and
 composer interactions, accessibility, live-model acceptance, and `UI-GATE` remain
 separate pending work.
+## F-03 Contract verifier infrastructure failure candidate
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Branch/base:** `fix/mock-main` / `origin/mock-main@ace01ae`
+
+The causal regression planted a Contract-only verifier exception containing a
+canary and private diagnostic path. Before the correction, the raw exception
+escaped; the Mission became `failed` with code `unknown` at
+`deterministic_demo`, both Contracts remained `verifying`, both Contract Planes
+remained `inspecting`, and both Agents remained `busy` with
+`currentContractId` retained.
+
+The correction is confined to the existing Contract verification service and
+verifier cancellation boundaries. A thrown verifier infrastructure error or a
+returned mandatory check with status `infrastructure_error` now produces fixed
+`verification_infrastructure_error` evidence at `contract_verification`. Ordinary
+mandatory checks with status `failed` retain `failed_independent_acceptance`.
+One durable mutation sets the throwing/returning Contract and its Plane to
+`verification_failed`/`failed`, interrupts every active sibling Contract/Plane,
+releases all mission-owned Agent and project ownership, and fails the Mission.
+The batch returns promptly, makes bounded best-effort cancellation calls, and
+rejects late sibling completion. Target cancellation remains sticky across
+sequential checks and reserved container creation, prevents later invocation or
+container start, contains repeated cancellation during bounded removal, and allows
+clean exact-ID reuse only after cleanup. Passing verification still requires
+independent evidence; no integration, candidate, or promotion path is entered.
+
+Three read-only review rounds prevented incomplete candidates from release. The
+first found an active sibling beneath a failed Mission. The second fault probe
+found the production container verifier returns infrastructure evidence rather
+than always throwing, plus non-sticky sequential/reserved cancellation. The third
+found a repeated cancel during delayed removal could leave a stale marker and
+cancel later same-ID work. Regressions preserve each failure: blocked sibling plus
+durable reload and late return; returned mandatory infrastructure evidence;
+no sibling verifier invocation; no second sequential check; no `start` after
+reserved cancellation; and delayed removal plus repeated cancel and bounded ID
+reuse. Final re-review reported no blocker, high, or medium finding. The configured
+custom reviewer role was unavailable, so reviews used a separate read-only
+fallback agent.
+
+Observed verification:
+
+```sh
+npm run test -w @launchpad/server -- --run \
+  src/shepherd/service.test.ts src/shepherd/verifier.container.test.ts \
+  -t "terminalizes Contract verification infrastructure failures without promotion or sensitive diagnostics|terminalizes returned Contract verification infrastructure evidence|preserves ordinary failed mandatory Contract acceptance semantics|atomically interrupts a blocked sibling after|does not invoke a sibling verifier after infrastructure terminalization|keeps target cancellation sticky across sequential checks and permits bounded ID reuse|keeps cancellation sticky across reserved container creation before start"
+# 2 files; 8 passed, 34 skipped
+
+npm run test -w @launchpad/server -- --run \
+  src/shepherd/service.test.ts src/shepherd/verifier.container.test.ts \
+  src/shepherd/codex-executor.test.ts src/shepherd/executor.test.ts src/app.test.ts \
+  src/shepherd/recovery.test.ts src/shepherd/recovery.process.test.ts \
+  src/shepherd/state-machine.test.ts src/database.test.ts src/store.test.ts
+# 10 files passed; 185/185 tests passed
+
+npm run check
+# exit 0: both workspace typechecks; launcher 3/3; server 26 files and
+# 563/563 tests passed with one opt-in live file/test skipped;
+# web and server production builds passed
+
+git diff --check
+# exit 0
+```
+
+The planted canary, private path, and raw verifier message were absent from the
+durable Mission detail, public Mission DTO, and persisted store file. No Ark/model
+request was made. Browser/UI and live Runtime gates were not run because this
+candidate changes only backend failure/cancellation orchestration and deterministic tests.
+`T,A,C,S` are fixer-verified; independent Auditor integration gate `I` remains
+pending.
 
 ## TST-02 deterministic recovery fixture clock
 
