@@ -7,6 +7,23 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — MR-01/MR-02 integrated audit
+
+The Auditor integrated the controlled MR-01 merge and truthful MR-02 capability
+correction on `mock-main` at `577255e6f4980499f032451d18557f8eefcf80ef`.
+Independent local gates passed: reviewer/config/service 173/173, Settings 5/5,
+adjacent service/API/store/recovery/state/container 100/100, harness unit 6/6 and
+Chromium 8/8 at both required viewports. Four MR-02 screenshots were inspected:
+configured and unavailable states preserve the accepted theme with no document
+overflow or clipping. The literal repository gate passed launcher 3/3, Server
+588/588 with two opt-in live skips, Web 13/13, both strict test typechecks and both
+builds. Dependency audit reported zero vulnerabilities; credential/private-output
+and tracked-artifact scans were clean. Configured reviewer roles were unavailable;
+independent manual security/UI review found no material issue, consistent with the
+candidate's prior independent fallbacks. Hosted Node 22 Required checks run
+`33268567614` passed. No live/model call ran. MR-01 remains below final scoped 100
+until MR-03 and one bounded live reviewer gate; MR-02 is audited scoped 100.
+
 ## 2026-08-30 — MR-02 truthful reviewer capability candidate
 
 The Fixer reproduced the no-reviewer mismatch before product edits: persisted
