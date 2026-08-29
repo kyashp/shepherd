@@ -806,6 +806,53 @@ Not run after this checkpoint:
 - a final live Mission on current `main`;
 - a post-merge gate for these documentation changes.
 
+### Pending test-lifecycle merge gate (`#11`)
+
+Draft PR [#19](https://github.com/kyashp/shepherd/pull/19) contains test-only lifecycle
+hardening on commits `de986b9a3ecdd1e1360050209742497f8c6b2813` and
+`f2db22c`; it is not merged into `main`. Its causal regressions prove that a
+sentinel-bound service fixture can remove
+a read-only trusted-verification snapshot, rejects an external root, and neither
+follows nor chmods a symlinked external target. Background-Mission tests now cancel
+and join through the existing `cancelMission()` path before fixture cleanup. Three
+measured service journeys plus the measured Git and recovery journeys have explicit
+15-second budgets; global/unit defaults are unchanged. Five target-substitution runs
+and two complete `npm run check` runs passed (547 passed, 2 opt-in skipped; web and
+server builds passed). The recovery fixture's Git helper now uses a fixed child
+environment rather than inheriting repository-routing variables. A disposable
+fixture/decoy regression poisons `GIT_DIR`, proves the selected fixture advances,
+and proves the decoy's HEAD and tree remain unchanged.
+
+The candidate was resolved against current `main` at
+`2f7a9fd8122cb62f2f2ed4e2b08cc87f311e8887`. `npm run check` on that exact head
+passed 25 files, 548 tests, with 2 opt-in tests skipped; both production builds
+completed. A test-only teardown follow-up remains in progress and must record its
+own final commit and gate before this evidence is used as a merge decision.
+
+The resulting test-only teardown follow-up begins at `d8c4dff`. It retains tracked Missions
+until cancellation/joining succeeds, cancels `attention_required` Missions, and
+releases blocked promotion checkpoints in `finally` paths. Its bounded RED was safe
+and its focused promotion/attention teardown slice plus full `service.test.ts`
+passed. The first repository gate on `d8c4dff` was not green: the unmodified
+Git-plane merge-conflict integration test timed out at the generic five-second
+budget (24 files passed, 1 failed, 2 skipped; 549 tests passed, 1 failed, 2
+skipped). That real-Git case is also owned by #11, so `0e0e743` gives only it an
+explicit 15-second budget; five focused runs and its 19-test integration file pass.
+
+A later full gate exposed the background real-Planes journey's shared 15-second
+completion-helper limit, despite the test already having a 30-second Vitest budget.
+`a14c3f7` permits a 25-second helper limit only at that measured call; it is not a
+seventh explicit Vitest timeout. Five focused background-journey runs and the full
+25-test service file pass. `npm run check` on exact head
+`a14c3f71446ff5c46a84db6482fc445e9d1944d9` passed 25 files and 550 tests, with 2
+opt-in tests skipped; both production builds passed. #11 now has six measured
+integration tests with explicit 15-second budgets, while global/unit defaults remain
+unchanged.
+
+The draft OPS-01 fix in PR [#8](https://github.com/kyashp/shepherd/pull/8) remains a
+separate startup change. It may use this test-stability evidence only after #19 has
+merged and a combined `main` gate is observed; OPS-01 is not marked resolved here.
+
 ### Draft PR #17 scoped UI correction and evidence
 
 This is newer, narrowly scoped evidence than the historical checkpoint immediately
@@ -982,6 +1029,10 @@ Repository-local Chromium was reported present at `.tmp/playwright-browsers/`; n
 
 14. Add test-file TypeScript checking; production `apps/server/tsconfig.json` excludes `*.test.ts`.
 15. Run the complete suite at least five consecutive times and fix flakiness by cause.
+    PR #19 removes the demonstrated temporary-repository route by giving its Git
+    fixture helper a fixed child environment. The pre-push hook itself still needs a
+    separate infrastructure audit: use `ECC_SKIP_PREPUSH=1` only after manual gates,
+    and inspect history/artifacts rather than accepting hook-created changes.
 16. Run three clean reset-to-completion demo rehearsals and record timings. Use a second machine/state only if genuinely available; otherwise document that limitation.
 17. Finish/update:
     - `docs/SHEPHERD.md`
@@ -1075,7 +1126,8 @@ Authoritative requirements/evidence:
 - Use repository-local state for QA. Do not point the demo at another repository or
   an existing data directory.
 - `npm run poc` is currently affected by `OPS-01`; use the verified command below
-  until that issue merges.
+  until that issue merges. Draft PR #8 is separate from the pending test-lifecycle
+  merge gate in PR #19.
 - Do not click **Reset demo state** before the first Mission initializes the demo;
   `RST-01` currently returns a 500 on a completely clean root.
 - The trusted verifier needs Docker, Colima, or Podman. The command below was

@@ -687,3 +687,93 @@ unrelated UI or Phase 4 behavior.
 demo Mission are proven across two fresh end-to-end Missions. Scheduler, Project
 Group parser, and Ark advisory-reviewer modules exist and are focused-test-backed, but
 their service/API integration remains Phase 4 work and is not claimed here.
+
+## Test-lifecycle stabilization candidate (`#11`)
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Candidate branch/commits:** `fix/11-shepherd-test-flake-clean` /
+`de986b9a3ecdd1e1360050209742497f8c6b2813`, `f2db22c`
+**Draft PR:** [#19](https://github.com/kyashp/shepherd/pull/19)
+
+The generic five-second Vitest budget was exceeded by three real service journeys
+and measured Git/recovery integration journeys under full-suite contention. A timed
+out background-Mission test could also race fixture cleanup; raw recursive cleanup
+could not remove a deliberately read-only trusted-verification snapshot.
+
+The candidate adds only test lifecycle changes. Service fixtures now require an
+exact sentinel, restore write permission only after validating the allocated path,
+and skip symlinks. Causal RED checks observed `EACCES` on a `0400` file beneath a
+`0500` snapshot and, under a temporary unsafe symlink mutation, an external marker
+became unreadable. Restored GREEN checks prove the fixture is removed while the
+external marker and permissions survive. Background test Missions cancel and join via
+the existing `cancelMission()` behavior before cleanup. Six measured
+integration cases declare 15-second budgets; global defaults stay unchanged.
+
+The contamination route was also causal: `runFixtureGit()` spread `process.env`, so
+an inherited `GIT_DIR` could override `git -C` and route a fixture commit elsewhere.
+The helper now gives Git a fixed environment (path/locale plus non-interactive,
+system/global-config-disabled settings). Its regression creates only disposable
+fixture and decoy repositories, poisons `GIT_DIR` with the decoy, and proves the
+fixture advances while the decoy's HEAD and tracked file remain unchanged. The RED
+against the old inherited environment left the fixture HEAD unchanged; the restored
+implementation is GREEN.
+
+Observed verification:
+
+```sh
+# target-substitution regression: 5 consecutive passes (2.51–3.59 s)
+npm run check
+# pass twice: 25 files passed, 2 opt-in skipped; 547 tests passed, 2 skipped;
+# web and server production builds passed
+git diff --check
+# passed
+```
+
+The initial PR #18 was closed as contaminated: the documented defective pre-push hook
+created commit `9d252957` and tracked `external-move.txt` before the intended fix.
+The clean candidate contains only the causal test files. The demonstrated recovery
+fixture route is fixed; the pre-push hook itself remains separate infrastructure work,
+so manual verification is required before using `ECC_SKIP_PREPUSH=1` for a scoped
+push.
+
+### Resolved-base verification
+
+The clean candidate was resolved against current `main` at
+`2f7a9fd8122cb62f2f2ed4e2b08cc87f311e8887`. On that exact resolved head,
+`npm run check` passed: 25 files passed, 548 tests passed, 2 opt-in tests skipped,
+and both production builds completed. A subsequent teardown-only audit identified a
+test-lifecycle follow-up; its final commit and verification are recorded separately
+once that bounded correction is complete.
+
+### Teardown follow-up evidence
+
+Commit `d8c4dff7e6a6c3b1597e56c8b493e436a4f227c2` is test-only. It retains tracked
+Missions until cancellation and background-run joining succeed, treats
+`attention_required` as cancellable, and releases both blocked promotion checkpoints
+in `finally` paths. The promotion verifier release is idempotent. Its causal RED
+timed out safely against the prior blocked verifier (the test's `finally` released
+the fixture); GREEN focused coverage passed the four promotion/attention teardown
+paths, and the full `service.test.ts` file passed 25/25.
+
+The first repository `npm run check` on `d8c4dff` was **not green**: the unmodified
+Git-plane integration test `reports a real textual merge conflict and leaves the
+integration Plane clean` timed out at Vitest's five-second default. The observed
+test phase had 24 files passed, 1 failed, 2 skipped; 549 tests passed, 1 failed, 2
+skipped. This follow-up did not broaden into that separately owned timeout; its
+production builds therefore did not run after the failing test phase.
+
+That Git-plane test is also an owned #11 real-Git integration case. Commit
+`0e0e743` gives only that test a 15-second Vitest budget. It passed five consecutive
+focused runs (1.23–1.90 s) and the complete Git-plane integration file passed 19/19.
+A subsequent full gate exposed a distinct RED: the background real-Planes service
+journey has a 30-second test budget but its shared completion helper stopped at 15
+seconds. Commit `a14c3f7` makes that helper accept an optional timeout and passes
+25 seconds only to this measured journey; it does not add another Vitest budget.
+The journey passed five consecutive focused runs (4.27–6.33 s) and the complete
+service test file passed 25/25.
+
+On final head `a14c3f71446ff5c46a84db6482fc445e9d1944d9`, `npm run check` passed:
+25 files passed, 550 tests passed, 2 opt-in tests skipped, and both production
+builds completed. Six measured integration cases now have explicit 15-second
+Vitest budgets; the one 25-second internal completion wait remains confined to the
+already-30-second background real-Planes test.
