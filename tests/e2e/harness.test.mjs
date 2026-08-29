@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { access, mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -15,6 +15,24 @@ import {
 
 const execFileAsync = promisify(execFile);
 const fakeCodex = path.join(repositoryRoot, "tests/e2e/fixtures/fake-codex.mjs");
+const fakeContainerEngine = path.join(repositoryRoot, "tests/e2e/fixtures/fake-container-engine.mjs");
+
+function verifierCreateArgs({ name, source, target = "contract-fixture" }) {
+  return [
+    "create", "--init", "--name", name,
+    "--label", "io.codejam.shepherd=independent-verifier",
+    "--label", `io.codejam.verification-target=${target}`,
+    "--label", "io.codejam.verifier-owner=fixture-owner",
+    "--network", "none", "--read-only", "--security-opt", "no-new-privileges",
+    "--cap-drop", "ALL", "--cpus", "1", "--memory", "256m", "--pids-limit", "64",
+    "--user", "65532:65532", "--mount", `type=bind,src=${source},dst=/workspace,readonly`,
+    "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=64m", "--workdir", "/workspace",
+    "--entrypoint", "/usr/bin/env", "fixture.invalid/shepherd:deterministic", "-i",
+    "HOME=/tmp", "TMPDIR=/tmp", "NO_COLOR=1", "CI=1",
+    "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    "node", "checks/frontend.cjs",
+  ];
+}
 
 test("fake Codex fixture implements bounded deterministic version, run, and resume", async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), "shepherd-fake-codex-"));
@@ -55,6 +73,48 @@ test("fake Codex fixture implements bounded deterministic version, run, and resu
     );
   } finally {
     await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("fake container engine accepts only the bounded independent-verifier protocol", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "shepherd-fake-container-"));
+  const home = path.join(root, "home");
+  const project = path.join(root, "project");
+  const checks = path.join(project, "checks");
+  const environment = { HOME: home, PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin" };
+  const name = "shepherd-verify-contract-fixture-frontend-fixture";
+  try {
+    await mkdir(checks, { recursive: true });
+    await writeFile(path.join(checks, "frontend.cjs"), "process.stdout.write('verified\\n');\n", "utf8");
+    await execFileAsync(fakeContainerEngine, verifierCreateArgs({ name, source: project }), {
+      encoding: "utf8",
+      env: environment,
+    });
+    const started = await execFileAsync(fakeContainerEngine, ["start", "--attach", name], {
+      encoding: "utf8",
+      env: environment,
+    });
+    assert.equal(started.stdout, "verified\n");
+    await execFileAsync(fakeContainerEngine, ["rm", "--force", name], { env: environment });
+
+    const ledger = (await readFile(path.join(home, ".fake-container-engine", "ledger.jsonl"), "utf8"))
+      .trim().split("\n").map((line) => JSON.parse(line));
+    assert.deepEqual(ledger.map((entry) => entry.operation), ["create", "start", "complete", "remove"]);
+    assert.equal(ledger[0].network, "none");
+    assert.equal(ledger[0].readOnly, true);
+
+    await assert.rejects(
+      execFileAsync(fakeContainerEngine, ["run", "--privileged", "alpine"], { env: environment }),
+      (error) => error.code === 2 && /unsupported operation/u.test(error.stderr),
+    );
+    const unsafe = verifierCreateArgs({ name: `${name}-unsafe`, source: project });
+    unsafe[unsafe.indexOf("none")] = "host";
+    await assert.rejects(
+      execFileAsync(fakeContainerEngine, unsafe, { env: environment }),
+      (error) => error.code === 2 && /expected none/u.test(error.stderr),
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 
