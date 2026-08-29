@@ -520,6 +520,7 @@ const eventSchema = z
       "mission_failed",
       "mission_cancelled",
       "execution_interrupted",
+      "model_review_completed",
       "model_review_degraded",
       "persistence_failed",
     ]),

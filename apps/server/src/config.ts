@@ -111,6 +111,63 @@ function hasUsableArkConfiguration(
   );
 }
 
+function hasUsableModelReviewEndpoint(baseUrl: string): boolean {
+  if (
+    baseUrl !== baseUrl.trim() ||
+    baseUrl.length === 0 ||
+    baseUrl.length > 2_048 ||
+    baseUrl.includes("\\") ||
+    /\p{Cc}/u.test(baseUrl)
+  ) {
+    return false;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(baseUrl);
+  } catch {
+    return false;
+  }
+  if (
+    parsed.protocol !== "https:" ||
+    parsed.hostname.length === 0 ||
+    parsed.username.length > 0 ||
+    parsed.password.length > 0 ||
+    parsed.search.length > 0 ||
+    parsed.hash.length > 0
+  ) {
+    return false;
+  }
+
+  const rawPathStart = baseUrl.indexOf("/", "https://".length);
+  const rawPath = rawPathStart === -1 ? "" : baseUrl.slice(rawPathStart);
+  return (
+    !/%2e|%2f|%5c/iu.test(rawPath) &&
+    !/(?:^|\/)\.{1,2}(?:\/|$)/u.test(rawPath) &&
+    !/\p{Cc}/u.test(rawPath)
+  );
+}
+
+function hasUsableModelReviewConfiguration(
+  apiKey: string,
+  model: string,
+  baseUrl: string,
+): boolean {
+  // Keep the readiness gate aligned with ArkModelReviewer's request-time
+  // validation so an enabled reviewer cannot immediately degrade as misconfigured.
+  return (
+    hasUsableArkConfiguration(apiKey, model) &&
+    apiKey === apiKey.trim() &&
+    apiKey.length >= 8 &&
+    apiKey.length <= 4_096 &&
+    !/\p{Cc}/u.test(apiKey) &&
+    model === model.trim() &&
+    model.length <= 256 &&
+    /^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/u.test(model) &&
+    hasUsableModelReviewEndpoint(baseUrl)
+  );
+}
+
 export function resolveShepherdExecutionMode(input: {
   requested: ShepherdExecutionModeSetting;
   runtimeProvider: "local-process" | "container";
@@ -397,6 +454,20 @@ export async function resolveVerifierOwnerId(
 
 export function isArkConfigured(config: AppConfig): boolean {
   return hasUsableArkConfiguration(config.arkApiKey, config.arkModel);
+}
+
+/**
+ * The advisory Shepherd reviewer uses SHEPHERD_MODEL, which falls back to
+ * ARK_MODEL. It is deliberately independent of shepherdExecutionMode: the
+ * reviewer is a bounded outbound request with no container, worktree, or Codex
+ * session, so it stays available in deterministic mode.
+ */
+export function isShepherdModelReviewConfigured(config: AppConfig): boolean {
+  return hasUsableModelReviewConfiguration(
+    config.arkApiKey,
+    config.shepherdModel,
+    config.arkBaseUrl,
+  );
 }
 
 function arkCodexConfigToml(

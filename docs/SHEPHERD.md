@@ -18,11 +18,11 @@ six requested UI surfaces. The deterministic backend demo path was rerun at the
 snapshot recorded in the handover.
 
 This is not a full-PRD completion claim. The current blocking areas are specifically
-the Project Group end-to-end behavior, advisory model composition, general service
-DAG waves, several typed failure/recovery paths, full browser/visual/accessibility
-evidence, repeated stability and demo timing, and Phase 9 deliverables. Use the
-requirement matrix and task ledger in the handover rather than deriving status from
-this summary.
+the Project Group end-to-end behavior, advisory-review live finding normalization
+(`MR-03`), general service DAG waves, several typed failure/recovery paths, full
+browser/visual/accessibility evidence, repeated stability and demo timing, and Phase
+9 deliverables. Use the requirement matrix and task ledger in the handover rather
+than deriving status from this summary.
 
 ## Accepted design contract
 
@@ -49,16 +49,17 @@ managed protected branch
 ### Model responsibilities
 
 - `ARK_MODEL` runs logical coding Agents in their isolated contract/candidate Plane.
-- `SHEPHERD_MODEL` is reserved for bounded structured planning and best-effort semantic review. The bounded review adapter exists, but Mission orchestration does not call it yet.
+- `SHEPHERD_MODEL` is reserved for bounded structured planning and best-effort semantic review. When configured, Mission orchestration calls the bounded reviewer once after verified Contract integration and before deterministic collision detection.
 - Model output is always untrusted. It cannot certify verification, choose a winner by opinion, submit shell commands, mutate the protected branch, or bypass authority.
 - Deterministic collision detection carries the demo-critical guarantee. Model-assisted review may raise advisory findings and emits an explicit degraded event on failure.
 
 The deterministic executor remains available as an explicit, labelled mode and proves
 the kernel independently of model variance. In live mode, each Contract and resolution
 candidate uses a fresh `ARK_MODEL` Codex turn. Two live Missions, each containing two
-Contract and two candidate turns, have passed the opt-in gate. The `SHEPHERD_MODEL`
-reviewer remains standalone at this boundary, so no Mission currently calls it and no
-live reviewer call is claimed.
+Contract and two candidate turns, have passed the opt-in gate. The composed
+`SHEPHERD_MODEL` live smoke made one request and preserved the deterministic outcome,
+but it reported an explicit `invalid_response` degradation. No live completed finding
+is claimed; `MR-03` tracks that separate adapter-normalization correction.
 
 Recovery remains deterministic across the Phase 2 and Phase 3 boundaries. No LLM is
 called during startup classification, evidence validation, interruption mapping,
@@ -169,7 +170,7 @@ Real secrets belong only in ignored `.env`.
 | --- | --- |
 | `ARK_API_KEY` | Credential for the configured OpenAI-compatible Responses API. |
 | `ARK_MODEL` | Coding Agent model. |
-| `SHEPHERD_MODEL` | Reserved planning/advisory-review model; defaults to `ARK_MODEL` when empty. The bounded adapter exists but is not yet connected to Mission orchestration. |
+| `SHEPHERD_MODEL` | Bounded planning/advisory-review model; defaults to `ARK_MODEL` when empty. When its configuration passes the adapter-aligned readiness gate, Mission orchestration injects one advisory review after verified Contract integration. |
 | `ARK_BASE_URL` | Responses-compatible API root. |
 | `APP_AUTH_TOKEN` | Shared local-demo bearer boundary; mandatory and non-placeholder whenever the server binds beyond loopback. |
 | `RUNTIME_PROVIDER` | Starter Agent runtime (`local-process` or `container`); Shepherd verification always uses its independent container boundary. |

@@ -2,6 +2,7 @@ import path from "node:path";
 import { AgentService } from "./agent-service.js";
 import { createApp } from "./app.js";
 import {
+  isShepherdModelReviewConfigured,
   loadConfig,
   resolveVerifierOwnerId,
   writeCodexConfig,
@@ -9,6 +10,7 @@ import {
 import { createRunner } from "./runner-factory.js";
 import { CodexShepherdExecutor } from "./shepherd/codex-executor.js";
 import { DeterministicFixtureExecutor } from "./shepherd/executor.js";
+import { ArkModelReviewer } from "./shepherd/model-reviewer.js";
 import {
   AUTH_BACKEND_PROFILE_ID,
   AUTH_FRONTEND_PROFILE_ID,
@@ -77,6 +79,23 @@ const shepherdExecutor =
   config.shepherdExecutionMode === "live"
     ? new CodexShepherdExecutor(config, verifierOwnerId)
     : new DeterministicFixtureExecutor();
+// Advisory only. Absent credentials mean no review runs and no advisory event is
+// emitted, which is honest; constructing one with a placeholder key would degrade
+// every Mission with a permanent false configuration_error alarm.
+const shepherdModelReviewer = isShepherdModelReviewConfigured(config)
+  ? new ArkModelReviewer({
+      enabled: true,
+      baseUrl: config.arkBaseUrl,
+      apiKey: config.arkApiKey,
+      model: config.shepherdModel,
+      timeoutMs: 20_000,
+      // The reviewer rejects its whole configuration if any supplied sensitive
+      // value is shorter than 8 characters, and authToken is legitimately empty
+      // on the documented loopback default. Passing it unfiltered would leave the
+      // reviewer permanently inert behind a misleading configuration_error.
+      sensitiveValues: sensitiveValues.filter((value) => value.length >= 8),
+    })
+  : undefined;
 const shepherdService = new ShepherdService({
   store,
   managedRoot: config.shepherdRoot,
@@ -86,6 +105,7 @@ const shepherdService = new ShepherdService({
   sensitiveValues,
   contractTimeoutMs: config.shepherdContractTimeoutMs,
   candidateTimeoutMs: config.shepherdCandidateTimeoutMs,
+  ...(shepherdModelReviewer ? { reviewer: shepherdModelReviewer } : {}),
 });
 await shepherdService.initialize();
 

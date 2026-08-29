@@ -2045,7 +2045,8 @@ yet invoked by `ShepherdService` or exposed by the current HTTP/UI surfaces:
   120 seconds (30-second default). All provider/configuration/timeout/schema/storage
   failures return an explicit typed degraded result; no result grants authority or
   changes deterministic collision/selection. The current service does not yet call
-  this adapter or emit its `model_review_degraded` event.
+  this adapter or emit its `model_review_degraded` event. **Superseded by the
+  Phase 4 composition recorded below (`MR-01`).**
 
 ### Live-gate corrective episodes
 
@@ -2306,6 +2307,336 @@ The remaining RST-01 work is lifecycle evidence: the final literal check/push ga
 required/merge-group checks when available, clean and initialized reset verification
 on updated `main`, issue closure, and a merged-SHA ledger update. None requires
 another scoped product-code change on this branch.
+
+## Phase 4 — Mission-composed advisory model review (`MR-01`, `MR-02`)
+
+Assessed on branch `feat/12-mr-01-compose-model-reviewer` at `4a46f72`, stacked on
+`fix/7-rst-01-idempotent-reset`. This entry supersedes the Phase 3 statement that the
+bounded reviewer is not connected to Mission orchestration.
+
+### What is now composed
+
+`ShepherdServiceOptions` gained an optional `reviewer?: ModelReviewer`, injected as an
+interface instance in the same style as `verifier` and `executor` and defaulting to
+`null`. `apps/server/src/index.ts` constructs an `ArkModelReviewer` only when the new
+`isShepherdModelReviewConfigured(config)` predicate holds, which gives
+`config.shepherdModel` — fed by the documented `SHEPHERD_MODEL` — its first and only
+consumer. An unconfigured server composes no reviewer and emits no advisory event,
+rather than degrading every Mission with a false `configuration_error`.
+
+`runAdvisoryModelReview()` runs between `integrateContracts()` and
+`detectAndPersistCollision()`, gated at call time on `settings().modelReviewEnabled`
+so the persisted setting is genuinely causal.
+
+### Why the advisory result cannot reach authority
+
+`runAdvisoryModelReview` returns `Promise<void>`, and `detectAndPersistCollision` has
+**zero diff** in this change: its only nearby hunk appends two new private methods
+after its closing brace. There is therefore no parameter, field, or closure through
+which a finding can reach the deterministic detector, the winner policy, or the
+promotion gate. The independence claim is structural rather than conventional.
+
+### Containment and bounds
+
+A reviewer that throws is converted into a durable `provider_error` degradation rather
+than being swallowed, so a failure can never present as a fake "safe". A service-side
+deadline bounds any injected reviewer that does not bound itself; the composed
+`ArkModelReviewer` bounds itself at 20 seconds. A 250 ms poller aborts an in-flight
+review once durable cancellation is visible, so `cancelMission` cannot block on it.
+The outer catch is total, and cancellation is re-derived from durable state by
+`detectAndPersistCollision`'s own `ensureMissionRunnable` on the very next statement.
+
+`model_review_completed` was added additively to `ShepherdEventType`
+(`shepherd/domain.ts`), the persisted `z.enum` (`database-schema.ts`), and the browser
+mirror (`apps/web/src/types.ts`). No store version bump and no migration were
+required: `databaseV2Schema` remains `version: z.literal(2)` and the change only
+widens what parses. Persisted advisory details are closed enums, counts, and claim
+keys Shepherd itself supplied. Free model prose (`finding.reason`) is deliberately
+never persisted or rendered.
+
+### Observed evidence
+
+```sh
+npx vitest run --config apps/server/vitest.config.ts \
+  apps/server/src/shepherd/service.model-review.test.ts
+# repository default config, no flags
+# Test Files  1 passed (1)
+#      Tests  9 passed (9)
+#   Duration  110.54s
+
+npm run typecheck
+# PASS: server and web TypeScript checks
+
+npm run build
+# PASS: web production build, 40 modules transformed
+# PASS: server production build
+
+git diff --check
+# clean
+```
+
+Each test declares the budget it needs, because every one drives a full Mission with
+real Git worktrees and real trusted fixture checks. The file therefore passes under
+the repository default configuration rather than depending on a `--testTimeout` flag.
+
+The composition predicate was checked against a configured environment, reporting
+booleans only and printing no secret:
+
+```text
+arkConfigured: true
+shepherdModelReviewConfigured: true
+shepherdModel is distinct from arkModel: true
+shepherdExecutionMode: deterministic
+```
+
+This confirms two design choices. Reusing `isArkConfigured` would have been wrong,
+because it validates `arkModel` while the reviewer consumes the genuinely distinct
+`shepherdModel`. Gating the reviewer on `shepherdExecutionMode` would have left the
+feature unreachable in exactly the configuration the deterministic demo runs in,
+since `auto` resolves to `deterministic` without a container engine.
+
+RED was observed before implementation on the same file: `3 failed | 1 passed`, each
+failure on `expect(reviewer.inputs).toHaveLength(1)`. `MR-T05` — the PRD 8.6 mandate
+that collision detection succeeds with the reviewer disabled — passed both before and
+after, because it is the baseline invariant rather than a new capability. Every
+independence assertion carries the call-count expectation; without it those tests
+would pass vacuously against an uncomposed service.
+
+`MR-T14` injects a finding naming a non-existent claim key and arguing for the losing
+transport, then asserts the persisted collision, the selected candidate, and the
+promoted SHA are unchanged, that `attentionReason` stays null, and that the hostile
+prose appears in neither the collision nor the event trail. `MR-T16` drives a real
+`ArkModelReviewer` through an injected `fetchImpl`, proving both that the
+service-built input satisfies `reviewInputSchema` end to end and that a configured
+secret never reaches the outbound request body.
+
+### Recorded limitations
+
+- `npm run check` was **not** observed passing unmodified on this host, and that is
+  pre-existing. On the unmodified stack parent the server suite reports
+  `24 failed | 518 passed`, every failure at ~5000 ms with no assertion failures,
+  because `apps/server/vitest.config.ts` leaves Vitest's 5 s default `testTimeout`
+  against tests that perform real Git work. Raising the flag takes
+  `git-plane-promotion.integration.test.ts` from `13 failed` to `19/19 passed`.
+- This change causes no functional regression, established by isolation rather than
+  by assertion. Under `--testTimeout=60000` the parent reports
+  `8 failed | 534 passed | 547` and this branch reports `12 failed | 543 passed | 556`
+  — nine tests added, nine passing. `service.test.ts` shows 3 failures on the parent
+  and 6 on this branch in a full run, but **1 failed / 20 passed when run in
+  isolation** on this branch. Five of those six therefore exist only under full-suite
+  parallelism, and the remaining one fails on the parent too. With no reviewer
+  injected `runAdvisoryModelReview` returns on its first line, so it cannot slow a
+  Mission; what the new file adds is roughly 110 s of parallel Mission load, which
+  pushes an already-marginal suite further past its timing budget.
+### Opt-in live `SHEPHERD_MODEL` gate
+
+HANDOVER pending-ledger item 5 was executed after item 4 passed, via the new
+`npm run test:shepherd:model-review:live` script and
+`apps/server/src/shepherd/live-model-review.integration.test.ts`. The suite is behind
+a double gate (`SHEPHERD_LIVE_TEST` **and** `SHEPHERD_LIVE_MODEL_REVIEW`) so the
+existing `test:shepherd:live` script cannot trigger it; both the default run and a
+`SHEPHERD_LIVE_TEST=true`-only run were confirmed to skip it. The Mission itself stays
+deterministic and container-free, so the gate costs exactly one provider request.
+
+```sh
+npm run test:shepherd:model-review:live
+# Test Files  1 passed (1)
+#      Tests  1 passed (1)
+#   Duration  14.55s
+# observed outcome: degraded reason=invalid_response retryable=false
+```
+
+The composition is proven against the real provider: one request was sent, a response
+was received, the degradation was recorded durably, and the deterministic collision,
+winner, and promoted head were unchanged. **The review itself did not succeed**, and
+that is reported as a defect rather than as a pass.
+
+Bounded diagnosis using the adapter's own schema and instructions with a two-contract
+payload: HTTP 200, `object: "response"`, `status: "completed"`, `store: false`,
+`error: null`, `incomplete_details: null`, one `reasoning` item followed by one
+assistant `output_text` message whose text parses as schema-valid JSON. The envelope
+contract in `extractOutputText` is therefore satisfied, and the model produced a
+genuinely correct review naming the real `auth.transport` conflict with high
+confidence.
+
+The rejection happens later. `evidenceReferenceExists` requires
+`source: "manifest"` refs to equal the literal sentinel `manifest_summary`, while the
+model supplied the manifest summary text; and `validateAndNormalizeFindings` returns
+`null` when any single finding fails, so one ambiguous reference discards the entire
+review including its valid findings. Tracked as `MR-03`. `ArkModelReviewer` is
+deliberately unmodified by this change.
+
+### Composition defect found by adversarial review
+
+An adversarial review of the branch diff found a high-severity defect in the
+composition itself. `apps/server/src/index.ts` passed `[arkApiKey, authToken]`
+unfiltered into `ArkModelReviewer`. `validateConfiguration` rejects the entire
+configuration when any supplied sensitive value is shorter than eight characters, and
+`config.authToken` is legitimately `""` on the documented loopback default, where
+`APP_AUTH_TOKEN` is required only for non-loopback listeners. The reviewer was
+therefore permanently inert: every qualifying Mission emitted
+`model_review_degraded / configuration_error` **without ever attempting a request**,
+behind a reason that reads as a credential problem.
+
+Reproduced with the compiled adapter and an empty auth token:
+
+```text
+as shipped      -> degraded/configuration_error | fetch attempted: false
+with >= 8 filter -> completed                   | fetch attempted: true
+```
+
+Fixed by filtering at the construction site. `MR-T17` pins the exact composition
+`index.ts` performs and was confirmed to fail without the filter
+(`expected 'degraded' to be 'completed'`).
+
+Nothing caught this earlier because every service test used a scripted fake with
+`sensitiveValues: []`, `MR-T16` supplied a single long key, and the live gate
+pre-filtered at `>= 4`, which dropped the empty token and exercised a composition the
+server never uses. The live gate now filters at `>= 8` to match production exactly.
+
+The remaining adapter-side weakness is deliberately out of this branch's scope:
+`validateConfiguration` rejects a whole configuration for one unusable sensitive
+value rather than dropping it or naming a caller-side mistake.
+
+### Recorded limitations
+
+- The live gate has never observed a `completed` review; only the degradation path is
+  live-proven. Until `MR-03` is fixed, the advisory reviewer is safe but silent.
+- Mid-review cancellation is covered by `MR-T13`, which blocks a reviewer until its
+  caller signal aborts, cancels the Mission in flight, and asserts the signal was
+  aborted, that no advisory event was recorded, and that no collision, candidate, or
+  protected-head change survived. The test pins `deadlineMs` far out of reach so only
+  the cancellation poller can settle the review: an earlier version passed with the
+  poller disabled because the service deadline aborted instead, which mutation
+  testing caught.
+- Both UI changes (the Verification stream filter and the `degraded` tone) are
+  untested: the web workspace has no test runner, so there is nowhere to put one.
+- `apps/server/src/index.ts` is a top-level-`await` entrypoint with no export, so its
+  composition is build-verified rather than test-verified.
+- No container runtime was available, so the two container-gated suites skipped as
+  designed. The new tests require none; they drive full Missions through an
+  in-process trusted fixture verifier.
+- During final integration, the two presentation-only regex changes (`model_review`
+  joining the Verification stream filter and `degraded` mapping to the existing
+  amber tone) were removed with user approval because this GPT CLI device has no
+  connected browser runtime. The event contract typing remains, but the final diff
+  adds no rendered UI behavior and therefore has no UI-specific browser gate.
+
+### Integrated current-main verification
+
+**Date:** 2026-08-30 (Asia/Singapore)
+**Branch:** `feat/12-mr-01-compose-model-reviewer`
+**Final integrated base:** `origin/main` at `fae0852`
+**Integration commits:** `fbf3038` (base `d27dea6`), then `5972aa8` (base `fae0852`)
+**Verified implementation checkpoint before the final base refresh:** `a2afbf3`
+
+The initial `d27dea6` `origin/main` base was merged without rebasing or
+force-pushing. All code merged automatically; the only conflict was this build log,
+where the complete MR-01 and current-main evidence blocks were both preserved.
+
+Immediately before final review, refreshed refs showed that PRs #9 and #37 had
+advanced `origin/main` to `fae0852`. That base was merged at `5972aa8`. Source and
+workflow changes merged automatically; the HANDOVER conflict was resolved by
+preserving both the newly merged Group Chat/required-check evidence and PR #16's
+model-review status. A new exact-head Node 24 gate is required after the final
+evidence commit; the earlier result is not presented as covering the refreshed base.
+
+The first focused baseline exposed an environmental timing failure rather than a
+reviewer defect: `JsonStore.persist()` rejected lifecycle state after Docker Desktop
+stepped its wall clock backwards. Path-only diagnostics isolated
+`updatedAt < createdAt` across Project, Contract, and Plane records. A standalone
+Node 24 probe then measured two backward steps in 40 seconds, with a largest step of
+`-35,921 ms`, while the monotonic timer advanced normally. The new Mission test
+fixture now uses the service's existing `now` seam with a strictly monotonic
+per-service test clock; production timestamp and reviewer behavior are unchanged.
+
+RED was observed repeatedly before that test-only correction. Fresh GREEN evidence:
+
+```text
+npx vitest run --config apps/server/vitest.config.ts \
+  apps/server/src/shepherd/service.model-review.test.ts
+# host isolation: 1 file passed; 13/13 tests; 100.10s
+
+# Node 24, focused model-review + config gate
+# 2 files passed; 33/33 tests; 219.95s
+```
+
+The first bind-mounted literal check was not reported green: it stopped in the
+launcher suite because Windows checkout conversion produced a `bash\r` shebang.
+The committed head was therefore cloned into a fresh Linux Docker volume so Git
+materialized LF files, and the same unmodified command passed:
+
+```text
+npm run check
+# launcher: 3/3 passed
+# server: 26 files passed, 3 skipped; 568 tests passed, 6 skipped
+# web and server typechecks passed
+# web production build: 40 modules transformed
+# server production build passed
+
+npm audit --json
+# 0 vulnerabilities across 251 dependencies
+```
+
+After the presentation-only deltas were removed, the same literal Node 24 gate was
+rerun against exact commit `a2afbf3` in a fresh LF-native Linux volume. It passed
+with the same totals: launcher 3/3, server 568 passed/6 skipped, both typechecks,
+both production builds, and a zero-vulnerability audit across 251 dependencies.
+
+The local Vite UI was started for the two-regex rendered gate, but the required
+browser runtime reported no connected in-app or extension browser. The server was
+stopped and no screenshot, viewport, or visual claim is made. With user approval,
+both presentation-only regex deltas were then removed; the final diff adds no
+rendered UI behavior. The final security/correctness review, push/required checks,
+merge, and post-merge verification remain separate gates and are not implied by
+this entry.
+
+### Final-review correctness corrections
+
+The independent final review of integrated checkpoint `aa76ebf` found three
+important service-boundary gaps. All three were reproduced with causal tests before
+production changes:
+
+- the readiness predicate accepted six configurations that `ArkModelReviewer`
+  rejects (short/control-character keys, an invalid model identifier, and insecure,
+  credential-bearing, or query-bearing endpoints);
+- malformed injected reviewer results could bypass an explicit durable degradation;
+- durable Mission cancellation only aborted the injected reviewer signal, so a
+  reviewer that ignored aborts held `cancelMission()` until the 1.5-second test
+  deadline.
+
+The combined RED run observed 32 passing and 8 failing assertions across the two
+affected files. The correction keeps `model-reviewer.ts` unchanged because active
+stacked PR #25 owns that adapter. Instead, `config.ts` mirrors the adapter's exact
+credential/model/HTTPS endpoint acceptance rules, while `ShepherdService` validates
+the closed, bounded result shape from any injected reviewer and converts invalid
+values to `invalid_response`. A service-owned cancellation settlement now races both
+the reviewer and deadline, so cancellation remains bounded even when the injected
+implementation never settles. The result validator accepts the bounded optional
+`droppedFindingCount` field planned by the stacked `MR-03` change without persisting
+it or giving it authority.
+
+Fresh Node 24 follow-up evidence:
+
+```text
+apps/server/src/config.test.ts
+# 1 file passed; 26/26 tests
+
+service.model-review.test.ts -t MR-T10b
+# 1/1 passed; 13 skipped
+
+service.model-review.test.ts -t MR-T13
+# 1/1 passed; 13 skipped
+
+npm run typecheck --workspace @launchpad/server
+# passed
+```
+
+One aggregate affected-file run reached 39/40 before a Git-fixture `worktree` command
+exited 128 in `MR-T12`; that case then passed 1/1 immediately in isolation. This is
+recorded as an infrastructure interruption, not presented as a clean aggregate pass.
+The literal exact-head Node 24 check, final independent follow-up, push/required
+checks, merge, and post-merge verification remain lifecycle gates.
 
 ## ST-02 — Truthful unavailable notification preferences
 
