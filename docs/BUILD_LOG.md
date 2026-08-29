@@ -119,6 +119,45 @@ is disabled. Hosted Node 22, `npm ci`, Docker daemon availability, the emitted c
 identity, and the real trigger remain pending until the first `mock-main` push run
 completes; CI-01 is not yet marked audited.
 
+### Hosted integration result
+
+The combined `mock-main` push at `cd23488b29d9f45ba854e11ef1b6bf41c1bcda3f`
+triggered the newly integrated workflow exactly once:
+
+- run: `33259565232`
+- URL: `https://github.com/kyashp/shepherd/actions/runs/33259565232`
+- event/ref: `push` / `mock-main`
+- job/check: `Node 22 / npm run check` (`99119063014`)
+- conclusion: `success`
+- duration: 91 seconds, from `2026-08-29T15:11:31Z` to `15:13:02Z`
+
+Every hosted step succeeded: checkout with credential persistence disabled,
+setup-node, Docker client/daemon probe, `npm ci`, literal repository gate, both
+post-action cleanups, and job completion. Bounded logs established the real hosted
+environment and counts:
+
+```text
+Node 22.23.2; npm 10.9.8
+Docker client 28.0.4; server 28.0.4
+launcher: 3/3 passed
+server: 25 files passed, 2 environment-gated files skipped;
+        551 tests passed, 5 skipped, 556 total
+web: 40 modules transformed; production build passed
+server: TypeScript production build passed
+```
+
+The hosted skip delta is explicit rather than hidden: local Docker evidence passed
+555 server tests with only the opt-in live test skipped, while hosted `CI=true`
+retained five repository-defined environment-gated skips. The dedicated hosted
+Docker probe proved both client and daemon availability independently. No secret,
+model, live-test, deployment, artifact, or write-capable path ran.
+
+**Verdict:** `CI-01` is **AUDITED at scoped 100%**, `C,I` 2/2. The stable branch
+protection check to select is `Node 22 / npm run check` from workflow `Required
+checks`. A repository administrator must still add this check to the protected
+`main` ruleset/branch-protection rule (and enable merge queue there if desired);
+that external administrative mutation was not performed by an agent.
+
 ## E2E-01 stopped at Create Agent overflow defect
 
 **Date:** 2026-08-29 (Asia/Singapore)

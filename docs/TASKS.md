@@ -1,7 +1,7 @@
 # Shepherd Completion Task Ledger
 
 **Canonical implementation snapshot:** `mock-main` at
-`5b152a0c54ac1ed97c69d69cc84a7e093f5250e9`
+`cda2446584d0f5d6c07ec8d2521d08fb6711f971`
 
 **Audited:** 2026-08-29, Asia/Singapore
 
@@ -139,7 +139,7 @@ without an open issue/PR are not active ownership claims.
 | `UI-GATE` | 0.4, 11.1–11.7 | `BLOCKED` by E2E rows | All six surfaces plus loading/empty/error/disabled/reconnect states at both viewports, screenshot corpus under `docs/ui-review/`, keyboard/focus/labels/contrast/long-ID/no-page-overflow checks. Preserve theme. `C,B,U,I`. | **25%**; 0/4; not audited |
 | `PERF-01` | 14 | `BLOCKED` by harness | Measure persisted event → visible `<=1.5s`, Plane creation, verification, candidate overlap, collision-to-promotion and total demo time; record method/sample/limits. `B,I`. | **10%**; 0/2; not audited |
 | `TEST-TS` | 16 Phase 9B | `READY`; Worker | Add a test-file TypeScript gate; production server tsconfig currently excludes `*.test.ts`. Keep production emit unchanged. `T,C,I`. | **0%**; 0/3; not audited |
-| `CI-01` | 0.1, 16, 17 | **INTEGRATED at `cda2446`; hosted run pending** | `required-checks.yml` uses supported official checkout/setup-node actions, Node 22, lockfile-backed npm cache, `npm ci`, Docker availability, and literal `npm run check`; triggers every PR, pushes to `main`/`mock-main`, and merge-queue `checks_requested`. Token permission is only `contents: read`; checkout credentials are not persisted; no `.env`, secrets, artifacts, privileged actions, or live/model path is configured. Auditor independently passed YAML/structure validation, local Docker 29.7.2, and the literal local gate: launcher 3/3, server 555/555 with one opt-in skip, both typechecks/builds. Await the hosted Node 22/Docker check before audit completion; an administrator must then require the observed stable check on protected `main`. `C,I`. | **95% scoped**; local `C` passed (1/2); hosted `I` pending; not yet audited |
+| `CI-01` | 0.1, 16, 17 | **AUDITED** at workflow `cda2446`; hosted run `33259565232` succeeded | `required-checks.yml` uses supported official checkout/setup-node actions, Node 22, lockfile-backed npm cache, `npm ci`, Docker availability, and literal `npm run check`; triggers every PR, pushes to `main`/`mock-main`, and merge-queue `checks_requested`. Token permission is only `contents: read`; checkout credentials are not persisted; no `.env`, secrets, artifacts, privileged actions, or live/model path is configured. Independent local validation passed Docker 29.7.2 and launcher 3/3 plus server 555/555 with one opt-in skip. Hosted Node 22.23.2/npm 10.9.8 and Docker client/server 28.0.4 passed locked install, launcher 3/3, server 551 passed/5 environment-gated skips, typechecks, 40-module web build and server build. Stable job check: `Node 22 / npm run check`. Administrator must require that check on protected `main`; this external rule change is not performed by agents. `C,I`. | **100% scoped**; `C,I` passed (2/2); audited |
 | `SEC-REVIEW` | 0.3, 13, 17 | `BLOCKED` by P0/E2E | Repository/store/prompt/API/DOM canary scan, five invariant mutation evidence, artifact/debug/bypass audit, then independent read-only security review and fixes. `C,S,I`. | **45%**; 0/3; not audited |
 | `STABILITY` | 16 Phase 9B | `BLOCKED` by all deterministic tests | Literal full suite passes five consecutive times; fix flakiness by cause, never sleeps/weakened assertions. `C,I`. | **0%**; 0/2; not audited |
 | `LIVE-01` | 16 Phase 3/7/8 | `BLOCKED` by P0 and external MR integration | Exactly one current live Mission plus legacy Playground continuity and exactly one live model-review smoke; bounded/redacted evidence only. `L,S,I`. | **35%**; 0/3; not audited |
@@ -157,7 +157,7 @@ without an open issue/PR are not active ownership claims.
 
 ## Count and current verdict
 
-- **45 tracked work items:** 2 audited, 4 externally held, and 39 other incomplete
+- **45 tracked work items:** 3 audited, 4 externally held, and 38 other incomplete
   items across P0/P1/P2.
 - **Next ready worker assignment:** `F-01/02` unless the integrator selects another
   non-overlapping ready row.
