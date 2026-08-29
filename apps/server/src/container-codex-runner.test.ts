@@ -1,6 +1,7 @@
 import { type ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
+import { inspect } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadConfig } from "./config.js";
 import {
@@ -289,18 +290,138 @@ describe("Container Codex runner", () => {
     );
   });
 
+  it("never exposes parsed or stderr diagnostics from a failed Runtime", async () => {
+    const opaqueCanary = "OPAQUE_BENIGN_STDERR_8675309";
+    const secretCanary = "SECRET_RUNTIME_CANARY_112358";
+    const privatePath = "/Users/private-user/.docker/run/docker.sock";
+    let owned = false;
+    const runner = new ContainerCodexRunner(config(), {
+      shepherdOwnerId: OWNER,
+      spawn: (_command, args) => {
+        const child = new FakeChild();
+        if (args[0] === "create") {
+          queueMicrotask(() => {
+            owned = true;
+            child.stdout.write(CONTAINER_ID + "\n");
+            child.finish(0);
+          });
+        } else {
+          child.stdin.setEncoding("utf8");
+          child.stdin.on("data", () => undefined);
+          child.stdin.on("error", () => undefined);
+          child.stdin.on("end", () => {
+            child.stdout.write(
+              JSON.stringify({
+                type: "error",
+                message: `${opaqueCanary} ${privatePath}`,
+              }) + "\n",
+            );
+            child.stderr.write(`${secretCanary}: operating system detail\n`);
+            child.finish(17);
+          });
+        }
+        return asChild(child);
+      },
+      execFile: async (_command, args) => {
+        if (args[0] === "rm") owned = false;
+        return { stdout: args[0] === "ps" && owned ? CONTAINER_ID + "\n" : "", stderr: "" };
+      },
+    });
+
+    const failure = await runner.run(request()).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(RuntimeExecutionError);
+    expect(failure).toMatchObject({
+      kind: "execution",
+      message: "Agent Runtime execution failed",
+    });
+    const exposed = [
+      String(failure),
+      (failure as Error).stack ?? "",
+      inspect(failure, { depth: 5 }),
+      inspect((failure as Error & { cause?: unknown }).cause, { depth: 5 }),
+    ].join("\n");
+    for (const canary of [opaqueCanary, secretCanary, privatePath]) {
+      expect(exposed).not.toContain(canary);
+    }
+    const invalidTimeout = new RuntimeExecutionError(
+      "timeout",
+      `${opaqueCanary} 9000` as unknown as number,
+    );
+    expect(invalidTimeout).toMatchObject({
+      timeoutMs: undefined,
+      message: "Agent Runtime execution timed out",
+    });
+    expect(inspect(invalidTimeout, { depth: 5 })).not.toContain(opaqueCanary);
+    const invalidKind = new RuntimeExecutionError(
+      opaqueCanary as unknown as "execution",
+      9_000,
+    );
+    expect(invalidKind).toMatchObject({
+      kind: "execution",
+      timeoutMs: undefined,
+      message: "Agent Runtime execution failed",
+    });
+    expect(inspect(invalidKind, { depth: 5 })).not.toContain(opaqueCanary);
+    expect(owned).toBe(false);
+  });
+
+  it("reconstructs create and spawn failures without raw diagnostics", async () => {
+    const opaqueCanary = "OPAQUE_CREATE_CANARY_161803";
+    const secretCanary = "SECRET_CREATE_CANARY_141421";
+    const privatePath = "/Users/private-user/.docker/run/docker.sock";
+    const exposed = async (runner: ContainerCodexRunner): Promise<string> => {
+      const failure = await runner.run(request()).catch((error: unknown) => error);
+      expect(failure).toMatchObject({
+        name: "RuntimeExecutionError",
+        kind: "execution",
+        message: "Agent Runtime execution failed",
+      });
+      return [
+        String(failure),
+        (failure as Error).stack ?? "",
+        inspect(failure, { depth: 5 }),
+        inspect((failure as Error & { cause?: unknown }).cause, { depth: 5 }),
+      ].join("\n");
+    };
+    const createFailure = new ContainerCodexRunner(config(), {
+      shepherdOwnerId: OWNER,
+      spawn: () => {
+        const child = new FakeChild();
+        queueMicrotask(() => {
+          child.stderr.write(`${opaqueCanary} ${secretCanary} ${privatePath}`);
+          child.finish(125);
+        });
+        return asChild(child);
+      },
+      execFile: async () => ({ stdout: "", stderr: "" }),
+    });
+    const spawnFailure = new ContainerCodexRunner(config(), {
+      shepherdOwnerId: OWNER,
+      spawn: () => {
+        throw new Error(`${opaqueCanary} ${secretCanary} ${privatePath}`);
+      },
+      execFile: async () => ({ stdout: "", stderr: "" }),
+    });
+
+    for (const surface of [await exposed(createFailure), await exposed(spawnFailure)]) {
+      for (const canary of [opaqueCanary, secretCanary, privatePath]) {
+        expect(surface).not.toContain(canary);
+      }
+    }
+  });
+
   it("rejects missing and duplicate Runtime thread identities", async () => {
     const missing = successfulRuntime([]);
     await expect(
       new ContainerCodexRunner(config(), missing.options).run(request()),
-    ).rejects.toThrow("did not emit thread.started");
+    ).rejects.toThrow("Agent Runtime execution failed");
 
     const duplicate = successfulRuntime(["thread-1", "thread-1"]);
     await expect(
       new ContainerCodexRunner(config(), duplicate.options).run(
         request({ agentId: "plane-execution-2" }),
       ),
-    ).rejects.toThrow("duplicate thread.started");
+    ).rejects.toThrow("Agent Runtime execution failed");
   });
 
   it("cancels an attached fresh container and waits for owner-scoped cleanup", async () => {
@@ -423,7 +544,7 @@ describe("Container Codex runner", () => {
       await Promise.resolve();
 
       expect(failure).toBeInstanceOf(Error);
-      expect((failure as Error).message).toContain("owner listing unavailable");
+      expect((failure as Error).message).toBe("Agent Runtime execution failed");
       expect(startChild).not.toBeNull();
       expect((startChild as FakeChild | null)?.signalCode).toBe("SIGTERM");
       expect(unhandled).toEqual([]);
@@ -470,7 +591,7 @@ describe("Container Codex runner", () => {
       await Promise.resolve();
 
       expect(failure).toBeInstanceOf(Error);
-      expect((failure as Error).message).toContain("owner listing unavailable");
+      expect((failure as Error).message).toBe("Agent Runtime execution failed");
       expect((failure as Error).message.length).toBeLessThan(256);
       expect(startChild).not.toBeNull();
       expect((startChild as FakeChild | null)?.signalCode).toBe("SIGTERM");

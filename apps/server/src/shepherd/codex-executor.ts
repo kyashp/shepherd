@@ -30,7 +30,6 @@ import {
   type ShepherdExecutor,
 } from "./executor.js";
 import { MAX_SHEPHERD_PROMPT_BYTES } from "./prompt.js";
-import { redactText } from "./redaction.js";
 
 const PRIVATE_HOME_PREFIX = "launchpad-shepherd-codex-";
 const PRIVATE_HOME_PATTERN = /^launchpad-shepherd-codex-[a-zA-Z0-9]{6}$/u;
@@ -40,7 +39,6 @@ const PREFLIGHT_WORKSPACE_PATTERN =
 const PRIVATE_ROOT_SENTINEL = ".shepherd-codex-home-root";
 const PRIVATE_ROOT_SENTINEL_CONTENT = "shepherd-codex-home-root-v1\n";
 const MAX_EXECUTION_ID_BYTES = 512;
-const MAX_RUNTIME_ERROR_CHARACTERS = 1_000;
 const ownerPattern =
   /^verifier\.[a-zA-Z0-9_.-]{1,48}\.[a-f0-9]{32}$/u;
 
@@ -48,23 +46,11 @@ function fingerprint(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function safeRuntimeError(error: unknown, config: AppConfig): Error {
+function safeRuntimeError(error: unknown): Error {
   if (error instanceof RunCancelledError) return new RunCancelledError();
-  let raw = "Live Shepherd Runtime failed";
-  try {
-    if (error instanceof Error && typeof error.message === "string") {
-      raw = error.message || raw;
-    }
-  } catch {
-    raw = "Live Shepherd Runtime failed";
-  }
-  const message = redactText(raw, {
-    secrets: [config.arkApiKey, config.authToken],
-    maxStringLength: MAX_RUNTIME_ERROR_CHARACTERS,
-  });
   return new RuntimeExecutionError(
     error instanceof RuntimeExecutionError ? error.kind : "execution",
-    message || "Live Shepherd Runtime failed",
+    error instanceof RuntimeExecutionError ? error.timeoutMs : undefined,
   );
 }
 
@@ -444,7 +430,7 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
     try {
       removedContainers = await this.runner.reconcileInterrupted();
     } catch (error) {
-      throw safeRuntimeError(error, this.config);
+      throw safeRuntimeError(error);
     }
     const privateRoot = await this.preparePrivateHomeRoot();
     const removedHomes = await this.removeInterruptedPrivateHomes(privateRoot);
@@ -481,7 +467,7 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
           privateHome,
         );
       } catch (error) {
-        throw safeRuntimeError(error, this.config);
+        throw safeRuntimeError(error);
       }
       if (preflightResult === false) {
         throw new Error(
@@ -573,7 +559,7 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
           timeoutMs: request.timeoutMs,
         });
       } catch (error) {
-        throw safeRuntimeError(error, this.config);
+        throw safeRuntimeError(error);
       }
       if (this.cancellationRequests.has(request.executionId)) {
         throw new RunCancelledError();
@@ -610,7 +596,7 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
     try {
       await this.runner.cancel(executionId);
     } catch (error) {
-      throw safeRuntimeError(error, this.config);
+      throw safeRuntimeError(error);
     }
     return true;
   }

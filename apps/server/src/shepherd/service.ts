@@ -2089,9 +2089,13 @@ export class ShepherdService {
   private makeFailure(error: unknown, stage: string, at: string): FailureInfo {
     const raw = error instanceof Error ? error.message : "Unknown failure";
     if (error instanceof RuntimeExecutionError) {
+      const publicMessage = new RuntimeExecutionError(
+        error.kind,
+        error.timeoutMs,
+      ).message;
       return {
         code: error.kind === "timeout" ? "agent_timeout" : "agent_runtime_error",
-        message: this.safeText(raw),
+        message: publicMessage,
         stage: "contract_execution",
         at,
         retryable: false,
@@ -4348,6 +4352,10 @@ export class ShepherdService {
       if (!candidate || !plane || candidate.executionState === "failed") return;
       candidate.executionState = "failed";
       const rawMessage = error instanceof Error ? error.message : "";
+      const runtimeFailure =
+        error instanceof RuntimeExecutionError
+          ? new RuntimeExecutionError(error.kind, error.timeoutMs)
+          : null;
       candidate.failure = error instanceof AuthorityViolationError
         ? {
               code: "unauthorized_file_change",
@@ -4357,12 +4365,13 @@ export class ShepherdService {
               retryable: false,
             }
         : {
-            code: /timed out after/iu.test(rawMessage)
+            code: runtimeFailure?.kind === "timeout" || /timed out after/iu.test(rawMessage)
               ? "candidate_timeout"
               : error instanceof Error && error.name === "PlaneCreationError"
                 ? "worktree_creation_failure"
                 : "agent_runtime_error",
-            message: this.safeText(rawMessage || "Candidate execution failed"),
+            message: runtimeFailure?.message ??
+              this.safeText(rawMessage || "Candidate execution failed"),
             stage: "candidate_execution",
             at: failedAt,
             retryable: true,

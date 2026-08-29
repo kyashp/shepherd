@@ -45,9 +45,22 @@ that limitation is explicit.
   message/stack/cause, durable/reloaded state, events, Agent and public DTO. Preserve
   cancellation, untyped unknown, verifier/candidate mapping, F-03, OPS-06 and
   authority/no-promotion behavior. No regex classification or broad redesign.
-- **Acceptance/status:** **OPEN / READY for Fixer.** Focused runner/executor/service
-  RED/GREEN, reload/API/event/Agent assertions, adjacent cancellation/F-03/verifier/
-  OPS-06, strict/literal check, diff/secret scan and independent security review.
+- **Observed correction:** candidate `fix/f-01-02-runtime-redaction` replaces every
+  Runtime diagnostic at the runner boundary with a freshly constructed typed error.
+  Its kind is normalized to the closed timeout/execution set, timeout text accepts
+  only a positive safe integer, and its public properties cannot be mutated. The
+  executor and both Contract/candidate service paths reconstruct the same bounded
+  failure before any durable/public use. Causal tests plant parsed-output, stderr,
+  create, spawn, opaque, secret, private-path and invalid-kind/timeout canaries and
+  scan Error/string/stack/inspection/cause, Contract/Plane/Mission/Agent, event,
+  store/reload and public DTO surfaces. Candidate failures exhaust without starting
+  promotion or moving the protected head. Focused 75/75 and adjacent 226/226 pass;
+  strict test typecheck and the first literal `npm run check` pass (launcher 3/3,
+  Server 607 with two explicit skips, Web 17/17, build green). External calls: 0.
+- **Acceptance/status:** **FIX CANDIDATE / Auditor integration pending.** Independent
+  security re-review closed its runner create/spawn and candidate-path findings; a
+  final closed-kind follow-up reports no High/Medium finding and the second literal
+  check passes as recorded in BUILD_LOG.
 
 ### `TST-12` — Executor preflight cleanup can expose raw filesystem cause
 

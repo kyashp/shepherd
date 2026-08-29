@@ -551,9 +551,17 @@ export class ContainerCodexRunner implements AgentRunner {
     if (this.active.has(request.agentId)) {
       throw new Error("Agent already has an active Runtime container");
     }
-    return isFreshEphemeralRunnerRequest(request)
-      ? this.runEphemeral(request)
-      : this.runLegacy(request);
+    try {
+      return await (isFreshEphemeralRunnerRequest(request)
+        ? this.runEphemeral(request)
+        : this.runLegacy(request));
+    } catch (error) {
+      if (error instanceof RunCancelledError) throw new RunCancelledError();
+      if (error instanceof RuntimeExecutionError) {
+        throw new RuntimeExecutionError(error.kind, error.timeoutMs);
+      }
+      throw new RuntimeExecutionError("execution");
+    }
   }
 
   private async runLegacy(request: RunnerRequest): Promise<RunnerResult> {
@@ -644,7 +652,7 @@ export class ContainerCodexRunner implements AgentRunner {
       if (active.timedOut) {
         throw new RuntimeExecutionError(
           "timeout",
-          "Agent Runtime exceeded the " + timeoutMs + " ms execution deadline",
+          timeoutMs,
         );
       }
       const child = this.spawnRuntime(
@@ -725,7 +733,7 @@ export class ContainerCodexRunner implements AgentRunner {
     if (active.timedOut) {
       throw new RuntimeExecutionError(
         "timeout",
-        "Agent Runtime exceeded the " + timeoutMs + " ms execution deadline",
+        timeoutMs,
       );
     }
     if (active.outputExceeded) {
@@ -796,35 +804,21 @@ export class ContainerCodexRunner implements AgentRunner {
       const timeoutMs = resolveRunnerTimeoutMs(request, this.config.codexTimeoutMs);
       throw new RuntimeExecutionError(
         "timeout",
-        "Agent Runtime exceeded the " + timeoutMs + " ms execution deadline",
+        timeoutMs,
       );
     }
     if (active.outputExceeded) {
-      throw new RuntimeExecutionError(
-        "execution",
-        "Agent Runtime output exceeded its configured byte ceiling",
-      );
+      throw new RuntimeExecutionError("execution");
     }
     if (exitCode !== 0) {
-      const detail = parsed.errors.at(-1) ?? stderr.trim() ?? "No error detail";
-      throw new RuntimeExecutionError(
-        "execution",
-        this.config.containerEngine +
-          " Runtime exited with code " +
-          exitCode +
-          ": " +
-          detail,
-      );
+      throw new RuntimeExecutionError("execution");
     }
     const threadId = requireFreshThread
       ? requireEphemeralThreadId(parsed)
       : parsed.threadId;
     const output = parsed.messages.at(-1)?.trim();
     if (!output) {
-      throw new RuntimeExecutionError(
-        "execution",
-        "Agent Runtime completed without an agent message",
-      );
+      throw new RuntimeExecutionError("execution");
     }
     return { output, threadId, usage: parsed.usage };
   }

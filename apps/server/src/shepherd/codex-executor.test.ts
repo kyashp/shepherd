@@ -254,14 +254,14 @@ describe("CodexShepherdExecutor", () => {
     const executor = new CodexShepherdExecutor(test.config, OWNER, runner);
 
     await expect(executor.run(executionRequest(test.workspace))).rejects.toThrow(
-      "simulated Runtime failure",
+      "Agent Runtime execution failed",
     );
     await expect(stat(runner.privateHomes[0]!)).rejects.toMatchObject({
       code: "ENOENT",
     });
   });
 
-  it("redacts and bounds Runtime errors before they escape live execution", async () => {
+  it("replaces Runtime diagnostics with a fixed public execution failure", async () => {
     const test = await environment();
     const runner = new FakeContainerRunner();
     const commonPatternCanary = "SECONDARY_TOKEN_CANARY_778899";
@@ -283,10 +283,10 @@ describe("CodexShepherdExecutor", () => {
     expect(failure).toBeInstanceOf(RuntimeExecutionError);
     expect(failure).toMatchObject({ kind: "execution" });
     expect(failure).not.toBe(runner.runError);
-    expect((failure as Error).message).not.toContain(test.config.arkApiKey);
-    expect((failure as Error).message).not.toContain(commonPatternCanary);
-    expect((failure as Error).message).toContain("[REDACTED]");
-    expect((failure as Error).message.length).toBeLessThanOrEqual(1_000);
+    expect((failure as Error).message).toBe("Agent Runtime execution failed");
+    expect(String(failure)).not.toContain(test.config.arkApiKey);
+    expect(String(failure)).not.toContain(commonPatternCanary);
+    expect((failure as Error).stack).not.toContain(commonPatternCanary);
     expect((failure as Error & { cause?: unknown }).cause).toBeUndefined();
     await expect(stat(runner.privateHomes[0]!)).rejects.toMatchObject({
       code: "ENOENT",
@@ -298,7 +298,7 @@ describe("CodexShepherdExecutor", () => {
     const runner = new FakeContainerRunner();
     runner.runError = new RuntimeExecutionError(
       "timeout",
-      "deadline exposed " + test.config.arkApiKey,
+      4_321,
     );
     const executor = new CodexShepherdExecutor(test.config, OWNER, runner);
 
@@ -308,15 +308,19 @@ describe("CodexShepherdExecutor", () => {
 
     expect(failure).toBeInstanceOf(RuntimeExecutionError);
     expect(failure).toMatchObject({ kind: "timeout" });
-    expect((failure as Error).message).toContain("[REDACTED]");
+    expect((failure as Error).message).toBe(
+      "Agent Runtime exceeded the 4321 ms execution deadline",
+    );
     expect((failure as Error).message).not.toContain(test.config.arkApiKey);
   });
 
   it("keeps Runtime secrets out of thrown and persisted service failures", async () => {
     const test = await environment();
     const runner = new FakeContainerRunner();
+    const opaqueCanary = "OPAQUE_BENIGN_RUNTIME_DIAGNOSTIC_481516";
+    const privatePath = "/Users/private-user/runtime/socket.sock";
     runner.runError = new Error(
-      "docker stderr leaked bearer " + test.config.arkApiKey,
+      `${opaqueCanary} bearer ${test.config.arkApiKey} at ${privatePath}`,
     );
     const executor = new CodexShepherdExecutor(test.config, OWNER, runner);
     const storePath = path.join(test.root, "state.json");
@@ -344,13 +348,22 @@ describe("CodexShepherdExecutor", () => {
       .catch((error: unknown) => error);
 
     expect(failure).toBeInstanceOf(Error);
-    expect((failure as Error).message).not.toContain(test.config.arkApiKey);
-    expect(await readFile(storePath, "utf8")).not.toContain(
-      test.config.arkApiKey,
-    );
-    expect(JSON.stringify(service.state())).not.toContain(
-      test.config.arkApiKey,
-    );
+    expect((failure as Error).message).toBe("Agent Runtime execution failed");
+    const errorSurfaces = [
+      String(failure),
+      (failure as Error).stack ?? "",
+      inspect(failure, { depth: 5 }),
+      inspect((failure as Error & { cause?: unknown }).cause, { depth: 5 }),
+    ].join("\n");
+    const durableSurfaces = [
+      await readFile(storePath, "utf8"),
+      JSON.stringify(service.state()),
+    ].join("\n");
+    for (const canary of [opaqueCanary, test.config.arkApiKey, privatePath]) {
+      expect(errorSurfaces).not.toContain(canary);
+      expect(durableSurfaces).not.toContain(canary);
+    }
+    expect(durableSurfaces).toContain("Agent Runtime execution failed");
   });
 
   it("preserves cancellation type without propagating a raw cancellation error", async () => {

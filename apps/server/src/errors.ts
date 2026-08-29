@@ -17,13 +17,34 @@ export class RunCancelledError extends Error {
 
 export type RuntimeExecutionFailureKind = "timeout" | "execution";
 
-/** Typed boundary failure from an Agent Runtime; public/persisted consumers must redact its message. */
+/** Typed Agent Runtime failure with a bounded, operator-safe public message. */
 export class RuntimeExecutionError extends Error {
+  public readonly kind!: RuntimeExecutionFailureKind;
+  public readonly timeoutMs: number | undefined;
+
   constructor(
-    public readonly kind: RuntimeExecutionFailureKind,
-    message: string,
+    kind: RuntimeExecutionFailureKind,
+    timeoutMs?: number,
   ) {
-    super(message);
+    const safeKind: RuntimeExecutionFailureKind =
+      kind === "timeout" ? "timeout" : "execution";
+    const safeTimeoutMs =
+      safeKind === "timeout" &&
+      Number.isSafeInteger(timeoutMs) &&
+      (timeoutMs ?? 0) > 0
+        ? timeoutMs
+        : undefined;
+    super(
+      safeKind === "timeout"
+        ? safeTimeoutMs === undefined
+          ? "Agent Runtime execution timed out"
+          : `Agent Runtime exceeded the ${safeTimeoutMs} ms execution deadline`
+        : "Agent Runtime execution failed",
+    );
     this.name = "RuntimeExecutionError";
+    Object.defineProperties(this, {
+      kind: { value: safeKind, enumerable: true },
+      timeoutMs: { value: safeTimeoutMs, enumerable: true },
+    });
   }
 }

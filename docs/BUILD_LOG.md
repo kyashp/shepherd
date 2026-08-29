@@ -3706,3 +3706,34 @@ passed 102/102, strict test typecheck passed, and two literal
 `npm run check` runs passed server 606/606 with two opt-in skips, Web 17/17, launcher
 3/3 and both builds. No live/model call, UI/theme change or schema migration ran.
 F-01/02 remains at 95% pending independent Auditor and hosted integration evidence.
+## 2026-08-30 — TST-13 bounded Agent Runtime failure candidate
+
+- **Branch/base:** `fix/f-01-02-runtime-redaction` from Auditor evidence
+  `b03b17f` (F-01/02 parent `685e4ff`); pushed before implementation.
+- **RED:** non-zero Agent Runtime output selected parsed error/raw stderr as
+  `RuntimeExecutionError.message`. Executor secret/path redaction retained opaque
+  diagnostics, and Contract/candidate failure paths persisted that message through
+  Mission, Contract, Plane, Agent, events, state/reload and public DTO.
+- **Correction:** `RuntimeExecutionError` constructs fixed bounded text from a
+  runtime-normalized closed kind and optional positive safe-integer timeout; its
+  public kind/deadline fields are non-writable. `ContainerCodexRunner.run`
+  reconstructs cancellation/typed errors and maps every other create/start/child/
+  cleanup operational failure to fixed execution text. Executor and service
+  Contract/candidate boundaries reconstruct again before durable/public use. No raw
+  stdout/stderr, parsed failure, model output, path, command or cause is retained.
+- **Causal evidence:** planted parsed-output, stderr, create-exit, synchronous spawn,
+  opaque benign, secret, private-path, hostile-kind and invalid-timeout canaries are
+  absent from Error message/string/stack/inspection/cause and Contract, Plane,
+  Mission, Agent `lastError`, events, raw store, reload and public mission DTO.
+  Candidate Runtime failure exhausts in `attention_required`, starts no promotion,
+  creates no promoted candidate and leaves the protected head at Mission base.
+- **Observed checks:** runner 22/22; focused runner/executor/service 75/75; adjacent
+  service/verifier/model/config 226/226; strict Server test typecheck green; first
+  literal `npm run check` green (launcher 3/3, Server 607 passed + two explicit
+  skips, Web 17/17, production builds green). No live/model/network call ran.
+- **Security review:** first read-only pass found create/spawn diagnostics and the
+  candidate path; second found hostile `kind` mutation. Both were corrected with
+  causal tests. Final read-only follow-up reports no remaining High/Medium finding
+  and a scoped PASS. Second literal `npm run check` is green (launcher 3/3,
+  Server 609 passed + two explicit skips, Web 17/17, production builds green).
+  Auditor U/I remain required.

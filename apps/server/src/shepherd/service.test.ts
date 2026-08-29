@@ -481,6 +481,26 @@ class FailCookieCandidateOnceExecutor implements ShepherdExecutor {
   }
 }
 
+class TypedFailingCandidateExecutor implements ShepherdExecutor {
+  readonly kind = "deterministic_fixture" as const;
+  private readonly inner = new DeterministicFixtureExecutor();
+
+  constructor(private readonly diagnostic: string) {}
+
+  async run(request: ShepherdExecutionRequest): Promise<ShepherdExecutionResult> {
+    if (request.operation.kind === "resolution_candidate") {
+      const failure = new RuntimeExecutionError("execution");
+      failure.message = this.diagnostic;
+      throw failure;
+    }
+    return await this.inner.run(request);
+  }
+
+  async cancel(executionId: string): Promise<boolean> {
+    return await this.inner.cancel(executionId);
+  }
+}
+
 class TypedFailingContractExecutor implements ShepherdExecutor {
   readonly kind = "deterministic_fixture" as const;
 
@@ -2199,6 +2219,52 @@ describe("Shepherd deterministic walking skeleton", () => {
     ).toBe(true);
   }, 30_000);
 
+  it("keeps typed candidate Runtime diagnostics out of durable no-promotion state", async () => {
+    const caseRoot = await makeCaseRoot();
+    const storePath = path.join(caseRoot, "state.json");
+    const store = new JsonStore(storePath);
+    await store.initialize();
+    const opaqueCanary = "OPAQUE_CANDIDATE_RUNTIME_424242";
+    const privatePath = "/Users/private-user/candidate/result.json";
+    const diagnostic = `${opaqueCanary} ${privatePath}`;
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      executor: new TypedFailingCandidateExecutor(diagnostic),
+    });
+
+    await expect(service.runDeterministicDemo()).rejects.toThrow(
+      "Resolution requires attention: all_candidates_failed",
+    );
+    const mission = service.state().missions.at(-1);
+    expect(mission).toMatchObject({
+      state: "attention_required",
+      attentionReason: "all_candidates_failed",
+    });
+    const detail = service.missionDetail(mission?.id ?? "missing");
+    expect(detail?.candidates.every((candidate) =>
+      candidate.executionState === "failed" &&
+      candidate.promotionState === "not_started" &&
+      candidate.failure?.message === "Agent Runtime execution failed"
+    )).toBe(true);
+    expect(detail?.events.some((event) => event.type === "promotion_started")).toBe(false);
+    expect(detail?.project.protectedHeadCommit).toBe(mission?.baseCommit);
+
+    const reloaded = new JsonStore(storePath);
+    await reloaded.initialize();
+    const surfaces = [
+      JSON.stringify(detail),
+      JSON.stringify(toPublicMissionDetail(detail!, [])),
+      JSON.stringify(reloaded.snapshot()),
+      await readFile(storePath, "utf8"),
+    ].join("\n");
+    for (const canary of [opaqueCanary, privatePath]) {
+      expect(surfaces).not.toContain(canary);
+    }
+  }, 30_000);
+
   it.each([
     {
       kind: "timeout" as const,
@@ -2210,19 +2276,27 @@ describe("Shepherd deterministic walking skeleton", () => {
       kind: "execution" as const,
       code: "agent_runtime_error" as const,
       contractState: "execution_failed" as const,
-      message: "Agent Runtime exited before producing a result",
+      message: "Agent Runtime execution failed",
     },
   ])("persists typed Agent Runtime $kind failures across every terminal surface", async ({ kind, code, contractState, message }) => {
     const caseRoot = await makeCaseRoot();
     const statePath = path.join(caseRoot, "state.json");
     const store = new JsonStore(statePath);
     await store.initialize();
+    const opaqueCanary = "OPAQUE_TYPED_RUNTIME_CANARY_314159";
+    const secretCanary = "SECRET_TYPED_RUNTIME_CANARY_271828";
+    const privatePath = "/Users/private-user/runtime/private.sock";
+    const runtimeError = new RuntimeExecutionError(
+      kind,
+      kind === "timeout" ? 1_234 : undefined,
+    );
+    runtimeError.message = `${opaqueCanary} ${secretCanary} ${privatePath}`;
     const service = new ShepherdService({
       store,
       managedRoot: path.join(caseRoot, "managed"),
       agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
       verifier: new HostTrustedFixtureVerifier(),
-      executor: new TypedFailingContractExecutor(new RuntimeExecutionError(kind, message)),
+      executor: new TypedFailingContractExecutor(runtimeError),
     });
 
     const { missionId } = await startTrackedTestMission(service);
@@ -2249,6 +2323,16 @@ describe("Shepherd deterministic walking skeleton", () => {
     const persisted = reloaded.snapshot();
     expect(persisted.shepherd.missions.find((mission) => mission.id === missionId)?.failure?.code).toBe(code);
     expect(persisted.shepherd.contracts.filter((contract) => contract.missionId === missionId).every((contract) => contract.failure?.code === code)).toBe(true);
+    const publicAndDurable = [
+      JSON.stringify(detail),
+      JSON.stringify(toPublicMissionDetail(detail, [])),
+      JSON.stringify(persisted),
+      await readFile(statePath, "utf8"),
+    ].join("\n");
+    for (const canary of [opaqueCanary, secretCanary, privatePath]) {
+      expect(publicAndDurable).not.toContain(canary);
+    }
+    expect(publicAndDurable).toContain(message);
   }, 30_000);
 
   it("persists cancellation before stopping exact executor identities", async () => {
