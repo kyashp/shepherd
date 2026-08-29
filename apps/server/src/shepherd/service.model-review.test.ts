@@ -27,6 +27,15 @@ import {
 } from "./service.js";
 import type { VerificationRequest } from "./verifier.js";
 
+/**
+ * Each test drives a full deterministic Mission with real Git worktrees and real
+ * trusted fixture checks, which exceeds Vitest's 5s default on ordinary hardware.
+ * Declared locally so this file passes under the repository default config rather
+ * than depending on a --testTimeout flag.
+ */
+const ONE_MISSION_BUDGET_MS = 180_000;
+const TWO_MISSION_BUDGET_MS = 360_000;
+
 const repositoryTestRoot = fileURLToPath(
   new URL("../../../../.tmp/shepherd-tests/", import.meta.url),
 );
@@ -297,7 +306,7 @@ describe("Shepherd advisory model review composition", () => {
     const events = advisoryEvents(service, result.mission.id);
     expect(events.completed).toHaveLength(0);
     expect(events.degraded).toHaveLength(0);
-  });
+  }, ONE_MISSION_BUDGET_MS);
 
   it("MR-T06 calls the reviewer exactly once with bounded trusted evidence", async () => {
     const reviewer = new ScriptedReviewer(completed([]));
@@ -330,7 +339,7 @@ describe("Shepherd advisory model review composition", () => {
     expect(Buffer.byteLength(serialized, "utf8")).toBeLessThanOrEqual(
       MODEL_REVIEW_MAX_INPUT_BYTES,
     );
-  });
+  }, ONE_MISSION_BUDGET_MS);
 
   it("MR-T03 makes modelReviewEnabled causally gate the reviewer call", async () => {
     const reviewer = new ScriptedReviewer(completed([]));
@@ -347,7 +356,7 @@ describe("Shepherd advisory model review composition", () => {
     const enabledRun = await service.runDeterministicDemo({ projectId: "other-demo" });
     expect(reviewer.inputs).toHaveLength(1);
     expectDeterministicResolution(service, enabledRun.mission.id);
-  });
+  }, TWO_MISSION_BUDGET_MS);
 
   it("MR-T07 records a durable degradation without failing the Mission", async () => {
     const reviewer = new ScriptedReviewer(async () => ({
@@ -370,7 +379,7 @@ describe("Shepherd advisory model review composition", () => {
     expect(degraded.details.retryable).toBe(true);
     expect(degraded.details.advisory).toBe(true);
     expect(degraded.missionId).toBe(result.mission.id);
-  });
+  }, ONE_MISSION_BUDGET_MS);
 
   it("MR-T14 ignores hostile findings and preserves the deterministic resolution", async () => {
     const hostileKey = "billing.provider";
@@ -435,7 +444,7 @@ describe("Shepherd advisory model review composition", () => {
     );
     expect(advisoryDto?.details.findingCount).toBe(1);
     expect(advisoryDto?.details.advisory).toBe(true);
-  });
+  }, ONE_MISSION_BUDGET_MS);
 
   it("MR-T10 converts a thrown reviewer into a durable degradation without leaking", async () => {
     const canary = "MODEL-REVIEW-CANARY-thrown-4471";
@@ -457,7 +466,7 @@ describe("Shepherd advisory model review composition", () => {
     expect(events.degraded[0]?.details.retryable).toBe(false);
     expect((await readFile(storePath, "utf8")).includes(canary)).toBe(false);
     expect(JSON.stringify(service.state()).includes(canary)).toBe(false);
-  });
+  }, ONE_MISSION_BUDGET_MS);
 
   it("MR-T04 records nothing when the reviewer reports itself disabled", async () => {
     const reviewer = new ScriptedReviewer(async () => ({ status: "disabled" }));
@@ -470,7 +479,7 @@ describe("Shepherd advisory model review composition", () => {
     const events = advisoryEvents(service, result.mission.id);
     expect(events.completed).toHaveLength(0);
     expect(events.degraded).toHaveLength(0);
-  });
+  }, ONE_MISSION_BUDGET_MS);
 
   it("MR-T12 records nothing when the reviewer reports cancellation", async () => {
     const reviewer = new ScriptedReviewer(async () => ({ status: "cancelled" }));
@@ -483,7 +492,7 @@ describe("Shepherd advisory model review composition", () => {
     const events = advisoryEvents(service, result.mission.id);
     expect(events.completed).toHaveLength(0);
     expect(events.degraded).toHaveLength(0);
-  });
+  }, ONE_MISSION_BUDGET_MS);
 
   it("MR-T16 never lets a configured secret cross the provider boundary", async () => {
     const apiKey = "ark-secret-value-must-not-escape-123456";
@@ -517,5 +526,5 @@ describe("Shepherd advisory model review composition", () => {
     expect(events.completed).toHaveLength(1);
     expect(events.degraded).toHaveLength(0);
     expect((await readFile(storePath, "utf8")).includes(apiKey)).toBe(false);
-  });
+  }, ONE_MISSION_BUDGET_MS);
 });
