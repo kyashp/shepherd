@@ -94,6 +94,52 @@ contracts; the audit did not retain a weakening mutation merely to recreate them
 `TEST-TS` is **AUDITED, scoped 100%**, with `T,C,I` passed 3/3. Hosted Node 22
 evidence is recorded after the final audit-documentation push.
 
+## UI-03 Create Agent preset-radio overflow correction
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Branch/base:** `fix/mock-main` / `39211213bc1f77e8873673eda9e7c87da2b24abd`
+
+The causal real-browser regression was added before production CSS changed. At
+`1280x800`, Create Agent failed with document scroll/client width `2299/1280`; at
+`1440x900`, it failed with `2579/1440`. The accessible four-radio group, initial
+Generalist selection, one native Tab stop, ArrowLeft focus/selection, and wrapping
+label click all passed before the overflow assertion, preserving the existing
+semantic baseline.
+
+The correction changes only the preset-radio CSS: each transparent absolute native
+radio is `1x1`, and inherited `min-height`, margin, padding, and border are reset.
+No ancestor overflow rule, React/API contract, visible card geometry, or theme was
+changed. Independent read-only review then found that the global focus outline was
+computed on the transparent radio rather than visibly painted on its card. A second
+minimal selector applies the same existing purple 2px focus outline to the wrapping
+label through `:has(input:focus-visible)`; the browser regression asserts that
+visible card treatment directly.
+
+Observed final evidence:
+
+- focused Chromium: 2/2 passed at exact `1280x800` and `1440x900`; document
+  scroll/client widths were `1280/1280` and `1440/1440`, document/body X/Y
+  invariants passed, and all four computed radio boxes were `1x1` with zero
+  inherited minimum height and spacing;
+- semantics: four radios under the `Authority preset` group, Generalist initially
+  checked, one Tab stop, arrow-key focus plus selection, visible focused-card
+  outline, all four wrapping labels selectable, and exactly one checked radio;
+- full deterministic browser harness: 4/4 passed across the two viewports;
+- screenshots inspected at
+  `docs/ui-review/ui-03-create-agent/{1280x800,1440x900}.png`; hashes are
+  `b64a61aa0c01566a710e3a480f6186a95e97075a06d97c89c327ea10cfec2de9` and
+  `ac630408a97445d439f79305b8c25854bdc07d3bb6fa741f45e3509055a26804`;
+- literal `npm run check`: both typechecks, launcher 3/3, server 563/563 with one
+  opt-in live skip, and both production builds passed.
+
+The independent read-only re-review reran the focused browser slice 2/2, observed
+the visible card outline, passed `git diff --check`, and closed its earlier Medium
+finding with no remaining UI-03 findings.
+
+No live/model request was made. `UI-03` is a **100% scoped candidate** with
+`T,C,B,U` passed; integrated Auditor gate `I`, `E2E-01`, and `UI-GATE` remain
+pending and are not claimed here.
+
 ## CI-01 required-check workflow candidate
 
 **Date:** 2026-08-29 (Asia/Singapore)

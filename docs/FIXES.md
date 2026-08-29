@@ -127,8 +127,20 @@ that limitation is explicit.
   preserve the current theme, E2E-01 proceeds beyond its first gate, and literal
   `npm run check` passes. Independent rendered `ui-reviewer` review and integrated
   Auditor rerun remain required.
-- **Owner/status:** Fixer / `READY`; **100% causal diagnosis, 0% correction**; no
-  production change made by the Worker.
+- **Observed correction:** the hidden native radio alone is now `1x1`, with inherited
+  `min-height`, margin, padding, and border neutralized. Document scroll/client width
+  is `1280/1280` and `1440/1440`; document/body Y invariants also pass. The visible
+  wrapping card receives the existing purple focus treatment through
+  `:has(input:focus-visible)`, rather than relying on an outline around a transparent
+  one-pixel control. Causal Playwright passed 2/2 and proves four accessible radios,
+  Generalist checked, one native Tab stop, arrow focus/selection, visible card focus,
+  every label click, exactly one checked radio, and bounded computed box styles.
+  Full browser harness passed 4/4. Literal `npm run check` passed launcher 3/3,
+  server 563/563 with one opt-in live skip, both typechecks, and both builds.
+  Screenshots `docs/ui-review/ui-03-create-agent/{1280x800,1440x900}.png` preserve
+  the accepted theme. No live/model call occurred.
+- **Owner/status:** Fixer / `RESOLVED — PENDING INTEGRATED AUDIT`; **100% scoped
+  candidate**, `T,C,B,U` passed 4/5 and `I` remains pending.
 
 ### `OPS-06` — macOS Docker Desktop live Shepherd preflight fails opaquely
 

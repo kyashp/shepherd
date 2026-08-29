@@ -2151,8 +2151,19 @@ tbody tr:last-child td {
   box-shadow: inset 0 0 0 1px rgba(105, 84, 217, 0.12);
 }
 
+.preset-grid label:has(input:focus-visible) {
+  outline: 2px solid #8773e8;
+  outline-offset: 2px;
+}
+
 .preset-grid input {
   position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
   opacity: 0;
   pointer-events: none;
 }
