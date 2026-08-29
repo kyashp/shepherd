@@ -62,12 +62,12 @@ that limitation is explicit.
   `worktree_creation_failure` at `plane_unwind`; F-06 `persistence_error` remains
   unclaimed. Planted raw path/OS/secret cleanup diagnostics are absent from durable,
   reload and public DTO surfaces.
-- **Status:** **FIXER + independent security review VERIFIED candidate / Auditor
-  pending.** Causal rows 2/2, service/real-Git 61/61,
-  security/F-01/recovery/API adjacency 186/186, strict test types and two literal
-  full checks pass (each: launcher 3/3, Server 665 plus two opt-in skips, Web 17/17,
-  both builds). Security re-review found no High/Medium issue; explicit reload and
-  non-busy Agent assertions close its actionable Low notes. No UI/live/model call ran.
+- **Status:** **CLOSED / AUDITED** at `2cef988`. Auditor focused paths 3/3, real Git
+  20/20, adjacent 174/174, literal full gate, independent security and hosted run
+  `33280187821` passed. A Low evidence limitation remains: the cleanup-double-fault
+  test mocks the complete destroy operation rather than each partial Git teardown
+  phase; retained branch metadata remains operator-discoverable and no false cleanup
+  is claimed. No UI/live/model call ran.
 
 `TST-13`–`TST-16` are **CLOSED / AUDITED** at `83cc1d0`. The complete
 runner→executor→durable/public boundary and all 47 inventoried executor filesystem/
@@ -826,7 +826,7 @@ operator-cleanup availability residual; cross-process automatic retry is not cla
 |---|---|---|---|
 | `F-01` | Source-evidenced: Contract timeout may surface as failure code `unknown` instead of `agent_timeout`. | Typed timeout propagated through Contract/Plane/Agent/Mission/event/API/UI; no message-regex classification. | **WORKER VERIFIED** candidate on `work/mock-main`; 95% pending Auditor |
 | `F-02` | Source-evidenced: Contract runtime errors can become generic `unknown`. | Shared typed stage error only; preserve candidate-specific handling. | **WORKER VERIFIED** candidate on `work/mock-main`; 95% pending Auditor |
-| `F-04` | Source-evidenced: initial Plane creation can fail before durable stage evidence; later mapper is too late. | Evidence on owning Contract/Mission without inventing a successful Plane. | **BLOCKED by TST-17**; first-call path passes, second-call batch unwind fails |
+| `F-04` | Source-evidenced: initial Plane creation can fail before durable stage evidence; later mapper is too late. | Evidence on owning Contract/Mission without inventing a successful Plane. | **AUDITED** at `2cef988`; TST-17 closed |
 | `F-05` | Existing Git test proves conflict detection, while service path converts it to a generic throw. | Persist bounded conflict files, integration state/event and no promotion. | Worker / ready |
 | `F-06` | Store rollback is tested; recovery-visible `persistence_failed` evidence is absent. | Journal/reconciliation-safe evidence; never claim a failed write persisted itself. | Worker / depends typed foundation |
 | `F-07` | Source-evidenced: candidate timeout state mapping is inconsistent and partly regex-based. | One typed timeout class and canonical state mapping. | Worker / ready |

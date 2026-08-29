@@ -7,6 +7,20 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — F-04 / TST-17 audited and integrated
+
+Exact implementation `2cef988` passed Auditor focused creation/unwind/double-fault
+3/3, real Git 20/20, adjacent service/executor/container/recovery/store/API/state/
+verifier 174/174, and literal `npm run check` (launcher 3/3, Server 665 passed plus
+two opt-in skips, Web 17/17, both builds). Successful unwind removes only exact
+current-batch durable Plane associations, worktrees and branches; cleanup failure
+truthfully retains a failed Plane and interrupted Contract under bounded
+`plane_unwind` evidence while Mission keeps the primary `plane_creation` failure.
+Agents release, active-project and protected-head invariants hold, and no downstream
+work runs. Independent security fallback found no High/Medium issue. Hosted Node 22
+run `33280187821` passed. F-04 and TST-17 are audited scoped 100%. The Low partial-
+teardown injection granularity limitation is documented; no live/model/UI call ran.
+
 ## 2026-08-30 — TST-17 transactional initial Plane unwind candidate
 
 The Fixer preserved the second-of-two RED from `5cc24f5`: one durable ready Plane,
