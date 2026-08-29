@@ -55,7 +55,7 @@ independent Auditor integration and the `I` gate remain pending.
 
 **Candidate:** `bab6de18e7c28e5f8a132f8d80163f509c890a1e`
 
-**Integrated implementation:** `0cb431a0e581f65373239941654574c9936a461f`
+**Integrated implementation:** `0cb431a0420e3d7f77784fe4c62b42f92710446c`
 
 The Auditor fetched the candidate without touching the Worker's worktree, reviewed
 the exact parent-relative diff, and found one production-adjacent test change:

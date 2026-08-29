@@ -1,7 +1,7 @@
 # Shepherd Completion Task Ledger
 
 **Canonical implementation snapshot:** `mock-main` at
-`0cb431a0e581f65373239941654574c9936a461f`
+`0cb431a0420e3d7f77784fe4c62b42f92710446c`
 
 **Audited:** 2026-08-29, Asia/Singapore
 
