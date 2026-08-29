@@ -1760,3 +1760,47 @@ checks and integrator disposition of the unrelated suite instability.
 PR #9 remains the bounded `GC-01` correction. The requested no-project composer
 behavior is `GC-05`, which issue #5 and this handover explicitly exclude; it needs
 its own issue, owner, branch, regression, and review.
+
+## 2026-08-30 — GC-01 post-merge verification
+
+PR #9 merged into `main` as `fae0852e284619c2912eeeb8ac3ebe156f45b026`.
+GitHub closed issue #5 through the linked merge, and the remote
+`fix/5-gc-01-quoted-mentions` branch was removed.
+
+Fresh Node 24 Linux checks ran against that exact merged-main tree:
+
+```sh
+npm run test -w @launchpad/server -- src/project-group-mention.test.ts
+# 1 file passed; 8 tests passed
+
+npm run typecheck
+# web and server workspace typechecks passed
+
+npm run build
+# web Vite production build and server TypeScript build passed
+```
+
+The in-app browser reported no available backend, so the exact merged-main Vite
+page was exercised with the documented terminal Chromium fallback. At both
+`1280x800` and `1440x900`, mouse, Enter, and Space produced
+`@"Frontend Agent" Keep this draft\nincluding its second line`; focus returned
+to the composer with the collapsed caret at `59..59`, and keyboard focus retained
+a solid 2 px visible outline. During a deferred POST, both the mention control and
+composer were disabled and programmatic activation did not mutate the submitted
+draft. Exact 2,000-character insertion succeeded; the over-boundary attempt stayed
+at 2,000 and displayed the explicit limit error. Each run issued exactly one
+expected group-message POST and had no horizontal overflow, clipping, layout
+overlap, console errors, page errors, or failed requests.
+
+The temporary screenshots were visually inspected and were not committed:
+
+```text
+1280x800  sha256 980854CC1C489C91BE5EBAFD42B940044AEF167FABFE8FF13E2E65D546D7CEC6
+1440x900  sha256 507CC82FE4F8C43E23A72BD022FF7987EAA2EF4518C20AD9007D3C05159363E6
+```
+
+The full `npm run check` was not rerun post-merge. Its latest pre-merge attempt
+remains the explicitly non-green result recorded above: 557 tests passed, 2
+unchanged server tests failed under suite load, and 5 were skipped. This scoped
+post-merge gate does not reclassify that unrelated process/shared-state
+instability, and it does not close the separately owned `GC-02..07` work.
