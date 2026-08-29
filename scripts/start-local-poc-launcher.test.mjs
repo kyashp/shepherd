@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -80,12 +80,51 @@ test("forwards Node-parsed dotenv values to the local PoC child without logging 
   assert.doesNotMatch(result.stderr, new RegExp(arkModelSentinel, "u"));
 });
 
+test("runs the local PoC child when invoked through a symlinked launcher path", async () => {
+  const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "ops-05-"));
+  temporaryDirectories.push(temporaryDirectory);
+  const scriptsDirectory = path.join(temporaryDirectory, "scripts");
+  const capturePath = path.join(temporaryDirectory, "child-ran");
+  await mkdir(scriptsDirectory);
+  await Promise.all([
+    readFile(path.join(repositoryRoot, "scripts", "start-local-poc-launcher.mjs"), "utf8").then(
+      (contents) => writeFile(path.join(scriptsDirectory, "start-local-poc-launcher.mjs"), contents),
+    ),
+    writeFile(
+      path.join(scriptsDirectory, "start-local-poc.sh"),
+      `#!/usr/bin/env bash\nprintf "child-ran\\n" > "$OPS_05_CAPTURE"\n`,
+      "utf8",
+    ),
+  ]);
+  await Promise.all([
+    chmod(path.join(scriptsDirectory, "start-local-poc.sh"), 0o755),
+    symlink(
+      path.join(scriptsDirectory, "start-local-poc-launcher.mjs"),
+      path.join(scriptsDirectory, "launcher-alias.mjs"),
+    ),
+  ]);
+
+  const result = await run(process.execPath, [path.join(scriptsDirectory, "launcher-alias.mjs")], {
+    cwd: temporaryDirectory,
+    env: { OPS_05_CAPTURE: capturePath },
+  });
+
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.signal, null);
+  assert.equal(await readFile(capturePath, "utf8"), "child-ran\n");
+});
+
 test("direct shell launch reads dotenv and localizes Docker-default data paths", async () => {
   const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "ops-02-"));
   temporaryDirectories.push(temporaryDirectory);
   const scriptsDirectory = path.join(temporaryDirectory, "scripts");
   const binDirectory = path.join(temporaryDirectory, "bin");
   const capturePath = path.join(temporaryDirectory, "startup-environment");
+  const homeDirectory = path.join(temporaryDirectory, "home");
+  const localStateRoot =
+    process.platform === "darwin"
+      ? path.join(homeDirectory, ".volc-agent-launchpad")
+      : path.join(temporaryDirectory, ".local");
   const arkKeySentinel = "ops-02-ark-key-sentinel";
   const arkModelSentinel = "ops-02-ark-model-sentinel";
   await Promise.all([mkdir(scriptsDirectory), mkdir(binDirectory)]);
@@ -147,6 +186,7 @@ test("direct shell launch reads dotenv and localizes Docker-default data paths",
     cwd: temporaryDirectory,
     env: {
       PATH: `${binDirectory}${path.delimiter}${process.env.PATH ?? ""}`,
+      HOME: homeDirectory,
       OPS_02_CAPTURE: capturePath,
     },
   });
@@ -160,11 +200,11 @@ test("direct shell launch reads dotenv and localizes Docker-default data paths",
   assert.deepEqual((await readFile(capturePath, "utf8")).trim().split("\n"), [
     arkKeySentinel,
     arkModelSentinel,
-    path.join(temporaryDirectory, ".local", "data"),
-    path.join(temporaryDirectory, ".local", "workspaces"),
-    path.join(temporaryDirectory, ".local", "codex-home"),
-    path.join(temporaryDirectory, ".local", "data", "shepherd"),
-    path.join(temporaryDirectory, ".local", "data", "shepherd-codex-homes"),
+    path.join(localStateRoot, "data"),
+    path.join(localStateRoot, "workspaces"),
+    path.join(localStateRoot, "codex-home"),
+    path.join(localStateRoot, "data", "shepherd"),
+    path.join(localStateRoot, "data", "shepherd-codex-homes"),
     "127.0.0.1",
   ]);
 
@@ -195,6 +235,7 @@ test("direct shell launch reads dotenv and localizes Docker-default data paths",
     cwd: temporaryDirectory,
     env: {
       PATH: `${binDirectory}${path.delimiter}${process.env.PATH ?? ""}`,
+      HOME: homeDirectory,
       OPS_02_CAPTURE: capturePath,
     },
   });
@@ -230,6 +271,7 @@ test("direct shell launch reads dotenv and localizes Docker-default data paths",
       cwd: temporaryDirectory,
       env: {
         PATH: `${binDirectory}${path.delimiter}${process.env.PATH ?? ""}`,
+        HOME: homeDirectory,
         OPS_02_CAPTURE: capturePath,
       },
     });

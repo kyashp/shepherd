@@ -7,6 +7,47 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## OPS-05 canonical launcher-entry candidate
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Branch:** `fix/31-ops-05-canonical-launcher-entry`
+**Issue:** [#31](https://github.com/kyashp/shepherd/issues/31)
+
+On macOS, `os.tmpdir()` returned a lexical `/var/...` path while `realpath()`
+returned its `/private/var/...` filesystem identity. The launcher compared the
+lexical `process.argv[1]` with ESM's canonical module path, misclassified direct
+execution as an import, and exited before starting its child. The preserved initial
+launcher suite RED was 1/2: the direct-shell fixture failed with missing
+`startup-environment`. A new deterministic symlink-entry RED then failed 0/1
+because its child-side-effect marker was absent even though the launcher exited 0.
+
+The launcher now canonicalizes both entry paths with `realpath()` before comparing
+them. An identity-resolution failure is an explicit generic launcher error (exit 1),
+never a safe import classification. The regression invokes a symlink alias and
+asserts that its child writes the marker. The existing direct-shell fixture now uses
+a temporary `HOME` and asserts Darwin's documented user-local state root while
+retaining Linux's repository-local root; exact Docker-default localization, explicit
+custom paths, Node-only dotenv parsing, inherited child environment, and secret
+non-disclosure assertions remain intact.
+
+Observed GREEN verification:
+
+```sh
+node --test scripts/start-local-poc-launcher.test.mjs
+# 3/3 passed, repeated five consecutive times
+
+npm run check
+# exit 0: workspace typechecks passed; launcher 3/3; server 25 files passed,
+# 550 tests passed, 2 opt-in tests skipped; web and server production builds passed
+
+npm audit
+# found 0 vulnerabilities
+```
+
+No Ark or Shepherd model request was made. A real zero-parameter Docker smoke was
+unavailable in this session: the Docker CLI was installed but `docker info` exited
+1, so no live Runtime claim is recorded.
+
 ## OPS-04 local loopback candidate
 
 **Date:** 2026-08-29 (Asia/Singapore)
