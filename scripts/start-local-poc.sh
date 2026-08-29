@@ -193,7 +193,9 @@ if [[ "$codex_sandbox_mode" == "workspace-write" ]] \
 fi
 
 export NODE_ENV=production
-export HOST="${HOST:-127.0.0.1}"
+if [[ -z "${HOST:-}" || "$HOST" == "0.0.0.0" || "$HOST" == "::" ]]; then
+  export HOST=127.0.0.1
+fi
 export PORT="${PORT:-3000}"
 export CODEX_SANDBOX_MODE="$codex_sandbox_mode"
 export RUNTIME_PROVIDER=container
