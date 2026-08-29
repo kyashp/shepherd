@@ -20,6 +20,25 @@ current evidence, defects, task IDs, and the runbook.
 Never push directly to `main`. Keep each branch narrowly scoped, do not edit files
 owned by another active task, and merge stacks bottom-up through protected PRs.
 
+## Concurrent agent isolation
+
+- Use one GitHub issue, branch, and isolated Git worktree per implementation owner.
+  An agent must work only from its assigned worktree and must not check out, commit
+  to, rebase, merge, reset, or delete another agent's branch or worktree.
+- Parallel branches target current `main` independently unless a real code
+  dependency is recorded in both issues and PRs. Do not create a stack merely to
+  coordinate agents; the integrator explicitly assigns every stack parent and merge
+  order.
+- Record primary owned files/modules and excluded adjacent work before editing.
+  Shared central modules have one active owner at a time. If an unexpected required
+  edit overlaps another active task, stop and coordinate instead of expanding scope.
+- At the start of every work session, fetch/prune remote metadata and verify the
+  current worktree path, branch, issue assignment, open PRs, and clean status. Push
+  commits only to the branch assigned to that worktree.
+- Agents do not merge their own PRs or integrate sibling branches. The integrator
+  reviews overlap, runs combined gates, controls rebases/retargeting, and merges
+  through the protected workflow.
+
 ## Change and evidence rules
 
 - Make the smallest coherent fix; avoid unrelated refactors, formatting, renames,
