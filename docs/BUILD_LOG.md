@@ -7,6 +7,24 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — E2E-02, TST-10 and TST-11 independently audited
+
+The Auditor integrated exact corrected chain `338f1e4` into `mock-main` only after
+four focused real-backend deterministic journeys passed. Harness units passed
+14/14 across those invocations; all 52 screenshot observations were reviewed;
+13/13 named claims were visibly supported at both 1280x800 and 1440x900; and all
+26 final hashes were unique. Exact stages 06, 09, 10 and 11 visibly showed
+promotion start, selected Candidate evidence, distinct final re-verification and
+rejected Candidate evidence with positive pane/drawer/browser intersection.
+
+Full harness passed unit 7/7 plus Chromium 12/12. Literal `npm run check` passed
+launcher 3/3, Server 592/592 plus two explicit opt-in skips, Web 17/17, strict
+test/source types and both builds. Independent rendered/security fallback returned
+READY with no finding; no production UI/CSS, live/model/network request, secret,
+private path, residual process/root or tracked artifact was introduced. Hosted
+Node 22 required-check run `33273947769` passed on the integrated implementation.
+This closes only E2E-02/TST-10/TST-11; `GC-06` and `UI-02` remain unclaimed.
+
 ## 2026-08-30 — TST-11 visible drawer-evidence candidate
 
 The Fixer reproduced the Auditor's four visual REDs on exact parent `041521b`:

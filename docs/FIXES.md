@@ -55,13 +55,11 @@ that limitation is explicit.
   Candidate verification summary inside `.detail-drawer`, proves positive
   marker/drawer/browser intersection, and requires that exact marker to be visible.
   Stage 10's keyboard-selected final-promotion evidence and TST-10 are unchanged.
-- **Acceptance/status:** **FIXER VERIFIED / AUDITOR PENDING.** Two focused
-  invocations passed both viewports (4/4 journeys; 52 capture observations). Manual
-  semantic review found all 13 named claims visible at both viewports, with 26/26
-  unique hashes. Harness unit 7/7, full Chromium 12/12, strict test typecheck and
-  two literal `npm run check` gates passed. No production/UI/CSS/theme, timing,
-  retry, dependency, live or model change. Hosted integrated Auditor evidence
-  remains required.
+- **Acceptance/status:** **CLOSED / AUDITED** at integrated `338f1e4`. Auditor
+  passed four journeys and all 52 semantic observations: 13/13 named markers were
+  visible at both viewports and 26/26 hashes were unique. Full harness/check,
+  independent UI/security review, cleanup scans and hosted run `33273947769`
+  passed with no production UI/CSS/theme or timing change.
 
 ### `TST-10` — E2E-02 promotion stage screenshot does not show promotion
 
