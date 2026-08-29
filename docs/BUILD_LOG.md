@@ -1215,7 +1215,7 @@ value rather than dropping it or naming a caller-side mistake.
 **Branch:** `feat/12-mr-01-compose-model-reviewer`
 **Integrated base:** `origin/main` at `d27dea6`
 **Merge commit:** `fbf3038`
-**Verified checkpoint:** `2dc7ac2`
+**Verified implementation checkpoint:** `a2afbf3`
 
 Current `origin/main` was merged without rebasing or force-pushing. All code merged
 automatically; the only conflict was this build log, where the complete MR-01 and
@@ -1257,6 +1257,11 @@ npm run check
 npm audit --json
 # 0 vulnerabilities across 251 dependencies
 ```
+
+After the presentation-only deltas were removed, the same literal Node 24 gate was
+rerun against exact commit `a2afbf3` in a fresh LF-native Linux volume. It passed
+with the same totals: launcher 3/3, server 568 passed/6 skipped, both typechecks,
+both production builds, and a zero-vulnerability audit across 251 dependencies.
 
 The local Vite UI was started for the two-regex rendered gate, but the required
 browser runtime reported no connected in-app or extension browser. The server was
