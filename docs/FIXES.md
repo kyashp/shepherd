@@ -28,6 +28,36 @@ that limitation is explicit.
 
 ## Immediate queue
 
+### `MR-02` — Settings implies an unavailable reviewer will run
+
+- **Evidence class:** reproduced in the real deterministic E2E harness on local
+  merge `1422fd6` at both 1280x800 and 1440x900; supported by production
+  composition and an independent security fallback.
+- **Failure contract:** with no usable Ark reviewer configuration,
+  `GET /api/system` reports `arkConfigured=false` while
+  `GET /api/shepherd/settings` reports the persisted preference
+  `modelReviewEnabled=true`. The Security tab renders the enabled, checked copy
+  “Run advisory structured semantic review” with no unavailable/not-configured
+  capability or operational status. Keyboard toggles false then true and both real
+  PATCH requests succeed, but `index.ts` deliberately composes no reviewer, so the
+  enabled preference cannot cause a call or advisory/degraded event.
+- **Impact:** the preference is durably correct, and MR-01 remains deterministic
+  and secure, but the operator-facing control implies behavior the running process
+  cannot perform. Silence is indistinguishable from “no findings.”
+- **Minimal correction:** preserve the stored preference, expose a bounded
+  server-derived reviewer capability/operational state, and render truthful
+  unavailable/ready/degraded wording or control state using the existing Settings
+  visual language. Do not expose credentials, models, prompts, endpoints or probe
+  the provider from the browser; do not redesign or weaken MR-01's silent
+  unconfigured production composition.
+- **Acceptance:** causal server/API tests for configured/unconfigured readiness and
+  persisted preference; real browser at both viewports proves unavailable cannot
+  imply a call, configured enabled/disabled semantics and PATCH persistence, and
+  advisory/degraded events remain visibly truthful; no X/Y overflow/theme drift;
+  security/UI fallback, literal check and hosted integrated gate pass.
+- **Owner/status:** Fixer / **READY**; blocks MR-01 integration; **35% scoped**,
+  browser RED/source cause 1/7, not audited.
+
 ### `TST-07` — GC-01 test violates strict cross-workspace ownership
 
 - **Evidence class:** deterministically reproduced on local integration merge
@@ -411,9 +441,9 @@ that limitation is explicit.
 | `GC-04` | Earlier reproduction: assignment returns conflict after the fast Mission finishes. | Remove the narrow timing dependency while keeping one mutation owner. | Worker / blocked by GC-03 |
 | `GC-05` | Current UI source disables textarea when no project exists; earlier browser observation confirmed it. | Safe read-model initialization or explicit in-panel Mission-start action; preserve composer design. | Worker / ready with GC-02 |
 | `GC-06` | Current lifecycle summaries use Shepherd sender; verified manifest-derived Agent summaries are absent. | Server-authored bounded summary only after verification, attributed to the real Agent ID. | Worker / blocked by targeted lifecycle |
-| `MR-01` | Audited `mock-main` still constructs no `ArkModelReviewer`; PR #16 is now merged to current `main` as `403fc09` but not integrated here. | Advisory-only composition after trusted evidence, durable degradation, deterministic independence. | Merged-main integration/audit pending; no longer externally held |
+| `MR-01` | Local merge `1422fd6` composes the bounded reviewer and passes provider-free audit, but is deliberately not pushed to `mock-main` while MR-02 is open. | Advisory-only composition after trusted evidence, durable degradation, deterministic independence; integrate after truthful capability UI. | Local audit candidate; blocked by MR-02 and final MR-03/live gates |
 | `MR-03` | External stack evidence: one invalid evidence ref can discard otherwise valid advisory findings. | Retain independently valid bounded findings; reject only invalid ones. | **Held external: PR #25** |
-| `MR-02` | Current Settings UI presents model review as functional while current mock-main orchestration does not consume it. | Resolved only by integrating MR-01 or truthfully disabling/labeling it. | Blocked by external MR-01 |
+| `MR-02` | No-Ark browser/API RED: preference is true and toggle enabled with “Run” copy while the process composes no reviewer; false/true PATCH succeeds without any possible call/outcome. | Preserve preference; expose bounded server-derived availability/operational truth; no credential/model/endpoint exposure or redesign. | **READY Fixer**; blocks MR-01 integration |
 | `ST-01` | Current config parses startup auto-resolution/max Planes, but `index.ts` does not pass them into `ShepherdService`. | Explicit initial-settings composition without overwriting later persisted settings. | Worker / ready |
 | `ST-02` | Notification toggles persisted although no notification behavior consumed them. | Resolved by preserving stored values behind visibly Reserved/Unavailable native disabled controls; no delivery expansion. | **RESOLVED + AUDITED** at merge `d5df930`; `T,C,B,U,I` 5/5 |
 | `SCH-01` | Current service invokes scheduler for one fixed initial batch without real busy/lock/active inputs. | Extend existing scheduler/service boundary for dependency waves; no architecture replacement. | Worker / blocked by SCH-02 |

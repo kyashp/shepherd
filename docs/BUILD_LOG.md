@@ -7,6 +7,54 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — MR-01 local audit and MR-02 reproduced blocker
+
+The Auditor published ownership branch `audit/mr-01-integration`, then merged
+current `main` `403fc095b07d60e17de1cb3f82b4e16b6a778919` locally into
+`mock-main` as `1422fd6` without pushing `mock-main`. The resulting tree exactly
+matched the precomputed conflict-free merge tree `804aa74c`. It preserves the
+audited F-03/TST/service work, strict Server/Web tests, E2E harness and both CI
+workflows while adding MR-01's 14-file bounded reviewer composition.
+
+Line review confirmed that only verified Contracts contribute bounded trusted
+objectives, ingested manifest summaries, valid corroborated claims, non-protected
+changed files and committed diff summaries. Closed runtime validation restricts
+result keys, enums, contract pairs and evidence references. The service consumes
+no finding value: it records only sparse bounded advisory metadata, returns void,
+then runs unchanged deterministic collision/candidate/winner/promotion logic.
+Deadline and durable cancellation win over an abort-ignoring reviewer; configured
+sensitive values are excluded/rejected. The independent security fallback found no
+High/Medium issue and returned READY for this provider-free scope. Configured
+`security-reviewer` was unavailable. MR-03 partial-finding behavior and the single
+final live reviewer gate remain deliberately pending; no network/model call ran.
+
+Observed local gates:
+
+- model-reviewer adapter/schema/evidence/redaction, MR service 14-case matrix and
+  readiness config: 3 files, 161/161;
+- Settings rendering: 1/1; API/store: 31/31;
+- F-03/service/container-verifier/recovery/state-machine adjacency: 69/69;
+- deterministic harness: Node 6/6 and Chromium 6/6;
+- literal `npm run check`: launcher 3/3, Server 587/587 with two opt-in live files
+  skipped, Web 9/9, both strict test-source projects and both builds.
+
+The dedicated real-browser audit passed 2/2 at 1280x800 and 1440x900 for real
+Tab/Enter/Space focus semantics, true→false→true PATCH persistence, advisory
+degradation event visibility, exact viewport/document/body overflow, screenshots,
+and absence of auth/private/raw-prompt text. It also reproduced MR-02 causally:
+the real no-Ark process reports `arkConfigured=false` while persisted
+`modelReviewEnabled=true`; Settings presents an enabled checked “Run advisory”
+toggle with no unavailable/not-configured state, and both PATCHes succeed even
+though production deliberately composes no reviewer. Therefore the preference
+cannot cause a call or outcome and silence can look like “no findings.”
+
+MR-02 owns the minimal fix: preserve preference, expose only bounded server-derived
+reviewer capability/operational truth, and reuse current Settings/event visuals.
+Never expose/probe credentials, model IDs, endpoints, prompts or provider state in
+the browser. MR-01 remains a passing provider-free local candidate, but is blocked
+from `mock-main` integration and cannot claim `I` or `L` until MR-02 is corrected;
+MR-03 should integrate before exactly one final sparse live review.
+
 ## 2026-08-30 — deviations hard-ledger reconciliation
 
 The Auditor reconciled every section of `docs/DEVIATIONS.md` against the PRD,

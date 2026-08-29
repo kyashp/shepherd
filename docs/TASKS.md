@@ -67,11 +67,12 @@ deterministic clean-shell browser harness are green at the snapshot named above.
 
 | ID | PRD | Status / owner | Current external work | Integration requirement |
 |---|---|---|---|---|
-| `MR-01` | 4.1.13, 8.6, 12 | `MERGED_MAIN_AWAITING_INTEGRATION`; Integrator | PR #16 merged to current `main` as `403fc09`; it is not yet an ancestor of `mock-main` | Preserve advisory-only authority; integrate current main and run fake-reviewer Mission/degradation/security gates before one sparse live review. |
+| `MR-01` | 4.1.13, 8.6, 12 | `LOCAL_AUDIT_BLOCKED_BY_MR-02`; Integrator/Fixer | PR #16 merged to `main` as `403fc09`; local merge `1422fd6` on `audit/mr-01-integration` is deliberately unpushed to `mock-main` | Provider-free audit passed the bounded reviewer/service/config matrix, adjacent F-03/recovery/API/settings slices, literal check, harness, browser and security review. Fix MR-02 truthfulness first, then integrate/host; defer `L` until MR-03 and one final sparse call. |
 | `MR-03` | 8.6, 12 | `HELD_EXTERNAL`, stacked on `MR-01` | Issue #21 / draft PR #25 / `fix/21-mr-03-partial-review-findings` | Integrate after MR-01; validate partial valid findings survive one rejected evidence reference. |
 
 These two workstreams are dependencies, not available tasks. Only `MR-03` remains
-externally held; `MR-01` is merged-main integration work. Historical
+externally held; `MR-01` is local integration work blocked by the reproduced
+`MR-02` product-truthfulness defect. Historical
 `feature/shepherd-phase-*`, merged startup/reset/UI branches, and remote branches
 without an open issue/PR are not active ownership claims.
 
@@ -116,6 +117,7 @@ without an open issue/PR are not active ownership claims.
 |---|---|---|---|---|
 | `GC-01` | 4.1.12, 11.5–11.6.3 | **AUDITED** at merge/fix `de3e631`; source `main` `662a7e7` | Parser-safe buttons preserve the draft and exact Agent routing for simple, spaced, escaped quote/backslash, Unicode, NFKC and unsafe-name ID-fallback cases. Auditor passed focused Web 8/8, full Web 9/9, Server routing 10/10, clean install/audit, both strict test typechecks, and a real-browser 2/2 protocol at 1280x800 and 1440x900 covering mouse/Tab/Enter/Space, focus-visible, caret, multiline draft, exact 2,000/2,001 boundaries, in-flight disable/no duplicate, parser ID round-trip, no document/body X/Y overflow, and no private output. Full harness passed unit 6/6 plus Chromium 6/6; literal check passed launcher 3/3, Server 563/563 plus one opt-in skip, Web 9/9 and both builds; hosted Node 22 run `33266624301` passed. Independent UI fallback found no GC-01 theme or accessibility regression; the accepted internally scrollable page requires scrolling the composer into view when the runtime banner is present, and disabled-button visual distinction remains a Low `UI-GATE` review item. This row does not claim `GC-03/04` lifecycle behavior. | **100% scoped**; `T,A,C,B,U,I` passed (6/6); audited |
 | `ST-02` | 11.5, 12 | **AUDITED** at integrated merge `d5df930` | PR #13 was merged to `main` as `d27dea6` and then merged into `mock-main` without product-code conflict. Notifications remain deliberately undelivered; the Settings surface now labels the capability **Unavailable** and every preserved preference **Reserved**, with three native disabled controls. Auditor passed focused rendering 1/1, web type/build, two-viewport real-browser semantics/no-PATCH/no-overflow, full harness unit 2/2 plus Chromium 4/4, and literal `npm run check` with launcher 3/3, server 563/563 plus one opt-in skip, strict typechecks and both builds. Independent rendered fallback review returned READY/no scoped findings; the configured `ui-reviewer` role was unavailable. No notification integration, public API/schema, persistence, or theme change. | **100% scoped**; `T,C,B,U,I` passed (5/5); audited |
+| `MR-02` | 4.1.13, 8.6, 11.5, 12 | `READY`; Fixer; blocks MR-01 integration | In the no-Ark deterministic runtime, `/api/system` reports `arkConfigured=false` while persisted Settings reports `modelReviewEnabled=true`. Security renders an enabled, checked “Run advisory…” toggle with no unavailable/not-configured status; false→true saves both succeed through real PATCH, but production composes no reviewer and therefore no call/outcome can occur. Preserve the preference, expose bounded capability/operational/degraded truth from the server, and prevent the UI from implying execution when unavailable; no credential probing/client secret exposure or redesign. `T,A,C,B,S,U,I`. | **35%**; browser RED and source cause passed (1/7); not audited |
 | `OPS-06` | 6.1, 8.10, 17 baseline | `READY`; Fixer, collaborator/macOS evidence required | Docker Desktop macOS reaches live Shepherd preflight then exits with only `Live Shepherd Runtime preflight failed`; the exact subprobe is swallowed. Preserve fail-closed sandboxing, add bounded stage diagnostics, reproduce on macOS, and correct only a proven compatibility mismatch. Never bypass socket/home restrictions. `T,A,C,S,L,I`. | **20%**; 0/6; not audited |
 | `GC-02/05` | 8.1, 11.5–11.6.3 | `READY`; Worker | Clean Project Group disables composition; unmentioned messages only persist despite UI promise. Initialize a safe read model or offer a clear Mission action, then route unmentioned text through a bounded Shepherd action/reply. `T,A,C,B,S,U,I`. | **20%**; 0/7; not audited |
 | `GC-03/04` | 8.1, 11.5–11.6.3 | `BLOCKED` by `GC-02/05`; Worker | `@Agent` only targets an already-active Contract and races the fast Mission. Add schema-constrained Contract creation independent of the narrow active timing window; no arbitrary shell/model authority. `T,A,C,B,S,U,I`. | **15%**; 0/7; not audited |
@@ -163,12 +165,13 @@ without an open issue/PR are not active ownership claims.
 
 ## Count and current verdict
 
-- **50 tracked work items:** 14 audited, 1 externally held, and 35 other incomplete
+- **51 tracked work items:** 14 audited, 1 externally held, and 36 other incomplete
   items across P0/P1/P2.
 - **Next ready worker assignment:** `F-01/02` unless the integrator selects another
   non-overlapping ready row.
-- **First fixer assignment:** `OPS-06` only when the required collaborator/macOS
-  evidence is available; otherwise no independent Fixer row is currently READY.
+- **First fixer assignment:** `MR-02`; it blocks audited MR-01 integration and has
+  an exact no-Ark browser/API/source failure contract. `OPS-06` follows only when
+  the required collaborator/macOS evidence is available.
 - **Current completion verdict:** incomplete. Strong kernel evidence exists, but the
   current deterministic full gate is green and all remaining rows above still
   require their stated integration/audit evidence.
