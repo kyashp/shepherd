@@ -48,10 +48,18 @@ that limitation is explicit.
   view and assert its rectangle intersects the contract pane before capture 06.
   Do not change production UI/CSS/theme, introduce sleeps/retries, weaken the event
   assertion, or fake a state. Preserve the truthful `GC-06` and `UI-02` exclusions.
-- **Acceptance/status:** **OPEN / READY for Fixer.** Captures 05 and 06 must differ
-  in both viewports; run the hero journey twice at each viewport and inspect all
-  52 observations, then full Chromium/harness, strict test typecheck, literal
-  `npm run check`, cleanup/security/UI fallback and hosted integrated gate.
+- **Observed correction:** test-only candidate on
+  `fix/e2e-02-visible-promotion`. The journey now targets the exact persisted
+  `promotion_started` event, scrolls its card inside `.event-list`, proves positive
+  card/pane/viewport intersection, and asserts the stage-05 and stage-06 PNG bytes
+  differ. No production, UI, CSS, timeout, retry or sleep changed.
+- **Acceptance/status:** **FIXER VERIFIED / AUDITOR PENDING.** The hero journey
+  passed twice at both viewports (4/4; 52 capture observations). All 26 final PNGs
+  were manually reviewed and have 26 distinct hashes; stage 06 visibly contains
+  the promotion-start card. Harness unit 7/7, full Chromium 12/12, strict test
+  typecheck and two literal `npm run check` gates passed. Cleanup, ignored-artifact,
+  diff, dependency, bounded-surface and UI-theme review found no issue. Hosted and
+  integrated Auditor evidence remain required.
 
 ### `UI-04` — promotion surfaces display candidate verification evidence
 

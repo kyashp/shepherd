@@ -7,6 +7,29 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — TST-10 visible promotion-stage candidate
+
+The Fixer reproduced the preserved E2E-02 visual RED on the exact candidate plus
+Auditor evidence: stage 05 and stage 06 were byte-identical at both 1280x800 and
+1440x900. The DOM assertion located a promotion-start event below the internally
+scrolling Contract pane, so it did not establish visible screenshot evidence.
+
+The test-only correction selects the exact persisted `promotion_started` event,
+scrolls that card into `.event-list`, asserts positive intersection with both the
+pane and browser viewport, and compares the written stage-05/stage-06 PNG bytes.
+No production, frontend, CSS, theme, timeout, retry, sleep or dependency changed.
+
+Two corrected focused invocations passed both viewports (4/4), yielding 52 capture
+observations. The final 26-file corpus had 26 distinct hashes and every image was
+manually inspected; stage 06 visibly shows “Started final authority and independent
+verification gate,” while stage 05 remains a distinct candidate-outcome view. Full
+harness passed unit 7/7 and Chromium 12/12. Strict test typecheck and two literal
+`npm run check` gates passed, each with launcher 3/3, Server 592/592 plus two
+explicit opt-in skips, Web 17/17, strict types and both builds. Dependency,
+cleanup, ignored-artifact, bounded-output, diff and visual-theme reviews were clean.
+No live/model/network request ran. Independent hosted Auditor integration remains
+required before TST-10 or E2E-02 can be called audited.
+
 ## 2026-08-30 — E2E-02 candidate audit blocked by TST-10 visual evidence
 
 The Auditor reviewed exact candidate

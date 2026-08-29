@@ -91,7 +91,9 @@ async function capture(page, testInfo, stage) {
     : path.join(repositoryRoot, ".tmp/playwright-evidence/e2e-02");
   const directory = path.join(root, `${viewport.width}x${viewport.height}`);
   await mkdir(directory, { recursive: true });
-  await page.screenshot({ path: path.join(directory, `${stage}.png`), fullPage: false });
+  const screenshotPath = path.join(directory, `${stage}.png`);
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  return screenshotPath;
 }
 
 async function releaseGate(name) {
@@ -276,9 +278,25 @@ test("real Shepherd hero chain verifies, resolves, and promotes protected output
   expect(promotionStarts).toHaveLength(1);
   await expect(page.locator("article.event-card").filter({ hasText: "Candidate passed" })).toBeVisible({ timeout: 3_000 });
   await expect(page.locator("article.event-card").filter({ hasText: "Candidate failed" })).toBeVisible();
-  await capture(page, testInfo, "05-candidate-outcomes");
-  await expect(page.locator("article.event-card").filter({ hasText: "Started final authority" })).toBeVisible();
-  await capture(page, testInfo, "06-promotion-reverifying");
+  const candidateOutcomeScreenshot = await capture(page, testInfo, "05-candidate-outcomes");
+  const promotionStartedEvent = entities.events.find((item) => item.type === "promotion_started");
+  const promotionStartedCard = page.locator("article.event-card").filter({ hasText: promotionStartedEvent.summary });
+  await expect(promotionStartedCard).toBeVisible();
+  await promotionStartedCard.scrollIntoViewIfNeeded();
+  const promotionCardIntersection = await promotionStartedCard.evaluate((card) => {
+    const pane = card.closest(".event-list");
+    if (!pane) return null;
+    const cardRect = card.getBoundingClientRect();
+    const paneRect = pane.getBoundingClientRect();
+    return {
+      width: Math.max(0, Math.min(cardRect.right, paneRect.right, window.innerWidth) - Math.max(cardRect.left, paneRect.left, 0)),
+      height: Math.max(0, Math.min(cardRect.bottom, paneRect.bottom, window.innerHeight) - Math.max(cardRect.top, paneRect.top, 0)),
+    };
+  });
+  expect(promotionCardIntersection?.width).toBeGreaterThan(0);
+  expect(promotionCardIntersection?.height).toBeGreaterThan(0);
+  const promotionScreenshot = await capture(page, testInfo, "06-promotion-reverifying");
+  expect(Buffer.compare(await readFile(candidateOutcomeScreenshot), await readFile(promotionScreenshot))).not.toBe(0);
 
   await releaseGate("promotion");
   current = await waitForState(request, (snapshot) => missionEntities(snapshot, missionId).mission?.state === "completed", "completed Mission");
