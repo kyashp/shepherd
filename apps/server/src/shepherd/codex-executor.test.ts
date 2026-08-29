@@ -8,7 +8,8 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { inspect } from "node:util";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadConfig, type AppConfig } from "../config.js";
 import { RunCancelledError } from "../errors.js";
 import { JsonStore } from "../store.js";
@@ -25,6 +26,21 @@ import { ShepherdService } from "./service.js";
 
 const OWNER = "verifier.test.0123456789abcdef0123456789abcdef";
 const temporaryRoots: string[] = [];
+const cleanupFault = vi.hoisted(() => ({
+  target: null as string | null,
+  error: null as Error | null,
+}));
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...actual,
+    rm: async (...args: Parameters<typeof actual.rm>) => {
+      if (cleanupFault.target === args[0]) throw cleanupFault.error;
+      return actual.rm(...args);
+    },
+  };
+});
 
 interface TestEnvironment {
   root: string;
@@ -137,6 +153,8 @@ class FakeContainerRunner implements EphemeralContainerRunner {
 }
 
 afterEach(async () => {
+  cleanupFault.target = null;
+  cleanupFault.error = null;
   await Promise.all(
     temporaryRoots.splice(0).map((root) =>
       rm(root, { recursive: true, force: true }),
@@ -489,6 +507,62 @@ describe("CodexShepherdExecutor", () => {
     );
     await expect(stat(runner.preflightHomes[0]!)).rejects.toMatchObject({ code: "ENOENT" });
     await expect(stat(runner.preflightWorkspaces[0]!)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("redacts executor cleanup failures from every startup-visible Error surface", async () => {
+    const test = await environment();
+    const privateDiagnostic =
+      "TST12_SECRET_CANARY EACCES Darwin /Users/private/runtime/preflight";
+    class CleanupFailingRunner extends FakeContainerRunner {
+      failCleanup = true;
+
+      override async isEphemeralAvailable(
+        workspacePath: string,
+        codexHome: string,
+      ): Promise<boolean | EphemeralPreflightResult> {
+        const result = await super.isEphemeralAvailable(workspacePath, codexHome);
+        if (this.failCleanup) {
+          cleanupFault.target = workspacePath;
+          cleanupFault.error = new Error(privateDiagnostic);
+        }
+        return result;
+      }
+    }
+    const runner = new CleanupFailingRunner();
+    const executor = new CodexShepherdExecutor(test.config, OWNER, runner);
+
+    let rejection: unknown;
+    try {
+      await executor.preflight();
+    } catch (error) {
+      rejection = error;
+    }
+    expect(rejection).toBeInstanceOf(Error);
+    const startupError = rejection as Error & { cause?: unknown };
+    expect(startupError.message).toBe(
+      "Live Shepherd Runtime preflight failed (stage=cleanup reason=cleanup_failed)",
+    );
+    expect(startupError.cause).toBeUndefined();
+    const visibleSurfaces = [
+      String(startupError),
+      startupError.stack ?? "",
+      inspect(startupError, { depth: 5 }),
+      JSON.stringify(startupError),
+      inspect(startupError.cause, { depth: 5 }),
+    ].join("\n");
+    expect(visibleSurfaces).not.toContain(privateDiagnostic);
+    expect(visibleSurfaces).not.toContain("TST12_SECRET_CANARY");
+    expect(visibleSurfaces).not.toContain("/Users/private/runtime/preflight");
+    expect(visibleSurfaces).not.toContain("EACCES Darwin");
+    await expect(stat(runner.preflightHomes[0]!)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+
+    cleanupFault.target = null;
+    cleanupFault.error = null;
+    runner.failCleanup = false;
+    await expect(executor.preflight()).resolves.toBeUndefined();
+    expect(runner.preflightCount).toBe(2);
   });
 
   it("fails closed on unsafe live composition", async () => {

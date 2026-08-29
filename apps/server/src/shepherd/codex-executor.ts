@@ -499,9 +499,9 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
         }
       }
       if (cleanupError) {
-        throw new Error("Live Shepherd Runtime preflight cleanup failed", {
-          cause: cleanupError,
-        });
+        throw new Error(
+          "Live Shepherd Runtime preflight failed (stage=cleanup reason=cleanup_failed)",
+        );
       }
     }
   }

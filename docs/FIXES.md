@@ -43,9 +43,19 @@ that limitation is explicit.
   assert rejection/startup-visible output excludes it. Preserve cleanup attempts,
   fail-closed startup, runner enums and every sandbox gate. No swallowed failure,
   raw logging, broad refactor or compatibility bypass.
-- **Acceptance/status:** **OPEN / READY for Fixer.** Focused executor/runner cleanup
-  and mapping regressions, startup-output leak proof, adjacent live-runtime/config,
-  strict/literal check, diff/secret scan and independent security re-review.
+- **Observed correction:** executor-only candidate on
+  `fix/ops-06-preflight-redaction`. Executor mount-cleanup failure now rejects with
+  fixed `stage=cleanup reason=cleanup_failed` and never attaches the raw failure as
+  `Error.cause`. The causal test injects planted secret, private-path and OS text
+  and proves it is absent from message, string, stack, inspection, JSON and cause
+  surfaces while cleanup remains fail-closed and a bounded retry remains possible.
+- **Acceptance/status:** **FIXER VERIFIED / AUDITOR PENDING.** Cleanup and primary
+  diagnostic rows passed 3/3; adjacent executor/runner/config/service/live-runtime
+  passed 95 plus one explicit opt-in skip; strict test typecheck and two literal
+  `npm run check` gates passed. No sandbox gate, runner enum, fallback, UI,
+  dependency, live or model behavior changed. Independent security fallback passed
+  executor/runner 34/34 with no finding. Affected-macOS validation and hosted
+  Auditor integration remain required.
 
 ### `TST-11` — E2E-02 candidate-evidence screenshots show metadata only
 

@@ -7,6 +7,33 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — TST-12 executor preflight redaction candidate
+
+The Fixer reproduced the source-confirmed Medium leak on exact Auditor evidence
+`ed3ceb6`: an injected cleanup failure containing planted secret, private macOS
+path and OS diagnostic text emerged unchanged as the uncaught executor preflight
+rejection's `Error.cause`. Inspection-capable startup handling could therefore
+expose detail despite the fixed outer message.
+
+The minimal executor correction removes the raw cause and rejects with only
+`Live Shepherd Runtime preflight failed (stage=cleanup reason=cleanup_failed)`.
+The causal regression checks the Error message, String conversion, stack,
+`util.inspect`, JSON serialization and cause inspection; none contains the planted
+detail. Cleanup remains fail-closed, both mount removals are still attempted, the
+cached failure permits a bounded retry, and the existing primary container-start
+stage/reason assertion is unchanged. No runner mapping, non-root/read-only-home,
+socket-denial, exact-version, output-cap, owner cleanup, fallback, UI or dependency
+behavior changed.
+
+Focused cleanup/primary rows passed 3/3. Adjacent config, runner, executor, service
+and live-runtime coverage passed 95 tests plus one explicit opt-in skip. Strict
+Server test typecheck passed. Two literal `npm run check` gates each passed launcher
+3/3, Server 602/602 plus two opt-in skips, Web 17/17, strict types and both builds.
+Dependency, diff, credential and artifact/root scans were clean. No live, model or
+external request ran. Independent security fallback passed executor/runner 34/34
+and strict test typecheck with no High, Medium or Low finding. Affected-macOS
+validation and hosted Auditor integration remain required before OPS-06 is audited.
+
 ## 2026-08-30 — OPS-06 integration blocked by TST-12 security finding
 
 The Auditor rebased candidate `5a1aef9` onto audited `mock-main` as local
