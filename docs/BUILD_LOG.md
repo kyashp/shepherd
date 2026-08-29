@@ -7,6 +7,50 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## TST-02 deterministic recovery fixture clock
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Branch/base:** `work/mock-main` / `6f7660d`
+
+The post-CAS startup-reconciliation fixture created its Git Planes with
+`PlaneManager`'s wall clock but reconciled them at the fixed instant
+`2026-08-29T12:05:00.000Z`. Once wall time passed that instant, recovery attempted
+to persist an `updatedAt` earlier than the Plane's `createdAt`; the store correctly
+rejected the invalid lifecycle state.
+
+The original isolated reproduction was preserved before editing:
+
+```sh
+npm run test -w @launchpad/server -- --run src/shepherd/recovery.test.ts \
+  -t "fails closed, recognizes the exact post-CAS window, cleans private artifacts, and is idempotent"
+# RED: 1 failed, 16 skipped; JsonStore reported
+# "Refusing to persist invalid database state"
+```
+
+The smallest correction is test-only: the affected fixture now passes its existing
+deterministic `12:00Z` clock to `PlaneManager`, so Plane creation precedes the
+deliberate `12:05Z` recovery instant. Production recovery, store validation, and
+lifecycle ordering assertions are unchanged.
+
+Observed GREEN verification:
+
+```sh
+npm run test -w @launchpad/server -- --run src/shepherd/recovery.test.ts \
+  -t "fails closed, recognizes the exact post-CAS window, cleans private artifacts, and is idempotent"
+# 1 passed, 16 skipped
+
+npm run test -w @launchpad/server -- --run src/shepherd/recovery.test.ts
+# 17/17 passed
+
+npm run check
+# exit 0: both workspace typechecks passed; launcher 3/3 passed;
+# server 26 files and 555 tests passed with one opt-in live file/test skipped;
+# web and server production builds passed
+```
+
+No Ark/model request was made. The implementation has `T`, `A`, and `C` evidence;
+independent Auditor integration and the `I` gate remain pending.
+
 ## OPS-05 canonical launcher-entry candidate
 
 **Date:** 2026-08-29 (Asia/Singapore)

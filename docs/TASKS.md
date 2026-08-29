@@ -91,7 +91,7 @@ without an open issue/PR are not active ownership claims.
 
 | ID | PRD ref | Status / owner / dependencies | Evidence and required acceptance | Confidence; gates passed; audit |
 |---|---|---|---|---|
-| `TST-02` | 0.2, 16 Phase 9B, 17 | **READY — first Worker task**; test fixture only | Fixed recovery clock (`12:05Z`) is older than wall-clock Plane creation after that time, so reconciliation writes `updatedAt < createdAt` and the store correctly rejects it. Inject one deterministic clock into the fixture; do not weaken lifecycle validation. Run the isolated test, full recovery file, and `C,I`. | **0%**; 0/4 gates; not audited |
+| `TST-02` | 0.2, 16 Phase 9B, 17 | **IMPLEMENTED — Worker; awaiting Auditor integration**; test fixture only | Reproduced the isolated store rejection, then injected the fixture's existing deterministic `12:00Z` clock into its `PlaneManager`; production recovery and lifecycle validation are unchanged. Original isolated test passed 1/1, full recovery file passed 17/17, and literal `npm run check` passed launcher 3/3 plus server 555/555 with one opt-in live test skipped and both production builds green. | **95%**; `T,A,C` passed (3/4); `I` pending; not audited |
 
 ## P0 — failure and recovery correctness
 
