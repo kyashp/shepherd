@@ -796,6 +796,27 @@ Not run after this checkpoint:
 - a final live Mission on current `main`;
 - a post-merge gate for these documentation changes.
 
+### Pending test-lifecycle merge gate (`#11`)
+
+Draft PR [#19](https://github.com/kyashp/shepherd/pull/19) contains test-only lifecycle
+hardening on commits `de986b9a3ecdd1e1360050209742497f8c6b2813` and
+`f2db22c`; it is not merged into `main`. Its causal regressions prove that a
+sentinel-bound service fixture can remove
+a read-only trusted-verification snapshot, rejects an external root, and neither
+follows nor chmods a symlinked external target. Background-Mission tests now cancel
+and join through the existing `cancelMission()` path before fixture cleanup. Three
+measured service journeys plus the measured Git and recovery journeys have explicit
+15-second budgets; global/unit defaults are unchanged. Five target-substitution runs
+and two complete `npm run check` runs passed (547 passed, 2 opt-in skipped; web and
+server builds passed). The recovery fixture's Git helper now uses a fixed child
+environment rather than inheriting repository-routing variables. A disposable
+fixture/decoy regression poisons `GIT_DIR`, proves the selected fixture advances,
+and proves the decoy's HEAD and tree remain unchanged.
+
+The draft OPS-01 fix in PR [#8](https://github.com/kyashp/shepherd/pull/8) remains a
+separate startup change. It may use this test-stability evidence only after #19 has
+merged and a combined `main` gate is observed; OPS-01 is not marked resolved here.
+
 ## 8. Failure-matrix audit
 
 PRD Section 12 is **not complete**.
@@ -910,6 +931,10 @@ Repository-local Chromium was reported present at `.tmp/playwright-browsers/`; n
 
 14. Add test-file TypeScript checking; production `apps/server/tsconfig.json` excludes `*.test.ts`.
 15. Run the complete suite at least five consecutive times and fix flakiness by cause.
+    PR #19 removes the demonstrated temporary-repository route by giving its Git
+    fixture helper a fixed child environment. The pre-push hook itself still needs a
+    separate infrastructure audit: use `ECC_SKIP_PREPUSH=1` only after manual gates,
+    and inspect history/artifacts rather than accepting hook-created changes.
 16. Run three clean reset-to-completion demo rehearsals and record timings. Use a second machine/state only if genuinely available; otherwise document that limitation.
 17. Finish/update:
     - `docs/SHEPHERD.md`
@@ -1003,7 +1028,8 @@ Authoritative requirements/evidence:
 - Use repository-local state for QA. Do not point the demo at another repository or
   an existing data directory.
 - `npm run poc` is currently affected by `OPS-01`; use the verified command below
-  until that issue merges.
+  until that issue merges. Draft PR #8 is separate from the pending test-lifecycle
+  merge gate in PR #19.
 - Do not click **Reset demo state** before the first Mission initializes the demo;
   `RST-01` currently returns a 500 on a completely clean root.
 - The trusted verifier needs Docker, Colima, or Podman. The command below was
