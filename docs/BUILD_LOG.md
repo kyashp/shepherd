@@ -7,6 +7,27 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — UI-04 and verifier fixture integrated audit
+
+The Auditor integrated the bounded verifier fixture, UI-04 frontend correction and
+explicit keyboard audit at `412a010`. Independent gates passed: fixture/harness
+7/7, Web 17/17, focused Chromium 2/2 twice, full Chromium 10/10 at 1280x800 and
+1440x900, and literal `npm run check` with launcher 3/3, Server 592/592 plus two
+opt-in skips, Web 17/17, strict types and builds. Screenshots showed the final
+promotion marker under the promotion event and distinct candidate/final drawer
+tabs without overflow/theme drift. Tab, Space, arrows, Home, End, Enter, Escape,
+focus-visible and opener restoration passed. Planted private fields stayed absent
+from API/DOM/store/log surfaces.
+
+The fixture accepts only the exact independent-verifier create/start/rm/ps
+protocol and validates network-none, readonly/non-root/capability/resource/tmpfs/
+environment/check allowlists with bounded output and cleanup. It introduces no
+production debug or live path. Configured custom security/UI reviewer roles were
+unavailable; independent manual fallbacks found no material issue. Dependency and
+artifact scans were clean. Hosted Required checks run `33271397185` passed. UI-04
+is audited scoped 100; the fixture prerequisite is integrated, while E2E-02 remains
+incomplete and ready for Worker continuation. No live/model call ran.
+
 ## 2026-08-30 — UI-04 truthful promotion evidence candidate
 
 The Fixer preserved the API/DOM RED, then changed only Shepherd frontend, scoped

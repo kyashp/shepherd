@@ -52,12 +52,13 @@ that limitation is explicit.
   reset, full roving keyboard semantics, visible focus, internal scroll and managed
   drawer focus/Escape/restoration. `EvidenceSummary` remains the sole renderer and
   ignores planted evidence IDs/stdout/stderr/errors/private diagnostics.
-- **Acceptance/status:** Fixer **CANDIDATE**, **95% scoped**, `T,C,B,U` 4/5.
+- **Acceptance/status:** **RESOLVED + AUDITED** at `412a010`, **100% scoped**,
+  `T,C,B,U,I` 5/5.
   Helper/component 4/4, Web 17/17, harness 7/7, focused browser 2/2 and full
   Chromium 10/10 at both required viewports, strict/build and two final literal
   checks passed. Screenshots and independent UI/security re-reviews passed with no
-  remaining finding. Auditor integration/hosted `I` remains pending; not audited.
-  `E2E-02` is unchanged and incomplete.
+  remaining finding. Hosted run `33271397185` passed. The bounded verifier fixture
+  prerequisite is integrated; `E2E-02` itself remains incomplete.
 
 
 ### `MR-02` — Settings implies an unavailable reviewer will run
