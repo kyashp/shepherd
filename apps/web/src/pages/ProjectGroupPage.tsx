@@ -4,6 +4,7 @@ import { Link } from "../router";
 import { useShepherdPolling } from "../shepherd-hooks";
 import type { Agent, ProjectGroupMessage } from "../types";
 import { EmptyState, ErrorState, Icon, LoadingPanel, PageHeader, Spinner, StatePill, formatTime, shortId } from "../ui";
+import { formatProjectGroupMention } from "./project-group-mention";
 
 function senderName(message: ProjectGroupMessage, agents: Agent[]): string {
   if (message.senderType === "human") return "You";
@@ -20,7 +21,19 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
   const [content, setContent] = useState("");
   const [sending, setSending] = useState(false);
   const messageEnd = useRef<HTMLDivElement>(null);
+  const messageComposer = useRef<HTMLTextAreaElement>(null);
   const inFlight = useRef(false);
+
+  const insertMention = (agentName: string) => {
+    const leadingMention = `${formatProjectGroupMention(agentName)} `;
+    setContent((current) => `${leadingMention}${current}`);
+    window.requestAnimationFrame(() => {
+      const composer = messageComposer.current;
+      if (!composer) return;
+      composer.focus();
+      composer.setSelectionRange(composer.value.length, composer.value.length);
+    });
+  };
 
   const refreshMessages = useCallback(async () => {
     if (!project || inFlight.current) return;
@@ -91,7 +104,7 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
         <div className="group-members" aria-label="Available mention targets">
           <span>Route directly:</span>
           {agents.map((agent) => (
-            <button key={agent.id} onClick={() => setContent((current) => current || `@${agent.name} `)}>@{agent.name}</button>
+            <button key={agent.id} onClick={() => insertMention(agent.name)}>@{agent.name}</button>
           ))}
         </div>
         {messageError ? (
@@ -128,6 +141,7 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
         <form className="chat-composer" onSubmit={submit}>
           <label htmlFor="group-message" className="sr-only">Message Project Group</label>
           <textarea
+            ref={messageComposer}
             id="group-message"
             rows={2}
             value={content}
