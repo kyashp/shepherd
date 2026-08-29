@@ -7,6 +7,26 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — F-05 integration blocked by TST-18 merge-abort precedence
+
+Candidate `0208713` was replayed onto canonical F-04 docs as `a7b669b`. Auditor
+passed ordinary real conflict/path gates 3/3: the ten-file add/add Mission retained a
+clean failed integration Plane, bounded count 10 / preview cap 8 / path length 48,
+verified Contracts, released Agents, protected HEAD/canary, no candidates/promotion,
+reload/API evidence and explicit reset removal; the lower real-Git conflict stayed
+clean. No candidate-owned test artifact remained.
+
+An independent cleanup-double-fault injected a planted exception specifically at
+`merge abort` after the real conflict was detected. The exact test reproduced 1/1:
+`mergePlane` rejected with the planted raw abort diagnostic instead of returning the
+validated conflict, proving original-conflict precedence and clean-retention claims
+are not closed. Independent security review additionally found conflict enumeration
+and path validation occur before abort, exit 128 is accepted without checking cleanup,
+and post-merge inspection does not assert clean/head state. Temporary audit
+instrumentation was removed. TST-18 requires a mandatory abort/restore boundary,
+bounded primary conflict and truthful cleanup state; F-05 was not pushed to
+`mock-main`.
+
 ## 2026-08-30 — F-04 / TST-17 audited and integrated
 
 Exact implementation `2cef988` passed Auditor focused creation/unwind/double-fault

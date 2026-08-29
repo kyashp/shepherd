@@ -28,6 +28,32 @@ that limitation is explicit.
 
 ## Immediate queue
 
+### `TST-18` — Merge-abort cleanup failure masks a detected Git conflict
+
+- **Evidence class:** independently injected cleanup double-fault on F-05 candidate
+  `a7b669b`, after a real add/add textual conflict was established.
+- **Failure contract:** `GitClient.mergeCommit` enumerates and validates conflict
+  paths before abort, so enumeration or path-validation failure skips cleanup. If
+  `git merge --abort` throws, its raw error replaces the conflict; exit 128 is also
+  accepted without proving cleanup. `mergePlane` then inspects without asserting a
+  clean worktree/head. The Mission can become `unknown`, planted diagnostics can
+  cross the boundary, or a dirty/unmerged Plane can be mislabeled as the ordinary
+  clean conflict outcome.
+- **Minimal correction:** preserve the conflict as primary, bound and discard the raw
+  abort cause, and expose truthful fixed cleanup state. A successful abort may retain
+  the clean conflict Plane; a failed abort must use explicit bounded attention/
+  cleanup evidence and must not claim a clean worktree. Preserve exact Plane/branch
+  inspection and reset ownership; do not broaden Git cleanup or weaken path gates.
+- **Acceptance:** causal real-conflict plus enumeration/path-validation, thrown abort
+  and accepted-nonzero abort REDs become green; exact clean/head state is checked;
+  primary Mission/Plane evidence remains `git_conflict/integration_merge`; cleanup
+  state is truthful; raw Error/cause/store/reload/event/API/log scans are clean;
+  protected HEAD/canary, verified Contracts, released Agents, no downstream work,
+  exact reset cleanup, ordinary ten-file/cap/path tests, adjacent/full/security and
+  hosted gates pass.
+- **Status:** **OPEN / Medium blocker.** Injected abort failure reproduced 1/1 and
+  surfaced the planted exception from `mergePlane`. F-05 is not integrated.
+
 ### `TST-17` — Second initial Plane creation failure leaves the first Plane live
 
 - **Evidence class:** independently reproduced RED and read-only security review of
@@ -827,7 +853,7 @@ operator-cleanup availability residual; cross-process automatic retry is not cla
 | `F-01` | Source-evidenced: Contract timeout may surface as failure code `unknown` instead of `agent_timeout`. | Typed timeout propagated through Contract/Plane/Agent/Mission/event/API/UI; no message-regex classification. | **WORKER VERIFIED** candidate on `work/mock-main`; 95% pending Auditor |
 | `F-02` | Source-evidenced: Contract runtime errors can become generic `unknown`. | Shared typed stage error only; preserve candidate-specific handling. | **WORKER VERIFIED** candidate on `work/mock-main`; 95% pending Auditor |
 | `F-04` | Source-evidenced: initial Plane creation can fail before durable stage evidence; later mapper is too late. | Evidence on owning Contract/Mission without inventing a successful Plane. | **AUDITED** at `2cef988`; TST-17 closed |
-| `F-05` | Preserved RED proved a real textual conflict became `unknown/background_demo`. | Typed bounded Mission/integration Plane/event mapping; retain clean conflict Plane for inspection and remove it on reset. | **WORKER VERIFIED candidate**; Auditor pending |
+| `F-05` | Preserved RED proved a real textual conflict became `unknown/background_demo`. | Typed bounded Mission/integration Plane/event mapping; retain clean conflict Plane for inspection and remove it on reset. | **BLOCKED by TST-18** merge-abort precedence |
 | `F-06` | Store rollback is tested; recovery-visible `persistence_failed` evidence is absent. | Journal/reconciliation-safe evidence; never claim a failed write persisted itself. | Worker / depends typed foundation |
 | `F-07` | Source-evidenced: candidate timeout state mapping is inconsistent and partly regex-based. | One typed timeout class and canonical state mapping. | Worker / ready |
 | `F-08` | Source-evidenced: most non-authority candidate exceptions are retryable; second-failure coverage absent. | Retry only typed transient failures, once, from the immutable base. | Worker / ready |
