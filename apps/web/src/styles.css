@@ -1124,6 +1124,24 @@ label small {
   line-height: 1.45;
 }
 
+.evidence-stage-label {
+  display: block;
+  padding: 8px 9px 0;
+  color: #696a63;
+  font-size: 8px;
+}
+
+.evidence-stage-tabs {
+  min-height: 33px;
+  margin: 0;
+  padding: 4px 0;
+  border: 0;
+}
+
+.evidence-stage-tabs button {
+  color: #696a63;
+}
+
 .check-list,
 .path-list {
   margin: 0;

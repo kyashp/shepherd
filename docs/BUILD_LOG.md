@@ -7,6 +7,36 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — UI-04 truthful promotion evidence candidate
+
+The Fixer preserved the API/DOM RED, then changed only Shepherd frontend, scoped
+styles and tests. Completed promotion events now bind final promotion
+re-verification evidence; candidate events retain candidate verification and a
+promotion-started event cannot imply final evidence exists. The Resolution Plane
+drawer exposes both safe stages through the existing compact filter visual language
+with candidate default and one/none fallback. Roving tab focus, arrows/Home/End,
+Tab/Enter/Space, focus-visible, drawer initial focus, Escape close, opener restore,
+plane reset and drawer-local scrolling are covered. No backend/schema/API/model
+authority or live behavior changed.
+
+Observed local gates:
+
+- causal Web helper/component 4/4 and full Web 17/17;
+- harness unit 7/7; focused Chromium 2/2 and full deterministic Chromium 10/10
+  across 1280x800 and 1440x900;
+- both final screenshots visually preserved the Launchpad theme/layout with zero
+  document/body X/Y overflow and readable candidate/final labels;
+- planted private evidence ID/stdout/stderr/error values remained absent from body
+  text and serialized DOM; public API private-field and store/log route-marker scans
+  passed;
+- strict test projects, Web build, and two final literal `npm run check` passes:
+  launcher 3/3, Server 592/592 with two opt-in live skips, Web 17/17 and both builds;
+- independent UI and security re-reviews passed with no remaining finding after
+  roving tabs, drawer focus lifecycle and inactive-tab contrast were corrected.
+
+No live/model request ran. Auditor integration/hosted evidence remains pending;
+UI-04 is not audited and broader E2E-02 remains incomplete.
+
 ## 2026-08-30 — UI-04 promotion evidence misbinding reproduced
 
 After final hosted run `33270319210` passed on `3846591`, the Auditor rebased the

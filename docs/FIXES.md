@@ -45,9 +45,19 @@ that limitation is explicit.
   events and the appropriate candidate/Plane promotion detail must use
   `promotionEvidence`; candidate verification events retain `verificationEvidence`.
   Reuse `EvidenceSummary`; do not change layout, styling, theme or backend evidence.
-- **Acceptance/status:** Fixer **READY**. Add distinct-marker component/browser
-  regressions for event and drawer, inspect both required viewports, verify no
-  overflow/theme/accessibility regression, run Web/full/hosted gates and UI review.
+- **Observed correction:** frontend-only. Completed promotion events select and
+  label only final `promotionEvidence`; candidate events retain candidate evidence,
+  and promotion-started shows no premature final evidence. Resolution Plane detail
+  offers both stages in an existing-theme tablist with one/none fallback, safe
+  reset, full roving keyboard semantics, visible focus, internal scroll and managed
+  drawer focus/Escape/restoration. `EvidenceSummary` remains the sole renderer and
+  ignores planted evidence IDs/stdout/stderr/errors/private diagnostics.
+- **Acceptance/status:** Fixer **CANDIDATE**, **95% scoped**, `T,C,B,U` 4/5.
+  Helper/component 4/4, Web 17/17, harness 7/7, focused browser 2/2 and full
+  Chromium 10/10 at both required viewports, strict/build and two final literal
+  checks passed. Screenshots and independent UI/security re-reviews passed with no
+  remaining finding. Auditor integration/hosted `I` remains pending; not audited.
+  `E2E-02` is unchanged and incomplete.
 
 
 ### `MR-02` — Settings implies an unavailable reviewer will run

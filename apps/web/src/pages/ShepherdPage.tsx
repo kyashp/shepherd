@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { api } from "../api";
 import { navigate } from "../router";
 import { useShepherdPolling } from "../shepherd-hooks";
@@ -30,6 +30,7 @@ import {
 } from "../ui";
 
 type EventFilter = "all" | "contracts" | "verification" | "collisions" | "resolution";
+type CandidateEvidenceStage = "candidate" | "promotion";
 
 const filterLabels: Array<{ id: EventFilter; label: string }> = [
   { id: "all", label: "All" },
@@ -55,7 +56,7 @@ function matchesFilter(event: ShepherdEvent, filter: EventFilter): boolean {
   return /resolution|candidate|tie|promotion/u.test(event.type);
 }
 
-function EvidenceSummary({ evidence }: { evidence: VerificationEvidence }) {
+export function EvidenceSummary({ evidence }: { evidence: VerificationEvidence }) {
   return (
     <div className="evidence-summary">
       <div className="evidence-head">
@@ -83,6 +84,119 @@ function EvidenceSummary({ evidence }: { evidence: VerificationEvidence }) {
   );
 }
 
+export function eventEvidencePresentation(
+  event: Pick<ShepherdEvent, "type">,
+  contract: ExecutionContract | null,
+  candidate: ResolutionCandidate | null,
+): { evidence: VerificationEvidence; label: string } | null {
+  if (contract?.verificationEvidence.at(-1)) {
+    return {
+      evidence: contract.verificationEvidence.at(-1)!,
+      label: "Contract verification",
+    };
+  }
+  if (!candidate) return null;
+  if (event.type === "promotion_completed") {
+    return candidate.promotionEvidence
+      ? {
+          evidence: candidate.promotionEvidence,
+          label: "Final promotion re-verification",
+        }
+      : null;
+  }
+  if (event.type === "promotion_started") return null;
+  return candidate.verificationEvidence
+    ? { evidence: candidate.verificationEvidence, label: "Candidate verification" }
+    : null;
+}
+
+export function candidateEvidenceStages(candidate: ResolutionCandidate | null) {
+  if (!candidate) return [];
+  return [
+    candidate.verificationEvidence
+      ? {
+          id: "candidate" as const,
+          label: "Candidate verification",
+          evidence: candidate.verificationEvidence,
+        }
+      : null,
+    candidate.promotionEvidence
+      ? {
+          id: "promotion" as const,
+          label: "Final promotion re-verification",
+          evidence: candidate.promotionEvidence,
+        }
+      : null,
+  ].filter((stage): stage is NonNullable<typeof stage> => stage !== null);
+}
+
+export function CandidateEvidencePanel({
+  candidate,
+  planeId,
+}: {
+  candidate: ResolutionCandidate;
+  planeId: string;
+}) {
+  const [evidenceStage, setEvidenceStage] = useState<CandidateEvidenceStage>("candidate");
+  useEffect(() => setEvidenceStage("candidate"), [planeId]);
+  const stages = candidateEvidenceStages(candidate);
+  const selectedStage = stages.find((stage) => stage.id === evidenceStage) ?? stages[0];
+  const selectStageFromKeyboard = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    currentIndex: number,
+  ) => {
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % stages.length;
+    if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + stages.length) % stages.length;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = stages.length - 1;
+    if (nextIndex === null) return;
+    event.preventDefault();
+    const nextStage = stages[nextIndex];
+    if (!nextStage) return;
+    setEvidenceStage(nextStage.id);
+    requestAnimationFrame(() => document.getElementById(`evidence-tab-${nextStage.id}`)?.focus());
+  };
+  if (!selectedStage) return null;
+  return (
+    <section className="drawer-section" aria-labelledby="resolution-evidence-title">
+      <h3 id="resolution-evidence-title">Resolution evidence</h3>
+      {stages.length > 1 ? (
+        <div className="filter-row evidence-stage-tabs" role="tablist" aria-label="Resolution evidence stage">
+          {stages.map((stage, index) => {
+            const selected = stage.id === selectedStage.id;
+            return (
+              <button
+                key={stage.id}
+                id={`evidence-tab-${stage.id}`}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                aria-controls="resolution-evidence-panel"
+                tabIndex={selected ? 0 : -1}
+                className={selected ? "active" : ""}
+                onClick={() => setEvidenceStage(stage.id)}
+                onKeyDown={(event) => selectStageFromKeyboard(event, index)}
+              >
+                {stage.label}
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <strong className="evidence-stage-label">{selectedStage.label}</strong>
+      )}
+      <div
+        id="resolution-evidence-panel"
+        role={stages.length > 1 ? "tabpanel" : undefined}
+        aria-labelledby={stages.length > 1 ? `evidence-tab-${selectedStage.id}` : undefined}
+      >
+        <EvidenceSummary evidence={selectedStage.evidence} />
+      </div>
+    </section>
+  );
+}
+
 function EventEvidence({
   event,
   state,
@@ -91,23 +205,28 @@ function EventEvidence({
   state: ShepherdState;
 }) {
   const contract = event.contractId
-    ? state.contracts.find((item) => item.id === event.contractId)
+    ? state.contracts.find((item) => item.id === event.contractId) ?? null
     : null;
   const candidate = event.candidateId
-    ? state.candidates.find((item) => item.id === event.candidateId)
+    ? state.candidates.find((item) => item.id === event.candidateId) ?? null
     : null;
   const collision = event.collisionId
     ? state.collisions.find((item) => item.id === event.collisionId)
     : null;
-  const evidence = contract?.verificationEvidence.at(-1) ?? candidate?.verificationEvidence ?? null;
+  const evidencePresentation = eventEvidencePresentation(event, contract, candidate);
   const safeDetails = Object.entries(event.details).filter(([key]) => !blockedDetailKeys.test(key));
-  if (!evidence && !collision && safeDetails.length === 0 && !contract?.failure && !candidate?.failure) {
+  if (!evidencePresentation && !collision && safeDetails.length === 0 && !contract?.failure && !candidate?.failure) {
     return null;
   }
   return (
     <details className="event-evidence">
       <summary>View evidence</summary>
-      {evidence ? <EvidenceSummary evidence={evidence} /> : null}
+      {evidencePresentation ? (
+        <section aria-label={evidencePresentation.label}>
+          <strong className="evidence-stage-label">{evidencePresentation.label}</strong>
+          <EvidenceSummary evidence={evidencePresentation.evidence} />
+        </section>
+      ) : null}
       {collision ? (
         <div className="claim-compare">
           <div><span>Left</span><strong>{collision.leftClaim.value}</strong></div>
@@ -320,6 +439,7 @@ function PlaneDetailDrawer({
 }) {
   const [plane, setPlane] = useState<Plane | null>(() => state.planes.find((item) => item.id === planeId) ?? null);
   const [error, setError] = useState<string | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     let active = true;
     void api.plane(planeId).then(({ plane: next }) => {
@@ -329,14 +449,23 @@ function PlaneDetailDrawer({
     });
     return () => { active = false; };
   }, [planeId]);
+  useEffect(() => closeButtonRef.current?.focus(), [planeId]);
   const contract = plane?.contractId ? state.contracts.find((item) => item.id === plane.contractId) : null;
   const candidate = plane?.candidateId ? state.candidates.find((item) => item.id === plane.candidateId) : null;
   const agent = contract ? agents.find((item) => item.id === contract.agentId) : null;
   return (
-    <aside className="detail-drawer" role="dialog" aria-modal="false" aria-labelledby="plane-detail-title">
+    <aside
+      className="detail-drawer"
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby="plane-detail-title"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") onClose();
+      }}
+    >
       <div className="drawer-heading">
         <div><span className="eyebrow">Plane detail</span><h2 id="plane-detail-title">{plane?.purpose ?? shortId(planeId, 18)}</h2></div>
-        <button onClick={onClose} aria-label="Close Plane detail">×</button>
+        <button ref={closeButtonRef} onClick={onClose} aria-label="Close Plane detail">×</button>
       </div>
       {error ? <ErrorState message={error} /> : null}
       {!plane ? <LoadingPanel label="Loading Plane evidence…" /> : (
@@ -361,7 +490,7 @@ function PlaneDetailDrawer({
             </section>
           ) : null}
           {contract?.verificationEvidence.at(-1) ? <EvidenceSummary evidence={contract.verificationEvidence.at(-1)!} /> : null}
-          {candidate?.verificationEvidence ? <EvidenceSummary evidence={candidate.verificationEvidence} /> : null}
+          {candidate ? <CandidateEvidencePanel candidate={candidate} planeId={planeId} /> : null}
           {candidate && candidate.retryCount > 0 ? (
             <section className="drawer-section retry-evidence">
               <h3>Retry evidence</h3>
@@ -393,6 +522,7 @@ function PlaneTree({
   requestedPlaneId: string | null;
 }) {
   const [selectedPlaneId, setSelectedPlaneId] = useState<string | null>(requestedPlaneId);
+  const openerRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => setSelectedPlaneId(requestedPlaneId), [requestedPlaneId]);
   const planes = mission ? state.planes.filter((plane) => plane.missionId === mission.id) : [];
   const contractPlanes = planes.filter((plane) => plane.kind === "contract");
@@ -409,7 +539,10 @@ function PlaneTree({
         className="tree-node"
         style={{ "--tree-depth": depth } as React.CSSProperties}
         key={plane.id}
-        onClick={() => setSelectedPlaneId(plane.id)}
+        onClick={(event) => {
+          openerRef.current = event.currentTarget;
+          setSelectedPlaneId(plane.id);
+        }}
         title={plane.purpose}
       >
         <span className="tree-connector" />
@@ -461,6 +594,7 @@ function PlaneTree({
           onClose={() => {
             setSelectedPlaneId(null);
             if (window.location.search) navigate("/shepherd", true);
+            requestAnimationFrame(() => openerRef.current?.focus());
           }}
         />
       ) : null}
