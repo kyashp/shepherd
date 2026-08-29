@@ -89,7 +89,11 @@ const shepherdModelReviewer = isShepherdModelReviewConfigured(config)
       apiKey: config.arkApiKey,
       model: config.shepherdModel,
       timeoutMs: 20_000,
-      sensitiveValues,
+      // The reviewer rejects its whole configuration if any supplied sensitive
+      // value is shorter than 8 characters, and authToken is legitimately empty
+      // on the documented loopback default. Passing it unfiltered would leave the
+      // reviewer permanently inert behind a misleading configuration_error.
+      sensitiveValues: sensitiveValues.filter((value) => value.length >= 8),
     })
   : undefined;
 const shepherdService = new ShepherdService({

@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { toPublicMissionDetail } from "../app.js";
+import { loadConfig } from "../config.js";
 import { JsonStore } from "../store.js";
 import { BEARER_TRANSPORT, COOKIE_TRANSPORT } from "./auth-fixture.js";
 import type {
@@ -461,4 +462,47 @@ describe("Shepherd advisory model review composition", () => {
     expect(input).toBeNull();
     expect(reviewer.inputs).toHaveLength(0);
   }, ONE_MISSION_BUDGET_MS);
+
+  it("MR-T17 composes sensitiveValues so an empty auth token cannot disable the reviewer", async () => {
+    // APP_AUTH_TOKEN is legitimately empty on the documented loopback default, and
+    // ArkModelReviewer rejects its entire configuration when any supplied sensitive
+    // value is shorter than 8 characters. Composing the raw pair would make the
+    // reviewer permanently inert behind a misleading configuration_error, without
+    // ever attempting a request. This pins the exact composition index.ts performs.
+    const config = loadConfig({
+      ARK_API_KEY: "ark-key-value-123456",
+      ARK_MODEL: "ep-agent-model",
+    });
+    expect(config.authToken).toBe("");
+
+    const fetchImpl = vi.fn<ModelReviewerFetch>(async () => completedResponse());
+    const reviewer = new ArkModelReviewer({
+      enabled: true,
+      baseUrl: config.arkBaseUrl,
+      apiKey: config.arkApiKey,
+      model: config.shepherdModel,
+      timeoutMs: 5_000,
+      sensitiveValues: [config.arkApiKey, config.authToken].filter(
+        (value) => value.length >= 8,
+      ),
+      fetchImpl,
+    });
+
+    const result = await reviewer.review({
+      contracts: [
+        { contractId: "contract-left", objective: "left", manifestSummary: "left summary",
+          claims: [{ key: "auth.transport", value: "bearer-jwt", scope: "authentication", mode: "exclusive" }],
+          changedFiles: ["src/frontend/auth.json"], diffSummary: "1 file changed" },
+        { contractId: "contract-right", objective: "right", manifestSummary: "right summary",
+          claims: [{ key: "auth.transport", value: "http-only-session-cookie", scope: "authentication", mode: "exclusive" }],
+          changedFiles: ["src/backend/auth.json"], diffSummary: "1 file changed" },
+      ],
+    });
+
+    expect(result.status).toBe("completed");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(String(fetchImpl.mock.calls[0]?.[1]?.body ?? "").includes(config.arkApiKey)).toBe(
+      false,
+    );
+  });
 });

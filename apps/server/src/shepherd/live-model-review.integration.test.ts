@@ -157,8 +157,10 @@ describe.skipIf(!liveEnabled)("Shepherd live SHEPHERD_MODEL advisory review", ()
 
       const caseRoot = await mkdtemp(path.join(liveRoot, "case-"));
       const storePath = path.join(caseRoot, "state.json");
+      // Must match the production filter in index.ts exactly, or this gate
+      // silently exercises a composition the server never uses.
       const secrets = [config.arkApiKey, config.authToken].filter(
-        (value) => value.length >= 4,
+        (value) => value.length >= 8,
       );
       const store = new JsonStore(storePath, { sensitiveValues: secrets });
       await store.initialize();

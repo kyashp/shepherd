@@ -930,10 +930,45 @@ model supplied the manifest summary text; and `validateAndNormalizeFindings` ret
 review including its valid findings. Tracked as `MR-03`. `ArkModelReviewer` is
 deliberately unmodified by this change.
 
+### Composition defect found by adversarial review
+
+An adversarial review of the branch diff found a high-severity defect in the
+composition itself. `apps/server/src/index.ts` passed `[arkApiKey, authToken]`
+unfiltered into `ArkModelReviewer`. `validateConfiguration` rejects the entire
+configuration when any supplied sensitive value is shorter than eight characters, and
+`config.authToken` is legitimately `""` on the documented loopback default, where
+`APP_AUTH_TOKEN` is required only for non-loopback listeners. The reviewer was
+therefore permanently inert: every qualifying Mission emitted
+`model_review_degraded / configuration_error` **without ever attempting a request**,
+behind a reason that reads as a credential problem.
+
+Reproduced with the compiled adapter and an empty auth token:
+
+```text
+as shipped      -> degraded/configuration_error | fetch attempted: false
+with >= 8 filter -> completed                   | fetch attempted: true
+```
+
+Fixed by filtering at the construction site. `MR-T17` pins the exact composition
+`index.ts` performs and was confirmed to fail without the filter
+(`expected 'degraded' to be 'completed'`).
+
+Nothing caught this earlier because every service test used a scripted fake with
+`sensitiveValues: []`, `MR-T16` supplied a single long key, and the live gate
+pre-filtered at `>= 4`, which dropped the empty token and exercised a composition the
+server never uses. The live gate now filters at `>= 8` to match production exactly.
+
+The remaining adapter-side weakness is deliberately out of this branch's scope:
+`validateConfiguration` rejects a whole configuration for one unusable sensitive
+value rather than dropping it or naming a caller-side mistake.
+
 ### Recorded limitations
 
 - The live gate has never observed a `completed` review; only the degradation path is
   live-proven. Until `MR-03` is fixed, the advisory reviewer is safe but silent.
+- Mid-review cancellation (the poller) has a test seam but no test.
+- Both UI changes (the Verification stream filter and the `degraded` tone) are
+  untested: the web workspace has no test runner, so there is nowhere to put one.
 - `apps/server/src/index.ts` is a top-level-`await` entrypoint with no export, so its
   composition is build-verified rather than test-verified.
 - No container runtime was available, so the two container-gated suites skipped as
