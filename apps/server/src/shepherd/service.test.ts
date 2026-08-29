@@ -1429,6 +1429,78 @@ describe("Shepherd deterministic walking skeleton", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("reserves a clean demo reset against a concurrent Mission start", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      executor: new CanaryFailureExecutor("concurrent start", "reset reservation"),
+    });
+    await service.initialize();
+
+    const [reset, start] = await Promise.allSettled([
+      service.resetDeterministicDemo(),
+      service.runDeterministicDemo(),
+    ]);
+
+    expect(reset).toMatchObject({
+      status: "fulfilled",
+      value: {
+        projectId: "auth-demo",
+        restoredHead: null,
+        removed: { missions: 0 },
+      },
+    });
+    expect(start).toMatchObject({
+      status: "rejected",
+      reason: { message: "A deterministic Mission is already active for this project" },
+    });
+    expect(service.state().projects).toEqual([]);
+    expect(service.state().missions).toEqual([]);
+  });
+
+  it("reserves an initialized demo reset against a concurrent Mission start", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      executor: new CanaryFailureExecutor("concurrent start", "reset reservation"),
+    });
+    await service.initialize();
+    await expect(service.runDeterministicDemo()).rejects.toThrow(
+      "executor leaked concurrent start from reset reservation",
+    );
+    expect(service.state().projects).toHaveLength(1);
+    expect(service.state().missions).toHaveLength(1);
+
+    const [reset, start] = await Promise.allSettled([
+      service.resetDeterministicDemo(),
+      service.runDeterministicDemo(),
+    ]);
+
+    expect(reset).toMatchObject({
+      status: "fulfilled",
+      value: {
+        projectId: "auth-demo",
+        restoredHead: expect.stringMatching(/^[0-9a-f]{40}$/u),
+        removed: { missions: 1 },
+      },
+    });
+    expect(start).toMatchObject({
+      status: "rejected",
+      reason: { message: "A deterministic Mission is already active for this project" },
+    });
+    expect(service.state().missions).toEqual([]);
+  }, 30_000);
+
   it("resumes a reset after Git reached the initial commit and preserves unrelated cursors", async () => {
     const caseRoot = await makeCaseRoot();
     const managedRoot = path.join(caseRoot, "managed");
