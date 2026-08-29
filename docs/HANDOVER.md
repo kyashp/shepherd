@@ -9,6 +9,12 @@
 **Assessed implementation checkpoint:** `6c1a948c52b8c6b8107ffcc87e63a1352e62481a`
 (`chore(docs): add techjam brief docs`)
 
+**Active stacked UI delta:** [draft PR #17](https://github.com/kyashp/shepherd/pull/17)
+contains the minimal viewport/layout corrections described below at commit
+`1406b7e38cea03390878f5b6b775c41fd27776d1`. This documentation branch is a
+child of PR #17 and must merge after its parent. Neither the UI changes nor this
+evidence update is part of `main` yet.
+
 **Repository observation:** the working tree was clean before this documentation
 update, and local `main` matched `origin/main` at the assessed checkpoint. The
 historical `feature/shepherd-phase-*` branches do not by themselves claim current
@@ -257,9 +263,13 @@ For **every UI fix**, the following additional rules are mandatory:
 | Authenticated Shepherd HTTP schemas, stable error statuses, path-free controls, demo-mode guards, and public DTO redaction | API tests; focused 116-test gate; full server suite | **95%** |
 | Project Group **parser only**: bounded normalization, exact/quoted mentions, ambiguity rejection, and inert untrusted content | `group-routing.test.ts`: 10/10 passed | **97%** |
 | Standalone `ArkModelReviewer` adapter only: schema validation, bounded I/O, timeout/cancellation, sensitive-value rejection, and explicit degradation results | `model-reviewer.test.ts` and Phase 3 full suite | **94%** |
+| Project Group clean-start **layout only** on draft PR #17 | Playwright with mocked authenticated API state at `1280x800` and `1440x900`: composer remained inside the panel/viewport, message history owned the flexible region, and document X/Y overflow was absent; screenshots were visually inspected | **93%** for this empty-state layout only; interaction, populated history, accessibility, and independent UI review remain |
 | Phase 3 live Codex runtime isolation at the Phase 3 checkpoint | Two fresh live Missions, eight isolated sessions, real collision/promotion evidence recorded in `docs/BUILD_LOG.md` | **88%**; not rerun after Phase 4 changes |
 
-The following are **not** included in the fully-tested claim above: rendered UI behavior, complete Group Chat behavior, general DAG scheduling, model-review Mission composition, and every missing/partial row in the failure matrix.
+The following are **not** included in the fully-tested claim above: rendered UI
+behavior beyond the narrowly scoped Project Group layout row, complete Group Chat
+behavior, general DAG scheduling, model-review Mission composition, and every
+missing/partial row in the failure matrix.
 
 ### Confirmed defects and partial behavior
 
@@ -295,9 +305,9 @@ The following are **not** included in the fully-tested claim above: rendered UI 
 
 | Feature/path | What exists | Missing evidence before it may be called complete |
 |---|---|---|
-| Six UI surfaces and shared navigation/design system | All requested routes compile and production-build | Real browser interaction, screenshots, responsive review, accessibility, and independent UI review |
-| Shepherd stream, filters, timeline, Plane Tree, detail drawer, cancel/selection controls | React components and API bindings exist | Populated deterministic browser journey, real Git/tree comparison, event visibility timing, failure slices |
-| Project Group message display/polling | Read API, sorting, connection/error/empty states exist | Browser polling/reconnect test plus fixes for `GC-01..06` |
+| Six UI surfaces and shared navigation/design system | All requested routes compile and production-build; draft PR #17 preserves the existing palette/components while moving page overflow into bounded internal regions and replacing the Shepherd glyph with Iconoir solid `cube-scan` geometry | Browser all six routes and all interaction states at both required viewports; accessibility and independent UI review |
+| Shepherd stream, filters, timeline, Plane Tree, detail drawer, cancel/selection controls | React components and API bindings exist; draft PR #17 keeps the composer in the flex-owned viewport, reduces excess stream/tree bottom spacing, shows seconds in short timelines, and labels Resolution rows by target value | Populated deterministic browser journey at both viewports, real Git/tree comparison, event visibility timing, failure slices, and screenshot review; the PR #17 Shepherd changes have source/build evidence only |
+| Project Group message display/polling | Read API, sorting, connection/error/empty states exist; draft PR #17 anchors the composer below a flexible scrollable history using the private-Agent chat layout pattern, with the clean-start empty state browser-checked at both required viewports | Browser polling/reconnect and populated-history tests plus fixes for `GC-01..06`; `GC-05` still disables typing before a project exists |
 | Legacy Playground in the new shell | Existing workflow retained in source | Create → task → follow-up → stop/restart Playwright regression |
 | Create/Edit Agent UI | Role/preset/advanced forms compile | Browser validation, keyboard/accessibility, and persistence round-trip |
 | Settings UI | Timeout/concurrency/auto-resolution values call real API | Browser round-trip; fix misleading model/notification controls and startup-env composition |
@@ -424,11 +434,11 @@ known requirement mismatch exists; **Unimplemented** = no composed product path;
 
 | ID | Requirement | Status | Blocking work/evidence |
 |---|---|---|---|
-| `UI-S01` | 11.1 sidebar/navigation | **I-U** | Source/build only; visual/responsive/keyboard review pending. |
-| `UI-S02` | 11.2 real event stream, filters, evidence, composer | **I-U** | Backend data exists; browser polling/latency/error evidence pending. |
-| `UI-S03` | 11.3 timeline with actuals and labelled estimates | **Partial** | Actual timestamp UI exists; real estimates absent (`UI-02`). |
+| `UI-S01` | 11.1 sidebar/navigation | **I-U; scoped visual evidence on draft PR #17** | Sidebar and official Shepherd icon were visually inspected with the Project Group empty state at both viewports; complete route, responsive, focus, and keyboard review remains. |
+| `UI-S02` | 11.2 real event stream, filters, evidence, composer | **I-U; layout correction on draft PR #17** | Composer/flexible-panel source and build checks pass; populated Shepherd browser polling/latency/error evidence remains. |
+| `UI-S03` | 11.3 timeline with actuals and labelled estimates | **Partial; legibility correction on draft PR #17** | Actual timestamps now include seconds for short runs and Resolution rows identify the target value; rendered populated-state evidence and real persisted estimates remain (`UI-02`). |
 | `UI-S04` | 11.4 Plane Tree and Git-reality detail | **I-U** | Data/detail UI exists; browser-to-`git worktree` comparison pending. |
-| `UI-S05` | 11.5 Project Group, Agent, Create/Edit | **Defective/I-U** | `GC-01..06`; remaining Agent/browser form/Playground evidence pending. |
+| `UI-S05` | 11.5 Project Group, Agent, Create/Edit | **Defective/I-U; clean-start layout verified on draft PR #17** | Project Group composer placement/no-page-overflow passed at both viewports, but the clean-start textarea was observed disabled (`GC-05`); `GC-01..06` and remaining Agent/form/Playground browser evidence remain. |
 | `E2E-01` | 11.6.1 baseline create/task/follow-up/restart | **Not evaluated on current UI** | Build a deterministic browser harness plus one sparse live Runtime acceptance. |
 | `E2E-02` | 11.6.2 full Mission hero chain | **Backend pass; browser not evaluated** | Eight-stage browser assertions/screenshots and timing. |
 | `E2E-03` | 11.6.3 `@Agent` journey | **Blocked by defects** | `GC-01`, `GC-03`, `GC-04`, `GC-05`. |
@@ -437,7 +447,7 @@ known requirement mismatch exists; **Unimplemented** = no composed product path;
 | `E2E-06` | 11.6.6 objective tie and human selection | **Unit/control exists; service/browser not evaluated** | Real tie state → verified choice → promotion. |
 | `E2E-07` | 11.6.7 cancellation | **Backend pass; browser not evaluated** | Mid-Mission browser cancellation plus repeated-cancel check. |
 | `E2E-08` | 11.6.8 restart interruption | **Backend process pass; browser not evaluated** | Browser reconnect shows durable interrupted state and nothing green. |
-| `UI-GATE` | 11.7 visual checklist and all UI states at 1280x800/1440x900 | **Assurance pending** | No current Shepherd screenshot corpus, accessibility run, or independent `ui-reviewer` result. Preserve the mandatory minimal UI policy above. |
+| `UI-GATE` | 11.7 visual checklist and all UI states at 1280x800/1440x900 | **Assurance pending; one scoped state evidenced** | Draft PR #17 has Playwright/visual evidence for the Project Group clean-start empty-state layout only. A committed screenshot corpus, all other routes/states, accessibility run, and independent `ui-reviewer` result remain. Preserve the mandatory minimal UI policy above. |
 
 ### PRD 12 failure matrix
 
@@ -795,6 +805,68 @@ Not run after this checkpoint:
 - three timed clean demo rehearsals;
 - a final live Mission on current `main`;
 - a post-merge gate for these documentation changes.
+
+### Draft PR #17 scoped UI correction and evidence
+
+This is newer, narrowly scoped evidence than the historical checkpoint immediately
+above. It does **not** close the overall `UI-GATE` or replace the pending browser
+journeys.
+
+[Draft PR #17](https://github.com/kyashp/shepherd/pull/17) targets `main` from
+`fix/15-ui-viewport-layout`. Its three implementation commits are
+`3a4e24c`, `abc0c9a`, and `1406b7e`. The owned implementation files are
+`apps/web/src/styles.css`, `apps/web/src/ui.tsx`, and
+`apps/web/src/pages/ShepherdPage.tsx`; it deliberately does not edit
+`ProjectGroupPage.tsx`, which is owned by the active Group Chat branch.
+
+Implemented in the draft parent:
+
+- replaced the Shepherd navigation/avatar glyph with the official Iconoir solid
+  `cube-scan` geometry while retaining the existing icon wrapper and colors;
+- made the application shell own the laptop viewport and moved overflow into the
+  affected internal panels instead of allowing document-level X/Y scrolling;
+- made the Shepherd grid consume its available main-canvas height, retained the
+  composer as a fixed flex child, and reduced excess event-stream/Plane-tree bottom
+  padding;
+- made the Project Group panel use the same fixed-composer/flexible-scroll-history
+  structure as private Agent chat, fixing the optional-reconnect-row layout bug that
+  stretched the composer upward;
+- improved only directly affected compact text and timeline legibility, including
+  seconds for short actual timestamps and target values on Resolution rows.
+
+Observed verification on 2026-08-29:
+
+- `npm run typecheck -w @launchpad/web` passed;
+- `npm run build -w @launchpad/web` passed;
+- `npm run check` passed after the final Project Group CSS correction: 26 server
+  test files passed and one opt-in live file was skipped; 544 tests passed and one
+  was skipped; both application typechecks and production builds passed;
+- `git diff --check` passed;
+- a repository-local Playwright Chromium run used mocked authenticated API data for
+  the clean-start Project Group state at `1280x800` and `1440x900`. At `1280x800`,
+  the panel occupied Y `92..776`, messages `133..682`, and composer `682..775`. At
+  `1440x900`, the corresponding bounds were `92..876`, `133..782`, and `782..875`.
+  Both runs reported no document X/Y overflow and screenshots were visually
+  inspected against the existing Launchpad aesthetic;
+- the browser binary was installed only inside the ignored worktree and removed
+  after verification. The temporary screenshots were not committed, so the final
+  durable screenshot corpus is still pending.
+
+Confirmed limitations and required next checks:
+
+- the same Playwright run observed `textarea.disabled === true` in the clean-start
+  Project Group state. This is existing defect `GC-05`, not fixed by PR #17;
+- the Shepherd page, populated Project Group history, all remaining routes,
+  keyboard/focus behavior, loading/error/reconnect states, and accessibility were
+  not rendered after the final correction and must not be inferred from the scoped
+  empty-state result;
+- no model/API capacity was consumed for this UI verification;
+- the required independent `ui-reviewer` role was unavailable, so PR #17 remains
+  draft pending that review and the remaining rendered gates;
+- preserve the mandatory minimal-fix and existing-UI instructions above when
+  addressing any remaining UI defect. Do not broaden PR #17 into Group Chat product
+  behavior; coordinate `GC-05` with the active Group Chat owner and merge stacks in
+  documented parent order.
 
 ## 8. Failure-matrix audit
 
