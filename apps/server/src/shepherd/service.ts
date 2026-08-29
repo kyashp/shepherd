@@ -288,7 +288,7 @@ export class ShepherdControlError extends Error {
 
 export interface DeterministicDemoResetResult {
   projectId: "auth-demo";
-  restoredHead: string;
+  restoredHead: string | null;
   removedPlanePaths: string[];
   removed: {
     missions: number;
@@ -1524,116 +1524,138 @@ export class ShepherdService {
         "The auth demo cannot reset while its control plane is active",
       );
     }
-    const snapshot = this.store.snapshot();
-    const project = snapshot.shepherd.projects.find((item) => item.id === projectId);
-    if (!project) throw new ShepherdControlError("not_found", "Auth demo was not found");
-    if (
-      snapshot.shepherd.missions.some(
-        (mission) => mission.projectId === projectId && !terminalMission(mission.state),
-      )
-    ) {
-      throw new ShepherdControlError(
-        "conflict",
-        "The auth demo cannot reset while a Mission is active",
-      );
-    }
-    const managedProject = await openAuthDemoProject({
-      managedRoot: this.managedRoot,
-      projectId,
-    });
-    if (
-      managedProject.repositoryPath !== project.repositoryPath ||
-      managedProject.protectedBranch !== project.protectedBranch ||
-      (managedProject.headCommit !== project.protectedHeadCommit &&
-        managedProject.headCommit !== managedProject.initialCommit)
-    ) {
-      throw new ShepherdControlError(
-        "conflict",
-        "Managed auth demo differs from durable trusted state",
-      );
-    }
-    const planeManager = new PlaneManager({
-      repositoryPath: managedProject.repositoryPath,
-      planesRoot: managedProject.planesRoot,
-      protectedBranch: managedProject.protectedBranch,
-      git: new GitClient(managedProject.repositoryPath, {
-        worktreeRoot: managedProject.planesRoot,
-        protectedBranch: managedProject.protectedBranch,
-      }),
-      now: this.now,
-    });
-    await planeManager.initialize();
-    const removedPlanePaths = await planeManager.resetManagedPlanes();
-    const resetProject = await resetAuthDemoProject({
-      managedRoot: this.managedRoot,
-      projectId,
-    });
-    const result = await this.store.mutate((database) => {
-      const missionIds = new Set(
-        database.shepherd.missions
-          .filter((mission) => mission.projectId === projectId)
-          .map((mission) => mission.id),
-      );
-      const counts = {
-        missions: database.shepherd.missions.filter((item) => missionIds.has(item.id)).length,
-        contracts: database.shepherd.contracts.filter((item) => missionIds.has(item.missionId)).length,
-        planes: database.shepherd.planes.filter((item) => missionIds.has(item.missionId)).length,
-        claims: database.shepherd.claims.filter((item) => missionIds.has(item.missionId)).length,
-        collisions: database.shepherd.collisions.filter((item) => missionIds.has(item.missionId)).length,
-        candidates: database.shepherd.candidates.filter((item) => missionIds.has(item.missionId)).length,
-        events: database.shepherd.events.filter((item) => item.missionId && missionIds.has(item.missionId)).length,
-        messages: database.shepherd.groupMessages.filter((item) => item.projectId === projectId).length,
-      };
-      database.shepherd.missions = database.shepherd.missions.filter(
-        (item) => !missionIds.has(item.id),
-      );
-      database.shepherd.contracts = database.shepherd.contracts.filter(
-        (item) => !missionIds.has(item.missionId),
-      );
-      database.shepherd.planes = database.shepherd.planes.filter(
-        (item) => !missionIds.has(item.missionId),
-      );
-      database.shepherd.claims = database.shepherd.claims.filter(
-        (item) => !missionIds.has(item.missionId),
-      );
-      database.shepherd.collisions = database.shepherd.collisions.filter(
-        (item) => !missionIds.has(item.missionId),
-      );
-      database.shepherd.candidates = database.shepherd.candidates.filter(
-        (item) => !missionIds.has(item.missionId),
-      );
-      database.shepherd.events = database.shepherd.events.filter(
-        (item) => !item.missionId || !missionIds.has(item.missionId),
-      );
-      database.shepherd.groupMessages = database.shepherd.groupMessages.filter(
-        (item) => item.projectId !== projectId,
-      );
-      const persistedProject = database.shepherd.projects.find(
-        (item) => item.id === projectId,
-      );
-      if (!persistedProject) throw new Error("Auth demo project disappeared during reset");
-      persistedProject.protectedHeadCommit = resetProject.initialCommit;
-      persistedProject.activeMissionId = null;
-      persistedProject.updatedAt = this.timestamp();
-      for (const agent of database.agents) {
-        if (
-          agent.id === deterministicDemoAgentId(projectId, "frontend") ||
-          agent.id === deterministicDemoAgentId(projectId, "backend")
-        ) {
-          agent.status = "ready";
-          agent.currentContractId = null;
-          agent.lastError = null;
-          agent.updatedAt = this.timestamp();
-        }
+    this.activeProjects.add(projectId);
+    try {
+      const snapshot = this.store.snapshot();
+      const project = snapshot.shepherd.projects.find((item) => item.id === projectId);
+      if (!project) {
+        await assertNoManagedProjectState(this.managedRoot);
+        return {
+          projectId,
+          restoredHead: null,
+          removedPlanePaths: [],
+          removed: {
+            missions: 0,
+            contracts: 0,
+            planes: 0,
+            claims: 0,
+            collisions: 0,
+            candidates: 0,
+            events: 0,
+            messages: 0,
+          },
+        };
       }
-      return counts;
-    });
-    return {
-      projectId,
-      restoredHead: resetProject.initialCommit,
-      removedPlanePaths,
-      removed: result,
-    };
+      if (
+        snapshot.shepherd.missions.some(
+          (mission) => mission.projectId === projectId && !terminalMission(mission.state),
+        )
+      ) {
+        throw new ShepherdControlError(
+          "conflict",
+          "The auth demo cannot reset while a Mission is active",
+        );
+      }
+      const managedProject = await openAuthDemoProject({
+        managedRoot: this.managedRoot,
+        projectId,
+      });
+      if (
+        managedProject.repositoryPath !== project.repositoryPath ||
+        managedProject.protectedBranch !== project.protectedBranch ||
+        (managedProject.headCommit !== project.protectedHeadCommit &&
+          managedProject.headCommit !== managedProject.initialCommit)
+      ) {
+        throw new ShepherdControlError(
+          "conflict",
+          "Managed auth demo differs from durable trusted state",
+        );
+      }
+      const planeManager = new PlaneManager({
+        repositoryPath: managedProject.repositoryPath,
+        planesRoot: managedProject.planesRoot,
+        protectedBranch: managedProject.protectedBranch,
+        git: new GitClient(managedProject.repositoryPath, {
+          worktreeRoot: managedProject.planesRoot,
+          protectedBranch: managedProject.protectedBranch,
+        }),
+        now: this.now,
+      });
+      await planeManager.initialize();
+      const removedPlanePaths = await planeManager.resetManagedPlanes();
+      const resetProject = await resetAuthDemoProject({
+        managedRoot: this.managedRoot,
+        projectId,
+      });
+      const result = await this.store.mutate((database) => {
+        const missionIds = new Set(
+          database.shepherd.missions
+            .filter((mission) => mission.projectId === projectId)
+            .map((mission) => mission.id),
+        );
+        const counts = {
+          missions: database.shepherd.missions.filter((item) => missionIds.has(item.id)).length,
+          contracts: database.shepherd.contracts.filter((item) => missionIds.has(item.missionId)).length,
+          planes: database.shepherd.planes.filter((item) => missionIds.has(item.missionId)).length,
+          claims: database.shepherd.claims.filter((item) => missionIds.has(item.missionId)).length,
+          collisions: database.shepherd.collisions.filter((item) => missionIds.has(item.missionId)).length,
+          candidates: database.shepherd.candidates.filter((item) => missionIds.has(item.missionId)).length,
+          events: database.shepherd.events.filter((item) => item.missionId && missionIds.has(item.missionId)).length,
+          messages: database.shepherd.groupMessages.filter((item) => item.projectId === projectId).length,
+        };
+        database.shepherd.missions = database.shepherd.missions.filter(
+          (item) => !missionIds.has(item.id),
+        );
+        database.shepherd.contracts = database.shepherd.contracts.filter(
+          (item) => !missionIds.has(item.missionId),
+        );
+        database.shepherd.planes = database.shepherd.planes.filter(
+          (item) => !missionIds.has(item.missionId),
+        );
+        database.shepherd.claims = database.shepherd.claims.filter(
+          (item) => !missionIds.has(item.missionId),
+        );
+        database.shepherd.collisions = database.shepherd.collisions.filter(
+          (item) => !missionIds.has(item.missionId),
+        );
+        database.shepherd.candidates = database.shepherd.candidates.filter(
+          (item) => !missionIds.has(item.missionId),
+        );
+        database.shepherd.events = database.shepherd.events.filter(
+          (item) => !item.missionId || !missionIds.has(item.missionId),
+        );
+        database.shepherd.groupMessages = database.shepherd.groupMessages.filter(
+          (item) => item.projectId !== projectId,
+        );
+        const persistedProject = database.shepherd.projects.find(
+          (item) => item.id === projectId,
+        );
+        if (!persistedProject) throw new Error("Auth demo project disappeared during reset");
+        persistedProject.protectedHeadCommit = resetProject.initialCommit;
+        persistedProject.activeMissionId = null;
+        persistedProject.updatedAt = this.timestamp();
+        for (const agent of database.agents) {
+          if (
+            agent.id === deterministicDemoAgentId(projectId, "frontend") ||
+            agent.id === deterministicDemoAgentId(projectId, "backend")
+          ) {
+            agent.status = "ready";
+            agent.currentContractId = null;
+            agent.lastError = null;
+            agent.updatedAt = this.timestamp();
+          }
+        }
+        return counts;
+      });
+      return {
+        projectId,
+        restoredHead: resetProject.initialCommit,
+        removedPlanePaths,
+        removed: result,
+      };
+    } finally {
+      this.activeProjects.delete(projectId);
+    }
   }
 
   eventsAfter(cursor: number, limit = 200): ShepherdEvent[] {

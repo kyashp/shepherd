@@ -15,6 +15,11 @@ contains the minimal viewport/layout corrections described below at commit
 child of PR #17 and must merge after its parent. Neither the UI changes nor this
 evidence update is part of `main` yet.
 
+**Active reviewed reset delta:** `RST-01` is implemented at
+`19a2e45f7a67c575d9acced3dfcfbc6a32f5718e` on
+[`fix/7-rst-01-idempotent-reset` draft PR #10](https://github.com/kyashp/shepherd/pull/10).
+The issue and PR remain open; this fix is not yet part of `main`.
+
 **Repository observation:** the working tree was clean before this documentation
 update, and local `main` matched `origin/main` at the assessed checkpoint. The
 historical `feature/shepherd-phase-*` branches do not by themselves claim current
@@ -70,8 +75,9 @@ The repository now has a strong deterministic Shepherd kernel, a proven live
 Codex-in-container boundary, a strict authenticated API, durable
 cancellation/retry/tie/reset controls, Agent roles and scoped authority, and all
 six requested React surfaces implemented in source. The rendered UI gate is still
-pending. The latest production type checks, production builds, and full server suite
-are green.
+pending. The latest production type checks and builds are green. The full server
+suite is green when run with one worker; unconstrained parallel execution has the
+fixed-timeout stability gap tracked as `TST-01`.
 
 The remaining work is material:
 
@@ -86,8 +92,9 @@ The remaining work is material:
   ignored `.env` is still preserved and the server correctly refuses its
   placeholder token. Branch `fix/29-ops-04-local-loopback` contains the minimal
   local-only loopback correction and passed its real startup smoke.
-- A clean-start demo reset returns `500 Auth demo was not found`; reset succeeds
-  after the first demo project has been initialized.
+- `RST-01` clean-start reset is fixed and independently reviewed on
+  [draft PR #10](https://github.com/kyashp/shepherd/pull/10); merge-group,
+  merged-`main`, and ledger verification remain.
 
 Do not treat `main` as complete merely because the current deterministic suite is
 green. Every future change still goes through a protected PR, and every completion
@@ -263,7 +270,7 @@ For **every UI fix**, the following additional rules are mandatory:
 | Final promotion gate: authority recheck, independent re-verification, selected-candidate validation, protected-head consistency, and trusted Git promotion | Promotion-gate negative tests, Git integration tests, service compensation tests | **96%** |
 | Restart recovery at four process-kill checkpoints, with no falsely completed Mission | Recovery unit/process tests and full server suite | **95%** |
 | Cancellation linearization in both promotion race directions and exact executor/verifier cancellation targets | Dedicated service race tests; full server suite | **95%** |
-| Guarded `auth-demo` reset, unrelated-data preservation, cursor preservation, hostile-path protection, and recovery after Git-reset/store-persist failure | Reset/service/database tests; full server suite | **95%** |
+| Guarded `auth-demo` reset, clean-start idempotence, reset/start serialization, unrelated-data and cursor preservation, hostile-path protection, and partial-reset recovery | Causal service/API reset tests; concurrent clean/initialized reset tests; persistence/recovery suites; independent review on [PR #10](https://github.com/kyashp/shepherd/pull/10) | **98%** |
 | Authenticated Shepherd HTTP schemas, stable error statuses, path-free controls, demo-mode guards, and public DTO redaction | API tests; focused 116-test gate; full server suite | **95%** |
 | Project Group **parser only**: bounded normalization, exact/quoted mentions, ambiguity rejection, and inert untrusted content | `group-routing.test.ts`: 10/10 passed | **97%** |
 | Standalone `ArkModelReviewer` adapter only: schema validation, bounded I/O, timeout/cancellation, sensitive-value rejection, and explicit degradation results | `model-reviewer.test.ts` and Phase 3 full suite | **94%** |
@@ -275,6 +282,12 @@ behavior beyond the narrowly scoped Project Group layout row, complete Group Cha
 behavior, general DAG scheduling, model-review Mission composition, and every
 missing/partial row in the failure matrix.
 
+### Fixed on an active PR, pending merge
+
+| ID | Fix and evidence | Active PR | Remaining gate |
+|---|---|---|---|
+| `RST-01` | A clean root now returns a deliberate path-free empty success without creating a Mission or fixture. Clean and initialized resets reserve `auth-demo` across all asynchronous work, so Mission startup cannot race destructive cleanup. Causal service/API and concurrency regressions, adjacent persistence/recovery suites, a full constrained check, and an independent follow-up review are green. | [Draft PR #10](https://github.com/kyashp/shepherd/pull/10), reviewed implementation commit `19a2e45f7a67c575d9acced3dfcfbc6a32f5718e` | Merge/required checks, rerun clean and initialized reset on updated `main`, then update issue and merged-SHA ledgers. |
+
 ### Confirmed defects and partial behavior
 
 | ID | Area | Confirmed defect / mismatch | User-visible or safety impact | Required minimal correction |
@@ -283,7 +296,6 @@ missing/partial row in the failure matrix.
 | `OPS-02` (resolved) | Direct local startup / paths | Merged PR #28 makes `./scripts/start-local-poc.sh` perform one guarded Node dotenv handoff and maps only the exact Docker-default data paths into the host local state root. Its regression, full gate, and independent fallback security review passed. | Direct zero-parameter shell startup now safely loads `.env`; explicit custom host paths remain unchanged. | Retain the dotenv, secret non-disclosure, default localization, and custom-path regressions. |
 | `OPS-04` | Local startup host binding | The ignored operator `.env` contains container-wide `HOST=0.0.0.0` and a placeholder application token. The real post-merge direct command reaches `node dist/index.js`, then the server correctly exits 1 rather than expose an unsafe public bind. | The promised zero-parameter local command still fails with the configured `.env`. | In the local launcher only, normalize empty and exact any-address hosts (`0.0.0.0`, `::`) to `127.0.0.1`; preserve custom hosts and the server's non-loopback token enforcement. Branch `fix/29-ops-04-local-loopback` has a causal regression across all host branches, real startup/API/shutdown smoke, full green gate, and independent fallback security review with its sole Low coverage finding closed. |
 | `OPS-05` | Local launcher self-entry | On macOS, `/var/...` from `os.tmpdir()` and ESM's `/private/var/...` module identity compared unequal lexically, so a directly invoked copied launcher exited before spawning its child. Issue [#31](https://github.com/kyashp/shepherd/issues/31) owns the correction. | Direct local launch can exit 0 without starting the control-plane child. | Canonicalize both entry paths before comparison; the regression invokes a symlink alias and asserts a child side effect. The fixture supplies an isolated `HOME` and follows the documented Darwin/Linux local-state root. Focused suite passed 3/3 five times; full check and audit passed. |
-| `RST-01` | Demo reset | `POST /api/shepherd/demo/reset` on a clean data root returns HTTP 500 with `Auth demo was not found`; after one Mission initializes `auth-demo`, reset succeeds and removes all managed state. | “Reset demo state” fails on first launch and exposes a server error instead of an idempotent clean result. | Make clean-start reset an idempotent success or return a deliberate non-error empty result; add service/API/UI regression tests. |
 | `GC-01` | Group Chat mention buttons | UI inserts `@Frontend Agent`, while names containing spaces require `@"Frontend Agent"`. The UI-generated value reproduces `unknown_agent`. | Mention buttons do not route the demo Agents. | Quote/escape whitespace-containing names using the parser's existing JSON mention syntax; add a browser regression test. |
 | `GC-02` | Unmentioned Group Chat messages | The backend persists a human message with no target, but does not invoke Shepherd, create work, or post a Shepherd response. | UI says “Unmentioned → Shepherd,” but no Shepherd action occurs. | Route through an existing bounded Shepherd action/response contract; do not add free-form shell/model authority. |
 | `GC-03` | `@Agent` assignment | It only links to an already-created Contract in an active Mission; it cannot create a new bounded Contract. | The required targeted Contract journey is incomplete. | Add a constrained, schema-validated Contract-creation path or change the copy/acceptance contract if product direction is explicitly revised. |
@@ -306,6 +318,8 @@ missing/partial row in the failure matrix.
 | `SCH-02` | Cycle timing | Cycles are rejected during scheduler evaluation, not before graph persistence/creation. | Invalid graphs may persist until execution. | Validate before persistence using the existing DAG validator. |
 | `UI-01` | Failed Mission evidence | Detailed failure UI is focused on `attention_required`; ordinary `failed` Missions can hide the specific failure. | A failed run may look unexplained. | Reuse the current attention/failure components for all non-green terminal Mission failures. |
 | `UI-02` | Timeline estimates | The UI renders an `est.` bar only if `estimatedDurationMs` exists, but no server/domain path produces or persists that field. | PRD Goal 16 / 11.3 estimated durations are absent in real Missions. | Persist a clearly labelled trusted estimate or remove the dead optional UI branch only if the PRD is explicitly revised; add API and browser assertions that distinguish estimates from actual timing. |
+| `TST-01` | Parallel test stability | On the RST-01 branch, three unconstrained `npm run check` attempts hit different existing 1-second/5-second timeouts in Git-heavy service, recovery, and Plane integration tests. Each affected test passed isolated; the complete suite passed with one worker and unchanged assertions. | Required checks can fail nondeterministically under local/CI resource contention even when product behavior is correct. | In a separate test-harness PR, replace timing proxies with condition barriers where applicable, give real-Git integration journeys evidence-based ceilings, or cap Vitest workers. Preserve assertions and first reproduce RED under contention. |
+| `CI-01` | Pull-request checks | GitHub reports no status checks for [draft PR #10](https://github.com/kyashp/shepherd/pull/10). | A locally verified branch can reach review without an independent automated typecheck/test/build result. | Add or repair required pull-request automation for the documented Node runtime; protect `main` with the resulting checks. Keep workflow/configuration changes separate from RST-01. |
 
 ### Implemented but not fully tested
 
@@ -351,7 +365,7 @@ missing/partial row in the failure matrix.
 
 The next agent must explicitly mark each item pass/fail with the exact command and observed evidence:
 
-1. Fix and test `OPS-01`, `OPS-02`, and `RST-01`: `.env` propagation, repository-local host paths, and idempotent clean-start reset.
+1. Fix and test `OPS-01` and `OPS-02`: `.env` propagation and repository-local host paths. Keep startup secret/path work separate from the reviewed `RST-01` reset PR.
 2. Add service fault-injection tests for `F-01..08`, missing/malformed/omitted manifests, Contract acceptance failure, objective tie, final re-verification, repeated cancellation, and persistence recovery.
 3. Add Group Chat unit/API/browser regressions for `GC-01..06`, including quoted whitespace names, a clean-start state, a message that produces a bounded Shepherd result, a targeted Contract, post-Mission behavior, and manifest-derived Agent summaries.
 4. Add fake-reviewer Mission tests for completed findings, zero findings, disabled review, timeout, cancellation, malformed response, transport/provider/config failure, sensitive-value rejection, and deterministic-collision independence.
@@ -365,12 +379,12 @@ The next agent must explicitly mark each item pass/fail with the exact command a
 12. Run the read-only `ui-reviewer` after screenshots and fix every high/medium finding with the mandatory minimal UI policy above.
 13. Run the read-only `security-reviewer` after Group Chat/model/failure/startup changes and fix material findings.
 14. Add TypeScript checking for test files; current server production typecheck excludes `*.test.ts`.
-15. Run the literal `npm run check` on the final feature commit.
-16. Run the complete suite at least five consecutive times and fix flakiness by root cause.
+15. Resolve `TST-01`, then run the literal unconstrained `npm run check` on the final feature commit. Until then, record both the exact attempt and the constrained-worker result without presenting one as the other.
+16. Run the complete suite at least five consecutive times and fix flakiness by root cause; `TST-01` is the current evidenced starting point.
 17. Run secret scans over source, generated prompts, persisted store, API payloads, and browser DOM after a complete demo.
 18. Perform three clean reset-to-completion rehearsals and record exact timings; use a second machine/state only if genuinely available.
 19. Run one final clean deterministic demo and the separately gated sparse live smoke on the final commit.
-20. After merge, rerun typecheck, full tests, production build, browser smoke, secret scan, and one clean demo on `main`.
+20. After merge, rerun typecheck, full tests, production build, browser smoke, secret scan, and one clean demo on `main`. For PR #10, explicitly rerun both clean and initialized reset, then close issue #7 and update the merged-SHA ledger.
 
 ## PRD traceability matrix
 
@@ -433,8 +447,8 @@ known requirement mismatch exists; **Unimplemented** = no composed product path;
 | `K-10` | 8.10 credential-free bounded verifier | **I+T, 94% — review required** | Container boundary tests pass; final security audit remains. |
 | `K-11` | 8.11 cancel and retry E2E | **I-U/partial, 84%** | `F-07`, `F-08`, repeated-cancel test, `E2E-07`. |
 | `P-01` | 9.1 versioned atomic persistence, migration, restart, secret-free state | **I+T core / Partial failure, 92%** | Migration/restart/redaction tests pass; recovery-visible persistence failure remains `F-06`. |
-| `P-02` | 9.2 authenticated schema-validated API and polling | **I+T core / Partial group path, 91%** | API tests pass; Group behavior, clean reset, and polling browser evidence remain. |
-| `FIX-01` | 10 deterministic network-free auth fixture and safe reset | **I+T hero path / Defective clean reset, 92%** | Current deterministic Mission passed; `RST-01`, reset safety browser/rehearsal evidence remain. |
+| `P-02` | 9.2 authenticated schema-validated API and polling | **I+T core / Partial group path, 93%** | API and authenticated clean/initialized reset tests pass on [PR #10](https://github.com/kyashp/shepherd/pull/10); Group behavior and polling browser evidence remain. |
+| `FIX-01` | 10 deterministic network-free auth fixture and safe reset | **I+T backend, 98% — pending merge** | Clean and initialized reset, hostile-path, unrelated-data, cursor, recovery, and reset/start serialization tests pass on [PR #10](https://github.com/kyashp/shepherd/pull/10). Browser rehearsal and merged-`main` evidence remain. |
 
 ### PRD 11 UI surfaces and user journeys
 
@@ -503,7 +517,8 @@ traceability.
 
 | Workstream | Recommended PR units | Stack/dependency guidance | Reviewer gate |
 |---|---|---|---|
-| Local run/reset | `OPS-01`, `OPS-02`, `RST-01` | `OPS-02` may stack on `OPS-01`; `RST-01` is independent. Keep startup secret/path work separate from reset behavior. | Security review for env/path handling |
+| Local run/reset | `OPS-01`, `OPS-02`; `RST-01` is implemented on [draft PR #10](https://github.com/kyashp/shepherd/pull/10) | `OPS-02` may stack on `OPS-01`. Keep startup secret/path work separate from the reset PR; after PR #10 merges, perform its clean/initialized post-merge reset gate. | Security review for env/path handling; PR #10 independent review is complete |
+| Test/PR assurance | `TST-01`, `CI-01` | Stabilize the Git-heavy test harness without weakening assertions, then add/require the resulting typecheck/test/build checks on pull requests. Keep this independent of product fixes. | Test-infrastructure and repository-administration review |
 | Typed failures | `F-01/F-02` common typed-stage foundation, then `F-03`, `F-04`, `F-05`, `F-06`, `F-07/F-08` | Use short stacks only where a shared typed error contract is required. Each PR includes its entity/event/API tests. | Security review after the workstream |
 | Group Chat | `GC-05` safe project initialization, `GC-02` Shepherd handling, `GC-03/GC-04` targeted Contract lifecycle, `GC-06` Agent summaries, `GC-01` mention UI | One stack steward; keep parser/security foundation below service behavior and UI. Browser tests land with each UI-visible correction. | Security + UI review |
 | Advisory model | `MR-01` service composition/degradation, then `MR-02` truthful setting/UI | Deterministic collision independence is a mandatory lower-layer test. One sparse live smoke only after fake-adapter gates. | Security + UI review |
@@ -795,17 +810,76 @@ Negative operational evidence from the same run:
   `.env` non-loopback/container path configuration; explicit loopback and
   repository-local Shepherd roots were required (`OPS-02`).
 - Clean-start `POST /api/shepherd/demo/reset` returned 500 `Auth demo was not
-  found`; reset passed only after initialization (`RST-01`).
+  found`; reset passed only after initialization. This historical reproduction
+  became the causal RED baseline for `RST-01` and is fixed on
+  [draft PR #10](https://github.com/kyashp/shepherd/pull/10).
+
+### RST-01 active-branch verification
+
+Observed on 2026-08-29 against
+`19a2e45f7a67c575d9acced3dfcfbc6a32f5718e` on
+`fix/7-rst-01-idempotent-reset`:
+
+- The original clean-start service/API regressions failed before the fix because
+  the service threw `Auth demo was not found` and the authenticated route
+  returned 404; both passed after the empty-success implementation.
+- Two reset/start concurrency regressions failed before reservation because the
+  concurrent Mission entered execution on a clean root and the initialized reset
+  lost the race. Both passed after reset reserved `auth-demo` until `finally`.
+- Reset-focused service/API tests passed 8/8; adjacent persistence/recovery tests
+  passed 100/100; the complete service suite passed 23/23.
+- The complete server suite passed with one worker: 25 files passed, 2 skipped;
+  547 tests passed, 2 skipped. `npm run check` under Node 24.17/npm 11.17 with
+  the same external worker constraint also passed both typechecks and production
+  builds. `npm audit --json` reported 0 vulnerabilities across 251 dependencies,
+  and `git diff --check` passed.
+- Three unconstrained full-check attempts exposed `TST-01`: varying existing
+  fixed-timeout Git-heavy tests failed under parallel contention but passed
+  isolated and serialized. No unrelated timeout or assertion changed in PR #10.
+- An independent read-only security/correctness review first found the missing
+  reset reservation. After the causal TDD fix, its follow-up reported no Critical,
+  Important, or Minor finding and marked the change ready to merge.
+- Live GitHub state at this documentation update: issue
+  [#7](https://github.com/kyashp/shepherd/issues/7) and
+  [draft PR #10](https://github.com/kyashp/shepherd/pull/10) are open, the PR is
+  mergeable, and GitHub reports no automated checks (`CI-01`).
+
+Current-main integration was subsequently observed after OPS-05 merged through
+PR #32 at `8110aa3ed49bd0586cbb275d7c4067552cd9a144`. RST-01 merge commit
+`4673edfff0d6a205b48ca4d90821ce852a9952e4` resolved conflicts only in
+`docs/BUILD_LOG.md` and this file by preserving current-main evidence and
+reapplying RST-01-specific entries. Its effective diff against `origin/main`
+contained exactly `apps/server/src/app.test.ts`,
+`apps/server/src/shepherd/service.test.ts`,
+`apps/server/src/shepherd/service.ts`, `docs/BUILD_LOG.md`, and this file.
+
+Fresh integrated verification passed:
+
+- reset-focused service/API tests: 8/8;
+- complete `service.test.ts`: 28/28;
+- complete `app.test.ts`: 19/19;
+- standalone typecheck and production build;
+- literal `npm run check` without overrides: launcher 3/3; server 25 files
+  passed, 2 skipped; 554 tests passed, 2 skipped; both production builds;
+- `npm audit --json`: 0 vulnerabilities across 251 dependencies;
+- `git diff --check origin/main...HEAD` with a clean worktree.
+
+An independent read-only final review of the integrated five-file diff at
+`ecd14228e0b83f8a9087d8bce675a3ae689fd29e` reported no Critical, Important,
+or Minor finding and returned **Ready to merge: Yes**. It specifically confirmed
+the reset reservation/`finally` release, fail-closed path and identity boundaries,
+causal clean/initialized concurrency and API coverage, exact scope, and browser
+non-applicability.
 
 Not run after this checkpoint:
 
-- Playwright/browser journeys or screenshots;
-- rendered browser interaction in this session because no browser connection was
-  available;
-- UI accessibility automation;
+- Playwright/browser journeys, screenshots, or accessibility automation because
+  browser evidence is not applicable to this service/API-only correction: no UI
+  source, layout, interaction, or response consumer changed, and the authenticated
+  route is covered through the real Fastify injection boundary;
 - custom `ui-reviewer` gate;
-- custom `security-reviewer` gate for the API/reset/cancellation/public DTO and
-  newly found startup-path behavior;
+- broad custom `security-reviewer` gate for the remaining API/cancellation/public
+  DTO and startup-path work; the scoped independent RST-01 review above is complete;
 - live `SHEPHERD_MODEL` call;
 - five consecutive full-suite runs;
 - three timed clean demo rehearsals;
@@ -975,14 +1049,15 @@ Because this checkpoint materially changed scoped authority, public DTOs, cancel
 
 ### P0 — correctness and truthfulness
 
-1. **Restore the documented local run/reset path (`OPS-01`, `OPS-02`, `RST-01`)**
+1. **Restore the documented local run path (`OPS-01`, `OPS-02`)**
    - Load `.env` into the local-PoC shell child without sourcing it or printing
      values.
    - Resolve all host PoC data roots inside the documented local root unless an
      explicit validated override is supplied.
-   - Make reset idempotent on a clean root.
-   - Add causal script/config/service/API tests and rerun the exact startup +
-     clean-start reset reproduction.
+   - Add causal script/config tests and rerun the exact startup reproduction.
+   - Keep these changes separate from reviewed
+     [RST-01 draft PR #10](https://github.com/kyashp/shepherd/pull/10); after it
+     merges, run the clean and initialized reset post-merge gate.
 
 2. **Typed failure hardening**
    - Introduce typed stage failures for Contract timeout/runtime, verifier infrastructure, Plane creation, integration conflict, and persistence failure.
@@ -1039,7 +1114,10 @@ Repository-local Chromium was reported present at `.tmp/playwright-browsers/`; n
     fixture helper a fixed child environment. The pre-push hook itself still needs a
     separate infrastructure audit: use `ECC_SKIP_PREPUSH=1` only after manual gates,
     and inspect history/artifacts rather than accepting hook-created changes.
-16. Run three clean reset-to-completion demo rehearsals and record timings. Use a second machine/state only if genuinely available; otherwise document that limitation.
+16. After PR #10 merges, run three clean reset-to-completion demo rehearsals and
+    record timings, including both a clean-root no-op reset and an initialized reset.
+    Use a second machine/state only if genuinely available; otherwise document that
+    limitation.
 17. Finish/update:
     - `docs/SHEPHERD.md`
     - `docs/BUILD_LOG.md`
@@ -1136,8 +1214,10 @@ Authoritative requirements/evidence:
   Until `OPS-04` merges, add an explicit `HOST=127.0.0.1` override or run the
   verified `fix/29-ops-04-local-loopback` candidate; do not weaken the application
   token validation.
-- Do not click **Reset demo state** before the first Mission initializes the demo;
-  `RST-01` currently returns a 500 on a completely clean root.
+- On this branch, **Reset demo state** is safe before the first Mission and returns
+  a deliberate empty success. Until
+  [PR #10](https://github.com/kyashp/shepherd/pull/10) merges, unmodified `main`
+  still has the historical `RST-01` clean-start failure.
 - The trusted verifier needs Docker, Colima, or Podman. The command below was
   verified with Docker.
 
