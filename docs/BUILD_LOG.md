@@ -45,9 +45,14 @@ npm run check
 # web and server production builds passed
 ```
 
-No live Ark or Shepherd-model request was made. A required independent security
-review and post-merge real zero-parameter startup smoke remain before `OPS-02` may
-be marked complete on `main`.
+No live Ark or Shepherd-model request was made. The configured custom security
+reviewer role was unavailable, so an independent read-only fallback reviewer
+inspected the exact `origin/main...8266c46` delta. It reported no critical, high,
+medium, or low finding: Node parses rather than executes `.env`; the recursion
+marker adds no privilege boundary; paths remain quoted; only exact Docker defaults
+are localized; and container isolation is unchanged. It reran the launcher suite
+2/2. A post-merge real zero-parameter startup smoke remains before `OPS-02` may be
+marked complete on `main`.
 
 ## Phase 0 — Baseline Lock
 
