@@ -80,6 +80,15 @@ describe("Shepherd configuration", () => {
     );
   });
 
+  it("uses the Runtime image when the verifier image is empty", () => {
+    const config = loadConfig({
+      CONTAINER_RUNTIME_IMAGE: "runtime-image:test",
+      SHEPHERD_VERIFIER_IMAGE: "",
+    });
+
+    expect(config.shepherdVerifierImage).toBe("runtime-image:test");
+  });
+
   it("accepts a distinct Shepherd model and explicit safe kernel settings", () => {
     const config = loadConfig({
       APP_DATA_DIR: ".tmp/config-data",

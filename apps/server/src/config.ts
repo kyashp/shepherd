@@ -91,7 +91,7 @@ const envSchema = z.object({
     .int()
     .min(1_000)
     .default(120_000),
-  SHEPHERD_VERIFIER_IMAGE: z.string().min(1).optional(),
+  SHEPHERD_VERIFIER_IMAGE: z.string().optional(),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });
 

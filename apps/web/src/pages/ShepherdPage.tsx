@@ -41,6 +41,11 @@ const filterLabels: Array<{ id: EventFilter; label: string }> = [
 
 const terminalMissionStates = new Set(["completed", "failed", "cancelled", "attention_required"]);
 const blockedDetailKeys = /secret|token|prompt|session|workspace|worktree|execution.?identity|fingerprint/iu;
+const timelineTimeFormatter = new Intl.DateTimeFormat(undefined, {
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+});
 
 function matchesFilter(event: ShepherdEvent, filter: EventFilter): boolean {
   if (filter === "all") return true;
@@ -247,7 +252,7 @@ function Timeline({
       <div className="timeline-scroll">
         <div className="timeline-axis">
           <span />
-          <div>{ticks.map((tick) => <time key={tick}>{formatTime(new Date(tick).toISOString())}</time>)}</div>
+          <div>{ticks.map((tick) => <time key={tick}>{timelineTimeFormatter.format(tick)}</time>)}</div>
         </div>
         <div className="timeline-rows">
           {contracts.map((contract) => {
@@ -279,7 +284,9 @@ function Timeline({
           })}
           {candidates.map((candidate) => (
             <div className="timeline-row resolution-row" key={candidate.id}>
-              <div className="timeline-label"><strong>Resolution</strong><span>{shortId(candidate.id, 12)}</span></div>
+              <div className="timeline-label" title={`${candidate.targetValue} · ${candidate.strategy}`}>
+                <strong>Resolution</strong><span>{candidate.targetValue}</span>
+              </div>
               <div className="timeline-track">
                 <span
                   className={`timeline-bar tone-${stateTone(candidate.executionState)}`}
