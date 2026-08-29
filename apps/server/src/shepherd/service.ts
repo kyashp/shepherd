@@ -1,7 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, realpath, rm } from "node:fs/promises";
 import path from "node:path";
-import { appendShepherdEvent } from "../database.js";
+import {
+  appendProjectGroupMessage,
+  appendShepherdEvent,
+} from "../database.js";
 import { JsonStore } from "../store.js";
 import type { Agent, Database } from "../types.js";
 import { WorkspaceManager } from "../workspace.js";
@@ -27,6 +30,8 @@ import {
   assertNoManagedProjectState,
   initializeAuthDemoProject,
   initializeShepherdManagedRoot,
+  openAuthDemoProject,
+  resetAuthDemoProject,
   resolveManagedProjectIdentity,
   validateShepherdManagedRoot,
   type ManagedAuthDemoProject,
@@ -37,13 +42,16 @@ import type {
   FailureInfo,
   Mission,
   Plane,
+  ProjectGroupMessage,
   ResolutionCandidate,
   ScopedAuthority,
   SemanticClaim,
   SemanticCollision,
   ShepherdDatabase,
   ShepherdEvent,
+  ShepherdEventActor,
   ShepherdProject,
+  ShepherdSettings,
   VerificationEvidence,
 } from "./domain.js";
 import {
@@ -52,6 +60,7 @@ import {
   type ShepherdExecutor,
 } from "./executor.js";
 import { ingestContractResultManifest } from "./manifest.js";
+import { parseProjectGroupMessage } from "./group-routing.js";
 import { GitClient, type GitClientOptions } from "./git-client.js";
 import {
   PlaneAuthorityViolationError,
@@ -63,18 +72,22 @@ import {
   buildResolutionCandidatePrompt,
   type DependencyOutput,
 } from "./prompt.js";
-import { PromotionGate } from "./promotion-gate.js";
+import { PromotionGate, type PromotionResult } from "./promotion-gate.js";
 import { redactText, redactValue } from "./redaction.js";
 import { reconcileShepherdStartup } from "./recovery.js";
 import {
   applyWinnerDecision,
+  candidatePassesMandatoryVerification,
+  decideHumanTieWinner,
   decideResolutionWinner,
 } from "./resolution.js";
 import {
+  canTransitionContract,
   canTransitionMission,
   transitionContractAndRecord,
   transitionMissionAndRecord,
 } from "./state-machine.js";
+import { selectRunnableContracts } from "./scheduler.js";
 import type { VerificationRequest } from "./verifier.js";
 
 const SHEPHERD_ACTOR = {
@@ -152,6 +165,7 @@ function boundedContractAuthority(
 
 export interface ShepherdIndependentVerifier {
   verify(request: VerificationRequest): Promise<VerificationEvidence>;
+  cancel?(targetId: string): Promise<boolean>;
   reconcileInterrupted?(): Promise<void>;
 }
 
@@ -162,7 +176,7 @@ export type ShepherdFaultCheckpoint =
   | "promotion_cas_completed";
 
 export interface ShepherdFaultCheckpointContext {
-  missionId: string;
+  missionId?: string;
   contractId?: string;
   candidateId?: string;
 }
@@ -191,6 +205,8 @@ export interface ShepherdServiceOptions {
 export interface DeterministicDemoOptions {
   projectId?: string;
   allowClientReadableCredential?: boolean;
+  /** Bounded human intent retained while the runnable plan stays the fixed demo. */
+  originalIntent?: string;
 }
 
 export interface ShepherdMissionDetail {
@@ -203,6 +219,87 @@ export interface ShepherdMissionDetail {
   collisions: SemanticCollision[];
   candidates: ResolutionCandidate[];
   events: ShepherdEvent[];
+}
+
+export interface ShepherdPlaneDetail {
+  plane: Plane;
+  mission: Mission;
+  project: ShepherdProject;
+  contract: ExecutionContract | null;
+  candidate: ResolutionCandidate | null;
+  verificationEvidence: VerificationEvidence[];
+}
+
+export interface ShepherdCollisionDetail {
+  collision: SemanticCollision;
+  mission: Mission;
+  project: ShepherdProject;
+  sourceContracts: [ExecutionContract, ExecutionContract];
+  candidates: ResolutionCandidate[];
+  planes: Plane[];
+}
+
+export interface ShepherdCandidateDetail {
+  candidate: ResolutionCandidate;
+  collision: SemanticCollision;
+  mission: Mission;
+  project: ShepherdProject;
+  plane: Plane;
+  previousPlanes: Plane[];
+}
+
+export interface ShepherdSettingsUpdate {
+  contractTimeoutMs?: number;
+  candidateTimeoutMs?: number;
+  autoResolution?: boolean;
+  maxConcurrentPlanes?: number;
+  modelReviewEnabled?: boolean;
+  notifications?: Partial<ShepherdSettings["notifications"]>;
+}
+
+export interface SendProjectGroupMessageInput {
+  clientMessageId: string;
+  content: string;
+  assignmentPreset?: "auth-demo-contract";
+}
+
+export interface StartMissionFromMessageInput {
+  content: string;
+  preset: "auth-demo";
+  clientMessageId?: string;
+}
+
+export type ShepherdControlErrorCode =
+  | "invalid_input"
+  | "not_found"
+  | "conflict"
+  | "unsupported_assignment"
+  | "idempotency_conflict";
+
+export class ShepherdControlError extends Error {
+  constructor(
+    readonly code: ShepherdControlErrorCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ShepherdControlError";
+  }
+}
+
+export interface DeterministicDemoResetResult {
+  projectId: "auth-demo";
+  restoredHead: string;
+  removedPlanePaths: string[];
+  removed: {
+    missions: number;
+    contracts: number;
+    planes: number;
+    claims: number;
+    collisions: number;
+    candidates: number;
+    events: number;
+    messages: number;
+  };
 }
 
 export interface DeterministicDemoResult {
@@ -248,7 +345,7 @@ interface EventInput {
   planeId?: string | null;
   collisionId?: string | null;
   candidateId?: string | null;
-  actor?: typeof SHEPHERD_ACTOR | typeof VERIFIER_ACTOR;
+  actor?: ShepherdEventActor;
   details?: ShepherdEvent["details"];
   timestamp: string;
 }
@@ -322,6 +419,36 @@ function pathsOverlap(left: string, right: string): boolean {
   );
 }
 
+async function allSettledBounded<T>(
+  inputs: readonly T[],
+  limit: number,
+  operation: (input: T, index: number) => Promise<void>,
+): Promise<PromiseSettledResult<void>[]> {
+  const results = new Array<PromiseSettledResult<void>>(inputs.length);
+  let nextIndex = 0;
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= inputs.length) return;
+      const input = inputs[index];
+      if (input === undefined) return;
+      try {
+        await operation(input, index);
+        results[index] = { status: "fulfilled", value: undefined };
+      } catch (reason) {
+        results[index] = { status: "rejected", reason };
+      }
+    }
+  };
+  const workers = Array.from(
+    { length: Math.min(inputs.length, Math.max(1, limit)) },
+    () => worker(),
+  );
+  await Promise.all(workers);
+  return results;
+}
+
 /** Stable UUID-shaped identity accepted by all existing Agent API routes. */
 export function deterministicDemoAgentId(
   projectId: string,
@@ -346,6 +473,13 @@ class AuthorityViolationError extends Error {
   constructor(readonly stage: "contract" | "candidate") {
     super(`Scoped authority denied ${stage} changes`);
     this.name = "AuthorityViolationError";
+  }
+}
+
+class MissionCancelledError extends Error {
+  constructor() {
+    super("Mission was cancelled");
+    this.name = "MissionCancelledError";
   }
 }
 
@@ -433,6 +567,30 @@ export class ShepherdService {
       await assertNoManagedProjectState(this.managedRoot);
       await initializeShepherdManagedRoot(this.managedRoot);
     }
+    const initialState = this.store.snapshot();
+    if (
+      initialState.shepherd.projects.length === 0 &&
+      initialState.shepherd.missions.length === 0 &&
+      initialState.shepherd.events.length === 0 &&
+      (initialState.shepherd.settings.contractTimeoutMs !== this.contractTimeoutMs ||
+        initialState.shepherd.settings.candidateTimeoutMs !== this.candidateTimeoutMs ||
+        initialState.shepherd.settings.mode !==
+          (this.executor.kind === "codex_ephemeral"
+            ? "production"
+            : "deterministic_test") ||
+        !initialState.shepherd.settings.retainCompletedPlanes)
+    ) {
+      await this.store.mutate((database) => {
+        database.shepherd.settings.contractTimeoutMs = this.contractTimeoutMs;
+        database.shepherd.settings.candidateTimeoutMs = this.candidateTimeoutMs;
+        database.shepherd.settings.mode =
+          this.executor.kind === "codex_ephemeral"
+            ? "production"
+            : "deterministic_test";
+        database.shepherd.settings.retainCompletedPlanes = true;
+        database.shepherd.settings.updatedAt = this.timestamp();
+      });
+    }
     await this.initializeWorkspaceRoot();
     let runtimeRecoveryError: unknown = null;
     try {
@@ -519,6 +677,965 @@ export class ShepherdService {
     };
   }
 
+  planeDetail(planeId: string): ShepherdPlaneDetail | null {
+    const database = this.store.snapshot();
+    const plane = database.shepherd.planes.find((item) => item.id === planeId);
+    if (!plane) return null;
+    const mission = database.shepherd.missions.find(
+      (item) => item.id === plane.missionId,
+    );
+    const project = database.shepherd.projects.find(
+      (item) => item.id === plane.projectId,
+    );
+    if (!mission || !project) throw new Error("Plane references missing durable state");
+    const contract = plane.contractId
+      ? database.shepherd.contracts.find((item) => item.id === plane.contractId) ?? null
+      : null;
+    const candidate = plane.candidateId
+      ? database.shepherd.candidates.find((item) => item.id === plane.candidateId) ?? null
+      : null;
+    const evidence = [
+      ...(contract?.verificationEvidence ?? []),
+      ...(candidate?.previousAttempts ?? []).flatMap((attempt) =>
+        attempt.verificationEvidence ? [attempt.verificationEvidence] : [],
+      ),
+      ...(candidate?.verificationEvidence ? [candidate.verificationEvidence] : []),
+      ...(candidate?.promotionEvidence ? [candidate.promotionEvidence] : []),
+    ];
+    const evidenceById = new Map(evidence.map((item) => [item.id, item]));
+    return {
+      plane,
+      mission,
+      project,
+      contract,
+      candidate,
+      verificationEvidence: plane.verificationEvidenceIds.map((id) => {
+        const item = evidenceById.get(id);
+        if (!item) throw new Error("Plane references missing verification evidence");
+        return item;
+      }),
+    };
+  }
+
+  collisionDetail(collisionId: string): ShepherdCollisionDetail | null {
+    const database = this.store.snapshot();
+    const collision = database.shepherd.collisions.find(
+      (item) => item.id === collisionId,
+    );
+    if (!collision) return null;
+    const mission = database.shepherd.missions.find(
+      (item) => item.id === collision.missionId,
+    );
+    const project = database.shepherd.projects.find(
+      (item) => item.id === mission?.projectId,
+    );
+    const left = database.shepherd.contracts.find(
+      (item) => item.id === collision.leftContractId,
+    );
+    const right = database.shepherd.contracts.find(
+      (item) => item.id === collision.rightContractId,
+    );
+    if (!mission || !project || !left || !right) {
+      throw new Error("Collision references missing durable state");
+    }
+    const candidates = database.shepherd.candidates.filter(
+      (item) => item.collisionId === collision.id,
+    );
+    const planeIds = new Set(
+      candidates.flatMap((candidate) => [
+        candidate.planeId,
+        ...(candidate.previousAttempts ?? []).map((attempt) => attempt.planeId),
+      ]),
+    );
+    return {
+      collision,
+      mission,
+      project,
+      sourceContracts: [left, right],
+      candidates,
+      planes: database.shepherd.planes.filter((plane) => planeIds.has(plane.id)),
+    };
+  }
+
+  candidateDetail(candidateId: string): ShepherdCandidateDetail | null {
+    const database = this.store.snapshot();
+    const candidate = database.shepherd.candidates.find(
+      (item) => item.id === candidateId,
+    );
+    if (!candidate) return null;
+    const collision = database.shepherd.collisions.find(
+      (item) => item.id === candidate.collisionId,
+    );
+    const mission = database.shepherd.missions.find(
+      (item) => item.id === candidate.missionId,
+    );
+    const project = database.shepherd.projects.find(
+      (item) => item.id === mission?.projectId,
+    );
+    const plane = database.shepherd.planes.find(
+      (item) => item.id === candidate.planeId,
+    );
+    if (!collision || !mission || !project || !plane) {
+      throw new Error("Candidate references missing durable state");
+    }
+    const previousPlanes = (candidate.previousAttempts ?? []).map((attempt) => {
+      const previous = database.shepherd.planes.find(
+        (item) => item.id === attempt.planeId,
+      );
+      if (!previous) throw new Error("Candidate retry references a missing Plane");
+      return previous;
+    });
+    return { candidate, collision, mission, project, plane, previousPlanes };
+  }
+
+  settings(): ShepherdSettings {
+    return {
+      ...this.store.snapshot().shepherd.settings,
+      mode:
+        this.executor.kind === "codex_ephemeral"
+          ? "production"
+          : "deterministic_test",
+      retainCompletedPlanes: true,
+      maxConcurrentPlanes: Math.max(
+        2,
+        this.store.snapshot().shepherd.settings.maxConcurrentPlanes,
+      ),
+    };
+  }
+
+  async updateSettings(input: ShepherdSettingsUpdate): Promise<ShepherdSettings> {
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+      throw new ShepherdControlError("invalid_input", "Settings update must be an object");
+    }
+    const allowed = new Set([
+      "contractTimeoutMs",
+      "candidateTimeoutMs",
+      "autoResolution",
+      "maxConcurrentPlanes",
+      "modelReviewEnabled",
+      "notifications",
+    ]);
+    if (Object.keys(input).some((key) => !allowed.has(key))) {
+      throw new ShepherdControlError("invalid_input", "Settings update has unknown fields");
+    }
+    for (const [label, value] of [
+      ["Contract", input.contractTimeoutMs],
+      ["Candidate", input.candidateTimeoutMs],
+    ] as const) {
+      if (value !== undefined) {
+        try {
+          this.executionTimeout(value, label);
+        } catch {
+          throw new ShepherdControlError(
+            "invalid_input",
+            `${label} timeout must be between 1000 and 3600000 ms`,
+          );
+        }
+      }
+    }
+    if (
+      input.maxConcurrentPlanes !== undefined &&
+      (!Number.isSafeInteger(input.maxConcurrentPlanes) ||
+        input.maxConcurrentPlanes < 2 ||
+        input.maxConcurrentPlanes > 16)
+    ) {
+      throw new ShepherdControlError(
+        "invalid_input",
+        "Maximum concurrent Planes must be between 2 and 16 for speculative resolution",
+      );
+    }
+    for (const value of [
+      input.autoResolution,
+      input.modelReviewEnabled,
+    ]) {
+      if (value !== undefined && typeof value !== "boolean") {
+        throw new ShepherdControlError("invalid_input", "Settings booleans are invalid");
+      }
+    }
+    if (input.notifications !== undefined) {
+      if (
+        !input.notifications ||
+        typeof input.notifications !== "object" ||
+        Array.isArray(input.notifications) ||
+        Object.keys(input.notifications).some(
+          (key) =>
+            ![
+              "missionCompleted",
+              "attentionRequired",
+              "collisionDetected",
+            ].includes(key),
+        ) ||
+        Object.values(input.notifications).some(
+          (value) => value !== undefined && typeof value !== "boolean",
+        )
+      ) {
+        throw new ShepherdControlError(
+          "invalid_input",
+          "Notification settings are invalid",
+        );
+      }
+    }
+    return await this.store.mutate((database) => {
+      if (database.shepherd.missions.some((mission) => !terminalMission(mission.state))) {
+        throw new ShepherdControlError(
+          "conflict",
+          "Settings cannot change while a Mission is active",
+        );
+      }
+      const current = database.shepherd.settings;
+      const updated: ShepherdSettings = {
+        ...current,
+        mode:
+          this.executor.kind === "codex_ephemeral"
+            ? "production"
+            : "deterministic_test",
+        ...(input.contractTimeoutMs === undefined
+          ? {}
+          : { contractTimeoutMs: input.contractTimeoutMs }),
+        ...(input.candidateTimeoutMs === undefined
+          ? {}
+          : { candidateTimeoutMs: input.candidateTimeoutMs }),
+        ...(input.autoResolution === undefined
+          ? {}
+          : { autoResolution: input.autoResolution }),
+        ...(input.maxConcurrentPlanes === undefined
+          ? {}
+          : { maxConcurrentPlanes: input.maxConcurrentPlanes }),
+        retainCompletedPlanes: true,
+        ...(input.modelReviewEnabled === undefined
+          ? {}
+          : { modelReviewEnabled: input.modelReviewEnabled }),
+        notifications: {
+          ...current.notifications,
+          ...(input.notifications ?? {}),
+        },
+        updatedAt: this.timestamp(),
+      };
+      database.shepherd.settings = updated;
+      return structuredClone(updated);
+    });
+  }
+
+  projectGroupMessages(projectId: string, limit = 200): ProjectGroupMessage[] {
+    if (!SAFE_ID.test(projectId)) {
+      throw new ShepherdControlError("invalid_input", "Project ID is invalid");
+    }
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) {
+      throw new ShepherdControlError("invalid_input", "Message limit must be 1 to 500");
+    }
+    return this.store
+      .snapshot()
+      .shepherd.groupMessages.filter((message) => message.projectId === projectId)
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+      .slice(-limit);
+  }
+
+  async sendProjectGroupMessage(
+    projectId: string,
+    input: SendProjectGroupMessageInput,
+  ): Promise<ProjectGroupMessage> {
+    if (!SAFE_ID.test(projectId) || !SAFE_ID.test(input.clientMessageId)) {
+      throw new ShepherdControlError("invalid_input", "Message identity is invalid");
+    }
+    if (
+      input.assignmentPreset !== undefined &&
+      input.assignmentPreset !== "auth-demo-contract"
+    ) {
+      throw new ShepherdControlError(
+        "unsupported_assignment",
+        "Only the fixed auth-demo Contract assignment preset is supported",
+      );
+    }
+    const snapshot = this.store.snapshot();
+    const project = snapshot.shepherd.projects.find((item) => item.id === projectId);
+    if (!project) throw new ShepherdControlError("not_found", "Project was not found");
+    const projectMissions = snapshot.shepherd.missions.filter(
+      (mission) => mission.projectId === projectId,
+    );
+    const projectMissionIds = new Set(projectMissions.map((mission) => mission.id));
+    const projectContracts = snapshot.shepherd.contracts.filter((contract) =>
+      projectMissionIds.has(contract.missionId),
+    );
+    const agentIds = new Set(projectContracts.map((contract) => contract.agentId));
+    const agents = snapshot.agents.filter((agent) => agentIds.has(agent.id));
+    const uniqueAgents = [...new Map(agents.map((agent) => [agent.id, agent])).values()];
+    let route;
+    try {
+      route = parseProjectGroupMessage(input.content, uniqueAgents);
+    } catch (error) {
+      throw new ShepherdControlError(
+        "invalid_input",
+        error instanceof Error ? error.message : "Project Group message is invalid",
+      );
+    }
+    const activeMission = project.activeMissionId
+      ? projectMissions.find((mission) => mission.id === project.activeMissionId) ?? null
+      : null;
+    let targetAgentId: string | null = null;
+    let contractId: string | null = null;
+    let content = route.content;
+    if (route.kind === "agent") {
+      if (input.assignmentPreset !== "auth-demo-contract") {
+        throw new ShepherdControlError(
+          "unsupported_assignment",
+          "Free-form @Agent assignments are not runnable in the fixed demo",
+        );
+      }
+      if (!activeMission) {
+        throw new ShepherdControlError(
+          "conflict",
+          "The auth-demo Contract preset needs an active Mission",
+        );
+      }
+      const contract = projectContracts.find(
+        (item) =>
+          item.missionId === activeMission.id && item.agentId === route.agentId,
+      );
+      if (!contract) {
+        throw new ShepherdControlError(
+          "unsupported_assignment",
+          "The mentioned Agent has no Contract in the active auth demo",
+        );
+      }
+      targetAgentId = route.agentId;
+      contractId = contract.id;
+    } else if (input.assignmentPreset !== undefined) {
+      throw new ShepherdControlError(
+        "unsupported_assignment",
+        "The auth-demo Contract preset requires a leading @Agent mention",
+      );
+    }
+    const messageId =
+      "group-" +
+      createHash("sha256")
+        .update(`${projectId}\0${input.clientMessageId}`, "utf8")
+        .digest("hex")
+        .slice(0, 40);
+    const message: ProjectGroupMessage = {
+      id: messageId,
+      projectId,
+      missionId: activeMission?.id ?? null,
+      senderType: "human",
+      senderId: null,
+      content,
+      targetAgentId,
+      contractId,
+      createdAt: this.timestamp(),
+    };
+    return await this.store.mutate((database) => {
+      const existing = database.shepherd.groupMessages.find(
+        (item) => item.id === messageId,
+      );
+      if (existing) {
+        if (
+          existing.projectId !== message.projectId ||
+          existing.content !== message.content ||
+          existing.targetAgentId !== message.targetAgentId ||
+          existing.contractId !== message.contractId
+        ) {
+          throw new ShepherdControlError(
+            "idempotency_conflict",
+            "Client message ID was already used for different content",
+          );
+        }
+        return structuredClone(existing);
+      }
+      return appendProjectGroupMessage(database, message);
+    });
+  }
+
+  async startMissionFromMessage(
+    input: StartMissionFromMessageInput,
+  ): Promise<{ missionId: string; message: ProjectGroupMessage }> {
+    if (input.preset !== "auth-demo") {
+      throw new ShepherdControlError(
+        "unsupported_assignment",
+        "Only the fixed auth-demo Mission preset is supported",
+      );
+    }
+    let route;
+    try {
+      route = parseProjectGroupMessage(input.content, []);
+    } catch (error) {
+      throw new ShepherdControlError(
+        "invalid_input",
+        error instanceof Error ? error.message : "Mission intent is invalid",
+      );
+    }
+    if (route.kind !== "shepherd" || route.content.length > 20_000) {
+      throw new ShepherdControlError(
+        "invalid_input",
+        "Mission intent must be a bounded Shepherd message",
+      );
+    }
+    const clientMessageId =
+      input.clientMessageId ??
+      ("start-" +
+        createHash("sha256").update(route.content, "utf8").digest("hex").slice(0, 32));
+    const messageId =
+      "group-" +
+      createHash("sha256")
+        .update(`auth-demo\0${clientMessageId}`, "utf8")
+        .digest("hex")
+        .slice(0, 40);
+    const existing = this.store
+      .snapshot()
+      .shepherd.groupMessages.find((message) => message.id === messageId);
+    if (existing) {
+      if (existing.content !== route.content || !existing.missionId) {
+        throw new ShepherdControlError(
+          "idempotency_conflict",
+          "Client message ID was already used for different content",
+        );
+      }
+      return { missionId: existing.missionId, message: existing };
+    }
+    const started = await this.startDeterministicDemo({
+      projectId: "auth-demo",
+      originalIntent: route.content,
+    });
+    const message = await this.sendProjectGroupMessage("auth-demo", {
+      clientMessageId,
+      content: route.content,
+    });
+    if (message.missionId !== started.missionId) {
+      throw new Error("Project Group message did not link to its created Mission");
+    }
+    return { missionId: started.missionId, message };
+  }
+
+  async cancelMission(missionId: string): Promise<Mission> {
+    if (!SAFE_ID.test(missionId)) {
+      throw new ShepherdControlError("invalid_input", "Mission ID is invalid");
+    }
+    const cancellation = await this.store.mutate((database) => {
+      const mission = database.shepherd.missions.find(
+        (item) => item.id === missionId,
+      );
+      if (!mission) throw new ShepherdControlError("not_found", "Mission was not found");
+      if (terminalMission(mission.state)) {
+        if (mission.state === "cancelled") {
+          return {
+            mission: structuredClone(mission),
+            executorIds: [] as string[],
+            verifierIds: [] as string[],
+          };
+        }
+        throw new ShepherdControlError(
+          "conflict",
+          "A terminal Mission cannot be cancelled",
+        );
+      }
+      const cancelledAt = this.timestamp();
+      const failure: FailureInfo = {
+        code: "cancelled",
+        message: "Mission cancelled by a human",
+        stage: "mission_cancellation",
+        at: cancelledAt,
+        retryable: false,
+      };
+      const missionPlanes = database.shepherd.planes.filter(
+        (plane) => plane.missionId === mission.id,
+      );
+      const missionContracts = database.shepherd.contracts.filter(
+        (contract) => contract.missionId === mission.id,
+      );
+      const missionCandidates = database.shepherd.candidates.filter(
+        (candidate) => candidate.missionId === mission.id,
+      );
+      if (
+        missionCandidates.some(
+          (candidate) => candidate.promotionState === "promoting",
+        )
+      ) {
+        throw new ShepherdControlError(
+          "conflict",
+          "Mission cannot be cancelled after promotion reached its durable CAS marker",
+        );
+      }
+      const executorIds = missionPlanes
+        .filter((plane) => plane.state === "running")
+        .map((plane) => plane.executionIdentity);
+      const verifierIds = [
+        ...missionContracts
+          .filter((contract) => contract.state === "verifying")
+          .map((contract) => contract.id),
+        ...missionCandidates
+          .filter(
+            (candidate) =>
+              candidate.executionState === "verifying" ||
+              candidate.promotionState === "reverifying",
+          )
+          .map((candidate) => candidate.id),
+      ];
+      for (const contract of missionContracts) {
+        if (canTransitionContract(contract.state, "cancelled", "human")) {
+          transitionContractAndRecord(database, contract.id, "cancelled", {
+            actor: "human",
+            eventActor: {
+              type: "human",
+              id: null,
+              displayName: "Human operator",
+            },
+            timestamp: cancelledAt,
+          });
+        }
+      }
+      for (const candidate of missionCandidates) {
+        if (
+          candidate.executionState === "created" ||
+          candidate.executionState === "queued" ||
+          candidate.executionState === "running" ||
+          candidate.executionState === "agent_completed" ||
+          candidate.executionState === "verifying"
+        ) {
+          candidate.executionState = "interrupted";
+          candidate.failure = failure;
+          candidate.updatedAt = cancelledAt;
+        }
+        if (candidate.promotionState === "reverifying") {
+          candidate.promotionState = "interrupted";
+          candidate.failure = failure;
+          candidate.updatedAt = cancelledAt;
+        }
+      }
+      for (const plane of missionPlanes) {
+        if (
+          plane.state === "creating" ||
+          plane.state === "ready" ||
+          plane.state === "running" ||
+          plane.state === "inspecting"
+        ) {
+          plane.state = "interrupted";
+          plane.error = failure;
+          plane.updatedAt = cancelledAt;
+        }
+      }
+      for (const agent of database.agents) {
+        if (
+          agent.currentContractId &&
+          mission.contractIds.includes(agent.currentContractId)
+        ) {
+          agent.currentContractId = null;
+          agent.status = "ready";
+          agent.lastError = null;
+          agent.updatedAt = cancelledAt;
+        }
+      }
+      const cancellationEvent = transitionMissionAndRecord(database, mission.id, "cancelled", {
+        actor: "human",
+        eventActor: {
+          type: "human",
+          id: null,
+          displayName: "Human operator",
+        },
+        timestamp: cancelledAt,
+        failure,
+        summary: "Mission cancelled by a human",
+      });
+      this.appendServerGroupMessage(database, {
+        sourceId: cancellationEvent.id,
+        missionId: mission.id,
+        content: "Mission cancelled by a human. Active executions were interrupted.",
+        timestamp: cancelledAt,
+      });
+      const project = database.shepherd.projects.find(
+        (item) => item.id === mission.projectId,
+      );
+      if (!project) throw new Error("Mission project disappeared during cancellation");
+      project.activeMissionId = null;
+      project.updatedAt = cancelledAt;
+      return {
+        mission: structuredClone(mission),
+        executorIds: [...new Set(executorIds)],
+        verifierIds: [...new Set(verifierIds)],
+      };
+    });
+    await Promise.allSettled([
+      ...cancellation.executorIds.map((id) => this.executor.cancel(id)),
+      ...cancellation.verifierIds.map((id) => this.verifier.cancel?.(id)),
+    ]);
+    await this.backgroundRuns.get(missionId)?.catch(() => null);
+    return this.missionDetail(missionId)?.mission ?? cancellation.mission;
+  }
+
+  async selectTiedCandidate(
+    collisionId: string,
+    candidateId: string,
+  ): Promise<ShepherdMissionDetail> {
+    if (!SAFE_ID.test(collisionId) || !SAFE_ID.test(candidateId)) {
+      throw new ShepherdControlError("invalid_input", "Selection identity is invalid");
+    }
+    const snapshot = this.store.snapshot();
+    const collision = snapshot.shepherd.collisions.find(
+      (item) => item.id === collisionId,
+    );
+    const candidate = snapshot.shepherd.candidates.find(
+      (item) => item.id === candidateId && item.collisionId === collisionId,
+    );
+    const mission = snapshot.shepherd.missions.find(
+      (item) => item.id === collision?.missionId,
+    );
+    const project = snapshot.shepherd.projects.find(
+      (item) => item.id === mission?.projectId,
+    );
+    if (!collision || !candidate || !mission || !project) {
+      throw new ShepherdControlError("not_found", "Resolution selection was not found");
+    }
+    if (
+      mission.state !== "attention_required" ||
+      collision.state !== "attention_required" ||
+      (mission.attentionReason !== "objective_tie" &&
+        mission.attentionReason !== "auto_resolution_disabled")
+    ) {
+      throw new ShepherdControlError(
+        "conflict",
+        "Resolution is not awaiting a human candidate selection",
+      );
+    }
+    if (!candidatePassesMandatoryVerification(candidate)) {
+      throw new ShepherdControlError(
+        "conflict",
+        "A failed or unverified candidate cannot be selected",
+      );
+    }
+    if (this.activeProjects.has(project.id)) {
+      throw new ShepherdControlError(
+        "conflict",
+        "The project still has an active control-plane operation",
+      );
+    }
+    this.activeProjects.add(project.id);
+    try {
+      const candidates = snapshot.shepherd.candidates.filter(
+        (item) => item.collisionId === collision.id,
+      );
+      const objective = decideResolutionWinner(candidates, []);
+      let decision: Extract<ReturnType<typeof decideResolutionWinner>, { kind: "selected" }>;
+      if (mission.attentionReason === "objective_tie") {
+        if (objective.kind !== "tie") {
+          throw new ShepherdControlError(
+            "conflict",
+            "Objective tie evidence changed before human selection",
+          );
+        }
+        const human = decideHumanTieWinner(objective, candidates, candidate.id);
+        if (human.kind !== "selected") {
+          throw new ShepherdControlError("conflict", "Human selection is no longer valid");
+        }
+        decision = human;
+      } else {
+        if (
+          objective.kind === "none" ||
+          (objective.kind === "selected" &&
+            objective.selectedCandidateId !== candidate.id)
+        ) {
+          throw new ShepherdControlError(
+            "conflict",
+            "Only an objectively passing candidate may be confirmed",
+          );
+        }
+        if (objective.kind === "tie") {
+          const human = decideHumanTieWinner(objective, candidates, candidate.id);
+          if (human.kind !== "selected") {
+            throw new ShepherdControlError("conflict", "Human selection is no longer valid");
+          }
+          decision = human;
+        } else {
+          decision = {
+            ...objective,
+            source: "human",
+            tieBreaker: null,
+            reason: "A human confirmed the sole objectively passing candidate",
+          };
+        }
+      }
+
+      const managedProject = await openAuthDemoProject({
+        managedRoot: this.managedRoot,
+        projectId: project.id,
+      });
+      if (
+        managedProject.repositoryPath !== project.repositoryPath ||
+        managedProject.protectedBranch !== project.protectedBranch ||
+        managedProject.headCommit !== project.protectedHeadCommit
+      ) {
+        throw new ShepherdControlError(
+          "conflict",
+          "Managed project head changed before human selection",
+        );
+      }
+      const planeManager = new PlaneManager({
+        repositoryPath: managedProject.repositoryPath,
+        planesRoot: managedProject.planesRoot,
+        protectedBranch: managedProject.protectedBranch,
+        git: new GitClient(managedProject.repositoryPath, {
+          worktreeRoot: managedProject.planesRoot,
+          protectedBranch: managedProject.protectedBranch,
+          ...(this.gitPromotionFaults === undefined
+            ? {}
+            : { promotionFaults: this.gitPromotionFaults }),
+        }),
+        now: this.now,
+      });
+      await planeManager.initialize();
+      const sourceContracts = snapshot.shepherd.contracts.filter(
+        (contract) => contract.missionId === mission.id,
+      );
+      if (sourceContracts.length !== 2 || !sourceContracts[0] || !sourceContracts[1]) {
+        throw new Error("Auth demo selection requires two source Contracts");
+      }
+      const prepared: PreparedMission = {
+        project: managedProject,
+        planeManager,
+        missionId: mission.id,
+        frontendContractId: sourceContracts[0].id,
+        backendContractId: sourceContracts[1].id,
+      };
+      const selectedAt = this.timestamp();
+      await this.store.mutate((database) => {
+        const persistedMission = database.shepherd.missions.find(
+          (item) => item.id === mission.id,
+        );
+        const persistedCollision = database.shepherd.collisions.find(
+          (item) => item.id === collision.id,
+        );
+        if (
+          persistedMission?.state !== "attention_required" ||
+          persistedMission.attentionReason !== mission.attentionReason ||
+          persistedCollision?.state !== "attention_required"
+        ) {
+          throw new ShepherdControlError(
+            "conflict",
+            "Resolution state changed before selection was persisted",
+          );
+        }
+        const current = database.shepherd.candidates.filter(
+          (item) => item.collisionId === collision.id,
+        );
+        for (const updated of applyWinnerDecision(current, decision, selectedAt)) {
+          replaceById(database.shepherd.candidates, updated);
+        }
+        persistedCollision.state = "resolving";
+        persistedCollision.updatedAt = selectedAt;
+        transitionMissionAndRecord(database, mission.id, "resolving", {
+          actor: "human",
+          eventActor: {
+            type: "human",
+            id: null,
+            displayName: "Human operator",
+          },
+          timestamp: selectedAt,
+          attentionReason: null,
+          failure: null,
+        });
+        this.recordEvent(database, {
+          type: "candidate_selected",
+          summary: "Human selected a verified resolution candidate",
+          missionId: mission.id,
+          collisionId: collision.id,
+          candidateId: candidate.id,
+          actor: {
+            type: "human",
+            id: null,
+            displayName: "Human operator",
+          },
+          timestamp: selectedAt,
+          details: {
+            source:
+              mission.attentionReason === "objective_tie"
+                ? "objective_tie"
+                : "manual_confirmation",
+          },
+        });
+      });
+      const selected = this.store
+        .snapshot()
+        .shepherd.candidates.find((item) => item.id === candidate.id);
+      const plane = this.store
+        .snapshot()
+        .shepherd.planes.find((item) => item.id === selected?.planeId);
+      if (!selected || !plane) throw new Error("Selected candidate Plane disappeared");
+      let promotion: PromotionResult;
+      try {
+        promotion = await this.promoteCandidate(prepared, selected, plane);
+      } catch (error) {
+        if (!this.missionIsCancelled(mission.id)) {
+          const current = this.store
+            .snapshot()
+            .shepherd.candidates.find((item) => item.id === selected.id);
+          if (current?.promotionState === "reverifying") {
+            const failedAt = this.timestamp();
+            await this.store.mutate((database) => {
+              const persistedMission = database.shepherd.missions.find(
+                (item) => item.id === mission.id,
+              );
+              const persistedCollision = database.shepherd.collisions.find(
+                (item) => item.id === collision.id,
+              );
+              const persistedCandidate = database.shepherd.candidates.find(
+                (item) => item.id === selected.id,
+              );
+              if (
+                persistedMission?.state !== "resolving" ||
+                !persistedCollision ||
+                persistedCandidate?.promotionState !== "reverifying"
+              ) {
+                return;
+              }
+              const failure: FailureInfo = {
+                code: "persistence_error",
+                message: "Promotion could not complete after human selection",
+                stage: "human_selection_promotion",
+                at: failedAt,
+                retryable: false,
+              };
+              persistedCandidate.promotionState = "failed";
+              persistedCandidate.failure = failure;
+              persistedCandidate.updatedAt = failedAt;
+              persistedCollision.state = "attention_required";
+              persistedCollision.updatedAt = failedAt;
+              transitionMissionAndRecord(database, mission.id, "attention_required", {
+                actor: "control_plane",
+                eventActor: SHEPHERD_ACTOR,
+                timestamp: failedAt,
+                attentionReason: "promotion_infrastructure_error",
+                failure,
+              });
+            });
+          }
+        }
+        throw error;
+      }
+      await this.persistPromotionOutcome(prepared, collision, selected, plane, promotion);
+      const detail = this.missionDetail(mission.id);
+      if (!detail) throw new Error("Promoted Mission detail disappeared");
+      return detail;
+    } finally {
+      this.activeProjects.delete(project.id);
+    }
+  }
+
+  async resetDeterministicDemo(): Promise<DeterministicDemoResetResult> {
+    const projectId = "auth-demo" as const;
+    if (this.activeProjects.has(projectId)) {
+      throw new ShepherdControlError(
+        "conflict",
+        "The auth demo cannot reset while its control plane is active",
+      );
+    }
+    const snapshot = this.store.snapshot();
+    const project = snapshot.shepherd.projects.find((item) => item.id === projectId);
+    if (!project) throw new ShepherdControlError("not_found", "Auth demo was not found");
+    if (
+      snapshot.shepherd.missions.some(
+        (mission) => mission.projectId === projectId && !terminalMission(mission.state),
+      )
+    ) {
+      throw new ShepherdControlError(
+        "conflict",
+        "The auth demo cannot reset while a Mission is active",
+      );
+    }
+    const managedProject = await openAuthDemoProject({
+      managedRoot: this.managedRoot,
+      projectId,
+    });
+    if (
+      managedProject.repositoryPath !== project.repositoryPath ||
+      managedProject.protectedBranch !== project.protectedBranch ||
+      (managedProject.headCommit !== project.protectedHeadCommit &&
+        managedProject.headCommit !== managedProject.initialCommit)
+    ) {
+      throw new ShepherdControlError(
+        "conflict",
+        "Managed auth demo differs from durable trusted state",
+      );
+    }
+    const planeManager = new PlaneManager({
+      repositoryPath: managedProject.repositoryPath,
+      planesRoot: managedProject.planesRoot,
+      protectedBranch: managedProject.protectedBranch,
+      git: new GitClient(managedProject.repositoryPath, {
+        worktreeRoot: managedProject.planesRoot,
+        protectedBranch: managedProject.protectedBranch,
+      }),
+      now: this.now,
+    });
+    await planeManager.initialize();
+    const removedPlanePaths = await planeManager.resetManagedPlanes();
+    const resetProject = await resetAuthDemoProject({
+      managedRoot: this.managedRoot,
+      projectId,
+    });
+    const result = await this.store.mutate((database) => {
+      const missionIds = new Set(
+        database.shepherd.missions
+          .filter((mission) => mission.projectId === projectId)
+          .map((mission) => mission.id),
+      );
+      const counts = {
+        missions: database.shepherd.missions.filter((item) => missionIds.has(item.id)).length,
+        contracts: database.shepherd.contracts.filter((item) => missionIds.has(item.missionId)).length,
+        planes: database.shepherd.planes.filter((item) => missionIds.has(item.missionId)).length,
+        claims: database.shepherd.claims.filter((item) => missionIds.has(item.missionId)).length,
+        collisions: database.shepherd.collisions.filter((item) => missionIds.has(item.missionId)).length,
+        candidates: database.shepherd.candidates.filter((item) => missionIds.has(item.missionId)).length,
+        events: database.shepherd.events.filter((item) => item.missionId && missionIds.has(item.missionId)).length,
+        messages: database.shepherd.groupMessages.filter((item) => item.projectId === projectId).length,
+      };
+      database.shepherd.missions = database.shepherd.missions.filter(
+        (item) => !missionIds.has(item.id),
+      );
+      database.shepherd.contracts = database.shepherd.contracts.filter(
+        (item) => !missionIds.has(item.missionId),
+      );
+      database.shepherd.planes = database.shepherd.planes.filter(
+        (item) => !missionIds.has(item.missionId),
+      );
+      database.shepherd.claims = database.shepherd.claims.filter(
+        (item) => !missionIds.has(item.missionId),
+      );
+      database.shepherd.collisions = database.shepherd.collisions.filter(
+        (item) => !missionIds.has(item.missionId),
+      );
+      database.shepherd.candidates = database.shepherd.candidates.filter(
+        (item) => !missionIds.has(item.missionId),
+      );
+      database.shepherd.events = database.shepherd.events.filter(
+        (item) => !item.missionId || !missionIds.has(item.missionId),
+      );
+      database.shepherd.groupMessages = database.shepherd.groupMessages.filter(
+        (item) => item.projectId !== projectId,
+      );
+      const persistedProject = database.shepherd.projects.find(
+        (item) => item.id === projectId,
+      );
+      if (!persistedProject) throw new Error("Auth demo project disappeared during reset");
+      persistedProject.protectedHeadCommit = resetProject.initialCommit;
+      persistedProject.activeMissionId = null;
+      persistedProject.updatedAt = this.timestamp();
+      for (const agent of database.agents) {
+        if (
+          agent.id === deterministicDemoAgentId(projectId, "frontend") ||
+          agent.id === deterministicDemoAgentId(projectId, "backend")
+        ) {
+          agent.status = "ready";
+          agent.currentContractId = null;
+          agent.lastError = null;
+          agent.updatedAt = this.timestamp();
+        }
+      }
+      return counts;
+    });
+    return {
+      projectId,
+      restoredHead: resetProject.initialCommit,
+      removedPlanePaths,
+      removed: result,
+    };
+  }
+
   eventsAfter(cursor: number, limit = 200): ShepherdEvent[] {
     return this.store.shepherdEventsAfter(cursor, limit);
   }
@@ -583,6 +1700,32 @@ export class ShepherdService {
     return this.now().toISOString();
   }
 
+  private missionIsCancelled(missionId: string): boolean {
+    return (
+      this.store
+        .snapshot()
+        .shepherd.missions.find((mission) => mission.id === missionId)?.state ===
+      "cancelled"
+    );
+  }
+
+  private ensureMissionRunnable(missionId: string): void {
+    const mission = this.store
+      .snapshot()
+      .shepherd.missions.find((item) => item.id === missionId);
+    if (!mission) throw new Error("Mission was not found");
+    if (mission.state === "cancelled") throw new MissionCancelledError();
+  }
+
+  private assertMissionRunnable(database: Database, missionId: string): Mission {
+    const mission = database.shepherd.missions.find(
+      (item) => item.id === missionId,
+    );
+    if (!mission) throw new Error("Mission was not found");
+    if (mission.state === "cancelled") throw new MissionCancelledError();
+    return mission;
+  }
+
   private executionTimeout(value: number, label: string): number {
     if (!Number.isSafeInteger(value) || value < 1_000 || value > 3_600_000) {
       throw new Error(`${label} execution timeout must be between 1000 and 3600000 ms`);
@@ -625,6 +1768,7 @@ export class ShepherdService {
     await this.store.mutate((database) => {
       const plane = database.shepherd.planes.find((item) => item.id === planeId);
       if (!plane) throw new Error("Runtime Plane disappeared before session binding");
+      if (plane.state === "interrupted") throw new MissionCancelledError();
       if (
         database.shepherd.planes.some(
           (item) =>
@@ -687,11 +1831,120 @@ export class ShepherdService {
               : this.safeText(JSON.stringify(value), 500);
       }
     }
-    return appendRawEvent(database, {
+    const event = appendRawEvent(database, {
       ...input,
       summary: this.safeText(input.summary, 500),
       details,
     });
+    this.appendLifecycleMessageForEvent(database, event);
+    return event;
+  }
+
+  private appendServerGroupMessage(
+    database: Database,
+    input: {
+      sourceId: string;
+      missionId: string;
+      content: string;
+      contractId?: string | null;
+      targetAgentId?: string | null;
+      timestamp: string;
+    },
+  ): void {
+    const mission = database.shepherd.missions.find(
+      (item) => item.id === input.missionId,
+    );
+    if (!mission) return;
+    const project = database.shepherd.projects.find(
+      (item) => item.id === mission.projectId,
+    );
+    if (!project) return;
+    const id =
+      "group-system-" +
+      createHash("sha256")
+        .update(`${project.id}\0${input.sourceId}`, "utf8")
+        .digest("hex")
+        .slice(0, 32);
+    if (database.shepherd.groupMessages.some((message) => message.id === id)) return;
+    appendProjectGroupMessage(database, {
+      id,
+      projectId: project.id,
+      missionId: mission.id,
+      senderType: "shepherd",
+      senderId: null,
+      content: this.safeText(input.content, 2_000),
+      targetAgentId: input.targetAgentId ?? null,
+      contractId: input.contractId ?? null,
+      createdAt: input.timestamp,
+    });
+  }
+
+  private appendLifecycleMessageForEvent(
+    database: Database,
+    event: ShepherdEvent,
+  ): void {
+    if (!event.missionId) return;
+    if (event.type === "mission_created") {
+      const mission = database.shepherd.missions.find(
+        (item) => item.id === event.missionId,
+      );
+      if (mission) {
+        this.appendServerGroupMessage(database, {
+          sourceId: event.id,
+          missionId: mission.id,
+          content: `Mission accepted: ${mission.originalIntent}`,
+          timestamp: event.timestamp,
+        });
+      }
+      return;
+    }
+    if (event.type === "collision_detected" && event.collisionId) {
+      const collision = database.shepherd.collisions.find(
+        (item) => item.id === event.collisionId,
+      );
+      if (collision) {
+        this.appendServerGroupMessage(database, {
+          sourceId: event.id,
+          missionId: event.missionId,
+          content: `Collision detected: exclusive ${collision.key} claims disagree in ${collision.scope}.`,
+          timestamp: event.timestamp,
+        });
+      }
+      return;
+    }
+    if (
+      (event.type === "candidate_passed" || event.type === "candidate_failed") &&
+      event.candidateId
+    ) {
+      const candidate = database.shepherd.candidates.find(
+        (item) => item.id === event.candidateId,
+      );
+      if (candidate) {
+        this.appendServerGroupMessage(database, {
+          sourceId: event.id,
+          missionId: event.missionId,
+          content:
+            event.type === "candidate_passed"
+              ? `Candidate passed independent verification: ${candidate.strategy} (${candidate.targetKey}=${candidate.targetValue}).`
+              : `Candidate failed: ${candidate.strategy} (${candidate.failure?.code ?? "failed_independent_acceptance"}).`,
+          timestamp: event.timestamp,
+        });
+      }
+      return;
+    }
+    if (event.type === "promotion_completed" && event.candidateId) {
+      const candidate = database.shepherd.candidates.find(
+        (item) => item.id === event.candidateId,
+      );
+      if (candidate) {
+        this.appendServerGroupMessage(database, {
+          sourceId: event.id,
+          missionId: event.missionId,
+          content: `Promotion completed: ${candidate.targetKey}=${candidate.targetValue}.`,
+          timestamp: event.timestamp,
+        });
+      }
+    }
   }
 
   private sanitizeEvidence(evidence: VerificationEvidence): VerificationEvidence {
@@ -713,6 +1966,16 @@ export class ShepherdService {
   ): Promise<PreparedMission> {
     await this.initialize();
     const requestedProjectId = options.projectId ?? "auth-demo";
+    const originalIntent =
+      options.originalIntent?.normalize("NFKC").trim() ??
+      "Implement frontend and backend authentication, detect their semantic transport collision, and promote the independently verified resolution.";
+    if (
+      originalIntent.length < 1 ||
+      originalIntent.length > 20_000 ||
+      /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u.test(originalIntent)
+    ) {
+      throw new ShepherdControlError("invalid_input", "Mission intent is invalid");
+    }
     const beforePreparation = this.store.snapshot();
     const existingActive = beforePreparation.shepherd.missions.find(
       (mission) =>
@@ -849,8 +2112,7 @@ export class ShepherdService {
       const mission: Mission = {
         id: missionId,
         projectId: project.projectId,
-        originalIntent:
-          "Implement frontend and backend authentication, detect their semantic transport collision, and promote the independently verified resolution.",
+        originalIntent,
         baseCommit: project.headCommit,
         contractIds: [frontendContractId, backendContractId],
         dependencyEdges: [],
@@ -1061,6 +2323,7 @@ export class ShepherdService {
   private async executePreparedMission(
     prepared: PreparedMission,
   ): Promise<DeterministicDemoResult> {
+    this.ensureMissionRunnable(prepared.missionId);
     const startedAt = this.timestamp();
     await this.store.mutate((database) => {
       transitionMissionAndRecord(database, prepared.missionId, "running", {
@@ -1086,24 +2349,76 @@ export class ShepherdService {
         },
       },
     ];
+    const schedulingSnapshot = this.store.snapshot();
+    const schedulingMission = schedulingSnapshot.shepherd.missions.find(
+      (mission) => mission.id === prepared.missionId,
+    );
+    const schedulingContracts = schedulingSnapshot.shepherd.contracts.filter(
+      (contract) => contract.missionId === prepared.missionId,
+    );
+    if (!schedulingMission) throw new Error("Mission disappeared before scheduling");
+    const scheduling = selectRunnableContracts(
+      schedulingMission,
+      schedulingContracts,
+      {
+        activePlaneCount: 0,
+        maxPlaneConcurrency: this.settings().maxConcurrentPlanes,
+      },
+    );
+    const selectedIds = new Set(scheduling.selected.map((contract) => contract.id));
+    if (selectedIds.size !== contractInputs.length) {
+      const blockedAt = this.timestamp();
+      await this.store.mutate((database) => {
+        this.assertMissionRunnable(database, prepared.missionId);
+        for (const blocked of scheduling.blocked) {
+          const contract = database.shepherd.contracts.find(
+            (item) => item.id === blocked.contract.id,
+          );
+          if (
+            contract &&
+            canTransitionContract(contract.state, "blocked", "control_plane")
+          ) {
+            transitionContractAndRecord(database, contract.id, "blocked", {
+              actor: "control_plane",
+              eventActor: SHEPHERD_ACTOR,
+              timestamp: blockedAt,
+              summary: "Contract blocked by the durable DAG scheduler",
+              details: { reason: blocked.reason.code },
+            });
+          }
+        }
+      });
+      throw new Error("Durable Contract DAG did not produce the required runnable batch");
+    }
+    const scheduledInputs = scheduling.selected.map((selected) => {
+      const input = contractInputs.find(
+        (candidate) => candidate.contractId === selected.id,
+      );
+      if (!input) throw new Error("Scheduler selected an unknown Contract input");
+      return input;
+    });
     const contractPlanes: Plane[] = [];
-    for (const input of contractInputs) {
+    for (const input of scheduledInputs) {
       contractPlanes.push(await this.createContractPlane(prepared, input.contractId));
     }
-    const contractResults = await Promise.allSettled(
-      contractInputs.map((input, index) => {
+    const contractResults = await allSettledBounded(
+      scheduledInputs,
+      this.settings().maxConcurrentPlanes,
+      async (input, index) => {
         const plane = contractPlanes[index];
         if (!plane) throw new Error("Contract Plane was not created");
-        return this.executeContract(prepared, input, plane);
-      }),
+        await this.executeContract(prepared, input, plane);
+      },
     );
     const contractFailure = contractResults.find(
       (result): result is PromiseRejectedResult => result.status === "rejected",
     );
     if (contractFailure) throw contractFailure.reason;
+    this.ensureMissionRunnable(prepared.missionId);
 
     const verificationAt = this.timestamp();
     await this.store.mutate((database) => {
+      this.assertMissionRunnable(database, prepared.missionId);
       transitionMissionAndRecord(database, prepared.missionId, "verifying", {
         actor: "control_plane",
         eventActor: SHEPHERD_ACTOR,
@@ -1123,8 +2438,10 @@ export class ShepherdService {
       collision,
       integrationCommit,
     );
-    const candidateSettled = await Promise.allSettled(
-      candidateWorks.map((work) => this.executeCandidate(prepared, work)),
+    const candidateSettled = await allSettledBounded(
+      candidateWorks,
+      this.settings().maxConcurrentPlanes,
+      async (work) => await this.executeCandidate(prepared, work),
     );
     for (const [index, settled] of candidateSettled.entries()) {
       if (settled.status === "rejected") {
@@ -1133,16 +2450,80 @@ export class ShepherdService {
       }
     }
 
+    const retryableCandidateIds = this.store
+      .snapshot()
+      .shepherd.candidates.filter(
+        (candidate) =>
+          candidate.collisionId === collision.id &&
+          candidate.retryCount === 0 &&
+          candidate.failure?.retryable === true &&
+          (candidate.executionState === "failed" ||
+            candidate.executionState === "timed_out"),
+      )
+      .map((candidate) => candidate.id);
+    await allSettledBounded(
+      retryableCandidateIds,
+      this.settings().maxConcurrentPlanes,
+      async (candidateId) =>
+        await this.retryTransientCandidate(prepared, candidateId),
+    );
+    this.ensureMissionRunnable(prepared.missionId);
+
     const candidates = this.store
       .snapshot()
       .shepherd.candidates.filter((item) => item.collisionId === collision.id);
     const decision = decideResolutionWinner(candidates, []);
+    if (!this.settings().autoResolution) {
+      const pausedAt = this.timestamp();
+      await this.store.mutate((database) => {
+        this.assertMissionRunnable(database, prepared.missionId);
+        const persistedCandidates = database.shepherd.candidates.filter(
+          (candidate) => candidate.collisionId === collision.id,
+        );
+        for (const candidate of persistedCandidates) {
+          candidate.selectionState =
+            candidate.executionState === "passed" ? "tied" : "rejected";
+          candidate.updatedAt = pausedAt;
+        }
+      });
+      await this.persistAttentionRequired(
+        prepared.missionId,
+        collision.id,
+        "auto_resolution_disabled",
+      );
+      throw new Error("Resolution requires attention: auto_resolution_disabled");
+    }
     if (decision.kind !== "selected") {
-      await this.persistAttentionRequired(prepared.missionId, collision.id, decision.reason);
+      const decisionAt = this.timestamp();
+      await this.store.mutate((database) => {
+        this.assertMissionRunnable(database, prepared.missionId);
+        const current = database.shepherd.candidates.filter(
+          (item) => item.collisionId === collision.id,
+        );
+        for (const updated of applyWinnerDecision(current, decision, decisionAt)) {
+          replaceById(database.shepherd.candidates, updated);
+        }
+        if (decision.kind === "tie") {
+          this.recordEvent(database, {
+            type: "tie_escalated",
+            summary: "Objective evidence left the resolution candidates tied",
+            missionId: prepared.missionId,
+            collisionId: collision.id,
+            timestamp: decisionAt,
+            details: { reason: decision.reason },
+          });
+        }
+      });
+      await this.persistAttentionRequired(
+        prepared.missionId,
+        collision.id,
+        decision.reason,
+      );
       throw new Error(`Resolution requires attention: ${decision.reason}`);
     }
     const selectedAt = this.timestamp();
     await this.store.mutate((database) => {
+      this.assertMissionRunnable(database, prepared.missionId);
       const current = database.shepherd.candidates.filter(
         (item) => item.collisionId === collision.id,
       );
@@ -1176,120 +2557,15 @@ export class ShepherdService {
       selectedCandidate,
       selectedPlane,
     );
-    if (promotion.promoted) {
-      await this.checkpoint("promotion_cas_completed", {
-        missionId: prepared.missionId,
-        candidateId: selectedCandidate.id,
-      });
-    }
-    if (!promotion.promoted) {
-      const failedAt = this.timestamp();
-      await this.store.mutate((database) => {
-        const promotionFailure = this.makeFailure(
-          new Error(`Promotion failed: ${promotion.reason}`),
-          "promotion",
-          failedAt,
-        );
-        const persistedCandidate = database.shepherd.candidates.find(
-          (item) => item.id === selectedCandidate.id,
-        );
-        const persistedPlane = database.shepherd.planes.find(
-          (item) => item.id === selectedPlane.id,
-        );
-        const persistedCollision = database.shepherd.collisions.find(
-          (item) => item.id === collision.id,
-        );
-        if (persistedCandidate) {
-          persistedCandidate.promotionState = "failed";
-          persistedCandidate.failure = promotionFailure;
-          persistedCandidate.updatedAt = failedAt;
-          if (persistedPlane) persistedPlane.updatedAt = failedAt;
-        }
-        if (persistedCollision) {
-          persistedCollision.state = "attention_required";
-          persistedCollision.updatedAt = failedAt;
-        }
-        const persistedMission = database.shepherd.missions.find(
-          (item) => item.id === prepared.missionId,
-        );
-        if (persistedMission && persistedMission.state !== "attention_required") {
-          transitionMissionAndRecord(
-            database,
-            persistedMission.id,
-            "attention_required",
-            {
-              actor: "control_plane",
-              eventActor: SHEPHERD_ACTOR,
-              timestamp: failedAt,
-              attentionReason: promotionFailure.message,
-              failure: promotionFailure,
-              summary: "Promotion failed after final gate evaluation",
-              details: { reason: promotion.reason },
-            },
-          );
-        }
-      });
-      throw new Error(`Promotion failed: ${promotion.reason}`);
-    }
-
-    const completedAt = this.timestamp();
-    await this.store.mutate((database) => {
-      const persistedCandidate = database.shepherd.candidates.find(
-        (item) => item.id === selectedCandidate.id,
-      );
-      const persistedPlane = database.shepherd.planes.find(
-        (item) => item.id === selectedPlane.id,
-      );
-      const persistedCollision = database.shepherd.collisions.find(
-        (item) => item.id === collision.id,
-      );
-      const persistedProject = database.shepherd.projects.find(
-        (item) => item.id === prepared.project.projectId,
-      );
-      if (
-        !persistedCandidate ||
-        !persistedPlane ||
-        !persistedCollision ||
-        !persistedProject
-      ) {
-        throw new Error("Promotion records disappeared before final persistence");
-      }
-      persistedCandidate.promotionState = "promoted";
-      persistedCandidate.promotionEvidence = structuredClone(
-        promotion.verificationEvidence,
-      );
-      persistedCandidate.result = `Promoted ${persistedCandidate.targetValue}`;
-      persistedCandidate.updatedAt = completedAt;
-      if (!persistedPlane.verificationEvidenceIds.includes(promotion.verificationEvidence.id)) {
-        persistedPlane.verificationEvidenceIds.push(promotion.verificationEvidence.id);
-      }
-      persistedPlane.state = "verified";
-      persistedPlane.updatedAt = completedAt;
-      persistedCollision.state = "resolved";
-      persistedCollision.resolvedAt = completedAt;
-      persistedCollision.updatedAt = completedAt;
-      persistedProject.protectedHeadCommit = promotion.promotedHead;
-      persistedProject.activeMissionId = null;
-      persistedProject.updatedAt = completedAt;
-      this.recordEvent(database, {
-        type: "promotion_completed",
-        summary: "Promoted the selected resolution to the protected branch",
-        missionId: prepared.missionId,
-        planeId: selectedPlane.id,
-        collisionId: collision.id,
-        candidateId: selectedCandidate.id,
-        timestamp: completedAt,
-        details: {
-          previousHead: promotion.previousHead,
-          promotedHead: promotion.promotedHead,
-        },
-      });
-      transitionMissionAndRecord(database, prepared.missionId, "completed", {
-        actor: "control_plane",
-        eventActor: SHEPHERD_ACTOR,
-        timestamp: completedAt,
-      });
-    });
+    this.ensureMissionRunnable(prepared.missionId);
+    await this.persistPromotionOutcome(
+      prepared,
+      collision,
+      selectedCandidate,
+      selectedPlane,
+      promotion,
+    );
+    if (!promotion.promoted) throw new Error("Unreachable failed promotion outcome");
 
     const detail = this.missionDetail(prepared.missionId);
     if (!detail) throw new Error("Completed Mission could not be reloaded");
@@ -1314,6 +2590,7 @@ export class ShepherdService {
     prepared: PreparedMission,
     contractId: string,
   ): Promise<Plane> {
+    this.ensureMissionRunnable(prepared.missionId);
     const snapshot = this.store.snapshot();
     const contract = snapshot.shepherd.contracts.find((item) => item.id === contractId);
     if (!contract) throw new Error("Execution Contract is missing");
@@ -1329,15 +2606,21 @@ export class ShepherdService {
       executionIdentity: this.identifier("execution"),
       authority: contract.authority,
     });
-    await this.store.mutate((database) => {
-      database.shepherd.planes.push(plane);
-      const persisted = database.shepherd.contracts.find(
-        (item) => item.id === contractId,
-      );
-      if (!persisted) throw new Error("Execution Contract disappeared");
-      persisted.planeId = plane.id;
-      persisted.updatedAt = this.timestamp();
-    });
+    try {
+      await this.store.mutate((database) => {
+        this.assertMissionRunnable(database, prepared.missionId);
+        database.shepherd.planes.push(plane);
+        const persisted = database.shepherd.contracts.find(
+          (item) => item.id === contractId,
+        );
+        if (!persisted) throw new Error("Execution Contract disappeared");
+        persisted.planeId = plane.id;
+        persisted.updatedAt = this.timestamp();
+      });
+    } catch (error) {
+      await prepared.planeManager.destroyPlane(plane).catch(() => undefined);
+      throw error;
+    }
     return plane;
   }
 
@@ -1392,8 +2675,10 @@ export class ShepherdService {
     input: ContractPlaneInput,
     initialPlane: Plane,
   ): Promise<void> {
+    this.ensureMissionRunnable(prepared.missionId);
     const startedAt = this.timestamp();
     await this.store.mutate((database) => {
+      this.assertMissionRunnable(database, prepared.missionId);
       transitionContractAndRecord(database, input.contractId, "running", {
         actor: "control_plane",
         eventActor: SHEPHERD_ACTOR,
@@ -1420,6 +2705,7 @@ export class ShepherdService {
     try {
       executionWorkspace =
         await prepared.planeManager.createExecutionWorkspace(initialPlane);
+      this.ensureMissionRunnable(prepared.missionId);
       await this.checkpoint("contract_execution_workspace_ready", {
         missionId: prepared.missionId,
         contractId: input.contractId,
@@ -1449,14 +2735,23 @@ export class ShepherdService {
         workspacePath: executionWorkspace.path,
         operation: input.operation,
         prompt,
-        timeoutMs: this.contractTimeoutMs,
+        timeoutMs: this.settings().contractTimeoutMs,
       });
+      this.ensureMissionRunnable(prepared.missionId);
       const runtimeSessionFingerprint = await this.persistRuntimeSessionFingerprint(
         initialPlane.id,
         executionResult.runtimeSessionId,
       );
       initialPlane.runtimeSessionFingerprint = runtimeSessionFingerprint;
     } catch (error) {
+      if (error instanceof MissionCancelledError || this.missionIsCancelled(prepared.missionId)) {
+        if (executionWorkspace) {
+          await prepared.planeManager
+            .destroyExecutionWorkspace(executionWorkspace)
+            .catch(() => undefined);
+        }
+        throw new MissionCancelledError();
+      }
       const failedAt = this.timestamp();
       const failure = this.makeFailure(error, "contract_execution", failedAt);
       await this.store.mutate((database) => {
@@ -1499,6 +2794,7 @@ export class ShepherdService {
     }
     const agentCompletedAt = this.timestamp();
     await this.store.mutate((database) => {
+      this.assertMissionRunnable(database, prepared.missionId);
       const runtimeSessionFingerprint = database.shepherd.planes.find(
         (item) => item.id === initialPlane.id,
       )?.runtimeSessionFingerprint;
@@ -1521,10 +2817,12 @@ export class ShepherdService {
       throw new Error("Contract execution workspace disappeared after completion");
     }
     try {
+      this.ensureMissionRunnable(prepared.missionId);
       await prepared.planeManager.importExecutionWorkspace(
         initialPlane,
         executionWorkspace,
       );
+      this.ensureMissionRunnable(prepared.missionId);
     } catch (error) {
       if (error instanceof PlaneAuthorityViolationError) {
         await this.persistContractAuthorityDenial(
@@ -1542,6 +2840,7 @@ export class ShepherdService {
       initialPlane.baseCommit,
       initialPlane.worktreePath,
     );
+    this.ensureMissionRunnable(prepared.missionId);
     const contract = this.store
       .snapshot()
       .shepherd.contracts.find((item) => item.id === input.contractId);
@@ -1564,6 +2863,7 @@ export class ShepherdService {
         retryable: false,
       };
       await this.store.mutate((database) => {
+        this.assertMissionRunnable(database, prepared.missionId);
         transitionContractAndRecord(database, input.contractId, "manifest_missing", {
           actor: "control_plane",
           eventActor: SHEPHERD_ACTOR,
@@ -1595,6 +2895,7 @@ export class ShepherdService {
         retryable: false,
       };
       await this.store.mutate((database) => {
+        this.assertMissionRunnable(database, prepared.missionId);
         transitionContractAndRecord(
           database,
           input.contractId,
@@ -1635,6 +2936,7 @@ export class ShepherdService {
         retryable: false,
       };
       await this.store.mutate((database) => {
+        this.assertMissionRunnable(database, prepared.missionId);
         if (malformed) {
           transitionContractAndRecord(
             database,
@@ -1677,6 +2979,7 @@ export class ShepherdService {
     }
     const authorityAt = this.timestamp();
     await this.store.mutate((database) => {
+      this.assertMissionRunnable(database, prepared.missionId);
       transitionContractAndRecord(
         database,
         input.contractId,
@@ -1709,6 +3012,7 @@ export class ShepherdService {
     if (!finalizedAuthority.allowed || finalizedAuthority.manifestPaths.length !== 0) {
       throw new Error("Contract diff failed authority after manifest removal");
     }
+    this.ensureMissionRunnable(prepared.missionId);
     let plane = await prepared.planeManager.commitPlane(
       initialPlane,
       `Finalize Contract ${input.contractId}`,
@@ -1716,6 +3020,7 @@ export class ShepherdService {
     plane = { ...plane, state: "inspecting", updatedAt: this.timestamp() };
     const verificationStartedAt = this.timestamp();
     await this.store.mutate((database) => {
+      this.assertMissionRunnable(database, prepared.missionId);
       replaceById(database.shepherd.planes, plane);
       const persisted = database.shepherd.contracts.find(
         (item) => item.id === input.contractId,
@@ -1749,6 +3054,7 @@ export class ShepherdService {
         },
       ),
     );
+    this.ensureMissionRunnable(prepared.missionId);
     const verifiedAt = this.timestamp();
     if (!evidence.passed) {
       const failure: FailureInfo = {
@@ -1759,6 +3065,7 @@ export class ShepherdService {
         retryable: false,
       };
       await this.store.mutate((database) => {
+        this.assertMissionRunnable(database, prepared.missionId);
         transitionContractAndRecord(
           database,
           input.contractId,
@@ -1790,6 +3097,7 @@ export class ShepherdService {
         retryable: false,
       };
       await this.store.mutate((database) => {
+        this.assertMissionRunnable(database, prepared.missionId);
         transitionContractAndRecord(database, input.contractId, "claim_rejected", {
           actor: "control_plane",
           eventActor: SHEPHERD_ACTOR,
@@ -1800,6 +3108,7 @@ export class ShepherdService {
       throw new Error(`Contract ${input.contractId} semantic claim was not corroborated`);
     }
     await this.store.mutate((database) => {
+      this.assertMissionRunnable(database, prepared.missionId);
       for (const claim of ingestion.claims) replaceById(database.shepherd.claims, claim);
       this.recordEvent(database, {
         type: "claims_loaded",
@@ -1810,12 +3119,25 @@ export class ShepherdService {
         timestamp: verifiedAt,
         details: { claimCount: ingestion.claims.length },
       });
-      transitionContractAndRecord(database, input.contractId, "verified", {
+      const verifiedEvent = transitionContractAndRecord(database, input.contractId, "verified", {
         actor: "independent_verifier",
         eventActor: VERIFIER_ACTOR,
         timestamp: verifiedAt,
         verificationEvidence: evidence,
       });
+      const verifiedContract = database.shepherd.contracts.find(
+        (item) => item.id === input.contractId,
+      );
+      if (verifiedContract?.manifest) {
+        this.appendServerGroupMessage(database, {
+          sourceId: verifiedEvent.id,
+          missionId: prepared.missionId,
+          contractId: verifiedContract.id,
+          targetAgentId: verifiedContract.agentId,
+          content: `Contract verified: ${verifiedContract.title}. ${verifiedContract.manifest.summary}`,
+          timestamp: verifiedAt,
+        });
+      }
       const persistedPlane = database.shepherd.planes.find(
         (item) => item.id === plane.id,
       );
@@ -1839,6 +3161,7 @@ export class ShepherdService {
   }
 
   private async integrateContracts(prepared: PreparedMission): Promise<Plane> {
+    this.ensureMissionRunnable(prepared.missionId);
     let integration = await prepared.planeManager.createIntegrationPlane({
       id: this.identifier("plane-integration"),
       projectId: prepared.project.projectId,
@@ -1848,9 +3171,15 @@ export class ShepherdService {
       executionIdentity: this.identifier("integration"),
       authority: authorityFor("resolution"),
     });
-    await this.store.mutate((database) => {
-      database.shepherd.planes.push(integration);
-    });
+    try {
+      await this.store.mutate((database) => {
+        this.assertMissionRunnable(database, prepared.missionId);
+        database.shepherd.planes.push(integration);
+      });
+    } catch (error) {
+      await prepared.planeManager.destroyPlane(integration).catch(() => undefined);
+      throw error;
+    }
     const contractPlanes = this.store
       .snapshot()
       .shepherd.planes.filter(
@@ -1861,15 +3190,18 @@ export class ShepherdService {
       throw new Error("Integration requires exactly two verified Contract Planes");
     }
     for (const contractPlane of contractPlanes) {
+      this.ensureMissionRunnable(prepared.missionId);
       const merged = await prepared.planeManager.mergePlane(
         integration,
         contractPlane,
       );
+      this.ensureMissionRunnable(prepared.missionId);
       if (!merged.merged || merged.conflictFiles.length > 0) {
         throw new Error("Verified Contracts produced a textual Git conflict");
       }
       integration = merged.plane;
       await this.store.mutate((database) => {
+        this.assertMissionRunnable(database, prepared.missionId);
         replaceById(database.shepherd.planes, integration);
       });
     }
@@ -1880,6 +3212,7 @@ export class ShepherdService {
     missionId: string,
     integrationPlane: Plane,
   ): Promise<SemanticCollision> {
+    this.ensureMissionRunnable(missionId);
     const snapshot = this.store.snapshot();
     const contracts = snapshot.shepherd.contracts
       .filter((contract) => contract.missionId === missionId)
@@ -1905,6 +3238,7 @@ export class ShepherdService {
     if (!collision) throw new Error("Collision detector returned no record");
     const collisionAt = this.timestamp();
     await this.store.mutate((database) => {
+      this.assertMissionRunnable(database, missionId);
       database.shepherd.collisions.push(collision);
       const mission = database.shepherd.missions.find(
         (item) => item.id === missionId,
@@ -1963,6 +3297,7 @@ export class ShepherdService {
     ];
     const works: CandidateWork[] = [];
     for (const input of candidates) {
+      this.ensureMissionRunnable(prepared.missionId);
       const candidateId = this.identifier("candidate");
       const plane = await prepared.planeManager.createResolutionPlane({
         id: this.identifier("plane-resolution"),
@@ -1987,6 +3322,7 @@ export class ShepherdService {
         selectionState: "pending",
         promotionState: "not_started",
         verificationEvidence: null,
+        previousAttempts: [],
         promotionEvidence: null,
         changedFiles: [],
         diffSummary: "",
@@ -1996,26 +3332,32 @@ export class ShepherdService {
         createdAt,
         updatedAt: createdAt,
       };
-      await this.store.mutate((database) => {
-        database.shepherd.planes.push(plane);
-        database.shepherd.candidates.push(candidate);
-        const persistedCollision = database.shepherd.collisions.find(
-          (item) => item.id === collision.id,
-        );
-        if (!persistedCollision) throw new Error("Collision disappeared");
-        persistedCollision.candidateIds.push(candidate.id);
-        persistedCollision.updatedAt = createdAt;
-        this.recordEvent(database, {
-          type: "candidate_created",
-          summary: `Created resolution candidate: ${input.strategy}`,
-          missionId: prepared.missionId,
-          planeId: plane.id,
-          collisionId: collision.id,
-          candidateId,
-          timestamp: createdAt,
-          details: { targetValue: input.value, baseCommit: integrationCommit },
+      try {
+        await this.store.mutate((database) => {
+          this.assertMissionRunnable(database, prepared.missionId);
+          database.shepherd.planes.push(plane);
+          database.shepherd.candidates.push(candidate);
+          const persistedCollision = database.shepherd.collisions.find(
+            (item) => item.id === collision.id,
+          );
+          if (!persistedCollision) throw new Error("Collision disappeared");
+          persistedCollision.candidateIds.push(candidate.id);
+          persistedCollision.updatedAt = createdAt;
+          this.recordEvent(database, {
+            type: "candidate_created",
+            summary: `Created resolution candidate: ${input.strategy}`,
+            missionId: prepared.missionId,
+            planeId: plane.id,
+            collisionId: collision.id,
+            candidateId,
+            timestamp: createdAt,
+            details: { targetValue: input.value, baseCommit: integrationCommit },
+          });
         });
-      });
+      } catch (error) {
+        await prepared.planeManager.destroyPlane(plane).catch(() => undefined);
+        throw error;
+      }
       works.push({
         candidateId,
         plane,
@@ -2033,8 +3375,10 @@ export class ShepherdService {
     prepared: PreparedMission,
     work: CandidateWork,
   ): Promise<void> {
+    this.ensureMissionRunnable(prepared.missionId);
     const startedAt = this.timestamp();
     await this.store.mutate((database) => {
+      this.assertMissionRunnable(database, prepared.missionId);
       const candidate = database.shepherd.candidates.find(
         (item) => item.id === work.candidateId,
       );
@@ -2048,6 +3392,7 @@ export class ShepherdService {
     const executionWorkspace =
       await prepared.planeManager.createExecutionWorkspace(work.plane);
     try {
+      this.ensureMissionRunnable(prepared.missionId);
       const executionSnapshot = this.store.snapshot();
       const candidate = executionSnapshot.shepherd.candidates.find(
         (item) => item.id === work.candidateId,
@@ -2136,18 +3481,21 @@ export class ShepherdService {
         workspacePath: executionWorkspace.path,
         operation: work.operation,
         prompt,
-        timeoutMs: this.candidateTimeoutMs,
+        timeoutMs: this.settings().candidateTimeoutMs,
       });
+      this.ensureMissionRunnable(prepared.missionId);
       const runtimeSessionFingerprint = await this.persistRuntimeSessionFingerprint(
         work.plane.id,
         executionResult.runtimeSessionId,
       );
       work.plane.runtimeSessionFingerprint = runtimeSessionFingerprint;
       try {
+        this.ensureMissionRunnable(prepared.missionId);
         await prepared.planeManager.importExecutionWorkspace(
           work.plane,
           executionWorkspace,
         );
+        this.ensureMissionRunnable(prepared.missionId);
       } catch (error) {
         if (error instanceof PlaneAuthorityViolationError) {
           throw new AuthorityViolationError("candidate");
@@ -2161,16 +3509,19 @@ export class ShepherdService {
       work.plane.baseCommit,
       work.plane.worktreePath,
     );
+    this.ensureMissionRunnable(prepared.missionId);
     const authority = validateChangedPaths(actualChanged, work.plane.authority);
     if (!authority.allowed || authority.manifestPaths.length > 0) {
       throw new AuthorityViolationError("candidate");
     }
+    this.ensureMissionRunnable(prepared.missionId);
     let plane = await prepared.planeManager.commitPlane(
       work.plane,
       `Finalize resolution candidate ${work.candidateId}`,
     );
     plane = { ...plane, state: "inspecting", updatedAt: this.timestamp() };
     await this.store.mutate((database) => {
+      this.assertMissionRunnable(database, prepared.missionId);
       replaceById(database.shepherd.planes, plane);
       const candidate = database.shepherd.candidates.find(
         (item) => item.id === work.candidateId,
@@ -2195,9 +3546,11 @@ export class ShepherdService {
           }),
       ),
     );
+    this.ensureMissionRunnable(prepared.missionId);
     const completedAt = this.timestamp();
     const verifiedTarget = verifiedAuthTransportFact(evidence);
     await this.store.mutate((database) => {
+      this.assertMissionRunnable(database, prepared.missionId);
       const candidate = database.shepherd.candidates.find(
         (item) => item.id === work.candidateId,
       );
@@ -2221,13 +3574,27 @@ export class ShepherdService {
               at: completedAt,
               retryable: false,
             }
-          : {
-              code: "failed_independent_acceptance",
-              message: evidence.summary,
-              stage: "candidate_verification",
-              at: completedAt,
-              retryable: false,
-            };
+          : (() => {
+              const transient = evidence.checks.some(
+                (check) =>
+                  check.mandatory &&
+                  (check.status === "infrastructure_error" ||
+                    check.status === "timed_out"),
+              );
+              return {
+                code: evidence.checks.some(
+                  (check) => check.mandatory && check.status === "timed_out",
+                )
+                  ? ("candidate_timeout" as const)
+                  : transient
+                    ? ("verification_infrastructure_error" as const)
+                    : ("failed_independent_acceptance" as const),
+                message: evidence.summary,
+                stage: "candidate_verification",
+                at: completedAt,
+                retryable: transient,
+              };
+            })();
       candidate.executionState = candidatePassed ? "passed" : "failed";
       candidate.verificationEvidence = evidence;
       candidate.failure = failure;
@@ -2260,6 +3627,7 @@ export class ShepherdService {
     work: CandidateWork,
     error: unknown,
   ): Promise<void> {
+    if (this.missionIsCancelled(work.plane.missionId)) return;
     const failedAt = this.timestamp();
     await this.store.mutate((database) => {
       const candidate = database.shepherd.candidates.find(
@@ -2268,16 +3636,28 @@ export class ShepherdService {
       const plane = database.shepherd.planes.find((item) => item.id === work.plane.id);
       if (!candidate || !plane || candidate.executionState === "failed") return;
       candidate.executionState = "failed";
-      candidate.failure =
-        error instanceof AuthorityViolationError
-          ? {
+      const rawMessage = error instanceof Error ? error.message : "";
+      candidate.failure = error instanceof AuthorityViolationError
+        ? {
               code: "unauthorized_file_change",
               message: "Actual Git changes exceeded the candidate's scoped authority",
               stage: "candidate_authority",
               at: failedAt,
               retryable: false,
             }
-          : this.makeFailure(error, "candidate_execution", failedAt);
+        : {
+            code: /timed out after/iu.test(rawMessage)
+              ? "candidate_timeout"
+              : error instanceof Error && error.name === "PlaneCreationError"
+                ? "worktree_creation_failure"
+                : "agent_runtime_error",
+            message: this.safeText(rawMessage || "Candidate execution failed"),
+            stage: "candidate_execution",
+            at: failedAt,
+            retryable: true,
+          };
+      candidate.executionState =
+        candidate.failure.code === "candidate_timeout" ? "timed_out" : "failed";
       candidate.updatedAt = failedAt;
       plane.state = "failed";
       plane.error = candidate.failure;
@@ -2294,6 +3674,132 @@ export class ShepherdService {
     });
   }
 
+  private async retryTransientCandidate(
+    prepared: PreparedMission,
+    candidateId: string,
+  ): Promise<void> {
+    this.ensureMissionRunnable(prepared.missionId);
+    const snapshot = this.store.snapshot();
+    const candidate = snapshot.shepherd.candidates.find(
+      (item) => item.id === candidateId,
+    );
+    const previousPlane = snapshot.shepherd.planes.find(
+      (item) => item.id === candidate?.planeId,
+    );
+    if (
+      !candidate ||
+      !previousPlane ||
+      candidate.retryCount !== 0 ||
+      (candidate.executionState !== "failed" &&
+        candidate.executionState !== "timed_out") ||
+      !candidate.failure?.retryable
+    ) {
+      return;
+    }
+    const retryPlane = await prepared.planeManager.createResolutionPlane({
+      id: this.identifier("plane-resolution"),
+      projectId: prepared.project.projectId,
+      missionId: prepared.missionId,
+      candidateId: candidate.id,
+      baseCommit: previousPlane.baseCommit,
+      purpose: candidate.strategy + " (single transient retry)",
+      executionIdentity: this.identifier("resolution-exec"),
+      authority: authorityFor("resolution"),
+    });
+    const retryAt = this.timestamp();
+    try {
+      await this.store.mutate((database) => {
+        const mission = database.shepherd.missions.find(
+          (item) => item.id === prepared.missionId,
+        );
+        const persisted = database.shepherd.candidates.find(
+          (item) => item.id === candidate.id,
+        );
+        const persistedPreviousPlane = database.shepherd.planes.find(
+          (item) => item.id === previousPlane.id,
+        );
+        if (mission?.state === "cancelled") throw new MissionCancelledError();
+        if (
+          !persisted ||
+          !persistedPreviousPlane ||
+          persisted.planeId !== previousPlane.id ||
+          persisted.retryCount !== 0 ||
+          (persisted.executionState !== "failed" &&
+            persisted.executionState !== "timed_out") ||
+          !persisted.failure?.retryable
+        ) {
+          throw new ShepherdControlError(
+            "conflict",
+            "Candidate retry eligibility changed",
+          );
+        }
+        const previousAttempts = persisted.previousAttempts ?? [];
+        if (previousAttempts.length !== 0) {
+          throw new ShepherdControlError(
+            "conflict",
+            "Candidate already has a previous attempt",
+          );
+        }
+        previousAttempts.push({
+          planeId: previousPlane.id,
+          executionState: persisted.executionState,
+          verificationEvidence: persisted.verificationEvidence,
+          changedFiles: [...persisted.changedFiles],
+          diffSummary: persisted.diffSummary,
+          failure: persisted.failure,
+          startedAt: persistedPreviousPlane.createdAt,
+          completedAt: persisted.failure.at,
+        });
+        persisted.previousAttempts = previousAttempts;
+        persisted.planeId = retryPlane.id;
+        persisted.executionState = "queued";
+        persisted.selectionState = "pending";
+        persisted.promotionState = "not_started";
+        persisted.verificationEvidence = null;
+        persisted.promotionEvidence = null;
+        persisted.changedFiles = [];
+        persisted.diffSummary = "";
+        persisted.result = null;
+        persisted.retryCount = 1;
+        persisted.failure = null;
+        persisted.updatedAt = retryAt;
+        database.shepherd.planes.push(retryPlane);
+        this.recordEvent(database, {
+          type: "candidate_retried",
+          summary: "Started the candidate's single transient retry",
+          missionId: persisted.missionId,
+          planeId: retryPlane.id,
+          collisionId: persisted.collisionId,
+          candidateId: persisted.id,
+          timestamp: retryAt,
+          details: {
+            previousPlaneId: previousPlane.id,
+            retryPlaneId: retryPlane.id,
+            baseCommit: retryPlane.baseCommit,
+            retryCount: 1,
+          },
+        });
+      });
+    } catch (error) {
+      await prepared.planeManager.destroyPlane(retryPlane).catch(() => undefined);
+      throw error;
+    }
+    const work: CandidateWork = {
+      candidateId: candidate.id,
+      plane: retryPlane,
+      operation: {
+        kind: "resolution_candidate",
+        candidateId: candidate.id,
+        targetTransport: candidate.targetValue as AuthTransport,
+      },
+    };
+    try {
+      await this.executeCandidate(prepared, work);
+    } catch (error) {
+      await this.persistCandidateInfrastructureFailure(work, error);
+    }
+  }
+
   private async persistAttentionRequired(
     missionId: string,
     collisionId: string,
@@ -2301,6 +3807,7 @@ export class ShepherdService {
   ): Promise<void> {
     const timestamp = this.timestamp();
     await this.store.mutate((database) => {
+      this.assertMissionRunnable(database, missionId);
       const collision = database.shepherd.collisions.find(
         (item) => item.id === collisionId,
       );
@@ -2308,11 +3815,200 @@ export class ShepherdService {
         collision.state = "attention_required";
         collision.updatedAt = timestamp;
       }
-      transitionMissionAndRecord(database, missionId, "attention_required", {
+      const code: FailureInfo["code"] =
+        reason === "objective_tie"
+          ? "objective_tie"
+          : reason === "auto_resolution_disabled"
+            ? "manual_confirmation_required"
+            : reason === "all_candidates_failed"
+              ? "all_candidates_failed"
+              : "single_candidate_failure";
+      const failure: FailureInfo = {
+        code,
+        message:
+          reason === "auto_resolution_disabled"
+            ? "Automatic resolution is disabled; a human must confirm a passing candidate"
+            : `Resolution requires attention: ${reason}`,
+        stage: "resolution_selection",
+        at: timestamp,
+        retryable: false,
+      };
+      const attentionEvent = transitionMissionAndRecord(database, missionId, "attention_required", {
         actor: "control_plane",
         eventActor: SHEPHERD_ACTOR,
         timestamp,
         attentionReason: reason,
+        failure,
+      });
+      this.appendServerGroupMessage(database, {
+        sourceId: attentionEvent.id,
+        missionId,
+        content:
+          reason === "objective_tie"
+            ? "Attention required: verified resolution candidates are objectively tied."
+            : reason === "auto_resolution_disabled"
+              ? "Manual confirmation required: automatic resolution is disabled."
+              : `Attention required: ${code}.`,
+        timestamp,
+      });
+    });
+  }
+
+  private async persistPromotionOutcome(
+    prepared: PreparedMission,
+    collision: SemanticCollision,
+    selectedCandidate: ResolutionCandidate,
+    selectedPlane: Plane,
+    promotion: PromotionResult,
+  ): Promise<void> {
+    if (promotion.promoted) {
+      await this.checkpoint("promotion_cas_completed", {
+        missionId: prepared.missionId,
+        candidateId: selectedCandidate.id,
+      });
+    }
+    if (!promotion.promoted) {
+      if (this.missionIsCancelled(prepared.missionId)) {
+        throw new MissionCancelledError();
+      }
+      const failedAt = this.timestamp();
+      const failureCode: FailureInfo["code"] =
+        promotion.reason === "protected_branch_moved"
+          ? "protected_branch_moved"
+          : promotion.reason === "final_reverification_failure"
+            ? "final_reverification_failure"
+            : promotion.reason === "verification_infrastructure_error"
+              ? "verification_infrastructure_error"
+              : promotion.reason === "unauthorized_file_change"
+                ? "unauthorized_file_change"
+                : promotion.reason === "non_fast_forward"
+                  ? "git_conflict"
+                  : "persistence_error";
+      await this.store.mutate((database) => {
+        const persistedCandidate = database.shepherd.candidates.find(
+          (item) => item.id === selectedCandidate.id,
+        );
+        const persistedCollision = database.shepherd.collisions.find(
+          (item) => item.id === collision.id,
+        );
+        const persistedMission = database.shepherd.missions.find(
+          (item) => item.id === prepared.missionId,
+        );
+        if (!persistedCandidate || !persistedCollision || !persistedMission) {
+          throw new Error("Promotion records disappeared before failure persistence");
+        }
+        const failure: FailureInfo = {
+          code: failureCode,
+          message: `Promotion failed: ${promotion.reason}`,
+          stage: "promotion",
+          at: failedAt,
+          retryable: false,
+        };
+        persistedCandidate.promotionState = "failed";
+        persistedCandidate.failure = failure;
+        persistedCandidate.updatedAt = failedAt;
+        persistedCollision.state = "attention_required";
+        persistedCollision.updatedAt = failedAt;
+        if (persistedMission.state !== "attention_required") {
+          const attentionEvent = transitionMissionAndRecord(
+            database,
+            persistedMission.id,
+            "attention_required",
+            {
+              actor: "control_plane",
+              eventActor: SHEPHERD_ACTOR,
+              timestamp: failedAt,
+              attentionReason: promotion.reason,
+              failure,
+              summary: "Promotion failed after final gate evaluation",
+              details: { reason: promotion.reason },
+            },
+          );
+          this.appendServerGroupMessage(database, {
+            sourceId: attentionEvent.id,
+            missionId: persistedMission.id,
+            content: `Attention required: promotion failed (${promotion.reason}).`,
+            timestamp: failedAt,
+          });
+        }
+      });
+      throw new Error(`Promotion failed: ${promotion.reason}`);
+    }
+
+    const completedAt = this.timestamp();
+    await this.store.mutate((database) => {
+      const persistedCandidate = database.shepherd.candidates.find(
+        (item) => item.id === selectedCandidate.id,
+      );
+      const persistedPlane = database.shepherd.planes.find(
+        (item) => item.id === selectedPlane.id,
+      );
+      const persistedCollision = database.shepherd.collisions.find(
+        (item) => item.id === collision.id,
+      );
+      const persistedProject = database.shepherd.projects.find(
+        (item) => item.id === prepared.project.projectId,
+      );
+      if (
+        !persistedCandidate ||
+        !persistedPlane ||
+        !persistedCollision ||
+        !persistedProject
+      ) {
+        throw new Error("Promotion records disappeared before final persistence");
+      }
+      persistedCandidate.promotionState = "promoted";
+      persistedCandidate.promotionEvidence = structuredClone(
+        promotion.verificationEvidence,
+      );
+      persistedCandidate.result = `Promoted ${persistedCandidate.targetValue}`;
+      persistedCandidate.failure = null;
+      persistedCandidate.updatedAt = completedAt;
+      if (
+        !persistedPlane.verificationEvidenceIds.includes(
+          promotion.verificationEvidence.id,
+        )
+      ) {
+        persistedPlane.verificationEvidenceIds.push(
+          promotion.verificationEvidence.id,
+        );
+      }
+      persistedPlane.state = "verified";
+      persistedPlane.updatedAt = completedAt;
+      persistedCollision.state = "resolved";
+      persistedCollision.resolvedAt = completedAt;
+      persistedCollision.updatedAt = completedAt;
+      persistedProject.protectedHeadCommit = promotion.promotedHead;
+      persistedProject.activeMissionId = null;
+      persistedProject.updatedAt = completedAt;
+      this.recordEvent(database, {
+        type: "promotion_completed",
+        summary: "Promoted the selected resolution to the protected branch",
+        missionId: prepared.missionId,
+        planeId: selectedPlane.id,
+        collisionId: collision.id,
+        candidateId: selectedCandidate.id,
+        timestamp: completedAt,
+        details: {
+          previousHead: promotion.previousHead,
+          promotedHead: promotion.promotedHead,
+        },
+      });
+      const completionEvent = transitionMissionAndRecord(
+        database,
+        prepared.missionId,
+        "completed",
+        {
+          actor: "control_plane",
+          eventActor: SHEPHERD_ACTOR,
+          timestamp: completedAt,
+        },
+      );
+      this.appendServerGroupMessage(database, {
+        sourceId: completionEvent.id,
+        missionId: prepared.missionId,
+        content: "Mission completed after final independent re-verification and promotion.",
+        timestamp: completedAt,
       });
     });
   }
@@ -2322,8 +4018,10 @@ export class ShepherdService {
     candidate: ResolutionCandidate,
     plane: Plane,
   ) {
+    this.ensureMissionRunnable(prepared.missionId);
     const startedAt = this.timestamp();
     await this.store.mutate((database) => {
+      this.assertMissionRunnable(database, prepared.missionId);
       const persisted = database.shepherd.candidates.find(
         (item) => item.id === candidate.id,
       );
@@ -2343,10 +4041,17 @@ export class ShepherdService {
     const gate = new PromotionGate(
       prepared.planeManager.git,
       {
-        verify: async (request) =>
-          this.sanitizeEvidence(await this.verifier.verify(request)),
+        verify: async (request) => {
+          this.ensureMissionRunnable(prepared.missionId);
+          const evidence = this.sanitizeEvidence(
+            await this.verifier.verify(request),
+          );
+          this.ensureMissionRunnable(prepared.missionId);
+          return evidence;
+        },
       },
       async (input) => {
+        this.ensureMissionRunnable(prepared.missionId);
         const decision = validateChangedPaths(
           input.changedFiles,
           input.plane.authority,
@@ -2367,6 +4072,7 @@ export class ShepherdService {
       expectedHead: prepared.project.headCommit,
       checks: [frontendCheck(), backendCheck(), projectCheck()],
       loadPersistedSelectedCandidateId: async () => {
+        this.ensureMissionRunnable(prepared.missionId);
         const selected = this.store
           .snapshot()
           .shepherd.candidates.filter(
@@ -2379,6 +4085,7 @@ export class ShepherdService {
       persistPromotingEvidence: async ({ evidence, changedFiles, candidateHead }) => {
         const promotingAt = this.timestamp();
         await this.store.mutate((database) => {
+          this.assertMissionRunnable(database, prepared.missionId);
           const persistedCandidate = database.shepherd.candidates.find(
             (item) => item.id === candidate.id,
           );

@@ -117,6 +117,7 @@ const failureCodeSchema = z.enum([
   "single_candidate_failure",
   "all_candidates_failed",
   "objective_tie",
+  "manual_confirmation_required",
   "final_reverification_failure",
   "protected_branch_moved",
   "verification_infrastructure_error",
@@ -431,6 +432,19 @@ const collisionSchema = z
   })
   .strict();
 
+const candidateAttemptSchema = z
+  .object({
+    planeId: idSchema,
+    executionState: z.enum(["failed", "timed_out", "interrupted"]),
+    verificationEvidence: verificationEvidenceSchema.nullable(),
+    changedFiles: boundedArray(projectPathSchema, MAX_COLLECTION_ITEMS),
+    diffSummary: shortTextSchema,
+    failure: failureSchema,
+    startedAt: timestampSchema,
+    completedAt: timestampSchema,
+  })
+  .strict();
+
 const candidateSchema = z
   .object({
     id: idSchema,
@@ -461,6 +475,7 @@ const candidateSchema = z
       "failed",
     ]),
     verificationEvidence: verificationEvidenceSchema.nullable(),
+    previousAttempts: boundedArray(candidateAttemptSchema, 1).optional(),
     promotionEvidence: verificationEvidenceSchema.nullable(),
     changedFiles: boundedArray(projectPathSchema, MAX_COLLECTION_ITEMS),
     diffSummary: shortTextSchema,
@@ -551,7 +566,7 @@ const settingsSchema = z
     contractTimeoutMs: positiveSafeIntegerSchema.max(86_400_000),
     candidateTimeoutMs: positiveSafeIntegerSchema.max(86_400_000),
     autoResolution: z.boolean(),
-    maxConcurrentPlanes: positiveSafeIntegerSchema.max(32),
+    maxConcurrentPlanes: positiveSafeIntegerSchema.min(2).max(16),
     retainCompletedPlanes: z.boolean(),
     modelReviewEnabled: z.boolean(),
     notifications: z
@@ -1299,6 +1314,26 @@ function hasValidReferences(database: DatabaseV2): boolean {
       }
       evidenceIds.push(candidate.verificationEvidence.id);
     }
+    for (const attempt of candidate.previousAttempts ?? []) {
+      if (
+        !planes.has(attempt.planeId) ||
+        planes.get(attempt.planeId)?.candidateId !== candidate.id ||
+        attempt.completedAt < attempt.startedAt
+      ) {
+        return false;
+      }
+      const evidence = attempt.verificationEvidence;
+      if (evidence) {
+        if (
+          evidence.targetType !== "candidate" ||
+          evidence.targetId !== candidate.id ||
+          !planes.get(attempt.planeId)?.verificationEvidenceIds.includes(evidence.id)
+        ) {
+          return false;
+        }
+        evidenceIds.push(evidence.id);
+      }
+    }
     if (candidate.promotionEvidence) {
       if (
         candidate.promotionEvidence.targetType !== "promotion" ||
@@ -1317,6 +1352,11 @@ function hasValidReferences(database: DatabaseV2): boolean {
     }
   }
   for (const candidate of shepherd.candidates) {
+    for (const attempt of candidate.previousAttempts ?? []) {
+      if (attempt.verificationEvidence) {
+        evidenceById.set(attempt.verificationEvidence.id, attempt.verificationEvidence);
+      }
+    }
     if (candidate.verificationEvidence) {
       evidenceById.set(candidate.verificationEvidence.id, candidate.verificationEvidence);
     }
@@ -1380,10 +1420,9 @@ function hasValidReferences(database: DatabaseV2): boolean {
   if (sequences.some((sequence, index) => index > 0 && sequence <= sequences[index - 1]!)) {
     return false;
   }
-  const expectedNext = sequences.length === 0 ? 1 : sequences[sequences.length - 1]! + 1;
+  const lastSequence = sequences.length === 0 ? 0 : sequences[sequences.length - 1]!;
   return (
-    Number.isSafeInteger(expectedNext) &&
-    shepherd.nextEventSequence === expectedNext &&
+    shepherd.nextEventSequence > lastSequence &&
     hasValidLifecycle(database)
   );
 }

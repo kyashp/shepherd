@@ -46,6 +46,8 @@ export interface ManagedAuthDemoProject {
   planesRoot: string;
   protectedBranch: string;
   headCommit: string;
+  /** Immutable root fixture commit used only by the guarded demo reset. */
+  initialCommit: string;
   allowClientReadableCredential: boolean;
   created: boolean;
 }
@@ -416,6 +418,26 @@ async function validateExistingProject(
   );
 }
 
+async function initialFixtureCommit(
+  repositoryPath: string,
+  protectedBranch: string,
+): Promise<string> {
+  const roots = (
+    await runGit(repositoryPath, [
+      "rev-list",
+      "--max-parents=0",
+      "--reverse",
+      "refs/heads/" + assertSafeGitBranch(protectedBranch),
+    ])
+  )
+    .split(/\r?\n/u)
+    .filter(Boolean);
+  if (roots.length !== 1 || !roots[0]) {
+    throw new Error("Managed auth demo must have exactly one initial fixture commit");
+  }
+  return assertFullObjectId(roots[0]);
+}
+
 /**
  * Resolves the only repository identity recovery may pass to Git. Persisted
  * path text is treated solely as a value to compare with sentinel-backed,
@@ -515,7 +537,11 @@ export async function initializeAuthDemoProject(
       metadata,
       expectedMetadata,
     );
-    return { ...expectedMetadata, headCommit, created: false };
+    const initialCommit = await initialFixtureCommit(
+      repositoryPath,
+      protectedBranch,
+    );
+    return { ...expectedMetadata, headCommit, initialCommit, created: false };
   }
 
   const repository = await ensureContainedDirectory(root, repositoryPath);
@@ -543,10 +569,88 @@ export async function initializeAuthDemoProject(
   const headCommit = assertFullObjectId(
     await runGit(repositoryPath, ["rev-parse", "--verify", "HEAD^{commit}"]),
   );
+  const initialCommit = headCommit;
   await writeFile(metadataPath, JSON.stringify(expectedMetadata, null, 2) + "\n", {
     encoding: "utf8",
     mode: 0o600,
     flag: "wx",
   });
-  return { ...expectedMetadata, headCommit, created: true };
+  return { ...expectedMetadata, headCommit, initialCommit, created: true };
+}
+
+/** Opens an existing sentinel-bound auth demo without accepting path input. */
+export async function openAuthDemoProject(options: {
+  managedRoot: string;
+  projectId?: string;
+}): Promise<ManagedAuthDemoProject> {
+  const root = await validateShepherdManagedRoot(options.managedRoot);
+  const projectId = options.projectId ?? "auth-demo";
+  if (!SAFE_PROJECT_ID.test(projectId)) {
+    throw new Error("Unsafe managed demo project ID");
+  }
+  const metadataPath = path.join(root, "projects", projectId + ".json");
+  if (!(await assertRegularFileIfPresent(metadataPath))) {
+    throw new Error("Managed demo project metadata is missing");
+  }
+  const metadata = parseProjectMetadata(
+    await readTrustedRegularFile(metadataPath, "Managed project metadata"),
+  );
+  const headCommit = await validateExistingProject(root, metadata, metadata);
+  const initialCommit = await initialFixtureCommit(
+    metadata.repositoryPath,
+    metadata.protectedBranch,
+  );
+  return {
+    projectId: metadata.projectId,
+    repositoryPath: metadata.repositoryPath,
+    planesRoot: metadata.planesRoot,
+    protectedBranch: metadata.protectedBranch,
+    headCommit,
+    initialCommit,
+    allowClientReadableCredential: metadata.allowClientReadableCredential,
+    created: false,
+  };
+}
+
+/**
+ * Restores only the fixed sentinel-backed auth demo repository. Callers must
+ * first remove registered Shepherd Plane worktrees through PlaneManager.
+ */
+export async function resetAuthDemoProject(options: {
+  managedRoot: string;
+  projectId?: string;
+}): Promise<ManagedAuthDemoProject> {
+  const project = await openAuthDemoProject(options);
+  const symbolicBranch = await runGit(project.repositoryPath, [
+    "symbolic-ref",
+    "--quiet",
+    "--short",
+    "HEAD",
+  ]);
+  if (symbolicBranch !== project.protectedBranch) {
+    throw new Error("Managed auth demo reset requires its protected branch checkout");
+  }
+
+  const branchOutput = await runGit(project.repositoryPath, [
+    "for-each-ref",
+    "--format=%(refname:short)",
+    "refs/heads/shepherd/",
+  ]);
+  const branches = branchOutput.split(/\r?\n/u).filter(Boolean).sort();
+  for (const branch of branches) {
+    const safeBranch = assertSafeGitBranch(branch);
+    if (!safeBranch.startsWith("shepherd/")) {
+      throw new Error("Managed auth demo reset encountered an unguarded branch");
+    }
+    await runGit(project.repositoryPath, ["branch", "-D", safeBranch]);
+  }
+  await runGit(project.repositoryPath, ["reset", "--hard", project.initialCommit]);
+  await runGit(project.repositoryPath, ["clean", "-ffdx", "--"]);
+  const headCommit = assertFullObjectId(
+    await runGit(project.repositoryPath, ["rev-parse", "--verify", "HEAD^{commit}"]),
+  );
+  if (headCommit !== project.initialCommit) {
+    throw new Error("Managed auth demo reset did not restore its initial fixture commit");
+  }
+  return { ...project, headCommit };
 }

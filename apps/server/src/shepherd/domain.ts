@@ -115,6 +115,7 @@ export type ShepherdFailureCode =
   | "single_candidate_failure"
   | "all_candidates_failed"
   | "objective_tie"
+  | "manual_confirmation_required"
   | "final_reverification_failure"
   | "protected_branch_moved"
   | "verification_infrastructure_error"
@@ -351,6 +352,20 @@ export type CandidatePromotionState =
   | "promoted"
   | "failed";
 
+export interface ResolutionCandidateAttempt {
+  planeId: string;
+  executionState: Extract<
+    CandidateExecutionState,
+    "failed" | "timed_out" | "interrupted"
+  >;
+  verificationEvidence: VerificationEvidence | null;
+  changedFiles: string[];
+  diffSummary: string;
+  failure: FailureInfo;
+  startedAt: IsoTimestamp;
+  completedAt: IsoTimestamp;
+}
+
 export interface ResolutionCandidate {
   id: string;
   missionId: string;
@@ -363,6 +378,8 @@ export interface ResolutionCandidate {
   selectionState: CandidateSelectionState;
   promotionState: CandidatePromotionState;
   verificationEvidence: VerificationEvidence | null;
+  /** The immutable first attempt archived by the one-shot retry policy. */
+  previousAttempts?: ResolutionCandidateAttempt[];
   /** Final independent re-verification evidence produced by the promotion gate. */
   promotionEvidence: VerificationEvidence | null;
   changedFiles: string[];

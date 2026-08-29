@@ -599,6 +599,27 @@ describe("Database V2", () => {
     expect(() => shepherdEventsAfter(database, -1)).toThrow("non-negative");
   });
 
+  it("accepts reset-created event gaps without reusing a polling cursor", () => {
+    const database = emptyDatabase(timestamp);
+    appendShepherdEvent(database, { ...eventInput("one"), missionId: null });
+    appendShepherdEvent(database, { ...eventInput("removed two"), missionId: null });
+    appendShepherdEvent(database, { ...eventInput("removed three"), missionId: null });
+    database.shepherd.events.splice(1);
+
+    const loaded = loadDatabase(database);
+    expect(loaded.database.shepherd.nextEventSequence).toBe(4);
+    const appended = appendShepherdEvent(loaded.database, {
+      ...eventInput("after reset"),
+      missionId: null,
+    });
+
+    expect(appended.sequence).toBe(4);
+    expect(loaded.database.shepherd.nextEventSequence).toBe(5);
+    expect(shepherdEventsAfter(loaded.database, 1)).toMatchObject([
+      { sequence: 4, summary: "after reset" },
+    ]);
+  });
+
   it("bounds event summaries and safe detail fields before persistence", () => {
     const database = emptyDatabase(timestamp);
     const event = appendShepherdEvent(database, {
@@ -667,7 +688,8 @@ describe("Database V2", () => {
         profileId: "unknown-profile",
       });
     }],
-    ["malformed settings", (database: Database) => ((database.shepherd.settings as { maxConcurrentPlanes: number }).maxConcurrentPlanes = 0)],
+    ["too-low Plane concurrency", (database: Database) => ((database.shepherd.settings as { maxConcurrentPlanes: number }).maxConcurrentPlanes = 1)],
+    ["too-high Plane concurrency", (database: Database) => ((database.shepherd.settings as { maxConcurrentPlanes: number }).maxConcurrentPlanes = 17)],
     ["malformed event details", (database: Database) => ((database.shepherd.events[0]!.details as Record<string, unknown>).nested = { secret: true })],
     ["unexpected nested field", (database: Database) => ((database.shepherd.settings as unknown as Record<string, unknown>).credential = "DATABASE_CANARY_7f3a")],
     ["orphan legacy Run", (database: Database) => (database.runs[0]!.agentId = "missing-agent")],
@@ -715,7 +737,8 @@ describe("Database V2", () => {
       database.shepherd.events[1]!.sequence = 1;
     }],
     ["inconsistent next event sequence", (database: Database) => {
-      database.shepherd.nextEventSequence = 99;
+      database.shepherd.nextEventSequence =
+        database.shepherd.events.at(-1)?.sequence ?? 1;
     }],
     ["missing Project reference", (database: Database) => {
       database.shepherd.missions[0]!.projectId = "project-missing";

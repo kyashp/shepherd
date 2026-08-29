@@ -1,0 +1,194 @@
+import { useEffect, useState, type FormEvent } from "react";
+import { api } from "../api";
+import type { ShepherdSettings, SystemInfo } from "../types";
+import { ErrorState, Icon, LoadingPanel, PageHeader, Spinner, StatePill, titleCase } from "../ui";
+
+type SettingsTab = "general" | "execution" | "security" | "notifications";
+
+const tabs: Array<{ id: SettingsTab; label: string }> = [
+  { id: "general", label: "General" },
+  { id: "execution", label: "Execution" },
+  { id: "security", label: "Security" },
+  { id: "notifications", label: "Notifications" },
+];
+
+function SettingRow({
+  label,
+  description,
+  children,
+}: {
+  label: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="setting-row">
+      <div><strong>{label}</strong><p>{description}</p></div>
+      <div className="setting-control">{children}</div>
+    </div>
+  );
+}
+
+function Toggle({ checked, onChange, label, disabled = false }: { checked: boolean; onChange: (checked: boolean) => void; label: string; disabled?: boolean }) {
+  return (
+    <label className={`toggle ${disabled ? "disabled" : ""}`}>
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} disabled={disabled} />
+      <span aria-hidden="true" />
+      <b className="sr-only">{label}</b>
+    </label>
+  );
+}
+
+export function SettingsPage({ system }: { system: SystemInfo | null }) {
+  const [settings, setSettings] = useState<ShepherdSettings | null>(null);
+  const [draft, setDraft] = useState<ShepherdSettings | null>(null);
+  const [tab, setTab] = useState<SettingsTab>("general");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await api.settings();
+      setSettings(result.settings);
+      setDraft(result.settings);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Settings unavailable");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void load(); }, []);
+
+  const save = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!draft) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await api.updateSettings({
+        contractTimeoutMs: draft.contractTimeoutMs,
+        candidateTimeoutMs: draft.candidateTimeoutMs,
+        autoResolution: draft.autoResolution,
+        maxConcurrentPlanes: draft.maxConcurrentPlanes,
+        modelReviewEnabled: draft.modelReviewEnabled,
+        notifications: draft.notifications,
+      });
+      setSettings(result.settings);
+      setDraft(result.settings);
+      setNotice("Settings saved to the Shepherd control plane.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Settings could not be saved");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const resetDemo = async () => {
+    if (!window.confirm("Reset only Shepherd demo state? Existing Launchpad Agents and Playground messages are preserved.")) return;
+    setResetting(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await api.resetDemo();
+      setNotice("Shepherd demo state was reset safely.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Demo reset failed");
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  if (loading && !draft) return <LoadingPanel label="Loading Shepherd settings…" />;
+  if (!draft) return <ErrorState message={error ?? "Settings unavailable."} onRetry={() => void load()} />;
+
+  return (
+    <div className="page settings-page">
+      <PageHeader title="Settings" description="Configure verified Shepherd kernel behavior and system preferences." />
+      <form className="settings-panel" onSubmit={save}>
+        <div className="settings-tabs" role="tablist" aria-label="Settings sections">
+          {tabs.map((item) => <button type="button" role="tab" aria-selected={tab === item.id} className={tab === item.id ? "active" : ""} key={item.id} onClick={() => setTab(item.id)}>{item.label}</button>)}
+        </div>
+        {error ? <div className="error-banner" role="alert"><span>{error}</span><button type="button" onClick={() => setError(null)}>×</button></div> : null}
+        {notice ? <div className="success-banner" role="status"><Icon name="check" />{notice}</div> : null}
+
+        <div className="settings-body">
+          {tab === "general" ? (
+            <>
+              <SettingRow label="Kernel mode" description="The configured server mode is locked for this running process.">
+                <span className="locked-value"><Icon name="stop" />{titleCase(draft.mode)}</span>
+              </SettingRow>
+              <SettingRow label="Execution mode" description="Live or deterministic execution is selected at server startup.">
+                <span className="locked-value"><Icon name="stop" />{system?.shepherdExecutionMode ? titleCase(system.shepherdExecutionMode) : "Unavailable"}</span>
+              </SettingRow>
+              <SettingRow label="Retain completed Planes" description="Locked on so losing and completed Plane evidence remains inspectable.">
+                <div className="locked-toggle"><Toggle checked={draft.retainCompletedPlanes} onChange={() => undefined} label="Retain completed Planes" disabled /><span>Locked</span></div>
+              </SettingRow>
+              <SettingRow label="Demo data" description="Safely recreate only the known Shepherd demo fixture and remove its stale managed Planes.">
+                <button type="button" className="button button-danger" disabled={resetting} onClick={() => void resetDemo()}>{resetting ? <Spinner /> : "Reset demo state"}</button>
+              </SettingRow>
+            </>
+          ) : null}
+
+          {tab === "execution" ? (
+            <>
+              <SettingRow label="Contract timeout" description="Maximum execution time for one contract before Shepherd fails it closed.">
+                <label className="number-control"><input type="number" min={1} max={3600} step={1} value={draft.contractTimeoutMs / 1_000} onChange={(event) => setDraft({ ...draft, contractTimeoutMs: Math.round(Number(event.target.value) * 1_000) })} /><span>seconds</span></label>
+              </SettingRow>
+              <SettingRow label="Candidate timeout" description="Maximum execution time for one speculative resolution candidate.">
+                <label className="number-control"><input type="number" min={1} max={3600} step={1} value={draft.candidateTimeoutMs / 1_000} onChange={(event) => setDraft({ ...draft, candidateTimeoutMs: Math.round(Number(event.target.value) * 1_000) })} /><span>seconds</span></label>
+              </SettingRow>
+              <SettingRow label="Maximum parallel Planes" description="Bound the number of isolated Agent execution Planes admitted concurrently.">
+                <input className="small-number" type="number" min={2} max={16} step={1} value={draft.maxConcurrentPlanes} onChange={(event) => setDraft({ ...draft, maxConcurrentPlanes: Number(event.target.value) })} />
+              </SettingRow>
+              <SettingRow label="Automatic resolution" description="Automatically select and promote the objectively eligible candidate. Off still verifies both futures, then pauses before selection and promotion.">
+                <Toggle checked={draft.autoResolution} onChange={(autoResolution) => setDraft({ ...draft, autoResolution })} label="Automatic resolution" />
+              </SettingRow>
+            </>
+          ) : null}
+
+          {tab === "security" ? (
+            <>
+              <SettingRow label="Bounded model review" description="Run advisory structured semantic review. Deterministic detection remains authoritative.">
+                <Toggle checked={draft.modelReviewEnabled} onChange={(modelReviewEnabled) => setDraft({ ...draft, modelReviewEnabled })} label="Bounded model review" />
+              </SettingRow>
+              <SettingRow label="Authority enforcement" description="Trusted diff inspection and protected-path checks cannot be disabled from the browser.">
+                <span className="locked-value"><Icon name="check" />Enforced</span>
+              </SettingRow>
+              <SettingRow label="Independent verification" description="Mandatory checks run outside Agent execution and cannot be self-certified.">
+                <span className="locked-value"><Icon name="check" />Enforced</span>
+              </SettingRow>
+            </>
+          ) : null}
+
+          {tab === "notifications" ? (
+            <>
+              <SettingRow label="Mission completed" description="Show completion summaries when trusted promotion finishes.">
+                <Toggle checked={draft.notifications.missionCompleted} onChange={(missionCompleted) => setDraft({ ...draft, notifications: { ...draft.notifications, missionCompleted } })} label="Mission completed notifications" />
+              </SettingRow>
+              <SettingRow label="Attention required" description="Surface safe stops that need human review.">
+                <Toggle checked={draft.notifications.attentionRequired} onChange={(attentionRequired) => setDraft({ ...draft, notifications: { ...draft.notifications, attentionRequired } })} label="Attention required notifications" />
+              </SettingRow>
+              <SettingRow label="Collision detected" description="Surface verified semantic incompatibilities as they are persisted.">
+                <Toggle checked={draft.notifications.collisionDetected} onChange={(collisionDetected) => setDraft({ ...draft, notifications: { ...draft.notifications, collisionDetected } })} label="Collision detected notifications" />
+              </SettingRow>
+            </>
+          ) : null}
+        </div>
+        <footer className="settings-footer">
+          <span>{settings && JSON.stringify(settings) !== JSON.stringify(draft) ? "Unsaved changes" : "All changes saved"}</span>
+          <div>
+            <button type="button" className="button button-ghost" disabled={!settings || busy} onClick={() => { setDraft(settings); setNotice(null); }}>Discard changes</button>
+            <button className="button button-primary" disabled={busy || !settings || JSON.stringify(settings) === JSON.stringify(draft)}>{busy ? <Spinner /> : "Save settings"}</button>
+          </div>
+        </footer>
+      </form>
+    </div>
+  );
+}

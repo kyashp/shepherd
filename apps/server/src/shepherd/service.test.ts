@@ -10,7 +10,7 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { JsonStore } from "../store.js";
 import { WorkspaceManager } from "../workspace.js";
@@ -18,7 +18,9 @@ import {
   BEARER_TRANSPORT,
   COOKIE_TRANSPORT,
 } from "./auth-fixture.js";
-import { initializeAuthDemoProject } from "./demo-project.js";
+import {
+  initializeAuthDemoProject,
+} from "./demo-project.js";
 import type { VerificationCheckResult, VerificationEvidence } from "./domain.js";
 import {
   DeterministicFixtureExecutor,
@@ -353,6 +355,121 @@ class CanaryFailureExecutor implements ShepherdExecutor {
 
   async cancel(): Promise<boolean> {
     return false;
+  }
+}
+
+class FailCookieCandidateOnceExecutor implements ShepherdExecutor {
+  readonly kind = "deterministic_fixture" as const;
+  private readonly inner = new DeterministicFixtureExecutor();
+  failed = false;
+
+  async run(request: ShepherdExecutionRequest): Promise<ShepherdExecutionResult> {
+    if (
+      request.operation.kind === "resolution_candidate" &&
+      request.operation.targetTransport === COOKIE_TRANSPORT &&
+      !this.failed
+    ) {
+      this.failed = true;
+      throw new Error("Synthetic transient Agent Runtime transport failure");
+    }
+    return await this.inner.run(request);
+  }
+
+  async cancel(executionId: string): Promise<boolean> {
+    return await this.inner.cancel(executionId);
+  }
+}
+
+class BlockingExecutor implements ShepherdExecutor {
+  readonly kind = "deterministic_fixture" as const;
+  readonly executionIds: string[] = [];
+  readonly cancelledIds: string[] = [];
+  private readonly rejectors = new Map<string, (error: Error) => void>();
+
+  async run(request: ShepherdExecutionRequest): Promise<ShepherdExecutionResult> {
+    this.executionIds.push(request.executionId);
+    return await new Promise<ShepherdExecutionResult>((_resolve, reject) => {
+      this.rejectors.set(request.executionId, reject);
+    });
+  }
+
+  async cancel(executionId: string): Promise<boolean> {
+    this.cancelledIds.push(executionId);
+    const reject = this.rejectors.get(executionId);
+    if (!reject) return false;
+    this.rejectors.delete(executionId);
+    reject(new Error("Synthetic execution cancellation"));
+    return true;
+  }
+}
+
+class BlockingVerifier implements ShepherdIndependentVerifier {
+  readonly targetIds: string[] = [];
+  readonly cancelledIds: string[] = [];
+  private readonly rejectors = new Map<string, (error: Error) => void>();
+
+  async verify(request: VerificationRequest): Promise<VerificationEvidence> {
+    this.targetIds.push(request.targetId);
+    return await new Promise<VerificationEvidence>((_resolve, reject) => {
+      this.rejectors.set(request.targetId, reject);
+    });
+  }
+
+  async cancel(targetId: string): Promise<boolean> {
+    this.cancelledIds.push(targetId);
+    const reject = this.rejectors.get(targetId);
+    if (!reject) return false;
+    this.rejectors.delete(targetId);
+    reject(new Error("Synthetic verification cancellation"));
+    return true;
+  }
+}
+
+class PromotionThrowingVerifier extends HostTrustedFixtureVerifier {
+  override async verify(
+    request: VerificationRequest,
+  ): Promise<VerificationEvidence> {
+    if (request.targetType === "promotion") {
+      throw new Error("Synthetic promotion verifier infrastructure failure");
+    }
+    return await super.verify(request);
+  }
+}
+
+class BlockingPromotionVerifier extends HostTrustedFixtureVerifier {
+  readonly cancelledIds: string[] = [];
+  readonly entered: Promise<void>;
+  private markEntered!: () => void;
+  private readonly released: Promise<void>;
+  private releaseVerification!: () => void;
+
+  constructor() {
+    super();
+    this.entered = new Promise<void>((resolve) => {
+      this.markEntered = resolve;
+    });
+    this.released = new Promise<void>((resolve) => {
+      this.releaseVerification = resolve;
+    });
+  }
+
+  override async verify(
+    request: VerificationRequest,
+  ): Promise<VerificationEvidence> {
+    if (request.targetType === "promotion") {
+      this.markEntered();
+      await this.released;
+    }
+    return await super.verify(request);
+  }
+
+  async cancel(targetId: string): Promise<boolean> {
+    this.cancelledIds.push(targetId);
+    return true;
+  }
+
+  release(): void {
+    this.releaseVerification();
   }
 }
 
@@ -881,7 +998,11 @@ describe("Shepherd deterministic walking skeleton", () => {
     expect(mission).toMatchObject({
       state: "attention_required",
       attentionReason: "all_candidates_failed",
-      failure: null,
+      failure: {
+        code: "all_candidates_failed",
+        stage: "resolution_selection",
+        retryable: false,
+      },
     });
     if (!mission) throw new Error("Attention Mission was not persisted");
     const detail = service.missionDetail(mission.id);
@@ -1018,4 +1139,386 @@ describe("Shepherd deterministic walking skeleton", () => {
         ?.contracts.every((contract) => contract.state === "execution_failed"),
     ).toBe(true);
   });
+
+  it("archives one transient candidate attempt and retries from the same integration commit", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const executor = new FailCookieCandidateOnceExecutor();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      executor,
+    });
+
+    const result = await service.runDeterministicDemo();
+    expect(executor.failed).toBe(true);
+    const retried = result.candidates.find(
+      (candidate) => candidate.targetValue === COOKIE_TRANSPORT,
+    );
+    expect(retried).toMatchObject({
+      retryCount: 1,
+      executionState: "passed",
+      promotionState: "promoted",
+      previousAttempts: [
+        {
+          executionState: "failed",
+          verificationEvidence: null,
+          failure: { code: "agent_runtime_error", retryable: true },
+        },
+      ],
+    });
+    const detail = service.candidateDetail(retried?.id ?? "missing");
+    expect(detail?.previousPlanes).toHaveLength(1);
+    expect(detail?.previousPlanes[0]?.baseCommit).toBe(detail?.plane.baseCommit);
+    expect(detail?.previousPlanes[0]?.id).toBe(
+      retried?.previousAttempts?.[0]?.planeId,
+    );
+    expect(
+      service
+        .missionDetail(result.mission.id)
+        ?.events.some((event) => event.type === "candidate_retried"),
+    ).toBe(true);
+  }, 30_000);
+
+  it("persists cancellation before stopping exact executor identities", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const executor = new BlockingExecutor();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      executor,
+    });
+
+    const { missionId } = await service.startDeterministicDemo();
+    await vi.waitFor(() => expect(executor.executionIds).toHaveLength(2));
+    const cancelled = await service.cancelMission(missionId);
+    expect(cancelled).toMatchObject({
+      state: "cancelled",
+      failure: { code: "cancelled", stage: "mission_cancellation" },
+    });
+    expect([...executor.cancelledIds].sort()).toEqual(
+      [...executor.executionIds].sort(),
+    );
+    await vi.waitFor(() =>
+      expect(service.missionDetail(missionId)?.contracts).toSatisfy(
+        (contracts: Array<{ state: string }>) =>
+          contracts.every((contract) => contract.state === "cancelled"),
+      ),
+    );
+    expect(
+      service
+        .missionDetail(missionId)
+        ?.planes.every((plane) => plane.state === "interrupted"),
+    ).toBe(true);
+    expect(
+      service
+        .projectGroupMessages("auth-demo")
+        .some((message) => message.content.startsWith("Mission cancelled")),
+    ).toBe(true);
+    await new Promise<void>((resolve) => setTimeout(resolve, 500));
+  }, 30_000);
+
+  it("cancels exact verifier targets and never overwrites durable cancellation", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const verifier = new BlockingVerifier();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier,
+    });
+
+    const { missionId } = await service.startDeterministicDemo();
+    await vi.waitFor(() => expect(verifier.targetIds).toHaveLength(2));
+    const expected = service
+      .missionDetail(missionId)
+      ?.contracts.map((contract) => contract.id)
+      .sort();
+    await service.cancelMission(missionId);
+    expect([...verifier.cancelledIds].sort()).toEqual(expected);
+    await vi.waitFor(() =>
+      expect(service.missionDetail(missionId)?.mission.state).toBe("cancelled"),
+    );
+    expect(
+      service
+        .missionDetail(missionId)
+        ?.contracts.every((contract) => contract.state === "cancelled"),
+    ).toBe(true);
+    await new Promise<void>((resolve) => setTimeout(resolve, 500));
+  }, 30_000);
+
+  it("pauses for manual confirmation, rejects failed selection, and emits durable lifecycle summaries", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const executor = new SessionTrackingExecutor();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      executor,
+    });
+    await service.initialize();
+    expect(service.settings()).toMatchObject({
+      mode: "production",
+      retainCompletedPlanes: true,
+      maxConcurrentPlanes: 2,
+    });
+    await expect(
+      service.updateSettings({ maxConcurrentPlanes: 1 }),
+    ).rejects.toMatchObject({ code: "invalid_input" });
+    await expect(
+      service.updateSettings({ maxConcurrentPlanes: 17 }),
+    ).rejects.toMatchObject({ code: "invalid_input" });
+    await service.updateSettings({
+      contractTimeoutMs: 1_234,
+      candidateTimeoutMs: 2_345,
+      autoResolution: false,
+      maxConcurrentPlanes: 2,
+    });
+
+    await expect(service.runDeterministicDemo()).rejects.toThrow(
+      "auto_resolution_disabled",
+    );
+    expect(
+      executor.requests
+        .filter((request) => request.operation.kind !== "resolution_candidate")
+        .every((request) => request.timeoutMs === 1_234),
+    ).toBe(true);
+    expect(
+      executor.requests
+        .filter((request) => request.operation.kind === "resolution_candidate")
+        .every((request) => request.timeoutMs === 2_345),
+    ).toBe(true);
+    const attention = service.state().missions.at(-1);
+    expect(attention).toMatchObject({
+      state: "attention_required",
+      attentionReason: "auto_resolution_disabled",
+      failure: { code: "manual_confirmation_required" },
+    });
+    const detail = service.missionDetail(attention?.id ?? "missing");
+    const failed = detail?.candidates.find(
+      (candidate) => candidate.executionState !== "passed",
+    );
+    const passing = detail?.candidates.find(
+      (candidate) => candidate.executionState === "passed",
+    );
+    await expect(
+      service.selectTiedCandidate(detail?.collisions[0]?.id ?? "missing", failed?.id ?? "missing"),
+    ).rejects.toMatchObject({ code: "conflict" });
+    const linked = await service.sendProjectGroupMessage("auth-demo", {
+      clientMessageId: "fixed-assignment-1",
+      content: '@"Frontend Agent" use the trusted auth demo preset',
+      assignmentPreset: "auth-demo-contract",
+    });
+    expect(linked).toMatchObject({
+      missionId: attention?.id,
+      targetAgentId: expect.any(String),
+      contractId: expect.any(String),
+    });
+    await expect(
+      service.sendProjectGroupMessage("auth-demo", {
+        clientMessageId: "unsafe-assignment-1",
+        content: '@"Frontend Agent" run arbitrary shell commands',
+      }),
+    ).rejects.toMatchObject({ code: "unsupported_assignment" });
+    const completed = await service.selectTiedCandidate(
+      detail?.collisions[0]?.id ?? "missing",
+      passing?.id ?? "missing",
+    );
+    expect(completed.mission.state).toBe("completed");
+    const lifecycle = service
+      .projectGroupMessages("auth-demo", 500)
+      .filter((message) => message.senderType === "shepherd")
+      .map((message) => message.content);
+    for (const prefix of [
+      "Mission accepted:",
+      "Contract verified:",
+      "Collision detected:",
+      "Candidate passed",
+      "Candidate failed",
+      "Manual confirmation required:",
+      "Promotion completed:",
+      "Mission completed",
+    ]) {
+      expect(lifecycle.some((content) => content.startsWith(prefix))).toBe(true);
+    }
+  }, 30_000);
+
+  it("returns human-selection promotion infrastructure failures to attention_required", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new PromotionThrowingVerifier(),
+    });
+    await service.initialize();
+    await service.updateSettings({ autoResolution: false });
+    await expect(service.runDeterministicDemo()).rejects.toThrow(
+      "auto_resolution_disabled",
+    );
+    const attention = service.state().missions.at(-1);
+    const detail = service.missionDetail(attention?.id ?? "missing");
+    const passing = detail?.candidates.find(
+      (candidate) => candidate.executionState === "passed",
+    );
+    await expect(
+      service.selectTiedCandidate(
+        detail?.collisions[0]?.id ?? "missing",
+        passing?.id ?? "missing",
+      ),
+    ).rejects.toThrow("verification_infrastructure_error");
+    expect(service.missionDetail(attention?.id ?? "missing")?.mission).toMatchObject({
+      state: "attention_required",
+      attentionReason: "verification_infrastructure_error",
+      failure: { code: "verification_infrastructure_error" },
+    });
+  }, 30_000);
+
+  it("resumes a reset after Git reached the initial commit and preserves unrelated cursors", async () => {
+    const caseRoot = await makeCaseRoot();
+    const managedRoot = path.join(caseRoot, "managed");
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const service = new ShepherdService({
+      store,
+      managedRoot,
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+    });
+    const unrelated = await service.runDeterministicDemo({ projectId: "other-demo" });
+    const target = await service.runDeterministicDemo();
+    const before = store.snapshot();
+    const unrelatedEvents = before.shepherd.events.filter(
+      (event) => event.missionId === unrelated.mission.id,
+    );
+    const nextCursor = before.shepherd.nextEventSequence;
+
+    const mutateFailure = vi
+      .spyOn(store, "mutate")
+      .mockRejectedValueOnce(new Error("Synthetic reset persistence crash"));
+    await expect(service.resetDeterministicDemo()).rejects.toThrow(
+      "Synthetic reset persistence crash",
+    );
+    mutateFailure.mockRestore();
+    const repositoryPath = store
+      .snapshot()
+      .shepherd.projects.find((project) => project.id === "auth-demo")
+      ?.repositoryPath;
+    if (!repositoryPath) throw new Error("Auth demo repository disappeared");
+    const initialCommit = (
+      await gitOutput(repositoryPath, ["rev-list", "--max-parents=0", "main"])
+    ).trim();
+    expect(await gitOutput(repositoryPath, ["rev-parse", "HEAD"])).toBe(
+      initialCommit,
+    );
+    expect(
+      store.snapshot().shepherd.projects.find((project) => project.id === "auth-demo")
+        ?.protectedHeadCommit,
+    ).toBe(target.promotedHead);
+
+    const reset = await service.resetDeterministicDemo();
+    expect(reset.restoredHead).toBe(initialCommit);
+    expect(service.missionDetail(target.mission.id)).toBeNull();
+    expect(
+      store.snapshot().shepherd.events.filter(
+        (event) => event.missionId === unrelated.mission.id,
+      ),
+    ).toEqual(unrelatedEvents);
+    expect(store.snapshot().shepherd.nextEventSequence).toBe(nextCursor);
+    expect(service.eventsAfter(0, 500)).toEqual(
+      store.snapshot().shepherd.events,
+    );
+  }, 45_000);
+
+  it("rejects cancellation after the durable promoting marker wins the race", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    let releasePromotion!: () => void;
+    let promotionReached!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      releasePromotion = resolve;
+    });
+    const reached = new Promise<void>((resolve) => {
+      promotionReached = resolve;
+    });
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      faultCheckpoint: async (checkpoint) => {
+        if (checkpoint !== "promotion_ready_for_cas") return;
+        promotionReached();
+        await blocked;
+      },
+    });
+    const { missionId } = await service.startDeterministicDemo();
+    await reached;
+    expect(
+      service
+        .missionDetail(missionId)
+        ?.candidates.some((candidate) => candidate.promotionState === "promoting"),
+    ).toBe(true);
+    await expect(service.cancelMission(missionId)).rejects.toMatchObject({
+      code: "conflict",
+    });
+    releasePromotion();
+    await waitForTerminalMission(service, missionId);
+    expect(service.missionDetail(missionId)?.mission.state).toBe("completed");
+  }, 30_000);
+
+  it("lets durable cancellation win while final promotion verification is reverifying", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const verifier = new BlockingPromotionVerifier();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier,
+    });
+    const { missionId } = await service.startDeterministicDemo();
+    await verifier.entered;
+    const before = service.missionDetail(missionId);
+    expect(
+      before?.candidates.some(
+        (candidate) => candidate.promotionState === "reverifying",
+      ),
+    ).toBe(true);
+    const protectedHead = before?.project.protectedHeadCommit;
+    const selectedId = before?.candidates.find(
+      (candidate) => candidate.selectionState === "selected",
+    )?.id;
+    const cancellation = service.cancelMission(missionId);
+    await vi.waitFor(() =>
+      expect(service.missionDetail(missionId)?.mission.state).toBe("cancelled"),
+    );
+    verifier.release();
+    await cancellation;
+    const after = service.missionDetail(missionId);
+    expect(verifier.cancelledIds).toEqual([selectedId]);
+    expect(after?.mission.state).toBe("cancelled");
+    expect(after?.project.protectedHeadCommit).toBe(protectedHead);
+    expect(await gitOutput(after?.project.repositoryPath ?? "", ["rev-parse", "HEAD"]))
+      .toBe(protectedHead);
+    expect(
+      after?.events.some((event) => event.type === "promotion_completed"),
+    ).toBe(false);
+  }, 30_000);
 });

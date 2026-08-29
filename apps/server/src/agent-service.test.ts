@@ -174,6 +174,123 @@ describe("Agent lifecycle", () => {
     expect(service.listAgents()).toHaveLength(0);
   });
 
+  it("persists role and normalized scoped authority across restart", async () => {
+    const testRoot = path.resolve(process.cwd(), ".tmp", "agent-service-tests");
+    await mkdir(testRoot, { recursive: true });
+    const root = await mkdtemp(path.join(testRoot, "case-"));
+    temporaryDirectories.push(root);
+    const dataRoot = path.join(root, "data");
+    const workspaceRoot = path.join(root, "workspaces");
+    const databasePath = path.join(dataRoot, "db.json");
+    const config = loadConfig({
+      NODE_ENV: "test",
+      APP_DATA_DIR: dataRoot,
+      AGENT_WORKSPACE_ROOT: workspaceRoot,
+      CODEX_HOME: path.join(root, "codex"),
+      ARK_API_KEY: "test-key",
+      ARK_MODEL: "ep-test",
+    });
+    const first = new AgentService(
+      config,
+      new JsonStore(databasePath),
+      new WorkspaceManager(workspaceRoot),
+      new FakeRunner(),
+    );
+    await first.initialize();
+    const created = await first.createAgent({
+      name: "Frontend owner",
+      role: "Frontend",
+      authority: {
+        readable: ["./src//frontend/**", "src/frontend/**"],
+        writable: ["src/frontend/components/**", "src/frontend/**"],
+        forbidden: [".shepherd/**", ".git/**"],
+      },
+    });
+    expect(created).toMatchObject({
+      role: "Frontend",
+      authority: {
+        readable: ["src/frontend/**"],
+        writable: ["src/frontend/**", "src/frontend/components/**"],
+        forbidden: [".git/**", ".shepherd/**"],
+      },
+    });
+
+    const second = new AgentService(
+      config,
+      new JsonStore(databasePath),
+      new WorkspaceManager(workspaceRoot),
+      new FakeRunner(),
+    );
+    await second.initialize();
+    expect(second.getAgent(created.id)).toMatchObject({
+      role: "Frontend",
+      authority: created.authority,
+    });
+  });
+
+  it("defaults new Agents to the bounded generalist preset", async () => {
+    const service = await makeService();
+    const agent = await service.createAgent({ name: "Builder" });
+    expect(agent.role).toBe("Generalist");
+    expect(agent.authority?.readable).toEqual(["**"]);
+    expect(agent.authority?.writable).toEqual([
+      "apps/**",
+      "docs/**",
+      "scripts/**",
+      "src/**",
+      "test/**",
+      "tests/**",
+    ]);
+    expect(agent.authority?.forbidden).toContain(".shepherd/**");
+  });
+
+  it("rejects host paths, traversal, null bytes, and unsupported glob syntax", async () => {
+    const service = await makeService();
+    for (const pattern of [
+      "/etc/passwd",
+      "../outside/**",
+      "src/\0secret/**",
+      "src/{frontend,backend}/**",
+      "C:\\Users\\owner\\repo\\**",
+    ]) {
+      await expect(
+        service.createAgent({
+          name: "Unsafe",
+          authority: { readable: ["**"], writable: [pattern], forbidden: [] },
+        }),
+        pattern,
+      ).rejects.toMatchObject({ statusCode: 400 });
+    }
+    expect(service.listAgents()).toHaveLength(0);
+  });
+
+  it("resets authority to the matching preset on a role-only update", async () => {
+    const service = await makeService();
+    const created = await service.createAgent({ name: "Owner", role: "Backend" });
+    const roleOnly = await service.updateAgent(created.id, { role: "Generalist" });
+    expect(roleOnly.role).toBe("Generalist");
+    expect(roleOnly.authority?.writable).toEqual([
+      "apps/**",
+      "docs/**",
+      "scripts/**",
+      "src/**",
+      "test/**",
+      "tests/**",
+    ]);
+
+    await expect(
+      service.updateAgent(created.id, {
+        name: "Should not persist",
+        authority: {
+          readable: ["**"],
+          writable: ["../../host/**"],
+          forbidden: [],
+        },
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(service.getAgent(created.id).name).toBe("Owner");
+  });
+
   it("persists a playground conversation", async () => {
     const service = await makeService();
     const agent = await service.createAgent({ name: "Coder" });

@@ -3,17 +3,129 @@ import type { AppConfig } from "./config.js";
 import { isArkConfigured } from "./config.js";
 import { HttpError, RunCancelledError } from "./errors.js";
 import { JsonStore } from "./store.js";
+import { normalizeScopedAuthority } from "./shepherd/authority.js";
 import type {
   Agent,
+  AgentRole,
   AgentRun,
   AgentRunner,
   CreateAgentInput,
   Message,
+  ScopedAuthority,
   UpdateAgentInput,
 } from "./types.js";
 import { WorkspaceManager } from "./workspace.js";
 
 const now = () => new Date().toISOString();
+
+export type AgentAuthorityPresetId =
+  | "frontend"
+  | "backend"
+  | "verification"
+  | "generalist";
+
+export interface AgentAuthorityPreset {
+  id: AgentAuthorityPresetId;
+  label: string;
+  description: string;
+  recommendedRole: AgentRole;
+  authority: ScopedAuthority;
+}
+
+const COMMON_FORBIDDEN_PATTERNS = [
+  ".git/**",
+  ".shepherd/**",
+  "checks/**",
+  "policy.json",
+  ".env",
+  ".env.*",
+  "**/.env",
+  "**/.env.*",
+  "**/*.key",
+  "**/*.pem",
+] as const;
+
+const defineAuthority = (writable: readonly string[]): ScopedAuthority => ({
+  readable: ["**"],
+  writable: [...writable],
+  forbidden: [...COMMON_FORBIDDEN_PATTERNS],
+});
+
+const AUTHORITY_PRESETS: Readonly<Record<AgentAuthorityPresetId, AgentAuthorityPreset>> = {
+  frontend: {
+    id: "frontend",
+    label: "Frontend",
+    description: "Frontend application and fixture files.",
+    recommendedRole: "Frontend",
+    authority: defineAuthority(["apps/web/**", "src/frontend/**"]),
+  },
+  backend: {
+    id: "backend",
+    label: "Backend",
+    description: "Server application and backend fixture files.",
+    recommendedRole: "Backend",
+    authority: defineAuthority(["apps/server/**", "src/backend/**"]),
+  },
+  verification: {
+    id: "verification",
+    label: "Verification",
+    description: "Repository tests and verification fixtures.",
+    recommendedRole: "Verification",
+    authority: defineAuthority([
+      "test/**",
+      "tests/**",
+      "**/*.spec.*",
+      "**/*.test.*",
+    ]),
+  },
+  generalist: {
+    id: "generalist",
+    label: "Generalist",
+    description: "Common source, documentation, script, and test areas.",
+    recommendedRole: "Generalist",
+    authority: defineAuthority([
+      "apps/**",
+      "docs/**",
+      "scripts/**",
+      "src/**",
+      "test/**",
+      "tests/**",
+    ]),
+  },
+};
+
+const PRESET_FOR_ROLE: Readonly<Record<AgentRole, AgentAuthorityPresetId>> = {
+  Frontend: "frontend",
+  Backend: "backend",
+  Verification: "verification",
+  Generalist: "generalist",
+};
+
+export function agentAuthorityPreset(
+  id: AgentAuthorityPresetId,
+): AgentAuthorityPreset {
+  return structuredClone(AUTHORITY_PRESETS[id]);
+}
+
+export function listAgentAuthorityPresets(): AgentAuthorityPreset[] {
+  return Object.values(AUTHORITY_PRESETS).map((preset) => structuredClone(preset));
+}
+
+function safeAuthority(
+  authority: ScopedAuthority | undefined,
+  role: AgentRole,
+): ScopedAuthority {
+  try {
+    return normalizeScopedAuthority(
+      authority ?? agentAuthorityPreset(PRESET_FOR_ROLE[role]).authority,
+    );
+  } catch {
+    throw new HttpError(
+      400,
+      "Authority must contain normalized repository-relative patterns only",
+    );
+  }
+}
 
 export class AgentService {
   private readonly activeExecutions = new Map<string, Promise<void>>();
@@ -66,6 +178,7 @@ export class AgentService {
   async createAgent(input: CreateAgentInput): Promise<Agent> {
     const timestamp = now();
     const id = randomUUID();
+    const role = input.role ?? "Generalist";
     const agent: Agent = {
       id,
       name: input.name.trim(),
@@ -75,6 +188,8 @@ export class AgentService {
       workspacePath: this.workspaces.workspacePath(id),
       codexThreadId: null,
       lastError: null,
+      role,
+      authority: safeAuthority(input.authority, role),
       createdAt: timestamp,
       updatedAt: timestamp,
     };
@@ -99,6 +214,17 @@ export class AgentService {
       if (input.name !== undefined) agent.name = input.name.trim();
       if (input.description !== undefined) agent.description = input.description.trim();
       if (input.instructions !== undefined) agent.instructions = input.instructions.trim();
+      if (input.role !== undefined) agent.role = input.role;
+      if (input.authority !== undefined) {
+        agent.authority = safeAuthority(
+          input.authority,
+          input.role ?? agent.role ?? "Generalist",
+        );
+      } else if (input.role !== undefined) {
+        agent.authority = safeAuthority(undefined, input.role);
+      } else if (agent.authority === undefined) {
+        agent.authority = safeAuthority(undefined, agent.role ?? "Generalist");
+      }
       agent.lastError = null;
       agent.updatedAt = now();
       return structuredClone(agent);

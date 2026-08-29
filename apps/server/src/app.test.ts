@@ -7,7 +7,21 @@ import {
 import { loadConfig } from "./config.js";
 import type { AgentService } from "./agent-service.js";
 import { emptyShepherdDatabase } from "./database.js";
-import type { ShepherdEvent } from "./shepherd/domain.js";
+import type {
+  ExecutionContract,
+  ProjectGroupMessage,
+  ResolutionCandidate,
+  SemanticClaim,
+  SemanticCollision,
+  ShepherdEvent,
+  VerificationEvidence,
+} from "./shepherd/domain.js";
+import type {
+  ShepherdCandidateDetail,
+  ShepherdCollisionDetail,
+  ShepherdPlaneDetail,
+} from "./shepherd/service.js";
+import { ShepherdControlError } from "./shepherd/service.js";
 import type { Agent, AgentRun, Message } from "./types.js";
 
 const service = {
@@ -88,15 +102,191 @@ const event: ShepherdEvent = {
   candidateId: null,
   details: {},
 };
+const plantedSecret = "test-ark-secret-canary-827364";
+const evidence: VerificationEvidence = {
+  id: "evidence-1",
+  targetType: "contract",
+  targetId: "contract-1",
+  runner: "independent",
+  passed: true,
+  checks: [
+    {
+      id: "check-1",
+      name: "Safe verification",
+      profileId: "auth-frontend",
+      mandatory: true,
+      status: "passed",
+      passed: true,
+      exitCode: 0,
+      durationMs: 5,
+      stdout: `verified ${plantedSecret} at ${managedRoot}/private-output`,
+      stderr: `Bearer ${plantedSecret}`,
+      error: `password=${plantedSecret}`,
+    },
+  ],
+  startedAt: timestamp,
+  completedAt: timestamp,
+  durationMs: 5,
+  changedFiles: ["src/frontend/auth.json"],
+  summary: `Verification passed; diagnostic secret=${plantedSecret}`,
+};
+const claim: SemanticClaim = {
+  id: "claim-1",
+  missionId,
+  contractId: "contract-1",
+  key: "auth.transport",
+  value: "bearer-jwt",
+  scope: "authentication",
+  mode: "exclusive",
+  evidence: [
+    {
+      path: "src/frontend/auth.json",
+      description: "Frontend transport",
+      line: 1,
+    },
+  ],
+  valid: true,
+  rejectionReason: null,
+  createdAt: timestamp,
+};
+const contract: ExecutionContract = {
+  id: "contract-1",
+  missionId,
+  agentId: "agent-1",
+  title: "Frontend authentication",
+  objective: `Implement auth without ${plantedSecret}`,
+  contextualInputs: [],
+  dependencyIds: [],
+  semanticScopes: ["authentication"],
+  declaredClaimKeys: ["auth.transport"],
+  authority: {
+    readable: ["**"],
+    writable: ["src/frontend/**"],
+    forbidden: [".shepherd/**"],
+  },
+  expectedArtifacts: [
+    {
+      path: "src/frontend/auth.json",
+      description: "Frontend auth transport",
+      required: true,
+    },
+  ],
+  acceptance: {
+    checks: [
+      {
+        id: "check-1",
+        name: "Frontend acceptance",
+        profileId: "auth-frontend",
+        mandatory: true,
+        timeoutMs: 30_000,
+      },
+    ],
+    objectiveTieBreakers: [],
+  },
+  planeId: "plane-1",
+  resultManifestPath: ".shepherd/result.json",
+  manifest: {
+    schemaVersion: 1,
+    contractId: "contract-1",
+    summary: `raw manifest ${plantedSecret}`,
+    artifacts: [],
+    semanticClaims: [],
+    agentDeclaredTests: [],
+    notes: `raw prompt ${plantedSecret}`,
+  },
+  verificationEvidence: [evidence],
+  state: "verified",
+  failure: null,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+  startedAt: timestamp,
+  agentCompletedAt: timestamp,
+  verifiedAt: timestamp,
+  completedAt: timestamp,
+};
+const candidate: ResolutionCandidate = {
+  id: "candidate-1",
+  missionId,
+  collisionId: "collision-1",
+  strategy: "Use the independently verified transport",
+  targetKey: "auth.transport",
+  targetValue: "http-only-session-cookie",
+  planeId: "plane-1",
+  executionState: "passed",
+  selectionState: "tied",
+  promotionState: "not_started",
+  verificationEvidence: { ...evidence, targetType: "candidate", targetId: "candidate-1" },
+  previousAttempts: [
+    {
+      planeId: "plane-previous",
+      executionState: "failed",
+      verificationEvidence: null,
+      changedFiles: ["src/frontend/auth.json"],
+      diffSummary: `failed at ${managedRoot}/previous`,
+      failure: {
+        code: "candidate_timeout",
+        message: `timeout secret=${plantedSecret}`,
+        stage: "candidate_execution",
+        at: timestamp,
+        retryable: true,
+      },
+      startedAt: timestamp,
+      completedAt: timestamp,
+    },
+  ],
+  promotionEvidence: null,
+  changedFiles: ["src/frontend/auth.json"],
+  diffSummary: "1 file changed",
+  result: `candidate output ${plantedSecret}`,
+  retryCount: 1,
+  failure: null,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+};
+const collision: SemanticCollision = {
+  id: "collision-1",
+  missionId,
+  key: "auth.transport",
+  scope: "authentication",
+  leftContractId: "contract-1",
+  rightContractId: "contract-2",
+  leftClaimId: claim.id,
+  rightClaimId: "claim-2",
+  leftClaim: claim,
+  rightClaim: {
+    ...claim,
+    id: "claim-2",
+    contractId: "contract-2",
+    value: "http-only-session-cookie",
+  },
+  reason: "Exclusive values differ",
+  detectionMechanism: "deterministic",
+  candidateIds: [candidate.id],
+  state: "attention_required",
+  createdAt: timestamp,
+  updatedAt: timestamp,
+  resolvedAt: null,
+};
+const groupMessage: ProjectGroupMessage = {
+  id: "group-1",
+  projectId: "project-1",
+  missionId,
+  senderType: "human",
+  senderId: null,
+  content: "Please run the fixed authentication Mission",
+  targetAgentId: null,
+  contractId: null,
+  createdAt: timestamp,
+};
 const missionDetail: ShepherdMissionDetail = {
   mission: {
     id: missionId,
     projectId: "project-1",
     originalIntent: "Build the authentication flow",
     baseCommit: "a".repeat(40),
-    contractIds: [],
+    contractIds: [contract.id],
     dependencyEdges: [],
-    collisionIds: [],
+    collisionIds: [collision.id],
     resolutionIds: [],
     state: "running",
     attentionReason: null,
@@ -130,7 +320,7 @@ const missionDetail: ShepherdMissionDetail = {
       updatedAt: timestamp,
     },
   ],
-  contracts: [],
+  contracts: [contract],
   planes: [
     {
       id: "plane-1",
@@ -157,17 +347,49 @@ const missionDetail: ShepherdMissionDetail = {
       error: null,
     },
   ],
-  claims: [],
-  collisions: [],
-  candidates: [],
+  claims: [claim],
+  collisions: [collision],
+  candidates: [candidate],
   events: [event],
 };
 
 const createShepherdState = () => {
   const state = emptyShepherdDatabase(timestamp);
   state.projects = [missionDetail.project];
+  state.missions = [missionDetail.mission];
+  state.contracts = missionDetail.contracts;
   state.planes = missionDetail.planes;
+  state.claims = missionDetail.claims;
+  state.collisions = missionDetail.collisions;
+  state.candidates = missionDetail.candidates;
+  state.events = missionDetail.events;
+  state.groupMessages = [groupMessage];
   return state;
+};
+
+const planeDetail: ShepherdPlaneDetail = {
+  plane: missionDetail.planes[0]!,
+  mission: missionDetail.mission,
+  project: missionDetail.project,
+  contract,
+  candidate,
+  verificationEvidence: [evidence],
+};
+const collisionDetail: ShepherdCollisionDetail = {
+  collision,
+  mission: missionDetail.mission,
+  project: missionDetail.project,
+  sourceContracts: [contract, { ...contract, id: "contract-2" }],
+  candidates: [candidate],
+  planes: missionDetail.planes,
+};
+const candidateDetail: ShepherdCandidateDetail = {
+  candidate,
+  collision,
+  mission: missionDetail.mission,
+  project: missionDetail.project,
+  plane: missionDetail.planes[0]!,
+  previousPlanes: [{ ...missionDetail.planes[0]!, id: "plane-previous" }],
 };
 
 const createShepherdService = (
@@ -177,6 +399,39 @@ const createShepherdService = (
   missionDetail: (id) => (id === missionId ? missionDetail : null),
   eventsAfter: () => [event],
   startDeterministicDemo: async () => ({ missionId }),
+  startMissionFromMessage: async () => ({ missionId, message: groupMessage }),
+  projectGroupMessages: () => [groupMessage],
+  sendProjectGroupMessage: async () => groupMessage,
+  cancelMission: async () => ({ ...missionDetail.mission, state: "cancelled" }),
+  selectTiedCandidate: async () => missionDetail,
+  resetDeterministicDemo: async () => ({
+    projectId: "auth-demo",
+    restoredHead: "a".repeat(40),
+    removedPlanePaths: [`${managedRoot}/planes/old`],
+    removed: {
+      missions: 1,
+      contracts: 2,
+      planes: 5,
+      claims: 2,
+      collisions: 1,
+      candidates: 2,
+      events: 20,
+      messages: 4,
+    },
+  }),
+  settings: () => createShepherdState().settings,
+  updateSettings: async (input) => ({
+    ...createShepherdState().settings,
+    ...input,
+    notifications: {
+      ...createShepherdState().settings.notifications,
+      ...(input.notifications ?? {}),
+    },
+    updatedAt: timestamp,
+  }),
+  planeDetail: (id) => (id === "plane-1" ? planeDetail : null),
+  collisionDetail: (id) => (id === collision.id ? collisionDetail : null),
+  candidateDetail: (id) => (id === candidate.id ? candidateDetail : null),
   ...overrides,
 });
 
@@ -228,6 +483,151 @@ describe("HTTP boundary", () => {
     await app.close();
   });
 
+  it("offers bounded authority presets and persists the resolved role and preset", async () => {
+    const createAgent = vi.fn(async (input) => ({
+      ...agent,
+      name: input.name,
+      description: input.description ?? "",
+      instructions: input.instructions ?? "",
+      role: input.role,
+      authority: input.authority,
+      codexThreadId: "private-thread-id",
+    }));
+    const app = await createApp(
+      loadConfig({ NODE_ENV: "test" }),
+      createAgentService({ createAgent }),
+    );
+
+    const presets = await app.inject({
+      method: "GET",
+      url: "/api/agent-authority-presets",
+    });
+    expect(presets.statusCode).toBe(200);
+    expect(presets.json().presets.map((preset) => preset.id)).toEqual([
+      "frontend",
+      "backend",
+      "verification",
+      "generalist",
+    ]);
+    expect(presets.json().presets[0].authority.writable).toContain("apps/web/**");
+    expect(presets.json().presets[0].authority.forbidden).toContain(".git/**");
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/agents",
+      payload: {
+        name: "Frontend owner",
+        authorityPreset: "frontend",
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.json().agent).toMatchObject({
+      name: "Frontend owner",
+      role: "Frontend",
+    });
+    expect(created.json().agent.authority.writable).toContain("src/frontend/**");
+    expect(created.json().agent.codexThreadId).toBeUndefined();
+    expect(createAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Frontend owner",
+        role: "Frontend",
+        authority: expect.objectContaining({ writable: expect.any(Array) }),
+      }),
+    );
+    await app.close();
+  });
+
+  it("normalizes advanced authority and rejects ambiguous or host-level authority", async () => {
+    const createAgent = vi.fn(async (input) => ({
+      ...agent,
+      name: input.name,
+      role: input.role,
+      authority: input.authority,
+    }));
+    const app = await createApp(
+      loadConfig({ NODE_ENV: "test" }),
+      createAgentService({ createAgent }),
+    );
+    const accepted = await app.inject({
+      method: "POST",
+      url: "/api/agents",
+      payload: {
+        name: "Scoped",
+        role: "Verification",
+        authority: {
+          readable: ["./src//**", "src/**"],
+          writable: ["tests/**", "./tests/**"],
+          forbidden: [".git/**"],
+        },
+      },
+    });
+    expect(accepted.statusCode).toBe(201);
+    expect(createAgent).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        role: "Verification",
+        authority: {
+          readable: ["src/**"],
+          writable: ["tests/**"],
+          forbidden: [".git/**"],
+        },
+      }),
+    );
+
+    const rejectedPayloads = [
+      {
+        name: "Ambiguous",
+        authorityPreset: "frontend",
+        authority: { readable: ["**"], writable: ["src/**"], forbidden: [] },
+      },
+      { name: "Mismatch", role: "Backend", authorityPreset: "frontend" },
+      {
+        name: "Absolute",
+        authority: { readable: ["**"], writable: ["/etc/**"], forbidden: [] },
+      },
+      {
+        name: "Traversal",
+        authority: { readable: ["**"], writable: ["../outside/**"], forbidden: [] },
+      },
+      {
+        name: "Unknown",
+        authorityPreset: "generalist",
+        repositoryPath: "/tmp/repository",
+      },
+    ];
+    for (const payload of rejectedPayloads) {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/agents",
+        payload,
+      });
+      expect(response.statusCode, payload.name).toBe(400);
+      expect(response.body).not.toContain("/etc");
+      expect(response.body).not.toContain("/tmp/repository");
+    }
+    expect(createAgent).toHaveBeenCalledTimes(1);
+    await app.close();
+  });
+
+  it("passes role-only edits through so AgentService resets the matching preset", async () => {
+    const updateAgent = vi.fn(async (_id, input) => ({
+      ...agent,
+      ...input,
+      role: input.role,
+    }));
+    const app = await createApp(
+      loadConfig({ NODE_ENV: "test" }),
+      createAgentService({ updateAgent }),
+    );
+    const response = await app.inject({
+      method: "PATCH",
+      url: `/api/agents/${agentId}`,
+      payload: { role: "Backend" },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(updateAgent).toHaveBeenCalledWith(agentId, { role: "Backend" });
+    await app.close();
+  });
+
   it("returns a generic bounded response for unexpected server errors", async () => {
     const app = await createApp(
       loadConfig({ NODE_ENV: "test", LOG_LEVEL: "silent" }),
@@ -246,6 +646,45 @@ describe("HTTP boundary", () => {
     expect(response.body.length).toBeLessThan(100);
     expect(response.body).not.toContain(privateWorkspace);
     expect(response.body).not.toContain("super-secret-value");
+    await app.close();
+  });
+
+  it("omits raw run prompts and redacts configured secrets from legacy aggregates", async () => {
+    const secretRun = {
+      ...run,
+      prompt: `raw prompt ${plantedSecret}`,
+      output: `Bearer ${plantedSecret}`,
+      error: `failed at ${privateWorkspace} password=${plantedSecret}`,
+    };
+    const secretAgent = {
+      ...agent,
+      codexThreadId: "private-thread-fingerprint",
+      lastError: `failed at ${privateWorkspace} secret=${plantedSecret}`,
+    };
+    const app = await createApp(
+      loadConfig({
+        NODE_ENV: "test",
+        ARK_API_KEY: plantedSecret,
+        ARK_MODEL: "test-model",
+      }),
+      createAgentService({
+        listAgents: () => [secretAgent],
+        getRuns: () => [secretRun],
+        getRun: () => secretRun,
+      }),
+    );
+    for (const url of [
+      "/api/agents",
+      `/api/agents/${agentId}/runs`,
+      `/api/runs/${runId}`,
+    ]) {
+      const response = await app.inject({ method: "GET", url });
+      expect(response.statusCode, url).toBe(200);
+      expect(response.body, url).not.toContain(plantedSecret);
+      expect(response.body, url).not.toContain(privateWorkspace);
+      expect(response.body, url).not.toContain("codexThreadId");
+      expect(response.body, url).not.toContain('"prompt"');
+    }
     await app.close();
   });
 
@@ -310,7 +749,18 @@ describe("HTTP boundary", () => {
     expect(state.json().state.projects[0].repositoryPath).toBeUndefined();
     expect(state.json().state.planes[0].worktreePath).toBeUndefined();
     expect(state.json().state.planes[0].runtimeSessionFingerprint).toBeUndefined();
+    expect(state.json().state.planes[0].executionIdentity).toBeUndefined();
     expect(state.json().state.planes[0].runtimeSessionEstablished).toBe(true);
+    expect(state.json().state.contracts[0].manifest).toBeUndefined();
+    expect(
+      state.json().state.contracts[0].verificationEvidence[0].checks[0].stdout,
+    ).toBeUndefined();
+    expect(
+      state.json().state.contracts[0].verificationEvidence[0].checks[0].stderr,
+    ).toBeUndefined();
+    expect(
+      state.json().state.contracts[0].verificationEvidence[0].checks[0].error,
+    ).toBeUndefined();
     expect(state.body).not.toContain(managedRoot);
 
     const mission = await app.inject({
@@ -324,6 +774,7 @@ describe("HTTP boundary", () => {
     expect(mission.json().planes[0].runtimeSessionFingerprint).toBeUndefined();
     expect(mission.json().planes[0].runtimeSessionEstablished).toBe(true);
     expect(mission.json().agents[0].workspacePath).toBeUndefined();
+    expect(mission.json().agents[0].codexThreadId).toBeUndefined();
     expect(mission.body).not.toContain(managedRoot);
 
     const events = await app.inject({
@@ -364,6 +815,363 @@ describe("HTTP boundary", () => {
     await app.close();
   });
 
+  it("authenticates every Shepherd read and control route", async () => {
+    const app = await createApp(
+      loadConfig({
+        NODE_ENV: "test",
+        APP_AUTH_TOKEN: "a-strong-shepherd-test-token",
+        SHEPHERD_DEMO_MODE: "true",
+      }),
+      service,
+      createShepherdService(),
+    );
+    const requests = [
+      { method: "GET", url: "/api/shepherd/state" },
+      { method: "GET", url: `/api/shepherd/missions/${missionId}` },
+      { method: "GET", url: "/api/shepherd/events" },
+      { method: "GET", url: "/api/shepherd/planes/plane-1" },
+      { method: "GET", url: "/api/shepherd/collisions/collision-1" },
+      { method: "GET", url: "/api/shepherd/candidates/candidate-1" },
+      {
+        method: "GET",
+        url: "/api/shepherd/projects/project-1/group-messages",
+      },
+      { method: "GET", url: "/api/shepherd/settings" },
+      {
+        method: "POST",
+        url: "/api/shepherd/messages",
+        payload: { content: "Implement authentication", preset: "auth-demo" },
+      },
+      {
+        method: "POST",
+        url: "/api/shepherd/projects/project-1/group-messages",
+        payload: { clientMessageId: "client-1", content: "Status?" },
+      },
+      {
+        method: "POST",
+        url: `/api/shepherd/missions/${missionId}/cancel`,
+        payload: {},
+      },
+      {
+        method: "POST",
+        url: "/api/shepherd/collisions/collision-1/select",
+        payload: { candidateId: "candidate-1" },
+      },
+      {
+        method: "PATCH",
+        url: "/api/shepherd/settings",
+        payload: { autoResolution: false },
+      },
+      { method: "POST", url: "/api/shepherd/demo/reset", payload: {} },
+    ] as const;
+    for (const request of requests) {
+      const response = await app.inject(request);
+      expect(response.statusCode, `${request.method} ${request.url}`).toBe(401);
+    }
+    await app.close();
+  });
+
+  it("serves the complete structured Shepherd control API", async () => {
+    const startMissionFromMessage = vi.fn(async () => ({
+      missionId,
+      message: groupMessage,
+    }));
+    const projectGroupMessages = vi.fn(() => [groupMessage]);
+    const sendProjectGroupMessage = vi.fn(async () => groupMessage);
+    const cancelMission = vi.fn(async () => ({
+      ...missionDetail.mission,
+      state: "cancelled" as const,
+    }));
+    const selectTiedCandidate = vi.fn(async () => missionDetail);
+    const updateSettings = vi.fn(async (input) => ({
+      ...createShepherdState().settings,
+      ...input,
+      notifications: {
+        ...createShepherdState().settings.notifications,
+        ...(input.notifications ?? {}),
+      },
+      updatedAt: timestamp,
+    }));
+    const app = await createApp(
+      loadConfig({ NODE_ENV: "test" }),
+      service,
+      createShepherdService({
+        startMissionFromMessage,
+        projectGroupMessages,
+        sendProjectGroupMessage,
+        cancelMission,
+        selectTiedCandidate,
+        updateSettings,
+      }),
+    );
+
+    const started = await app.inject({
+      method: "POST",
+      url: "/api/shepherd/messages",
+      payload: {
+        content: "Implement the authentication demo",
+        preset: "auth-demo",
+        clientMessageId: "mission-client-1",
+      },
+    });
+    expect(started.statusCode).toBe(202);
+    expect(started.json()).toMatchObject({
+      status: "accepted",
+      missionId,
+      executionMode: "deterministic",
+      message: { id: groupMessage.id },
+    });
+    expect(startMissionFromMessage).toHaveBeenCalledWith({
+      content: "Implement the authentication demo",
+      preset: "auth-demo",
+      clientMessageId: "mission-client-1",
+    });
+
+    const messages = await app.inject({
+      method: "GET",
+      url: "/api/shepherd/projects/project-1/group-messages?limit=25",
+    });
+    expect(messages.statusCode).toBe(200);
+    expect(messages.json()).toEqual({ messages: [groupMessage] });
+    expect(projectGroupMessages).toHaveBeenCalledWith("project-1", 25);
+
+    const sent = await app.inject({
+      method: "POST",
+      url: "/api/shepherd/projects/project-1/group-messages",
+      payload: {
+        clientMessageId: "group-client-1",
+        content: "@Frontend Agent verify the contract",
+        assignmentPreset: "auth-demo-contract",
+      },
+    });
+    expect(sent.statusCode).toBe(201);
+    expect(sendProjectGroupMessage).toHaveBeenCalledWith("project-1", {
+      clientMessageId: "group-client-1",
+      content: "@Frontend Agent verify the contract",
+      assignmentPreset: "auth-demo-contract",
+    });
+
+    const cancelled = await app.inject({
+      method: "POST",
+      url: `/api/shepherd/missions/${missionId}/cancel`,
+      payload: {},
+    });
+    expect(cancelled.statusCode).toBe(200);
+    expect(cancelled.json().mission.state).toBe("cancelled");
+    expect(cancelMission).toHaveBeenCalledWith(missionId);
+
+    const selected = await app.inject({
+      method: "POST",
+      url: "/api/shepherd/collisions/collision-1/select",
+      payload: { candidateId: "candidate-1" },
+    });
+    expect(selected.statusCode).toBe(200);
+    expect(selected.json().mission.id).toBe(missionId);
+    expect(selectTiedCandidate).toHaveBeenCalledWith("collision-1", "candidate-1");
+
+    const settings = await app.inject({
+      method: "PATCH",
+      url: "/api/shepherd/settings",
+      payload: {
+        contractTimeoutMs: 45_000,
+        autoResolution: false,
+        modelReviewEnabled: true,
+        notifications: { collisionDetected: false },
+      },
+    });
+    expect(settings.statusCode).toBe(200);
+    expect(settings.json().settings).toMatchObject({
+      contractTimeoutMs: 45_000,
+      autoResolution: false,
+      modelReviewEnabled: true,
+      notifications: { collisionDetected: false },
+    });
+    expect(updateSettings).toHaveBeenCalledWith({
+      contractTimeoutMs: 45_000,
+      autoResolution: false,
+      modelReviewEnabled: true,
+      notifications: { collisionDetected: false },
+    });
+    await app.close();
+  });
+
+  it("returns safe Plane, collision, and candidate detail aggregates", async () => {
+    const stateWithPrivateEventDetails = createShepherdState();
+    stateWithPrivateEventDetails.events = [
+      {
+        ...event,
+        details: {
+          prompt: `internal prompt ${plantedSecret}`,
+          runtimeSessionFingerprint: "f".repeat(64),
+          worktreePath: `${managedRoot}/private-event-plane`,
+          safeSummary: `Bearer ${plantedSecret}`,
+        },
+      },
+    ];
+    const app = await createApp(
+      loadConfig({
+        NODE_ENV: "test",
+        ARK_API_KEY: plantedSecret,
+        ARK_MODEL: "test-model",
+      }),
+      service,
+      createShepherdService({ state: () => stateWithPrivateEventDetails }),
+    );
+    for (const url of [
+      "/api/shepherd/state",
+      `/api/shepherd/missions/${missionId}`,
+      "/api/shepherd/planes/plane-1",
+      "/api/shepherd/collisions/collision-1",
+      "/api/shepherd/candidates/candidate-1",
+    ]) {
+      const response = await app.inject({ method: "GET", url });
+      expect(response.statusCode, url).toBe(200);
+      expect(response.body, url).not.toContain(plantedSecret);
+      expect(response.body, url).not.toContain(managedRoot);
+      expect(response.body, url).not.toContain("worktreePath");
+      expect(response.body, url).not.toContain("repositoryPath");
+      expect(response.body, url).not.toContain("runtimeSessionFingerprint");
+      expect(response.body, url).not.toContain("executionIdentity");
+      expect(response.body, url).not.toContain('"stdout"');
+      expect(response.body, url).not.toContain('"stderr"');
+      expect(response.body, url).not.toContain('"manifest"');
+      expect(response.body, url).not.toContain('"prompt"');
+    }
+
+    for (const url of [
+      "/api/shepherd/planes/missing",
+      "/api/shepherd/collisions/missing",
+      "/api/shepherd/candidates/missing",
+    ]) {
+      const response = await app.inject({ method: "GET", url });
+      expect(response.statusCode, url).toBe(404);
+    }
+    await app.close();
+  });
+
+  it("rejects unsupported plans, host controls, locked settings, and malformed controls", async () => {
+    const app = await createApp(
+      loadConfig({ NODE_ENV: "test", SHEPHERD_DEMO_MODE: "true" }),
+      service,
+      createShepherdService(),
+    );
+    const requests = [
+      {
+        method: "POST",
+        url: "/api/shepherd/messages",
+        payload: { content: "Arbitrary plan", preset: "generic" },
+        status: 422,
+      },
+      {
+        method: "POST",
+        url: "/api/shepherd/messages",
+        payload: {
+          content: "Demo",
+          preset: "auth-demo",
+          repositoryPath: "/etc",
+        },
+        status: 400,
+      },
+      {
+        method: "POST",
+        url: "/api/shepherd/projects/project-1/group-messages",
+        payload: { content: "Missing identity" },
+        status: 400,
+      },
+      {
+        method: "POST",
+        url: `/api/shepherd/missions/${missionId}/cancel`,
+        payload: { force: true },
+        status: 400,
+      },
+      {
+        method: "POST",
+        url: "/api/shepherd/collisions/collision-1/select",
+        payload: { candidateId: "../../candidate", path: "/tmp" },
+        status: 400,
+      },
+      {
+        method: "PATCH",
+        url: "/api/shepherd/settings",
+        payload: { mode: "production" },
+        status: 400,
+      },
+      {
+        method: "PATCH",
+        url: "/api/shepherd/settings",
+        payload: { retainCompletedPlanes: false },
+        status: 400,
+      },
+      {
+        method: "PATCH",
+        url: "/api/shepherd/settings",
+        payload: { maxConcurrentPlanes: 17 },
+        status: 400,
+      },
+      {
+        method: "GET",
+        url: "/api/shepherd/projects/project-1/group-messages?limit=201",
+        status: 400,
+      },
+    ] as const;
+    for (const request of requests) {
+      const response = await app.inject(request);
+      expect(response.statusCode, `${request.method} ${request.url}`).toBe(
+        request.status,
+      );
+      expect(response.body).not.toContain("/etc");
+      expect(response.body).not.toContain("/tmp");
+    }
+    await app.close();
+  });
+
+  it("maps Shepherd control conflicts and unsupported assignments to stable statuses", async () => {
+    const app = await createApp(
+      loadConfig({ NODE_ENV: "test" }),
+      service,
+      createShepherdService({
+        sendProjectGroupMessage: async () => {
+          throw new ShepherdControlError(
+            "unsupported_assignment",
+            "Only fixed assignments are supported",
+          );
+        },
+        updateSettings: async () => {
+          throw new ShepherdControlError(
+            "conflict",
+            "Settings cannot change while a Mission is active",
+          );
+        },
+        cancelMission: async () => {
+          throw new ShepherdControlError("not_found", "Mission was not found");
+        },
+      }),
+    );
+    const unsupported = await app.inject({
+      method: "POST",
+      url: "/api/shepherd/projects/project-1/group-messages",
+      payload: {
+        clientMessageId: "client-unsupported",
+        content: "@Frontend Agent do arbitrary work",
+        assignmentPreset: "auth-demo-contract",
+      },
+    });
+    expect(unsupported.statusCode).toBe(422);
+    const conflict = await app.inject({
+      method: "PATCH",
+      url: "/api/shepherd/settings",
+      payload: { autoResolution: false },
+    });
+    expect(conflict.statusCode).toBe(409);
+    const missing = await app.inject({
+      method: "POST",
+      url: `/api/shepherd/missions/${missionId}/cancel`,
+      payload: {},
+    });
+    expect(missing.statusCode).toBe(404);
+    await app.close();
+  });
+
   it("guards deterministic demo execution behind explicit demo mode", async () => {
     const startDeterministicDemo = vi.fn(async () => ({ missionId }));
     const shepherd = createShepherdService({ startDeterministicDemo });
@@ -396,6 +1204,46 @@ describe("HTTP boundary", () => {
       executionMode: "deterministic",
     });
     expect(startDeterministicDemo).toHaveBeenCalledWith({});
+    await enabledApp.close();
+  });
+
+  it("guards demo reset and never exposes removed worktree paths", async () => {
+    const resetDeterministicDemo = vi.fn(
+      createShepherdService().resetDeterministicDemo,
+    );
+    const disabledApp = await createApp(
+      loadConfig({ NODE_ENV: "test", SHEPHERD_DEMO_MODE: "false" }),
+      service,
+      createShepherdService({ resetDeterministicDemo }),
+    );
+    const disabled = await disabledApp.inject({
+      method: "POST",
+      url: "/api/shepherd/demo/reset",
+      payload: {},
+    });
+    expect(disabled.statusCode).toBe(403);
+    expect(resetDeterministicDemo).not.toHaveBeenCalled();
+    await disabledApp.close();
+
+    const enabledApp = await createApp(
+      loadConfig({ NODE_ENV: "test", SHEPHERD_DEMO_MODE: "true" }),
+      service,
+      createShepherdService({ resetDeterministicDemo }),
+    );
+    const reset = await enabledApp.inject({
+      method: "POST",
+      url: "/api/shepherd/demo/reset",
+      payload: {},
+    });
+    expect(reset.statusCode).toBe(200);
+    expect(reset.json()).toMatchObject({
+      reset: true,
+      projectId: "auth-demo",
+      removedPlaneCount: 1,
+    });
+    expect(reset.body).not.toContain(managedRoot);
+    expect(reset.body).not.toContain("removedPlanePaths");
+    expect(resetDeterministicDemo).toHaveBeenCalledOnce();
     await enabledApp.close();
   });
 
