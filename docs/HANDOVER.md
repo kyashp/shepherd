@@ -80,9 +80,12 @@ The remaining work is material:
 - No Playwright configuration, eight-journey suite, screenshots, or independent rendered UI review exists yet.
 - Final architecture/test-report/README completion, repeated stability runs, and
   three timed rehearsals are not complete.
-- Merged PR #8 fixes `.env` propagation for `npm run poc`. Draft PR #28 extends
-  the same safe Node-parsed behavior to direct `./scripts/start-local-poc.sh`
-  invocation and localizes the exact Docker-default data paths for host use.
+- Merged PRs #8 and #28 provide safe Node-parsed `.env` propagation, direct
+  `./scripts/start-local-poc.sh` invocation, and host-local data paths. The first
+  real post-merge run exposed `OPS-04`: a container-wide `HOST` value in the
+  ignored `.env` is still preserved and the server correctly refuses its
+  placeholder token. Branch `fix/29-ops-04-local-loopback` contains the minimal
+  local-only loopback correction and passed its real startup smoke.
 - A clean-start demo reset returns `500 Auth demo was not found`; reset succeeds
   after the first demo project has been initialized.
 
@@ -277,7 +280,8 @@ missing/partial row in the failure matrix.
 | ID | Area | Confirmed defect / mismatch | User-visible or safety impact | Required minimal correction |
 |---|---|---|---|---|
 | `OPS-01` (resolved) | Local startup / `.env` | Merged PR #8 uses Node's dotenv parser and an explicit launcher that inherits the parsed environment without shell-sourcing or logging it. | `npm run poc` is restored on `main`. | Retain the secret-sentinel launcher regression. |
-| `OPS-02` | Direct local startup / paths | Current `main` still requires the npm entry point, and `.env.example` contains Docker paths such as `/app/data/shepherd`. PR #28 makes `./scripts/start-local-poc.sh` perform one guarded Node dotenv handoff and maps only the exact Docker defaults into the host local state root. Its regression, full gate, and independent fallback security review passed. | Until #28 merges, direct zero-parameter shell startup does not load `.env` and Docker paths can target unintended absolute locations. | Review and merge #28, then run the real zero-parameter startup smoke on updated `main`. Explicit custom host paths must remain unchanged. |
+| `OPS-02` (resolved) | Direct local startup / paths | Merged PR #28 makes `./scripts/start-local-poc.sh` perform one guarded Node dotenv handoff and maps only the exact Docker-default data paths into the host local state root. Its regression, full gate, and independent fallback security review passed. | Direct zero-parameter shell startup now safely loads `.env`; explicit custom host paths remain unchanged. | Retain the dotenv, secret non-disclosure, default localization, and custom-path regressions. |
+| `OPS-04` | Local startup host binding | The ignored operator `.env` contains container-wide `HOST=0.0.0.0` and a placeholder application token. The real post-merge direct command reaches `node dist/index.js`, then the server correctly exits 1 rather than expose an unsafe public bind. | The promised zero-parameter local command still fails with the configured `.env`. | In the local launcher only, normalize empty and exact any-address hosts (`0.0.0.0`, `::`) to `127.0.0.1`; preserve custom hosts and the server's non-loopback token enforcement. Branch `fix/29-ops-04-local-loopback` has a causal regression across all host branches, real startup/API/shutdown smoke, full green gate, and independent fallback security review with its sole Low coverage finding closed. |
 | `RST-01` | Demo reset | `POST /api/shepherd/demo/reset` on a clean data root returns HTTP 500 with `Auth demo was not found`; after one Mission initializes `auth-demo`, reset succeeds and removes all managed state. | “Reset demo state” fails on first launch and exposes a server error instead of an idempotent clean result. | Make clean-start reset an idempotent success or return a deliberate non-error empty result; add service/API/UI regression tests. |
 | `GC-01` | Group Chat mention buttons | UI inserts `@Frontend Agent`, while names containing spaces require `@"Frontend Agent"`. The UI-generated value reproduces `unknown_agent`. | Mention buttons do not route the demo Agents. | Quote/escape whitespace-containing names using the parser's existing JSON mention syntax; add a browser regression test. |
 | `GC-02` | Unmentioned Group Chat messages | The backend persists a human message with no target, but does not invoke Shepherd, create work, or post a Shepherd response. | UI says “Unmentioned → Shepherd,” but no Shepherd action occurs. | Route through an existing bounded Shepherd action/response contract; do not add free-form shell/model authority. |
@@ -323,7 +327,7 @@ missing/partial row in the failure matrix.
 | Repeated cancellation | Single cancellation and both promotion races are tested | Explicit idempotent repeated-cancel API/service test |
 | UI reconnect handling | Poller retains state and retries | Browser interruption, visible reconnect, cursor reconciliation, no-duplicate event test |
 | Live Mission on current `main` | Phase 3 runtime previously passed at its named checkpoint | One sparse post-integration live Mission after P0 fixes; no repeated unnecessary model calls |
-| Host local-PoC startup | Merged #8 fixes `npm run poc`; PR #28 adds direct-shell dotenv loading plus exact Docker-default path localization. Its isolated launcher test, full gate, and independent fallback security review passed. | Post-merge zero-parameter real startup smoke on `main` |
+| Host local-PoC startup | Merged #8/#28 provide direct dotenv and path behavior. The `OPS-04` candidate additionally normalizes exact any-address hosts to loopback while preserving a concrete custom host in regression coverage. With the actual ignored `.env`, direct startup bound `127.0.0.1:3000`; health/web returned 200, unauthenticated system returned 401, authenticated system returned 200, and SIGINT left no owned Runtime container. Independent fallback security review found no high/medium issue; its sole Low coverage gap was closed. | Merge `OPS-04`, then repeat the same zero-parameter smoke on updated `main` |
 
 ### Unimplemented required behavior
 
@@ -1126,9 +1130,11 @@ Authoritative requirements/evidence:
   configured model and consumes real capacity.
 - Use repository-local state for QA. Do not point the demo at another repository or
   an existing data directory.
-- `npm run poc` is fixed on current `main` by merged PR #8. Draft PR #28 makes
-  `./scripts/start-local-poc.sh` itself the zero-parameter entry point; until #28
-  merges, use `npm run poc` on `main`.
+- Merged PRs #8/#28 make `./scripts/start-local-poc.sh` the `.env`-based entry
+  point, but the current ignored `.env` also carries a container-wide host value.
+  Until `OPS-04` merges, add an explicit `HOST=127.0.0.1` override or run the
+  verified `fix/29-ops-04-local-loopback` candidate; do not weaken the application
+  token validation.
 - Do not click **Reset demo state** before the first Mission initializes the demo;
   `RST-01` currently returns a 500 on a completely clean root.
 - The trusted verifier needs Docker, Colima, or Podman. The command below was

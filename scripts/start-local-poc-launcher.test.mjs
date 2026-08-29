@@ -204,4 +204,37 @@ test("direct shell launch reads dotenv and localizes Docker-default data paths",
     (await readFile(capturePath, "utf8")).trim().split("\n").slice(2, 7),
     customPaths,
   );
+
+  for (const [configuredHost, expectedHost] of [
+    ["", "127.0.0.1"],
+    ["::", "127.0.0.1"],
+    ["192.0.2.10", "192.0.2.10"],
+  ]) {
+    await writeFile(
+      path.join(temporaryDirectory, ".env"),
+      [
+        `ARK_API_KEY=${arkKeySentinel}`,
+        `ARK_MODEL=${arkModelSentinel}`,
+        `HOST=${configuredHost}`,
+        `APP_DATA_DIR=${customPaths[0]}`,
+        `AGENT_WORKSPACE_ROOT=${customPaths[1]}`,
+        `CODEX_HOME=${customPaths[2]}`,
+        `SHEPHERD_ROOT=${customPaths[3]}`,
+        `SHEPHERD_CODEX_HOME_ROOT=${customPaths[4]}`,
+        "CONTAINER_ENGINE=docker",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    const hostResult = await run(path.join(scriptsDirectory, "start-local-poc.sh"), [], {
+      cwd: temporaryDirectory,
+      env: {
+        PATH: `${binDirectory}${path.delimiter}${process.env.PATH ?? ""}`,
+        OPS_02_CAPTURE: capturePath,
+      },
+    });
+
+    assert.equal(hostResult.code, 0, hostResult.stderr);
+    assert.equal((await readFile(capturePath, "utf8")).trim().split("\n").at(-1), expectedHost);
+  }
 });
