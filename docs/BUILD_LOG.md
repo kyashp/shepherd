@@ -7,6 +7,52 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## TST-02 recovery fixture clock candidate
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Branch:** `fix/33-recovery-fixture-clock`
+**Issue:** [#33](https://github.com/kyashp/shepherd/issues/33)
+**Draft PR:** [#34](https://github.com/kyashp/shepherd/pull/34)
+
+The exact post-CAS recovery test created its Plane through a `PlaneManager` using
+the real wall clock, then reconciled it with fixed `recoveredAt`
+`2026-08-29T12:05:00.000Z`. Once real time passed 12:05Z, recovery assigned an
+`updatedAt` earlier than the Plane's real `createdAt`, and database validation
+correctly rejected the state. The unmodified targeted test reproduced the causal
+RED with `Refusing to persist invalid database state` after 12:05Z.
+
+The candidate injects the test's existing `2026-08-29T12:00:00.000Z` timestamp
+through `PlaneManager`'s existing `now` option. It changes no production code,
+schema, validator, assertion, launcher, dependency, UI file, or ST-02/PR #13 file.
+
+Observed against code commit
+`1dc3133c332b9fd31ec27d2ed5e8d620a0dae08f`:
+
+- the exact targeted test passed 1/1 at the real post-rollover time 15:08Z;
+- the complete `recovery.test.ts` file passed 17/17 at the real post-rollover time;
+- literal `npm run check` in a clean Node 24 Linux workspace, with only the process
+  wall clock held at the shared 12:00Z fixture baseline, passed: launcher 3/3,
+  server 25 files passed and 2 opt-in files skipped, 551 tests passed and 5 skipped,
+  and both production builds completed;
+- unconstrained real-clock full-suite attempts still exposed unrelated current-main
+  cross-suite instability in unchanged service/recovery-process cases, while the
+  changed recovery file remained 17/17; the full unchanged `service.test.ts` and
+  `recovery.process.test.ts` files then passed 28/28 and 5/5 in isolation;
+- `npm audit --json` reported 0 vulnerabilities across 251 dependencies;
+- `git diff --check` passed.
+
+An independent read-only review of the exact code range
+`349897d3d9167fe711bf720f7c3fadd213938d11...1dc3133c332b9fd31ec27d2ed5e8d620a0dae08f`
+reported no Critical, Important, or Minor finding and returned **Ready to merge:
+Yes**. It confirmed the injected clock owns the persisted Plane lifecycle
+timestamps, produces a fresh fixed `Date` on each call, precedes recovery by five
+minutes, and leaves every fail-closed, cleanup, event, and idempotency assertion
+unchanged.
+
+The clock-controlled full check is recorded as controlled evidence, not as an
+unconstrained real-clock pass. The real-clock targeted and full-file results are the
+post-rollover proof for this narrowly scoped correction.
+
 ## OPS-05 canonical launcher-entry candidate
 
 **Date:** 2026-08-29 (Asia/Singapore)

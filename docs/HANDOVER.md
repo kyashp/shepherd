@@ -887,6 +887,41 @@ Not run after this checkpoint:
 - a final live Mission on current `main`;
 - a post-merge gate for these documentation changes.
 
+### TST-02 recovery fixture clock candidate (`#33`)
+
+Draft PR [#34](https://github.com/kyashp/shepherd/pull/34) contains a one-line,
+test-only correction on code commit
+`1dc3133c332b9fd31ec27d2ed5e8d620a0dae08f`. In the exact post-CAS recovery test,
+the Plane was created with real wall time but reconciled with fixed 12:05Z time.
+After 12:05Z, the validator correctly rejected the resulting
+`updatedAt < createdAt` state. The candidate passes the fixture's existing 12:00Z
+timestamp to that `PlaneManager` through its existing `now` option; recovery
+behavior and assertions are unchanged.
+
+The unmodified exact target reproduced RED after the rollover with
+`Refusing to persist invalid database state`. On the candidate at real 15:08Z, the
+exact target passed 1/1 and the complete `recovery.test.ts` file passed 17/17. A
+literal `npm run check` in clean Node 24 Linux with the process wall clock held at
+the shared 12:00Z fixture baseline passed launcher 3/3, 25 server files with 2
+opt-in files skipped, 551 tests with 5 skipped, and both production builds. This is
+controlled full-gate evidence, not an unconstrained real-clock pass.
+
+Unconstrained real-clock full-suite attempts continued to expose unrelated
+current-main cross-suite instability in unchanged service/recovery-process cases;
+the changed recovery file remained 17/17, and the full unchanged files passed
+28/28 and 5/5 in real-clock isolation. `npm audit --json` reported zero
+vulnerabilities across 251 dependencies, and `git diff --check` passed. The owned
+implementation scope is only `apps/server/src/shepherd/recovery.test.ts`; PR #34
+does not modify production recovery, schemas/validation, SettingsPage, PR #13,
+launcher files, dependencies, or unrelated tests.
+
+An independent read-only review of the exact code range reported no Critical,
+Important, or Minor finding and returned **Ready to merge: Yes**. It confirmed the
+fixed clock supplies all persisted Plane lifecycle timestamps, precedes recovery by
+five minutes, introduces no mutable shared clock, and leaves the fail-closed,
+cleanup, event, and idempotency assertions unchanged. The evidence-only ledger
+changes are restricted to `docs/BUILD_LOG.md` and this HANDOVER section.
+
 ### Pending test-lifecycle merge gate (`#11`)
 
 Draft PR [#19](https://github.com/kyashp/shepherd/pull/19) contains test-only lifecycle
