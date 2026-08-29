@@ -822,18 +822,42 @@ never persisted or rendered.
 
 ```sh
 npx vitest run --config apps/server/vitest.config.ts \
-  apps/server/src/shepherd/service.model-review.test.ts \
-  --testTimeout=90000 --hookTimeout=90000
+  apps/server/src/shepherd/service.model-review.test.ts
+# repository default config, no flags
 # Test Files  1 passed (1)
 #      Tests  9 passed (9)
-#   Duration  116.68s
+#   Duration  110.54s
 
 npm run typecheck
 # PASS: server and web TypeScript checks
 
+npm run build
+# PASS: web production build, 40 modules transformed
+# PASS: server production build
+
 git diff --check
 # clean
 ```
+
+Each test declares the budget it needs, because every one drives a full Mission with
+real Git worktrees and real trusted fixture checks. The file therefore passes under
+the repository default configuration rather than depending on a `--testTimeout` flag.
+
+The composition predicate was checked against a configured environment, reporting
+booleans only and printing no secret:
+
+```text
+arkConfigured: true
+shepherdModelReviewConfigured: true
+shepherdModel is distinct from arkModel: true
+shepherdExecutionMode: deterministic
+```
+
+This confirms two design choices. Reusing `isArkConfigured` would have been wrong,
+because it validates `arkModel` while the reviewer consumes the genuinely distinct
+`shepherdModel`. Gating the reviewer on `shepherdExecutionMode` would have left the
+feature unreachable in exactly the configuration the deterministic demo runs in,
+since `auto` resolves to `deterministic` without a container engine.
 
 RED was observed before implementation on the same file: `3 failed | 1 passed`, each
 failure on `expect(reviewer.inputs).toHaveLength(1)`. `MR-T05` — the PRD 8.6 mandate
@@ -852,12 +876,22 @@ secret never reaches the outbound request body.
 
 ### Recorded limitations
 
-- `npm run check` was **not** run unmodified on this host. On the unmodified stack
-  parent the server suite reports `24 failed | 518 passed`, every failure at ~5000 ms
-  with no assertion failures, because `apps/server/vitest.config.ts` leaves Vitest's
-  5 s default `testTimeout` against tests that perform real Git work. Raising the flag
-  takes `git-plane-promotion.integration.test.ts` from `13 failed` to `19/19 passed`.
-  Tracked separately; all gates above therefore used an explicit `--testTimeout`.
+- `npm run check` was **not** observed passing unmodified on this host, and that is
+  pre-existing. On the unmodified stack parent the server suite reports
+  `24 failed | 518 passed`, every failure at ~5000 ms with no assertion failures,
+  because `apps/server/vitest.config.ts` leaves Vitest's 5 s default `testTimeout`
+  against tests that perform real Git work. Raising the flag takes
+  `git-plane-promotion.integration.test.ts` from `13 failed` to `19/19 passed`.
+- This change causes no functional regression, established by isolation rather than
+  by assertion. Under `--testTimeout=60000` the parent reports
+  `8 failed | 534 passed | 547` and this branch reports `12 failed | 543 passed | 556`
+  — nine tests added, nine passing. `service.test.ts` shows 3 failures on the parent
+  and 6 on this branch in a full run, but **1 failed / 20 passed when run in
+  isolation** on this branch. Five of those six therefore exist only under full-suite
+  parallelism, and the remaining one fails on the parent too. With no reviewer
+  injected `runAdvisoryModelReview` returns on its first line, so it cannot slow a
+  Mission; what the new file adds is roughly 110 s of parallel Mission load, which
+  pushes an already-marginal suite further past its timing budget.
 - No live `SHEPHERD_MODEL` request has been made. The provider response shape is
   exercised only through `fetchImpl` fixtures. The opt-in live smoke remains pending.
 - `apps/server/src/index.ts` is a top-level-`await` entrypoint with no export, so its
