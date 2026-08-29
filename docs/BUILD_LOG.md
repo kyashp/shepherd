@@ -7,6 +7,47 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## ST-02 main-to-mock integration audit
+
+**Date:** 2026-08-30 (Asia/Singapore)
+
+PR #13 merged to `main` as `d27dea670108e5a06eac20de7df88f756b68e404`.
+The Auditor merged that mainline into `mock-main` as
+`d5df930923503cf337f865f8c0361fa1b3bd8530`, retaining both histories in the sole
+`BUILD_LOG.md` conflict. The effective product delta is only
+`SettingsPage.tsx` plus its focused test: public Settings schemas/persistence and
+all kernel, harness, strict-type, CI, UI-03 and TST-03 implementation remain intact.
+No notification delivery, external integration, model request, or credential path
+was added.
+
+Observed independent evidence:
+
+- focused static-render regression: 1/1 passed;
+- web production typecheck and 40-module build: passed;
+- real Chromium Settings audit at exact `1280x800` and `1440x900`: three disabled
+  accessible notification controls, three **Reserved** labels, one **Unavailable**
+  label, disabled controls skipped in Tab order, forced interaction sent zero
+  Settings `PATCH` requests, and document/body X/Y scroll sizes equalled client
+  sizes at both viewports;
+- screenshots `docs/ui-review/st-02-settings/{1280x800,1440x900}.png` were inspected
+  and preserve the accepted Launchpad theme with no clipping or overlap;
+- deterministic harness unit 2/2 and Chromium 4/4 passed;
+- literal `npm run check` passed in 39 seconds: launcher 3/3, server 563/563 with
+  one opt-in live skip, strict test-source and production typechecks, and both
+  production builds;
+- `git diff --check` and the bounded diff/artifact review passed.
+
+The configured `ui-reviewer` role was unavailable. An independent read-only rendered
+fallback returned **READY with no scoped findings**. It confirmed truthful copy,
+native disabled semantics, persisted checked-state visibility, non-color-only labels,
+responsive layout and design fidelity. It noted only pre-existing non-blocking
+Settings tablist ARIA/arrow-key and small secondary-type debt; ST-02 does not broaden
+into those shared concerns.
+
+**Verdict:** ST-02 is **AUDITED at scoped 100%**, `T,C,B,U,I` 5/5. This is one
+observed green repository run, not a claim that separately reproduced TST-04
+background-cleanup instability is resolved.
+
 ## TST-03 independent integration audit and hosted closeout
 
 **Date:** 2026-08-30 (Asia/Singapore)

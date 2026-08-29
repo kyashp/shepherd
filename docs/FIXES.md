@@ -1,6 +1,6 @@
 # Shepherd Defect Queue
 
-**Assessed branch/SHA:** `mock-main` / `0b1c4017f01d37823b13c5da7360f00a8d8e7814`
+**Assessed branch/SHA:** `mock-main` / `d5df930923503cf337f865f8c0361fa1b3bd8530`
 
 **Audited:** 2026-08-29, Asia/Singapore
 
@@ -241,7 +241,7 @@ that limitation is explicit.
 | `MR-03` | External stack evidence: one invalid evidence ref can discard otherwise valid advisory findings. | Retain independently valid bounded findings; reject only invalid ones. | **Held external: PR #25** |
 | `MR-02` | Current Settings UI presents model review as functional while current mock-main orchestration does not consume it. | Resolved only by integrating MR-01 or truthfully disabling/labeling it. | Blocked by external MR-01 |
 | `ST-01` | Current config parses startup auto-resolution/max Planes, but `index.ts` does not pass them into `ShepherdService`. | Explicit initial-settings composition without overwriting later persisted settings. | Worker / ready |
-| `ST-02` | Current notification toggles persist but no notification behavior consumes them. | Truthfully mark unavailable or implement bounded in-app behavior; no external delivery expansion. | **Held external: PR #13** |
+| `ST-02` | Notification toggles persisted although no notification behavior consumed them. | Resolved by preserving stored values behind visibly Reserved/Unavailable native disabled controls; no delivery expansion. | **RESOLVED + AUDITED** at merge `d5df930`; `T,C,B,U,I` 5/5 |
 | `SCH-01` | Current service invokes scheduler for one fixed initial batch without real busy/lock/active inputs. | Extend existing scheduler/service boundary for dependency waves; no architecture replacement. | Worker / blocked by SCH-02 |
 | `SCH-02` | Cycles are rejected during scheduling rather than before graph persistence. | Call existing DAG validator before durable Contract creation. | Worker / ready |
 | `UI-01` | Current detailed failure panel is attention-focused; ordinary failed Missions may hide typed detail. | Reuse existing failure/attention primitives; no visual redesign. | Worker / blocked by typed failures |

@@ -1,7 +1,7 @@
 # Shepherd Completion Task Ledger
 
 **Canonical implementation snapshot:** `mock-main` at
-`0b1c4017f01d37823b13c5da7360f00a8d8e7814`
+`d5df930923503cf337f865f8c0361fa1b3bd8530`
 
 **Audited:** 2026-08-29, Asia/Singapore
 
@@ -68,7 +68,6 @@ deterministic clean-shell browser harness are green at the snapshot named above.
 | ID | PRD | Status / owner | Current external work | Integration requirement |
 |---|---|---|---|---|
 | `GC-01` | 4.1.12, 11.5–11.6.3 | `HELD_EXTERNAL` | Issue #5 / draft PR #9 / `fix/5-gc-01-quoted-mentions` | Review the latest external SHA, integrate into `mock-main`, run focused mention tests, Project Group browser journey, and full gate. |
-| `ST-02` | 11.5, 12 | `HELD_EXTERNAL` | Issue #6 / draft PR #13 / `fix/6-st-02-notification-truth` | Integrate only after confirming the controls are truthfully unavailable or actually consumed; browser and full gates required. |
 | `MR-01` | 4.1.13, 8.6, 12 | `HELD_EXTERNAL` | Issue #12 / PR #16 / `feat/12-mr-01-compose-model-reviewer` | Preserve advisory-only authority; integrate and run fake-reviewer Mission matrix before one sparse live review. |
 | `MR-03` | 8.6, 12 | `HELD_EXTERNAL`, stacked on `MR-01` | Issue #21 / draft PR #25 / `fix/21-mr-03-partial-review-findings` | Integrate after MR-01; validate partial valid findings survive one rejected evidence reference. |
 
@@ -113,6 +112,7 @@ without an open issue/PR are not active ownership claims.
 
 | ID | PRD ref | Status / owner / dependencies | Evidence and required acceptance | Confidence; gates passed; audit |
 |---|---|---|---|---|
+| `ST-02` | 11.5, 12 | **AUDITED** at integrated merge `d5df930` | PR #13 was merged to `main` as `d27dea6` and then merged into `mock-main` without product-code conflict. Notifications remain deliberately undelivered; the Settings surface now labels the capability **Unavailable** and every preserved preference **Reserved**, with three native disabled controls. Auditor passed focused rendering 1/1, web type/build, two-viewport real-browser semantics/no-PATCH/no-overflow, full harness unit 2/2 plus Chromium 4/4, and literal `npm run check` with launcher 3/3, server 563/563 plus one opt-in skip, strict typechecks and both builds. Independent rendered fallback review returned READY/no scoped findings; the configured `ui-reviewer` role was unavailable. No notification integration, public API/schema, persistence, or theme change. | **100% scoped**; `T,C,B,U,I` passed (5/5); audited |
 | `OPS-06` | 6.1, 8.10, 17 baseline | `READY`; Fixer, collaborator/macOS evidence required | Docker Desktop macOS reaches live Shepherd preflight then exits with only `Live Shepherd Runtime preflight failed`; the exact subprobe is swallowed. Preserve fail-closed sandboxing, add bounded stage diagnostics, reproduce on macOS, and correct only a proven compatibility mismatch. Never bypass socket/home restrictions. `T,A,C,S,L,I`. | **20%**; 0/6; not audited |
 | `GC-02/05` | 8.1, 11.5–11.6.3 | `READY`; Worker; do not touch held `GC-01` files | Clean Project Group disables composition; unmentioned messages only persist despite UI promise. Initialize a safe read model or offer a clear Mission action, then route unmentioned text through a bounded Shepherd action/reply. `T,A,C,B,S,U,I`. | **20%**; 0/7; not audited |
 | `GC-03/04` | 8.1, 11.5–11.6.3 | `BLOCKED` by `GC-01` integration and `GC-02/05`; Worker | `@Agent` only targets an already-active Contract and races the fast Mission. Add schema-constrained Contract creation independent of the narrow active timing window; no arbitrary shell/model authority. `T,A,C,B,S,U,I`. | **15%**; 0/7; not audited |
@@ -158,7 +158,7 @@ without an open issue/PR are not active ownership claims.
 
 ## Count and current verdict
 
-- **46 tracked work items:** 7 audited, 4 externally held, and 35 other incomplete
+- **46 tracked work items:** 8 audited, 3 externally held, and 35 other incomplete
   items across P0/P1/P2.
 - **Next ready worker assignment:** `F-01/02` unless the integrator selects another
   non-overlapping ready row.
