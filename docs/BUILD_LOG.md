@@ -7,6 +7,22 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — OPS-06 integration blocked by TST-12 security finding
+
+The Auditor rebased candidate `5a1aef9` onto audited `mock-main` as local
+`34477e8`. Focused runner/executor tests passed 186/186 and literal `npm run check`
+passed launcher 3/3, Server 601/601 plus two explicit opt-in skips, Web 17/17,
+strict test/source types and both builds. No live/model request ran.
+
+Configured `security-reviewer` was unavailable; independent read-only fallback
+found one Medium defect. Executor-side preflight mount cleanup attaches raw
+`cleanupError` as `Error.cause`; an uncaught startup failure may render a private
+path or OS detail even though runner stage/reason diagnostics are closed enums.
+The remaining typed mapping, fail-closed sandbox/private-home/non-root/version
+gates, output cap, raw stderr discard and owner-scoped cleanup were READY. OPS-06
+was not pushed to `mock-main`; TST-12 requires a fixed bounded executor cleanup
+error and planted-path causal regression before integration or macOS validation.
+
 ## 2026-08-30 — OPS-06 bounded live-preflight diagnostics candidate
 
 The Fixer source-traced the macOS message loss without a live/model request:

@@ -28,6 +28,25 @@ that limitation is explicit.
 
 ## Immediate queue
 
+### `TST-12` — Executor preflight cleanup can expose raw filesystem cause
+
+- **Evidence class:** independent security review of unintegrated OPS-06 rebased
+  candidate `34477e8`; source-confirmed at `CodexShepherdExecutor.performPreflight`.
+- **Failure contract:** executor mount cleanup throws a fixed message but attaches
+  raw `cleanupError` as `Error.cause`. An uncaught startup error can render that
+  cause, including private filesystem paths, planted values and OS diagnostics.
+  Runner-side typed cleanup diagnostics are bounded; this distinct executor path
+  is not causally covered, contradicting OPS-06's no-path/raw-detail claim.
+- **Minimal correction:** executor/test only. Throw the fixed bounded cleanup
+  message without a raw cause (or route detail only to a proven redacted internal
+  sink). Add a causal injected cleanup error containing private path/secret text and
+  assert rejection/startup-visible output excludes it. Preserve cleanup attempts,
+  fail-closed startup, runner enums and every sandbox gate. No swallowed failure,
+  raw logging, broad refactor or compatibility bypass.
+- **Acceptance/status:** **OPEN / READY for Fixer.** Focused executor/runner cleanup
+  and mapping regressions, startup-output leak proof, adjacent live-runtime/config,
+  strict/literal check, diff/secret scan and independent security re-review.
+
 ### `TST-11` — E2E-02 candidate-evidence screenshots show metadata only
 
 - **Evidence class:** independent exhaustive semantic review of all 13 named
