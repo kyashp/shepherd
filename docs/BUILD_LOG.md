@@ -3451,3 +3451,22 @@ Administration (write) for ruleset creation. CI-01 therefore remains open for:
 3. merge-group execution proof only if a merge queue is enabled.
 
 No repository rule was created or changed by the workflow or this evidence update.
+
+## 2026-08-30 — E2E-02 Worker candidate
+
+The Worker added a model/network-free real-browser hero journey on the audited
+deterministic verifier fixture. It exercised 13 material stages at `1280x800` and
+`1440x900`, from active Contracts through protected promotion and Project Group
+summaries, with backend API, Git, persisted-store and bounded verifier-ledger
+oracles. Focused Chromium passed twice (4/4 total), the full Chromium suite passed
+12/12, and harness unit coverage passed 7/7. All 26 ignored screenshots were
+visually inspected; document/body overflow, clipping and theme drift were absent.
+
+The journey also passed bearer-auth 401, keyboard/focus and evidence-tab controls,
+same-base/distinct-branch candidate identity, 11/11/11 verifier
+create/complete/remove operations, no-network/read-only verifier constraints,
+public DTO/DOM/store/log canary scans, canonical protected output, outside-write
+canary, reset restoration and exact port/process/container/root cleanup. It made
+zero live/model calls and did not change production code, UI or CSS. E2E-02 remains
+at 95% until independent Auditor review and hosted integration evidence; `GC-06`
+remains open because lifecycle summaries are truthfully Shepherd-authored.
