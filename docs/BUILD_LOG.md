@@ -52,6 +52,48 @@ npm run check
 This is implementation evidence only. Independent Auditor integration/review on
 `mock-main` remains the `I` gate, so confidence is scoped to 95%, not 100%.
 
+### TEST-TS independent integration audit
+
+The Auditor reviewed and integrated the candidate as `8995605`. The new config is
+strict, no-emit, and additive: the production server `tsconfig.json`, emitted files,
+web compiler, dependencies, runtime, API, and UI are unchanged. Source review found
+no `ts-nocheck`/`ts-ignore`, new broad exclusion, `skipLibCheck` weakening, blanket
+`any`, assertion removal, or matcher weakening. Runtime matcher objects are unchanged;
+the required fixture callback and owner identity complete existing production
+contracts, while the non-null assertions encode commit invariants already established
+earlier in the same tests.
+
+Independent candidate and integrated evidence:
+
+```sh
+npm run typecheck:tests -w @launchpad/server
+# passed on candidate and integrated implementation
+
+npm run typecheck -w @launchpad/server
+npm run typecheck -w @launchpad/web
+npm run build -w @launchpad/server
+npm run build -w @launchpad/web
+# both production typechecks and builds passed; web transformed 40 modules
+
+npm run test -w @launchpad/server -- --run src/app.test.ts \
+  src/shepherd/git-plane-promotion.integration.test.ts \
+  src/shepherd/service.container.test.ts src/shepherd/service.test.ts
+# 4 files passed; 73/73 tests passed
+
+npm run check
+# passed on candidate and integrated implementation: launcher 3/3; server 26
+# files and 563/563 tests passed with one unchanged opt-in live file/test skipped;
+# strict test-source and production typechecks plus web/server builds passed
+
+git diff --check
+# passed
+```
+
+The recorded RED categories match the exact corrected sites and TypeScript/Vitest
+contracts; the audit did not retain a weakening mutation merely to recreate them.
+`TEST-TS` is **AUDITED, scoped 100%**, with `T,C,I` passed 3/3. Hosted Node 22
+evidence is recorded after the final audit-documentation push.
+
 ## CI-01 required-check workflow candidate
 
 **Date:** 2026-08-29 (Asia/Singapore)

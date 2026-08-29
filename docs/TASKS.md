@@ -1,7 +1,7 @@
 # Shepherd Completion Task Ledger
 
 **Canonical implementation snapshot:** `mock-main` at
-`dc8755308dbbb8d0404a8b9aacb7ff3c393a49c0`
+`8995605bd122ba8c476a3f15caee36fb76dc0b0a`
 
 **Audited:** 2026-08-29, Asia/Singapore
 
@@ -138,7 +138,7 @@ without an open issue/PR are not active ownership claims.
 | `E2E-08` | 11.6.8, 12 | `BLOCKED` by harness | Kill/restart mid-Mission → reconnect/cursor reconciliation, interrupted visible, no false green/duplicates; `C,B,S,U,I`. | **50%**; 0/5; not audited |
 | `UI-GATE` | 0.4, 11.1–11.7 | `BLOCKED` by E2E rows | All six surfaces plus loading/empty/error/disabled/reconnect states at both viewports, screenshot corpus under `docs/ui-review/`, keyboard/focus/labels/contrast/long-ID/no-page-overflow checks. Preserve theme. `C,B,U,I`. | **25%**; 0/4; not audited |
 | `PERF-01` | 14 | `BLOCKED` by harness | Measure persisted event → visible `<=1.5s`, Plane creation, verification, candidate overlap, collision-to-promotion and total demo time; record method/sample/limits. `B,I`. | **10%**; 0/2; not audited |
-| `TEST-TS` | 16 Phase 9B | `IMPLEMENTED`; Auditor review pending | Separate strict no-emit server test-source config is enforced by root `typecheck`/`check`; production emit config is unchanged. RED: 14 errors across 4 test files (4 implicit callback types, 5 invalid Vitest matcher generics, 4 stale promotion fixtures, 1 stale verifier fixture), then 2 nullable fixture values exposed after matcher typing was restored. GREEN: test and production typechecks/build; affected suites 73/73; literal `npm run check` (launcher 3/3, server 563 passed + 1 opt-in skipped, web/server builds). `T,C` passed; `I` pending. | **95%**; 2/3; not yet audited |
+| `TEST-TS` | 16 Phase 9B | **AUDITED** at integrated implementation `8995605` | Separate strict no-emit server test-source config is enforced by root `typecheck`/`check`; production emit config is unchanged. RED evidence covers 14 errors across 4 test files (4 implicit callback types, 5 invalid Vitest matcher generics, 4 stale promotion fixtures, 1 stale verifier fixture), then 2 nullable fixture values exposed after matcher typing was restored. Auditor confirmed no suppression, broad exclusion, compiler weakening, blanket `any`, assertion weakening, product/UI change, or dependency churn. Candidate and integrated strict test-source checks passed; both production typechecks/builds passed; affected suites passed 73/73; literal candidate and integrated gates passed with launcher 3/3, server 563/563 and one unchanged opt-in live skip, plus both production builds. | **100% scoped**; `T,C,I` passed (3/3); audited |
 | `CI-01` | 0.1, 16, 17 | **AUDITED** at workflow `cda2446`; hosted run `33259565232` succeeded | `required-checks.yml` uses supported official checkout/setup-node actions, Node 22, lockfile-backed npm cache, `npm ci`, Docker availability, and literal `npm run check`; triggers every PR, pushes to `main`/`mock-main`, and merge-queue `checks_requested`. Token permission is only `contents: read`; checkout credentials are not persisted; no `.env`, secrets, artifacts, privileged actions, or live/model path is configured. Independent local validation passed Docker 29.7.2 and launcher 3/3 plus server 555/555 with one opt-in skip. Hosted Node 22.23.2/npm 10.9.8 and Docker client/server 28.0.4 passed locked install, launcher 3/3, server 551 passed/5 environment-gated skips, typechecks, 40-module web build and server build. Stable job check: `Node 22 / npm run check`. Administrator must require that check on protected `main`; this external rule change is not performed by agents. `C,I`. | **100% scoped**; `C,I` passed (2/2); audited |
 | `SEC-REVIEW` | 0.3, 13, 17 | `BLOCKED` by P0/E2E | Repository/store/prompt/API/DOM canary scan, five invariant mutation evidence, artifact/debug/bypass audit, then independent read-only security review and fixes. `C,S,I`. | **45%**; 0/3; not audited |
 | `STABILITY` | 16 Phase 9B | `BLOCKED` by all deterministic tests | Literal full suite passes five consecutive times; fix flakiness by cause, never sleeps/weakened assertions. `C,I`. | **0%**; 0/2; not audited |
@@ -157,7 +157,7 @@ without an open issue/PR are not active ownership claims.
 
 ## Count and current verdict
 
-- **45 tracked work items:** 4 audited, 4 externally held, and 37 other incomplete
+- **45 tracked work items:** 5 audited, 4 externally held, and 36 other incomplete
   items across P0/P1/P2.
 - **Next ready worker assignment:** `F-01/02` unless the integrator selects another
   non-overlapping ready row.
