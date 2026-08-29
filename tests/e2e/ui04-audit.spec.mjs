@@ -63,7 +63,13 @@ test("promotion surfaces distinguish candidate and final evidence", async ({ pag
   await expect(candidateTab).toHaveAttribute("aria-selected", "true");
   await expect(drawer.getByText(candidateMarker, { exact: true })).toBeVisible();
   await expect(drawer.getByText(promotionMarker, { exact: true })).toHaveCount(0);
+  await page.keyboard.press("End");
+  await expect(promotionTab).toBeFocused();
+  await expect(promotionTab).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("ArrowLeft");
+  await expect(candidateTab).toBeFocused();
   await page.keyboard.press("Space");
+  await expect(candidateTab).toHaveAttribute("aria-selected", "true");
   await page.keyboard.press("ArrowRight");
   await expect(promotionTab).toBeFocused();
   await expect(promotionTab).toHaveAttribute("aria-selected", "true");
