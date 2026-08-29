@@ -35,6 +35,16 @@ const repositoryTestRoot = fileURLToPath(
 );
 const cleanupRoots: string[] = [];
 
+/**
+ * Docker Desktop can step its wall clock backwards while these Git-heavy
+ * Missions run. Use the service's existing clock seam so test persistence
+ * remains deterministic and lifecycle timestamps never regress.
+ */
+function monotonicTestClock(): () => Date {
+  let nextTimestamp = Date.now();
+  return () => new Date(nextTimestamp++);
+}
+
 /** Distinct prefix from service.test.ts: both files run in parallel under one root. */
 async function makeCaseRoot(): Promise<string> {
   await mkdir(repositoryTestRoot, { recursive: true });
@@ -139,6 +149,7 @@ async function makeService(options: {
     agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
     verifier: new HostTrustedFixtureVerifier(),
     sensitiveValues,
+    now: monotonicTestClock(),
     ...(reviewer ? { reviewer } : {}),
     ...(options.modelReviewBounds ? { modelReviewBounds: options.modelReviewBounds } : {}),
   });
