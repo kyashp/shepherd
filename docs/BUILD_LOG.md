@@ -7,6 +7,52 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## TST-04 exact verification-snapshot quiescence candidate
+
+**Date:** 2026-08-30 (Asia/Singapore)
+**Branch/base:** `fix/mock-main` / `4f7da60a4b45415fb6283eaa3a60360102875856`
+
+The preserved RED is the full-suite `afterEach` failure recorded below: after all
+typechecks, `makeDeletable -> readdir` received `ENOENT` beneath a sibling
+`.trusted-verification/verify-*/src`, while the exact isolated behavioral row passed.
+The disappearing owned path and order dependence implicated teardown beginning
+before a sibling `withVerificationSnapshot` finalizer finished.
+
+The correction is test-only. `SnapshotTrackingContractThrowingVerifier` records the
+blocked backend request's real `planePath` and uses the existing two-arrival barrier,
+so the selected frontend infrastructure failure is not released before the backend
+snapshot is observable. The Mission promise gets an immediate success/rejection
+observer. After the typed rejection, the test asserts the captured absolute root is
+inside the sentinel-owned case root, its parent is exactly `.trusted-verification`,
+its basename matches `verify-<uuid>`, and that exact directory still exists. This is
+the controlled proof that fail-fast rejection precedes sibling snapshot cleanup.
+
+Before releasing the backend, the test arms `fs.promises.watch` on the exact root's
+parent. Its quiescence signal requires an event for the captured basename followed
+by `lstat(capturedRoot)` returning `ENOENT`, bounded by the existing five-second
+`settleWithin` helper. A `finally` block idempotently releases the Contract pair and
+sibling and joins the Mission, sibling return, and removal outcome. The test cannot
+finish into `afterEach` while that background snapshot cleanup remains active.
+Existing typed terminalization, bounded diagnostics, ownership release,
+no-collision/candidate/promotion and public/store assertions remain unchanged.
+
+Observed GREEN evidence:
+
+- focused causal row: 1/1 passed initially, 560ms test time;
+- 20 independent exact-row invocations: 20/20 passed in 28s;
+- service/container-verifier slice: 43/43 passed in 33.22s;
+- strict server test-source typecheck: passed;
+- literal `npm run check` passed twice under normal contention, 39s/39s each:
+  production and strict test typechecks, launcher 3/3, server 563/563 with one
+  opt-in live skip, and both production builds passed;
+- `git diff --check`: passed.
+
+No `ENOENT` was swallowed in `makeDeletable`; no sleep, retry, timeout increase,
+cleanup-sentinel/path/symlink weakening, product/service/verifier/UI edit, or
+live/model call occurred. `TST-04` is a **100% scoped candidate** with `T,A,C`
+passed; integrated Auditor/hosted `I` remains pending. E2E-01 stays paused only on
+that deterministic baseline audit.
+
 ## ST-02 main-to-mock integration audit
 
 **Date:** 2026-08-30 (Asia/Singapore)

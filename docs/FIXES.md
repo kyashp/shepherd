@@ -60,7 +60,22 @@ that limitation is explicit.
   cleanup completes; corrected original row passes repeatedly; entire
   `service.test.ts`, strict test-source typecheck, literal `npm run check`, and
   independent integrated/hosted gates pass.
-- **Owner/status:** `REPRODUCED`; Fixer; **80% diagnosis**, `T,A,C,I` pending 0/4.
+- **Observed correction:** test fixture only. A controlled verifier records the
+  blocked backend `VerificationRequest.planePath` and uses the existing two-arrival
+  coordination so the frontend typed failure cannot precede that capture. After
+  the Mission rejects, the test proves the exact owned
+  `.trusted-verification/verify-<uuid>` root still exists. It then arms
+  `fs.promises.watch` on that root's parent, releases and joins the sibling, and
+  requires an event for the exact basename followed by `lstat -> ENOENT` through
+  the existing five-second quiescence helper. `finally` joins the Mission, sibling,
+  and removal outcome before teardown. Exact row passed 20/20 in 28s; full
+  service/container-verifier slice passed 43/43 in 33.22s; strict test typecheck
+  passed; and literal `npm run check` passed twice in 39s/39s with launcher 3/3,
+  server 563/563 plus one opt-in live skip, all typechecks and both builds. The
+  security-sensitive cleanup walker and production code are unchanged.
+- **Owner/status:** Fixer / `RESOLVED — PENDING INTEGRATED/HOSTED AUDIT`; **100%
+  scoped candidate**, `T,A,C` passed 3/4 and `I` remains pending. E2E-01 remains
+  paused until that deterministic baseline is audited.
 
 ### `TST-02` — deterministic recovery test becomes invalid after its fixed clock
 

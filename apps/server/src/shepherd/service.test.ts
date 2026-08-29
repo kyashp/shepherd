@@ -11,6 +11,7 @@ import {
   rm,
   stat,
   symlink,
+  watch,
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
@@ -535,26 +536,6 @@ class PromotionThrowingVerifier extends HostTrustedFixtureVerifier {
   }
 }
 
-class ContractThrowingVerifier extends HostTrustedFixtureVerifier {
-  constructor(
-    private readonly canary: string,
-    private readonly privatePath: string,
-  ) {
-    super();
-  }
-
-  override async verify(
-    request: VerificationRequest,
-  ): Promise<VerificationEvidence> {
-    if (request.targetType === "contract") {
-      throw new Error(
-        `Synthetic Contract verifier failure ${this.canary} at ${this.privatePath}`,
-      );
-    }
-    return await super.verify(request);
-  }
-}
-
 function returnedContractInfrastructureEvidence(
   evidence: VerificationEvidence,
   canary: string,
@@ -644,6 +625,60 @@ class TwoArrivalBarrier {
 
   release(): void {
     this.releaseArrivals();
+  }
+}
+
+class SnapshotTrackingContractThrowingVerifier extends HostTrustedFixtureVerifier {
+  readonly siblingSnapshotCaptured: Promise<string>;
+  private markSiblingSnapshotCaptured!: (snapshotPath: string) => void;
+  readonly siblingReturned: Promise<void>;
+  private markSiblingReturned!: () => void;
+  private readonly siblingReleased: Promise<void>;
+  private releaseSiblingVerification!: () => void;
+  private readonly contractPair = new TwoArrivalBarrier();
+
+  constructor(
+    private readonly canary: string,
+    private readonly privatePath: string,
+  ) {
+    super();
+    this.siblingSnapshotCaptured = new Promise<string>((resolve) => {
+      this.markSiblingSnapshotCaptured = resolve;
+    });
+    this.siblingReturned = new Promise<void>((resolve) => {
+      this.markSiblingReturned = resolve;
+    });
+    this.siblingReleased = new Promise<void>((resolve) => {
+      this.releaseSiblingVerification = resolve;
+    });
+  }
+
+  override async verify(
+    request: VerificationRequest,
+  ): Promise<VerificationEvidence> {
+    if (request.targetType !== "contract") {
+      return await super.verify(request);
+    }
+    if (!request.targetId.includes("front")) {
+      this.markSiblingSnapshotCaptured(request.planePath);
+    }
+    await this.contractPair.arrive();
+    if (request.targetId.includes("front")) {
+      throw new Error(
+        `Synthetic Contract verifier failure ${this.canary} at ${this.privatePath}`,
+      );
+    }
+    await this.siblingReleased;
+    try {
+      return await super.verify(request);
+    } finally {
+      this.markSiblingReturned();
+    }
+  }
+
+  releaseSibling(): void {
+    this.contractPair.release();
+    this.releaseSiblingVerification();
   }
 }
 
@@ -839,6 +874,26 @@ async function settleWithin<T>(promise: Promise<T>, timeoutMs = 5_000): Promise<
     ]);
   } finally {
     if (timeout) clearTimeout(timeout);
+  }
+}
+
+async function waitForOwnedPathRemoval(targetPath: string): Promise<void> {
+  const parent = path.dirname(targetPath);
+  const targetName = path.basename(targetPath);
+  const watcher = watch(parent);
+  try {
+    for await (const event of watcher) {
+      if (event.filename !== targetName) continue;
+      try {
+        await lstat(targetPath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+        throw error;
+      }
+    }
+    throw new Error("Owned verification snapshot watcher ended before cleanup");
+  } finally {
+    await watcher.return?.();
   }
 }
 
@@ -1552,20 +1607,59 @@ describe("Shepherd deterministic walking skeleton", () => {
     const storePath = path.join(caseRoot, "state.json");
     const store = new JsonStore(storePath, { sensitiveValues: [canary] });
     await store.initialize();
+    const verifier = new SnapshotTrackingContractThrowingVerifier(
+      canary,
+      privatePath,
+    );
     const service = new ShepherdService({
       store,
       managedRoot: path.join(caseRoot, "managed"),
       agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
-      verifier: new ContractThrowingVerifier(canary, privatePath),
+      verifier,
       sensitiveValues: [canary],
     });
 
+    const run = service.runDeterministicDemo();
+    const runOutcome = run.then(
+      (value) => ({ status: "fulfilled" as const, value }),
+      (reason: unknown) => ({ status: "rejected" as const, reason }),
+    );
+    let siblingSnapshotRoot = "";
+    let snapshotRemoved: Promise<void> | undefined;
     let thrownMessage = "";
     try {
-      await service.runDeterministicDemo();
-    } catch (error) {
-      thrownMessage = error instanceof Error ? error.message : String(error);
+      siblingSnapshotRoot = path.resolve(await verifier.siblingSnapshotCaptured);
+      expect(path.basename(siblingSnapshotRoot)).toMatch(/^verify-/u);
+      expect(path.basename(path.dirname(siblingSnapshotRoot))).toBe(
+        ".trusted-verification",
+      );
+      expect(siblingSnapshotRoot.startsWith(path.resolve(caseRoot) + path.sep)).toBe(
+        true,
+      );
+      const outcome = await runOutcome;
+      expect(outcome.status).toBe("rejected");
+      if (outcome.status !== "rejected") {
+        throw new Error("Contract verifier infrastructure Mission unexpectedly fulfilled");
+      }
+      expect(outcome.reason).toBeInstanceOf(Error);
+      thrownMessage = (outcome.reason as Error).message;
+      await expect(access(siblingSnapshotRoot)).resolves.toBeUndefined();
+
+      snapshotRemoved = settleWithin(
+        waitForOwnedPathRemoval(siblingSnapshotRoot),
+      );
+      verifier.releaseSibling();
+      await verifier.siblingReturned;
+      await snapshotRemoved;
+    } finally {
+      verifier.releaseSibling();
+      await Promise.allSettled([
+        run,
+        verifier.siblingReturned,
+        ...(snapshotRemoved ? [snapshotRemoved] : []),
+      ]);
     }
+    await expect(access(siblingSnapshotRoot)).rejects.toMatchObject({ code: "ENOENT" });
 
     const mission = service.state().missions.at(-1);
     const detail = service.missionDetail(mission?.id ?? "missing");
