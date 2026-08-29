@@ -422,6 +422,27 @@ describe("strict result-manifest ingestion", () => {
     });
   });
 
+  it("rejects a claim scope that was not predeclared by the Contract", () => {
+    const result = ingestContractResultManifest(
+      manifest(),
+      context({ declaredSemanticScopes: ["authentication"] }),
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      failureCode: "invalid_semantic_evidence",
+      issues: expect.arrayContaining([
+        expect.objectContaining({ code: "undeclared_claim_scope" }),
+      ]),
+      claims: [
+        expect.objectContaining({
+          scope: "web.client",
+          valid: false,
+          rejectionReason: expect.stringContaining("undeclared_claim_scope"),
+        }),
+      ],
+    });
+  });
+
   it("rejects duplicate canonical claims even when spelling differs", () => {
     const baseClaim = manifest().semanticClaims[0]!;
     const result = ingestContractResultManifest(

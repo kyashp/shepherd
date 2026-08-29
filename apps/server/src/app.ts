@@ -28,7 +28,12 @@ export type ShepherdHttpService = Pick<
 >;
 
 type PublicShepherdProject = Omit<ShepherdProject, "repositoryPath">;
-type PublicPlane = Omit<Plane, "worktreePath">;
+type PublicPlane = Omit<
+  Plane,
+  "worktreePath" | "runtimeSessionFingerprint"
+> & {
+  runtimeSessionEstablished: boolean;
+};
 export type PublicAgent = Pick<
   Agent,
   | "id"
@@ -66,9 +71,12 @@ const withoutProjectPath = (project: ShepherdProject): PublicShepherdProject => 
 };
 
 const withoutPlanePath = (plane: Plane): PublicPlane => {
-  const { worktreePath, ...publicPlane } = plane;
+  const { worktreePath, runtimeSessionFingerprint, ...publicPlane } = plane;
   void worktreePath;
-  return publicPlane;
+  return {
+    ...publicPlane,
+    runtimeSessionEstablished: Boolean(runtimeSessionFingerprint),
+  };
 };
 
 export const toPublicAgent = (agent: Agent): PublicAgent => {
@@ -296,6 +304,7 @@ export async function createApp(
       return reply.code(202).send({
         status: "accepted",
         missionId: accepted.missionId,
+        executionMode: config.shepherdExecutionMode,
       });
     });
   }

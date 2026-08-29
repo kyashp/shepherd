@@ -45,6 +45,7 @@ export interface SystemInfo {
   codexAvailable: boolean;
   codexSandboxMode: string;
   runtimeProvider: "local-process" | "container";
+  shepherdExecutionMode: "live" | "deterministic";
   containerEngine: string | null;
   runtime: string;
 }

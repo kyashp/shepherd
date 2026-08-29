@@ -755,6 +755,55 @@ describe("ArkModelReviewer bounded response parsing", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  it("rejects a zero-byte stream chunk instead of allowing an unbounded no-progress loop", async () => {
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(new Uint8Array(0));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const fetchImpl = makeFetch(
+      new Response(stream, {
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const result = await makeReviewer(fetchImpl, { timeoutMs: 1 }).review(baseInput());
+    expectDegraded(result, "invalid_response", false);
+    await vi.waitFor(() => expect(cancelled).toBe(true));
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("contains a hostile stream cancellation rejection", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array([0xc3, 0x28]));
+        },
+        cancel() {
+          return Promise.reject(new Error("hostile cancellation rejection"));
+        },
+      });
+      const fetchImpl = makeFetch(
+        new Response(stream, {
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      const result = await makeReviewer(fetchImpl).review(baseInput());
+      expectDegraded(result, "invalid_response", false);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(unhandled).toEqual([]);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
   it("accepts a valid response stream at exactly 128 KiB", async () => {
     const envelope = providerEnvelope();
     const serialize = (padding: string) => JSON.stringify({ ...envelope, padding });

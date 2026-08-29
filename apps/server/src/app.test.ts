@@ -145,6 +145,7 @@ const missionDetail: ShepherdMissionDetail = {
       headCommit: "b".repeat(40),
       purpose: "Frontend contract",
       executionIdentity: "execution-1",
+      runtimeSessionFingerprint: "a".repeat(64),
       authority: { readable: ["**"], writable: ["src/frontend/**"], forbidden: [] },
       state: "running",
       changedFiles: ["src/frontend/auth.json"],
@@ -308,6 +309,8 @@ describe("HTTP boundary", () => {
     expect(state.json().state.nextEventSequence).toBe(1);
     expect(state.json().state.projects[0].repositoryPath).toBeUndefined();
     expect(state.json().state.planes[0].worktreePath).toBeUndefined();
+    expect(state.json().state.planes[0].runtimeSessionFingerprint).toBeUndefined();
+    expect(state.json().state.planes[0].runtimeSessionEstablished).toBe(true);
     expect(state.body).not.toContain(managedRoot);
 
     const mission = await app.inject({
@@ -318,6 +321,8 @@ describe("HTTP boundary", () => {
     expect(mission.json().mission.id).toBe(missionId);
     expect(mission.json().project.repositoryPath).toBeUndefined();
     expect(mission.json().planes[0].worktreePath).toBeUndefined();
+    expect(mission.json().planes[0].runtimeSessionFingerprint).toBeUndefined();
+    expect(mission.json().planes[0].runtimeSessionEstablished).toBe(true);
     expect(mission.json().agents[0].workspacePath).toBeUndefined();
     expect(mission.body).not.toContain(managedRoot);
 
@@ -385,7 +390,11 @@ describe("HTTP boundary", () => {
       url: "/api/shepherd/demo/missions",
     });
     expect(accepted.statusCode).toBe(202);
-    expect(accepted.json()).toEqual({ status: "accepted", missionId });
+    expect(accepted.json()).toEqual({
+      status: "accepted",
+      missionId,
+      executionMode: "deterministic",
+    });
     expect(startDeterministicDemo).toHaveBeenCalledWith({});
     await enabledApp.close();
   });

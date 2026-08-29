@@ -26,6 +26,7 @@ const contract: ContractPromptInputContract = {
     { path: "src/frontend/auth.json", description: "Auth config", required: true },
   ],
   declaredClaimKeys: ["auth.transport"],
+  semanticScopes: ["authentication"],
   resultManifestPath: ".shepherd/result.json",
 };
 
@@ -40,6 +41,7 @@ type ContractPromptInputContract = Pick<
   | "authority"
   | "expectedArtifacts"
   | "declaredClaimKeys"
+  | "semanticScopes"
   | "resultManifestPath"
 >;
 
@@ -81,6 +83,7 @@ describe("Shepherd execution prompt envelopes", () => {
         authority,
         expectedArtifacts: contract.expectedArtifacts,
         declaredCanonicalClaimKeys: ["auth.transport"],
+        declaredCanonicalSemanticScopes: ["authentication"],
         resultManifestPath: ".shepherd/result.json",
       },
     });
@@ -162,6 +165,12 @@ describe("Shepherd execution prompt envelopes", () => {
     );
     expect(envelope.executionRules.join(" ")).toContain(
       "not an Agent manifest",
+    );
+    expect(envelope.executionRules.join(" ")).toContain(
+      "exactly as candidate.targetValue",
+    );
+    expect(envelope.executionRules.join(" ")).toContain(
+      "Do not substitute another value",
     );
     expect(envelope.executionRules.join(" ")).not.toContain(
       "only permitted .shepherd/** write",

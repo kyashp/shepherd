@@ -742,6 +742,7 @@ export class PlaneManager {
         headCommit,
         purpose: input.purpose,
         executionIdentity: input.executionIdentity,
+        runtimeSessionFingerprint: null,
         authority: {
           readable: [...input.authority.readable],
           writable: [...input.authority.writable],

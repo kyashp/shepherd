@@ -564,6 +564,7 @@ async function readBoundedBody(
       if (next.done) break;
       const chunk = next.value;
       if (!(chunk instanceof Uint8Array)) throw new InvalidProviderResponse();
+      if (chunk.byteLength === 0) throw new InvalidProviderResponse();
       totalBytes += chunk.byteLength;
       if (totalBytes > MODEL_REVIEW_MAX_RESPONSE_BYTES) {
         try {
@@ -587,7 +588,7 @@ async function readBoundedBody(
     return output;
   } catch (error) {
     try {
-      void reader.cancel();
+      void reader.cancel().catch(() => undefined);
     } catch {
       // Best effort only.
     }

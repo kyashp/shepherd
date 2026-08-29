@@ -117,6 +117,7 @@ export type ManifestIssueCode =
   | "invalid_claim"
   | "duplicate_claim"
   | "undeclared_claim_key"
+  | "undeclared_claim_scope"
   | "invalid_evidence_path"
   | "missing_evidence"
   | "irrelevant_evidence"
@@ -132,6 +133,8 @@ export interface ManifestIngestionContext {
   expectedContractId: string;
   missionId: string;
   declaredClaimKeys: readonly string[];
+  /** When supplied, claim scopes must match the Contract's canonical semantic scopes. */
+  declaredSemanticScopes?: readonly string[];
   /** Concrete repo-relative paths known to exist in the Plane. */
   existingPaths: readonly string[];
   /** Concrete repo-relative paths from the trusted Git diff. */
@@ -355,6 +358,11 @@ export function ingestContractResultManifest(
   const declaredKeys = new Set(
     context.declaredClaimKeys.map(normalizeClaimKey).filter((key) => key.length > 0),
   );
+  const declaredScopes = new Set(
+    (context.declaredSemanticScopes ?? [])
+      .map(normalizeClaimScope)
+      .filter((scope) => scope.length > 0),
+  );
   const seenClaims = new Set<string>();
   const presentDeclaredKeys = new Set<string>();
   const claims: SemanticClaim[] = parsed.data.semanticClaims.map((claim, index) => {
@@ -390,6 +398,15 @@ export function ingestContractResultManifest(
       claimIssues.push("undeclared_claim_key");
     } else {
       presentDeclaredKeys.add(key);
+    }
+
+    if (declaredScopes.size > 0 && !declaredScopes.has(scope)) {
+      issues.push({
+        code: "undeclared_claim_scope",
+        path: `$.semanticClaims[${index}].scope`,
+        message: "Claim scope was not predeclared by the execution contract",
+      });
+      claimIssues.push("undeclared_claim_scope");
     }
 
     const evidence = claim.evidence.flatMap((reference, evidenceIndex) => {

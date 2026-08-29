@@ -160,15 +160,27 @@ class HostTrustedFixtureVerifier implements ShepherdIndependentVerifier {
 }
 
 class ObservedConcurrentExecutor implements ShepherdExecutor {
+  readonly kind = "deterministic_fixture" as const;
   private readonly inner = new DeterministicFixtureExecutor();
+  private readonly firstPairArrived: Promise<void>;
+  private releaseFirstPair!: () => void;
+  private arrivals = 0;
   active = 0;
   maximumActive = 0;
 
+  constructor() {
+    this.firstPairArrived = new Promise<void>((resolve) => {
+      this.releaseFirstPair = resolve;
+    });
+  }
+
   async run(request: ShepherdExecutionRequest): Promise<ShepherdExecutionResult> {
     this.active += 1;
+    this.arrivals += 1;
     this.maximumActive = Math.max(this.maximumActive, this.active);
+    if (this.arrivals === 2) this.releaseFirstPair();
     try {
-      await new Promise<void>((resolve) => setTimeout(resolve, 15));
+      await this.firstPairArrived;
       return await this.inner.run(request);
     } finally {
       this.active -= 1;
@@ -180,7 +192,47 @@ class ObservedConcurrentExecutor implements ShepherdExecutor {
   }
 }
 
+class SessionTrackingExecutor implements ShepherdExecutor {
+  readonly kind = "codex_ephemeral" as const;
+  private readonly inner = new DeterministicFixtureExecutor();
+  readonly requests: ShepherdExecutionRequest[] = [];
+
+  async run(request: ShepherdExecutionRequest): Promise<ShepherdExecutionResult> {
+    this.requests.push(structuredClone(request));
+    const result = await this.inner.run(request);
+    return {
+      ...result,
+      runtimeSessionId: `private-thread-${request.executionId}`,
+      usage: { inputTokens: 10, outputTokens: 5 },
+    };
+  }
+
+  async cancel(executionId: string): Promise<boolean> {
+    return await this.inner.cancel(executionId);
+  }
+}
+
+class FailingPreflightExecutor implements ShepherdExecutor {
+  readonly kind = "codex_ephemeral" as const;
+  private readonly inner = new DeterministicFixtureExecutor();
+  preflightCalls = 0;
+
+  async preflight(): Promise<void> {
+    this.preflightCalls += 1;
+    throw new Error("synthetic Runtime preflight denial");
+  }
+
+  async run(request: ShepherdExecutionRequest): Promise<ShepherdExecutionResult> {
+    return await this.inner.run(request);
+  }
+
+  async cancel(executionId: string): Promise<boolean> {
+    return await this.inner.cancel(executionId);
+  }
+}
+
 class UnauthorizedContractExecutor implements ShepherdExecutor {
+  readonly kind = "deterministic_fixture" as const;
   private readonly inner = new DeterministicFixtureExecutor();
 
   async run(request: ShepherdExecutionRequest): Promise<ShepherdExecutionResult> {
@@ -201,6 +253,7 @@ class UnauthorizedContractExecutor implements ShepherdExecutor {
 }
 
 class UnauthorizedCandidateExecutor implements ShepherdExecutor {
+  readonly kind = "deterministic_fixture" as const;
   private readonly inner = new DeterministicFixtureExecutor();
 
   async run(request: ShepherdExecutionRequest): Promise<ShepherdExecutionResult> {
@@ -221,6 +274,7 @@ class UnauthorizedCandidateExecutor implements ShepherdExecutor {
 }
 
 class ForgedSemanticClaimExecutor implements ShepherdExecutor {
+  readonly kind = "deterministic_fixture" as const;
   private readonly inner = new DeterministicFixtureExecutor();
 
   async run(request: ShepherdExecutionRequest): Promise<ShepherdExecutionResult> {
@@ -247,7 +301,47 @@ class ForgedSemanticClaimExecutor implements ShepherdExecutor {
   }
 }
 
+class TargetSubstitutionExecutor implements ShepherdExecutor {
+  readonly kind = "deterministic_fixture" as const;
+  private readonly inner = new DeterministicFixtureExecutor();
+
+  async run(request: ShepherdExecutionRequest): Promise<ShepherdExecutionResult> {
+    const result = await this.inner.run(request);
+    if (
+      request.operation.kind === "resolution_candidate" &&
+      request.operation.targetTransport === BEARER_TRANSPORT
+    ) {
+      const substituted = JSON.stringify(
+        {
+          transport: COOKIE_TRANSPORT,
+          clientReadableCredential: false,
+        },
+        null,
+        2,
+      ) + "\n";
+      await Promise.all([
+        writeFile(
+          path.join(request.workspacePath, "src/frontend/auth.json"),
+          substituted,
+          "utf8",
+        ),
+        writeFile(
+          path.join(request.workspacePath, "src/backend/auth.json"),
+          substituted,
+          "utf8",
+        ),
+      ]);
+    }
+    return result;
+  }
+
+  async cancel(executionId: string): Promise<boolean> {
+    return await this.inner.cancel(executionId);
+  }
+}
+
 class CanaryFailureExecutor implements ShepherdExecutor {
+  readonly kind = "deterministic_fixture" as const;
   constructor(
     private readonly canary: string,
     private readonly plantedPath: string,
@@ -307,6 +401,29 @@ async function gitOutput(cwd: string, args: string[]): Promise<string> {
 }
 
 describe("Shepherd deterministic walking skeleton", () => {
+  it("fails startup closed when the live Runtime preflight is denied", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const executor = new FailingPreflightExecutor();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      executor,
+    });
+
+    await expect(service.initialize()).rejects.toThrow(
+      "synthetic Runtime preflight denial",
+    );
+    await expect(service.initialize()).rejects.toThrow(
+      "synthetic Runtime preflight denial",
+    );
+    expect(executor.preflightCalls).toBe(1);
+    expect(store.snapshot().shepherd.projects).toEqual([]);
+  });
+
   it("runs in the background through real no-conflict Planes and promotes the evidence-derived winner", async () => {
     const caseRoot = await makeCaseRoot();
     const store = new JsonStore(path.join(caseRoot, "state.json"));
@@ -471,6 +588,71 @@ describe("Shepherd deterministic walking skeleton", () => {
         }),
       }),
     );
+  }, 30_000);
+
+  it("builds bounded prompts and persists only unique live-session fingerprints", async () => {
+    const caseRoot = await makeCaseRoot();
+    const databasePath = path.join(caseRoot, "state.json");
+    const store = new JsonStore(databasePath);
+    await store.initialize();
+    const executor = new SessionTrackingExecutor();
+    const canary = "ARK_PROMPT_CANARY_91c0f4";
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      executor,
+      sensitiveValues: [canary],
+    });
+
+    const result = await service.runDeterministicDemo();
+    const detail = service.missionDetail(result.mission.id);
+    if (!detail) throw new Error("Live-session Mission detail was not persisted");
+
+    expect(executor.requests).toHaveLength(4);
+    expect(new Set(executor.requests.map((request) => request.executionId)).size).toBe(4);
+    expect(
+      executor.requests.every(
+        (request) =>
+          request.prompt?.startsWith("SHEPHERD_EXECUTION_ENVELOPE_V1\n") &&
+          !request.prompt.includes(canary),
+      ),
+    ).toBe(true);
+    expect(
+      executor.requests.filter((request) => request.operation.kind !== "resolution_candidate")
+        .every((request) => request.prompt?.includes('"required": true')),
+    ).toBe(true);
+    expect(
+      executor.requests.filter((request) => request.operation.kind === "resolution_candidate")
+        .every(
+          (request) =>
+            request.prompt?.includes('"forbidden": true') &&
+            !request.prompt.includes("ARK_PROMPT_CANARY"),
+        ),
+    ).toBe(true);
+
+    const executedPlanes = detail.planes.filter(
+      (plane) => plane.kind === "contract" || plane.kind === "resolution",
+    );
+    const fingerprints = executedPlanes.map(
+      (plane) => plane.runtimeSessionFingerprint,
+    );
+    expect(fingerprints).toHaveLength(4);
+    expect(fingerprints.every((value) => /^[a-f0-9]{64}$/u.test(value ?? "")))
+      .toBe(true);
+    expect(new Set(fingerprints).size).toBe(4);
+    expect(
+      detail.planes.find((plane) => plane.kind === "integration")
+        ?.runtimeSessionFingerprint,
+    ).toBeNull();
+
+    const persisted = await readFile(databasePath, "utf8");
+    for (const request of executor.requests) {
+      expect(persisted).not.toContain(`private-thread-${request.executionId}`);
+      expect(persisted).not.toContain(request.prompt ?? "missing-prompt");
+    }
+    expect(persisted).not.toContain(canary);
   }, 30_000);
 
   it("flips the selected strategy when the trusted project invariant flips", async () => {
@@ -750,6 +932,45 @@ describe("Shepherd deterministic walking skeleton", () => {
       false,
     );
     expect(detail?.project.protectedHeadCommit).toBe(mission?.baseCommit);
+  });
+
+  it("rejects a candidate that substitutes a different target even when every independent check passes", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      executor: new TargetSubstitutionExecutor(),
+    });
+
+    const result = await service.runDeterministicDemo();
+    expect(result.mission.state).toBe("completed");
+    const detail = service.missionDetail(result.mission.id);
+    const substituted = detail?.candidates.find(
+      (candidate) => candidate.targetValue === BEARER_TRANSPORT,
+    );
+    expect(substituted).toMatchObject({
+      executionState: "failed",
+      selectionState: "rejected",
+      failure: {
+        code: "invalid_semantic_evidence",
+        stage: "candidate_target_corroboration",
+      },
+      verificationEvidence: { passed: true },
+    });
+    expect(
+      detail?.events.some(
+        (event) =>
+          event.type === "candidate_failed" &&
+          event.candidateId === substituted?.id &&
+          event.details?.targetCorroborated === false,
+      ),
+    ).toBe(true);
+    expect(result.selectedCandidate.targetValue).toBe(COOKIE_TRANSPORT);
+    expect(detail?.mission.attentionReason).toBeNull();
   });
 
   it("redacts planted secrets and absolute paths from every persisted failure surface", async () => {

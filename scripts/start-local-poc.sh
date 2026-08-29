@@ -10,6 +10,7 @@ runtime_apt_mirror="${CONTAINER_APT_MIRROR:-}"
 runtime_apt_security_mirror="${CONTAINER_APT_SECURITY_MIRROR:-}"
 runtime_apt_packages="${CONTAINER_RUNTIME_APT_PACKAGES:-ca-certificates git ripgrep}"
 codex_sandbox_mode="${CODEX_SANDBOX_MODE:-workspace-write}"
+shepherd_execution_mode="${SHEPHERD_EXECUTION_MODE:-auto}"
 
 log() {
   printf '[local-poc] %s\n' "$*" >&2
@@ -136,13 +137,35 @@ if ! "$engine" run --rm \
   exit 2
 fi
 
+if [[ "$shepherd_execution_mode" != "deterministic" && "$codex_sandbox_mode" != "workspace-write" ]]; then
+  log "Live/auto Shepherd execution requires CODEX_SANDBOX_MODE=workspace-write."
+  exit 2
+fi
+
 if [[ "$codex_sandbox_mode" == "workspace-write" ]] \
-  && ! "$engine" run --rm "$runtime_image" \
-    codex sandbox linux --full-auto -- true >/dev/null 2>&1; then
-  log "Codex Landlock is unavailable in this Linux Runtime."
-  log "Falling back to danger-full-access inside the disposable container boundary."
-  log "Do not mount unrelated secrets or host directories into the Agent Runtime."
-  codex_sandbox_mode=danger-full-access
+  && ! "$engine" run --rm \
+    "${preflight_user_args[@]}" \
+    --read-only \
+    --network none \
+    --security-opt no-new-privileges \
+    --cap-drop ALL \
+    --cpus 1 \
+    --memory 512m \
+    --pids-limit 64 \
+    --mount "type=bind,src=$AGENT_WORKSPACE_ROOT,dst=/workspace" \
+    --mount "type=bind,src=$CODEX_HOME,dst=/codex-home" \
+    --tmpfs /tmp:rw,nosuid,nodev,mode=1777,size=64m \
+    --workdir /workspace \
+    --env HOME=/tmp \
+    --env TMPDIR=/tmp \
+    --env CODEX_HOME=/codex-home \
+    "$runtime_image" \
+    codex sandbox linux --full-auto -- sh -c \
+      'touch .launchpad-landlock-write-test && rm .launchpad-landlock-write-test && ! touch /etc/.launchpad-landlock-escape-test' \
+      >/dev/null 2>&1; then
+  log "Codex workspace-write Landlock is unavailable in the hardened non-root Runtime."
+  log "Shepherd will not fall back to danger-full-access."
+  exit 2
 fi
 
 export NODE_ENV=production
