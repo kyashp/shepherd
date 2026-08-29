@@ -1,10 +1,15 @@
 import { execFile } from "node:child_process";
 import {
   access,
+  chmod,
+  lstat,
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
+  realpath,
   rm,
+  stat,
   symlink,
   writeFile,
 } from "node:fs/promises";
@@ -41,18 +46,111 @@ const repositoryTestRoot = fileURLToPath(
   new URL("../../../../.tmp/shepherd-tests/", import.meta.url),
 );
 const cleanupRoots: string[] = [];
+const backgroundTestMissions: Array<{
+  service: ShepherdService;
+  missionId: string;
+}> = [];
+const serviceCaseSentinel = ".service-test-case";
+const expectedServiceCaseSentinel = "shepherd service test fixture\n";
 
 async function makeCaseRoot(): Promise<string> {
   await mkdir(repositoryTestRoot, { recursive: true });
   const root = await mkdtemp(path.join(repositoryTestRoot, "service-"));
+  await writeFile(path.join(root, serviceCaseSentinel), expectedServiceCaseSentinel, {
+    encoding: "utf8",
+    mode: 0o600,
+  });
   cleanupRoots.push(root);
   return root;
 }
 
+async function removeServiceCaseRoot(root: string): Promise<void> {
+  let rootStat: Awaited<ReturnType<typeof lstat>>;
+  try {
+    rootStat = await lstat(root);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
+    throw new Error("Service test cleanup target must be a real directory");
+  }
+  const canonicalTestRoot = await realpath(repositoryTestRoot);
+  const canonicalRoot = await realpath(root);
+  if (
+    path.dirname(canonicalRoot) !== canonicalTestRoot ||
+    !path.basename(canonicalRoot).startsWith("service-")
+  ) {
+    throw new Error("Service test cleanup escaped its allocated fixture root");
+  }
+  const sentinelPath = path.join(canonicalRoot, serviceCaseSentinel);
+  const sentinelStat = await lstat(sentinelPath);
+  if (sentinelStat.isSymbolicLink() || !sentinelStat.isFile()) {
+    throw new Error("Service test cleanup sentinel is not a regular file");
+  }
+  if ((await readFile(sentinelPath, "utf8")) !== expectedServiceCaseSentinel) {
+    throw new Error("Service test cleanup sentinel mismatch");
+  }
+
+  const makeDeletable = async (directory: string): Promise<void> => {
+    await chmod(directory, 0o700);
+    for (const name of await readdir(directory)) {
+      const entry = path.join(directory, name);
+      let entryStat: Awaited<ReturnType<typeof lstat>>;
+      try {
+        entryStat = await lstat(entry);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw error;
+      }
+      if (entryStat.isDirectory() && !entryStat.isSymbolicLink()) {
+        const canonicalEntry = await realpath(entry);
+        if (
+          canonicalEntry !== entry ||
+          !canonicalEntry.startsWith(canonicalRoot + path.sep)
+        ) {
+          throw new Error("Service test cleanup encountered an escaping directory");
+        }
+        await makeDeletable(entry);
+      } else if (!entryStat.isSymbolicLink()) {
+        await chmod(entry, 0o600);
+      }
+    }
+  };
+
+  await makeDeletable(canonicalRoot);
+  await rm(canonicalRoot, { recursive: true, force: false });
+}
+
+async function startTrackedTestMission(
+  service: ShepherdService,
+): Promise<{ missionId: string }> {
+  const started = await service.startDeterministicDemo();
+  backgroundTestMissions.push({ service, missionId: started.missionId });
+  return started;
+}
+
+async function quiesceTrackedTestMissions(): Promise<void> {
+  while (true) {
+    const tracked = backgroundTestMissions.at(-1);
+    if (!tracked) return;
+    const state = tracked.service.missionDetail(tracked.missionId)?.mission.state;
+    const terminal =
+      state === "completed" ||
+      state === "failed" ||
+      state === "cancelled";
+    if (!terminal) {
+      await tracked.service.cancelMission(tracked.missionId);
+    }
+    backgroundTestMissions.pop();
+  }
+}
+
 afterEach(async () => {
+  await quiesceTrackedTestMissions();
   while (cleanupRoots.length > 0) {
     const root = cleanupRoots.pop();
-    if (root) await rm(root, { recursive: true, force: true });
+    if (root) await removeServiceCaseRoot(root);
   }
 });
 
@@ -442,6 +540,7 @@ class BlockingPromotionVerifier extends HostTrustedFixtureVerifier {
   private markEntered!: () => void;
   private readonly released: Promise<void>;
   private releaseVerification!: () => void;
+  private isReleased = false;
 
   constructor() {
     super();
@@ -465,10 +564,13 @@ class BlockingPromotionVerifier extends HostTrustedFixtureVerifier {
 
   async cancel(targetId: string): Promise<boolean> {
     this.cancelledIds.push(targetId);
+    this.release();
     return true;
   }
 
   release(): void {
+    if (this.isReleased) return;
+    this.isReleased = true;
     this.releaseVerification();
   }
 }
@@ -476,8 +578,9 @@ class BlockingPromotionVerifier extends HostTrustedFixtureVerifier {
 async function waitForTerminalMission(
   service: ShepherdService,
   missionId: string,
+  timeoutMs = 15_000,
 ): Promise<void> {
-  const deadline = Date.now() + 15_000;
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const state = service.missionDetail(missionId)?.mission.state;
     if (state === "completed") return;
@@ -487,6 +590,23 @@ async function waitForTerminalMission(
     await new Promise<void>((resolve) => setTimeout(resolve, 10));
   }
   throw new Error("Background Mission did not complete before the test deadline");
+}
+
+async function settleWithin<T>(promise: Promise<T>, timeoutMs = 5_000): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error("Background Mission did not quiesce before teardown")),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 async function gitOutput(cwd: string, args: string[]): Promise<string> {
@@ -518,6 +638,58 @@ async function gitOutput(cwd: string, args: string[]): Promise<string> {
 }
 
 describe("Shepherd deterministic walking skeleton", () => {
+  it("cleans a case root containing a read-only trusted verification snapshot", async () => {
+    const caseRoot = await makeCaseRoot();
+    const snapshotPath = path.join(
+      caseRoot,
+      "managed",
+      "planes",
+      ".trusted-verification",
+      "verify-interrupted",
+    );
+    const snapshotFile = path.join(snapshotPath, "candidate.ts");
+    await mkdir(snapshotPath, { recursive: true });
+    await writeFile(snapshotFile, "candidate\n", "utf8");
+    await chmod(snapshotFile, 0o400);
+    await chmod(snapshotPath, 0o500);
+
+    await expect(removeServiceCaseRoot(caseRoot)).resolves.toBeUndefined();
+  });
+
+  it("refuses to clean a root outside its allocated test fixture", async () => {
+    const externalRoot = await mkdtemp(path.join(repositoryTestRoot, "external-"));
+    await writeFile(path.join(externalRoot, "preserve.txt"), "preserve\n", "utf8");
+    try {
+      await expect(removeServiceCaseRoot(externalRoot)).rejects.toThrow();
+      await expect(readFile(path.join(externalRoot, "preserve.txt"), "utf8")).resolves.toBe(
+        "preserve\n",
+      );
+    } finally {
+      await rm(externalRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("cleans an allocated fixture without mutating a linked external target", async () => {
+    const caseRoot = await makeCaseRoot();
+    const externalRoot = await mkdtemp(path.join(repositoryTestRoot, "external-"));
+    const marker = path.join(externalRoot, "marker.txt");
+    const linkedTarget = path.join(caseRoot, "managed", "planes", "linked-external");
+    await writeFile(marker, "must survive\n", "utf8");
+    await chmod(externalRoot, 0o700);
+    try {
+      await mkdir(path.dirname(linkedTarget), { recursive: true });
+      await symlink(externalRoot, linkedTarget);
+
+      await removeServiceCaseRoot(caseRoot);
+
+      await expect(readFile(marker, "utf8")).resolves.toBe("must survive\n");
+      expect((await stat(externalRoot)).mode & 0o777).toBe(0o700);
+    } finally {
+      await chmod(externalRoot, 0o700);
+      await rm(externalRoot, { recursive: true, force: true });
+    }
+  });
+
   it("fails startup closed when the live Runtime preflight is denied", async () => {
     const caseRoot = await makeCaseRoot();
     const store = new JsonStore(path.join(caseRoot, "state.json"));
@@ -555,9 +727,9 @@ describe("Shepherd deterministic walking skeleton", () => {
       executor,
     });
 
-    const { missionId } = await service.startDeterministicDemo();
+    const { missionId } = await startTrackedTestMission(service);
     expect(service.missionDetail(missionId)?.mission.state).not.toBe("completed");
-    await waitForTerminalMission(service, missionId);
+    await waitForTerminalMission(service, missionId, 25_000);
 
     const detail = service.missionDetail(missionId);
     expect(detail).not.toBeNull();
@@ -1018,7 +1190,7 @@ describe("Shepherd deterministic walking skeleton", () => {
     expect(detail?.project.protectedHeadCommit).toBe(mission.baseCommit);
     expect(await gitOutput(detail?.project.repositoryPath ?? "", ["rev-parse", "HEAD"]))
       .toBe(mission.baseCommit);
-  });
+  }, 15_000);
 
   it("rejects an Agent-declared semantic value that trusted verification does not corroborate", async () => {
     const caseRoot = await makeCaseRoot();
@@ -1053,7 +1225,7 @@ describe("Shepherd deterministic walking skeleton", () => {
       false,
     );
     expect(detail?.project.protectedHeadCommit).toBe(mission?.baseCommit);
-  });
+  }, 15_000);
 
   it("rejects a candidate that substitutes a different target even when every independent check passes", async () => {
     const caseRoot = await makeCaseRoot();
@@ -1092,7 +1264,7 @@ describe("Shepherd deterministic walking skeleton", () => {
     ).toBe(true);
     expect(result.selectedCandidate.targetValue).toBe(COOKIE_TRANSPORT);
     expect(detail?.mission.attentionReason).toBeNull();
-  });
+  }, 15_000);
 
   it("redacts planted secrets and absolute paths from every persisted failure surface", async () => {
     const caseRoot = await makeCaseRoot();
@@ -1196,8 +1368,10 @@ describe("Shepherd deterministic walking skeleton", () => {
       executor,
     });
 
-    const { missionId } = await service.startDeterministicDemo();
-    await vi.waitFor(() => expect(executor.executionIds).toHaveLength(2));
+    const { missionId } = await startTrackedTestMission(service);
+    await vi.waitFor(() => expect(executor.executionIds).toHaveLength(2), {
+      timeout: 10_000,
+    });
     const cancelled = await service.cancelMission(missionId);
     expect(cancelled).toMatchObject({
       state: "cancelled",
@@ -1206,11 +1380,13 @@ describe("Shepherd deterministic walking skeleton", () => {
     expect([...executor.cancelledIds].sort()).toEqual(
       [...executor.executionIds].sort(),
     );
-    await vi.waitFor(() =>
-      expect(service.missionDetail(missionId)?.contracts).toSatisfy(
-        (contracts: Array<{ state: string }>) =>
-          contracts.every((contract) => contract.state === "cancelled"),
-      ),
+    await vi.waitFor(
+      () =>
+        expect(service.missionDetail(missionId)?.contracts).toSatisfy(
+          (contracts: Array<{ state: string }>) =>
+            contracts.every((contract) => contract.state === "cancelled"),
+        ),
+      { timeout: 10_000 },
     );
     expect(
       service
@@ -1237,16 +1413,19 @@ describe("Shepherd deterministic walking skeleton", () => {
       verifier,
     });
 
-    const { missionId } = await service.startDeterministicDemo();
-    await vi.waitFor(() => expect(verifier.targetIds).toHaveLength(2));
+    const { missionId } = await startTrackedTestMission(service);
+    await vi.waitFor(() => expect(verifier.targetIds).toHaveLength(2), {
+      timeout: 10_000,
+    });
     const expected = service
       .missionDetail(missionId)
       ?.contracts.map((contract) => contract.id)
       .sort();
     await service.cancelMission(missionId);
     expect([...verifier.cancelledIds].sort()).toEqual(expected);
-    await vi.waitFor(() =>
-      expect(service.missionDetail(missionId)?.mission.state).toBe("cancelled"),
+    await vi.waitFor(
+      () => expect(service.missionDetail(missionId)?.mission.state).toBe("cancelled"),
+      { timeout: 10_000 },
     );
     expect(
       service
@@ -1456,6 +1635,12 @@ describe("Shepherd deterministic walking skeleton", () => {
     const reached = new Promise<void>((resolve) => {
       promotionReached = resolve;
     });
+    let promotionReleased = false;
+    const releaseBlockedPromotion = (): void => {
+      if (promotionReleased) return;
+      promotionReleased = true;
+      releasePromotion();
+    };
     const service = new ShepherdService({
       store,
       managedRoot: path.join(caseRoot, "managed"),
@@ -1467,18 +1652,21 @@ describe("Shepherd deterministic walking skeleton", () => {
         await blocked;
       },
     });
-    const { missionId } = await service.startDeterministicDemo();
-    await reached;
-    expect(
-      service
-        .missionDetail(missionId)
-        ?.candidates.some((candidate) => candidate.promotionState === "promoting"),
-    ).toBe(true);
-    await expect(service.cancelMission(missionId)).rejects.toMatchObject({
-      code: "conflict",
-    });
-    releasePromotion();
-    await waitForTerminalMission(service, missionId);
+    const { missionId } = await startTrackedTestMission(service);
+    try {
+      await reached;
+      expect(
+        service
+          .missionDetail(missionId)
+          ?.candidates.some((candidate) => candidate.promotionState === "promoting"),
+      ).toBe(true);
+      await expect(service.cancelMission(missionId)).rejects.toMatchObject({
+        code: "conflict",
+      });
+    } finally {
+      releaseBlockedPromotion();
+      await waitForTerminalMission(service, missionId);
+    }
     expect(service.missionDetail(missionId)?.mission.state).toBe("completed");
   }, 30_000);
 
@@ -1493,32 +1681,97 @@ describe("Shepherd deterministic walking skeleton", () => {
       agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
       verifier,
     });
-    const { missionId } = await service.startDeterministicDemo();
+    const { missionId } = await startTrackedTestMission(service);
+    let cancellation: Promise<unknown> | undefined;
+    try {
+      await verifier.entered;
+      const before = service.missionDetail(missionId);
+      expect(
+        before?.candidates.some(
+          (candidate) => candidate.promotionState === "reverifying",
+        ),
+      ).toBe(true);
+      const protectedHead = before?.project.protectedHeadCommit;
+      const selectedId = before?.candidates.find(
+        (candidate) => candidate.selectionState === "selected",
+      )?.id;
+      cancellation = service.cancelMission(missionId);
+      await vi.waitFor(
+        () => expect(service.missionDetail(missionId)?.mission.state).toBe("cancelled"),
+        { timeout: 10_000 },
+      );
+      await cancellation;
+      const after = service.missionDetail(missionId);
+      expect(verifier.cancelledIds).toEqual([selectedId]);
+      expect(after?.mission.state).toBe("cancelled");
+      expect(after?.project.protectedHeadCommit).toBe(protectedHead);
+      expect(await gitOutput(after?.project.repositoryPath ?? "", ["rev-parse", "HEAD"]))
+        .toBe(protectedHead);
+      expect(
+        after?.events.some((event) => event.type === "promotion_completed"),
+      ).toBe(false);
+    } finally {
+      cancellation ??= service.cancelMission(missionId);
+      try {
+        await cancellation;
+      } finally {
+        verifier.release();
+      }
+    }
+  }, 30_000);
+
+  it("releases a blocked promotion verifier before tracked fixture teardown", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const verifier = new BlockingPromotionVerifier();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier,
+    });
+
+    const { missionId } = await startTrackedTestMission(service);
     await verifier.entered;
-    const before = service.missionDetail(missionId);
-    expect(
-      before?.candidates.some(
-        (candidate) => candidate.promotionState === "reverifying",
-      ),
-    ).toBe(true);
-    const protectedHead = before?.project.protectedHeadCommit;
-    const selectedId = before?.candidates.find(
-      (candidate) => candidate.selectionState === "selected",
-    )?.id;
-    const cancellation = service.cancelMission(missionId);
-    await vi.waitFor(() =>
-      expect(service.missionDetail(missionId)?.mission.state).toBe("cancelled"),
+    const quiescence = quiesceTrackedTestMissions();
+    try {
+      await expect(settleWithin(quiescence)).resolves.toBeUndefined();
+    } finally {
+      verifier.release();
+      await quiescence;
+    }
+    expect(service.missionDetail(missionId)?.mission.state).toBe("cancelled");
+    expect(backgroundTestMissions).toHaveLength(0);
+    await removeServiceCaseRoot(caseRoot);
+    const cleanupRootIndex = cleanupRoots.indexOf(caseRoot);
+    if (cleanupRootIndex >= 0) cleanupRoots.splice(cleanupRootIndex, 1);
+    await expect(access(caseRoot)).rejects.toMatchObject({ code: "ENOENT" });
+  }, 30_000);
+
+  it("cancels tracked attention-required Missions before fixture cleanup", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+    });
+    await service.initialize();
+    await service.updateSettings({ autoResolution: false });
+
+    const { missionId } = await startTrackedTestMission(service);
+    await vi.waitFor(
+      () =>
+        expect(service.missionDetail(missionId)?.mission.state).toBe(
+          "attention_required",
+        ),
+      { timeout: 10_000 },
     );
-    verifier.release();
-    await cancellation;
-    const after = service.missionDetail(missionId);
-    expect(verifier.cancelledIds).toEqual([selectedId]);
-    expect(after?.mission.state).toBe("cancelled");
-    expect(after?.project.protectedHeadCommit).toBe(protectedHead);
-    expect(await gitOutput(after?.project.repositoryPath ?? "", ["rev-parse", "HEAD"]))
-      .toBe(protectedHead);
-    expect(
-      after?.events.some((event) => event.type === "promotion_completed"),
-    ).toBe(false);
+    await quiesceTrackedTestMissions();
+    expect(service.missionDetail(missionId)?.mission.state).toBe("cancelled");
+    expect(backgroundTestMissions).toHaveLength(0);
   }, 30_000);
 });

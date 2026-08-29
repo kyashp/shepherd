@@ -24,8 +24,8 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
   const messageComposer = useRef<HTMLTextAreaElement>(null);
   const inFlight = useRef(false);
 
-  const insertMention = (agentName: string) => {
-    setContent((current) => prependProjectGroupMention(agentName, current));
+  const insertMention = (agent: Agent) => {
+    setContent((current) => prependProjectGroupMention(agent.name, agent.id, current));
     window.requestAnimationFrame(() => {
       const composer = messageComposer.current;
       if (!composer) return;
@@ -103,7 +103,7 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
         <div className="group-members" aria-label="Available mention targets">
           <span>Route directly:</span>
           {agents.map((agent) => (
-            <button key={agent.id} onClick={() => insertMention(agent.name)}>@{agent.name}</button>
+            <button key={agent.id} onClick={() => insertMention(agent)}>@{agent.name}</button>
           ))}
         </div>
         {messageError ? (

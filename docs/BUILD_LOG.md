@@ -688,7 +688,7 @@ demo Mission are proven across two fresh end-to-end Missions. Scheduler, Project
 Group parser, and Ark advisory-reviewer modules exist and are focused-test-backed, but
 their service/API integration remains Phase 4 work and is not claimed here.
 
-## 2026-08-29 — GC-01 draft correction and OPS-03 merge
+## 2026-08-29 — GC-01 draft correction
 
 [Draft PR #9](https://github.com/kyashp/shepherd/pull/9) implements the bounded
 `GC-01` correction discovered while verifying Project Group mentions:
@@ -698,30 +698,209 @@ their service/API integration remains Phase 4 work and is not claimed here.
   preserves existing multiline composer content; the page retains its existing
   request-animation-frame focus/caret restoration.
 
-The independent `OPS-03` correction was extracted into
-[PR #22](https://github.com/kyashp/shepherd/pull/22) and squash-merged to `main`
-as `d6596c3`. An empty `SHEPHERD_VERIFIER_IMAGE`, as documented in
-`.env.example`, is accepted so `loadConfig()` can fall back to the validated
-`CONTAINER_RUNTIME_IMAGE`.
-
 Strict TDD evidence:
 
 - Mention formatting RED received `@Frontend Agent` instead of
   `@"Frontend Agent"`; focused GREEN passed 2/2.
 - Draft preservation RED reported a missing prepend contract; focused GREEN passed
   3/3 after the helper and page integration.
-- Verifier fallback RED reproduced the `SHEPHERD_VERIFIER_IMAGE` Zod `too_small`
-  failure; focused GREEN passed 16/16 config tests.
 
 The final pre-merge `npm run check` passed with 25 test files passed and 2 skipped,
 544 tests passed and 2 skipped, and successful web/server typechecks and production
-builds. On updated `origin/main`, the focused config suite passed 16/16 and an
-isolated deterministic local-PoC run loaded the main-worktree `.env` with an empty
-verifier-image value, built the Runtime and application, reached
-`Server listening at http://127.0.0.1:3000`, and served HTTP 200 responses. No
-`.env` value was printed or copied.
+builds.
 
 Browser interaction and screenshots are not claimed: the browser runtime exposed no
 attachable browser. `docs/HANDOVER.md` records the remaining `GC-01` keyboard,
-focus/caret, and `1280x800`/`1440x900` gates plus separate `GC-02..06`, `OPS-01`,
-and `OPS-02` work.
+focus/caret, and `1280x800`/`1440x900` gates plus separate `GC-02..07` work.
+
+## Test-lifecycle stabilization candidate (`#11`)
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Candidate branch/commits:** `fix/11-shepherd-test-flake-clean` /
+`de986b9a3ecdd1e1360050209742497f8c6b2813`, `f2db22c`
+**Draft PR:** [#19](https://github.com/kyashp/shepherd/pull/19)
+
+The generic five-second Vitest budget was exceeded by three real service journeys
+and measured Git/recovery integration journeys under full-suite contention. A timed
+out background-Mission test could also race fixture cleanup; raw recursive cleanup
+could not remove a deliberately read-only trusted-verification snapshot.
+
+The candidate adds only test lifecycle changes. Service fixtures now require an
+exact sentinel, restore write permission only after validating the allocated path,
+and skip symlinks. Causal RED checks observed `EACCES` on a `0400` file beneath a
+`0500` snapshot and, under a temporary unsafe symlink mutation, an external marker
+became unreadable. Restored GREEN checks prove the fixture is removed while the
+external marker and permissions survive. Background test Missions cancel and join via
+the existing `cancelMission()` behavior before cleanup. Six measured
+integration cases declare 15-second budgets; global defaults stay unchanged.
+
+The contamination route was also causal: `runFixtureGit()` spread `process.env`, so
+an inherited `GIT_DIR` could override `git -C` and route a fixture commit elsewhere.
+The helper now gives Git a fixed environment (path/locale plus non-interactive,
+system/global-config-disabled settings). Its regression creates only disposable
+fixture and decoy repositories, poisons `GIT_DIR` with the decoy, and proves the
+fixture advances while the decoy's HEAD and tracked file remain unchanged. The RED
+against the old inherited environment left the fixture HEAD unchanged; the restored
+implementation is GREEN.
+
+Observed verification:
+
+```sh
+# target-substitution regression: 5 consecutive passes (2.51–3.59 s)
+npm run check
+# pass twice: 25 files passed, 2 opt-in skipped; 547 tests passed, 2 skipped;
+# web and server production builds passed
+git diff --check
+# passed
+```
+
+The initial PR #18 was closed as contaminated: the documented defective pre-push hook
+created commit `9d252957` and tracked `external-move.txt` before the intended fix.
+The clean candidate contains only the causal test files. The demonstrated recovery
+fixture route is fixed; the pre-push hook itself remains separate infrastructure work,
+so manual verification is required before using `ECC_SKIP_PREPUSH=1` for a scoped
+push.
+
+### Resolved-base verification
+
+The clean candidate was resolved against current `main` at
+`2f7a9fd8122cb62f2f2ed4e2b08cc87f311e8887`. On that exact resolved head,
+`npm run check` passed: 25 files passed, 548 tests passed, 2 opt-in tests skipped,
+and both production builds completed. A subsequent teardown-only audit identified a
+test-lifecycle follow-up; its final commit and verification are recorded separately
+once that bounded correction is complete.
+
+### Teardown follow-up evidence
+
+Commit `d8c4dff7e6a6c3b1597e56c8b493e436a4f227c2` is test-only. It retains tracked
+Missions until cancellation and background-run joining succeed, treats
+`attention_required` as cancellable, and releases both blocked promotion checkpoints
+in `finally` paths. The promotion verifier release is idempotent. Its causal RED
+timed out safely against the prior blocked verifier (the test's `finally` released
+the fixture); GREEN focused coverage passed the four promotion/attention teardown
+paths, and the full `service.test.ts` file passed 25/25.
+
+The first repository `npm run check` on `d8c4dff` was **not green**: the unmodified
+Git-plane integration test `reports a real textual merge conflict and leaves the
+integration Plane clean` timed out at Vitest's five-second default. The observed
+test phase had 24 files passed, 1 failed, 2 skipped; 549 tests passed, 1 failed, 2
+skipped. This follow-up did not broaden into that separately owned timeout; its
+production builds therefore did not run after the failing test phase.
+
+That Git-plane test is also an owned #11 real-Git integration case. Commit
+`0e0e743` gives only that test a 15-second Vitest budget. It passed five consecutive
+focused runs (1.23–1.90 s) and the complete Git-plane integration file passed 19/19.
+A subsequent full gate exposed a distinct RED: the background real-Planes service
+journey has a 30-second test budget but its shared completion helper stopped at 15
+seconds. Commit `a14c3f7` makes that helper accept an optional timeout and passes
+25 seconds only to this measured journey; it does not add another Vitest budget.
+The journey passed five consecutive focused runs (4.27–6.33 s) and the complete
+service test file passed 25/25.
+
+On final head `a14c3f71446ff5c46a84db6482fc445e9d1944d9`, `npm run check` passed:
+25 files passed, 550 tests passed, 2 opt-in tests skipped, and both production
+builds completed. Six measured integration cases now have explicit 15-second
+Vitest budgets; the one 25-second internal completion wait remains confined to the
+already-30-second background real-Planes test.
+
+## 2026-08-29 — GC-01 post-#19 current-main browser gate
+
+[Draft PR #9](https://github.com/kyashp/shepherd/pull/9) was integrated on the
+merged [PR #19](https://github.com/kyashp/shepherd/pull/19) `main` commit
+`120fff066d962f4f30ed6cd62bc367cc869e02db` in a detached evidence worktree.
+The overlay contained exactly the three GC web files, and each blob matched the
+PR #9 head:
+
+```text
+apps/web/src/pages/ProjectGroupPage.tsx
+apps/web/src/pages/project-group-mention.test.ts
+apps/web/src/pages/project-group-mention.ts
+```
+
+Observed verification on that exact integration:
+
+```sh
+npx vitest run apps/web/src/pages/project-group-mention.test.ts \
+  --environment node --no-file-parallelism --maxWorkers=1
+# 1 file passed; 3 tests passed
+
+npm run check
+# exit 0: both workspace typechecks passed
+# 25 test files passed, 2 opt-in files skipped
+# 550 tests passed, 2 opt-in tests skipped
+# web and server production builds passed
+
+git diff --check
+# passed
+```
+
+A terminal Playwright run exercised the real Vite page with deterministic API
+interception in installed headless Chromium. At both exact `1280x800` and
+`1440x900` viewports, mouse click, keyboard Enter, and keyboard Space activation
+produced `@"Frontend Agent" Keep this draft\nincluding its second line`. After
+every activation, `#group-message` was the active element and its collapsed
+selection was `59..59` for a 59-character value. Keyboard focus matched
+`:focus-visible` with a solid 2 px outline. Both pages reported exact requested
+viewport dimensions, no horizontal overflow, no console/page error, and no
+unexpected API request.
+
+The two screenshots were visually inspected against `docs/UI.jpeg`. The dark
+sidebar, restrained purple accents, bordered conversation panel, spacing hierarchy,
+and bottom composer remained consistent; mention chips and the focused composer had
+no clipping or overlap. Screenshots and the one-off Playwright harness remained
+temporary and were not committed.
+
+This evidence closes the scoped `GC-01` interaction uncertainty only. `GC-02..07`,
+polling/reconnect and populated-history browser coverage, accessibility, a committed
+deterministic E2E harness/screenshot corpus, independent UI review, and post-merge
+verification after PR #9 itself lands remain separate.
+
+### GC-01 final parser-round-trip hardening
+
+A final review found that a quoted display name could still fail routing when the
+server's whole-message normalization changed the decoded lookup target. For example,
+`Frontend  Agent` was formatted as `@"Frontend  Agent"`, then collapsed to one
+space before lookup even though the stored Agent name retained two spaces.
+
+The focused RED failed 2/5 tests: normalization-changing spacing did not fall back
+to the Agent ID, and full-width quote characters were not normalized before JSON
+escaping. The minimal web-only fix now normalizes safe display-name mentions before
+escaping and falls back to the Agent UUID when a parser-valid name cannot survive
+the whole-message transformation and the shared ID/name namespace is unambiguous.
+The focused GREEN passed 5/5 and
+round-tripped those generated mentions through the production
+`parseProjectGroupMessage()` implementation.
+
+A second review found that U+037A gains leading spacing under NFKC and the parser
+directory trims after normalization. RED failed 1/6 because the formatter retained
+that introduced spacing; the minimal post-NFKC trim is GREEN at 6/6 through the
+production parser. No server files, stored records, or public schemas changed.
+
+The reviews also found two out-of-scope server directory mismatches, now tracked as
+`GC-07`: create/update accepts source-short Agent names whose NFKC+trim form exceeds
+the parser's 128-character directory-key limit, and names canonically equal to a
+different Agent's ID even though IDs/names share one parser lookup namespace. The
+parser rejects the first entire directory before resolving an ID and correctly
+rejects the second route as ambiguous, so no web fallback can correct either case.
+A separate server/schema task must align canonical length and namespace validation
+and plan non-destructive repair for existing invalid or colliding stored names.
+
+On the actual merge-resolved branch:
+
+```sh
+npx vitest run apps/web/src/pages/project-group-mention.test.ts
+# 1 file passed; 6 tests passed
+
+npm run check
+# exit 0: both workspace typechecks passed
+# 25 test files passed, 2 opt-in files skipped
+# 550 tests passed, 2 opt-in tests skipped
+# web and server production builds passed
+```
+
+Terminal Playwright was rerun at exact `1280x800` and `1440x900`. Mouse, Enter,
+and Space still inserted the readable `@"Frontend Agent"` form, preserved the
+multiline draft, restored focus, and left the collapsed caret at `59..59`.
+Keyboard focus remained visibly outlined; both viewports had no overflow,
+console/page errors, unexpected API requests, clipping, or overlap. The refreshed
+screenshots were visually inspected against `docs/UI.jpeg` and remained temporary.
