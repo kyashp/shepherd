@@ -49,6 +49,8 @@ export interface PlaneManagerOptions {
   protectedBranch?: string;
   git?: GitClient;
   now?: () => Date;
+  /** Recovery validates persisted ownership and must never mint a new sentinel. */
+  createRootSentinel?: boolean;
 }
 
 export interface CreatePlaneInput {
@@ -381,6 +383,7 @@ export class PlaneManager {
   readonly planesRoot: string;
   readonly git: GitClient;
   private readonly now: () => Date;
+  private readonly createRootSentinel: boolean;
   private initialization: Promise<void> | null = null;
   private canonicalRepositoryPath: string | null = null;
   private canonicalPlanesRoot: string | null = null;
@@ -411,6 +414,7 @@ export class PlaneManager {
         protectedBranch,
       });
     this.now = options.now ?? (() => new Date());
+    this.createRootSentinel = options.createRootSentinel ?? true;
   }
 
   async initialize(): Promise<void> {
@@ -424,7 +428,14 @@ export class PlaneManager {
   }
 
   private async initializeOnce(): Promise<void> {
-    await mkdir(this.planesRoot, { recursive: true });
+    if (this.createRootSentinel) {
+      await mkdir(this.planesRoot, { recursive: true });
+    } else {
+      const entry = await lstat(this.planesRoot);
+      if (entry.isSymbolicLink() || !entry.isDirectory()) {
+        throw new Error("Managed Plane root must be a real directory");
+      }
+    }
     this.canonicalRepositoryPath = await realpath(this.repositoryPath);
     this.canonicalPlanesRoot = await realpath(this.planesRoot);
     if (
@@ -445,6 +456,9 @@ export class PlaneManager {
     }
 
     if (!sentinelExists) {
+      if (!this.createRootSentinel) {
+        throw new Error("Managed Plane root sentinel is missing");
+      }
       const entries = await readdir(this.canonicalPlanesRoot);
       if (entries.length > 0) {
         throw new Error("Refusing to adopt a non-empty Plane root without its sentinel");
@@ -481,7 +495,33 @@ export class PlaneManager {
     if (canonicalRoot !== this.canonicalPlanesRoot) {
       throw new Error("Plane root identity changed after initialization");
     }
-    const raw = await readFile(path.join(canonicalRoot, ROOT_SENTINEL), "utf8");
+    const sentinelPath = path.join(canonicalRoot, ROOT_SENTINEL);
+    const sentinelEntry = await lstat(sentinelPath);
+    if (
+      sentinelEntry.isSymbolicLink() ||
+      !sentinelEntry.isFile() ||
+      sentinelEntry.size > 8_192
+    ) {
+      throw new Error("Managed Plane root sentinel must be a bounded regular file");
+    }
+    const sentinelHandle = await open(
+      sentinelPath,
+      fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | fsConstants.O_NONBLOCK,
+    );
+    let raw: string;
+    try {
+      const openedEntry = await sentinelHandle.stat();
+      if (
+        openedEntry.dev !== sentinelEntry.dev ||
+        openedEntry.ino !== sentinelEntry.ino ||
+        openedEntry.size !== sentinelEntry.size
+      ) {
+        throw new Error("Managed Plane root sentinel identity changed");
+      }
+      raw = await sentinelHandle.readFile("utf8");
+    } finally {
+      await sentinelHandle.close();
+    }
     let sentinel: PlaneRootSentinel;
     try {
       sentinel = JSON.parse(raw) as PlaneRootSentinel;
@@ -1144,6 +1184,54 @@ export class PlaneManager {
       removed.push(worktree.path);
     }
     await this.git.pruneWorktrees();
+    return removed.sort();
+  }
+
+  /**
+   * Removes only crash-left private execution, materialization, and verification
+   * directories. Persisted Plane worktrees and branches are deliberately not
+   * touched so interruption evidence remains inspectable.
+   */
+  async reconcileInterruptedArtifacts(): Promise<string[]> {
+    await this.ensureInitialized();
+    await this.assertRootSentinel();
+    const roots = [
+      { root: this.canonicalExecutionRoot, prefix: "execution-", kind: "execution" },
+      {
+        root: this.canonicalMaterializationRoot,
+        prefix: "materialize-",
+        kind: "materialization",
+      },
+      { root: this.canonicalVerificationRoot, prefix: "verify-", kind: "verification" },
+    ] as const;
+    const worktrees = await this.git.listWorktrees();
+    const removed: string[] = [];
+    for (const item of roots) {
+      if (!item.root) throw new Error("Managed private root is not initialized");
+      for (const name of await readdir(item.root)) {
+        if (!name.startsWith(item.prefix) || name.length <= item.prefix.length) {
+          throw new Error("Unexpected entry in managed private artifact root");
+        }
+        const target = this.assertPrivateTarget(item.root, path.join(item.root, name));
+        const entry = await lstat(target);
+        if (!entry.isDirectory() || entry.isSymbolicLink()) {
+          throw new Error("Interrupted private artifact is not a real directory");
+        }
+        const registered = worktrees.some(
+          (worktree) => path.resolve(worktree.path) === target,
+        );
+        if (registered) {
+          if (item.kind !== "materialization") {
+            throw new Error("Unexpected Git worktree in a non-Git private artifact root");
+          }
+          await this.git.removeWorktree(target);
+        }
+        await this.removePrivateTree(item.root, target);
+        removed.push(item.kind + ":" + name);
+      }
+    }
+    await this.git.pruneWorktrees();
+    this.activeExecutionWorkspaces.clear();
     return removed.sort();
   }
 

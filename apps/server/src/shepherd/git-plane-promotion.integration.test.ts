@@ -709,6 +709,7 @@ async function createCandidate(fixture: Fixture) {
     selectionState: "selected",
     promotionState: "not_started",
     verificationEvidence: null,
+    promotionEvidence: null,
     changedFiles: committedPlane.changedFiles,
     diffSummary: committedPlane.diffSummary,
     result: "passed",
@@ -755,6 +756,7 @@ describe("PromotionGate integration", () => {
           reads += 1;
           return candidate.id;
         },
+        persistPromotingEvidence: async () => {},
       });
       expect(result).toMatchObject({
         promoted: true,
@@ -799,6 +801,7 @@ describe("PromotionGate integration", () => {
           expectedHead: fixture.baseCommit,
           checks: [mandatoryCheck],
           loadPersistedSelectedCandidateId: async () => candidate.id,
+          persistPromotingEvidence: async () => {},
         }),
       ).toMatchObject({
         promoted: false,
@@ -806,6 +809,42 @@ describe("PromotionGate integration", () => {
         actualHead: fixture.baseCommit,
         verificationEvidence: { passed: true },
       });
+      expect(await fixtureGit(fixture.repositoryPath, ["rev-parse", "main"])).toBe(
+        fixture.baseCommit,
+      );
+      await fixture.manager.resetManagedPlanes();
+    } finally {
+      await destroyFixture(fixture);
+    }
+  });
+
+  it("does not invoke the protected CAS when durable pre-CAS persistence fails", async () => {
+    const fixture = await createFixture();
+    try {
+      const { plane, candidate } = await createCandidate(fixture);
+      const cas = vi.spyOn(fixture.manager.git, "compareAndSwapFastForward");
+      const gate = new PromotionGate(
+        fixture.manager.git,
+        { verify: async () => evidence(true, candidate.id) },
+        async () => ({ allowed: true, reason: null }),
+        fixture.manager,
+      );
+      const result = await gate.promote({
+        candidate,
+        plane,
+        protectedBranch: "main",
+        expectedHead: fixture.baseCommit,
+        checks: [mandatoryCheck],
+        loadPersistedSelectedCandidateId: async () => candidate.id,
+        persistPromotingEvidence: async () => {
+          throw new Error("injected persistence failure");
+        },
+      });
+      expect(result).toMatchObject({
+        promoted: false,
+        reason: "promotion_infrastructure_error",
+      });
+      expect(cas).not.toHaveBeenCalled();
       expect(await fixtureGit(fixture.repositoryPath, ["rev-parse", "main"])).toBe(
         fixture.baseCommit,
       );
@@ -916,6 +955,7 @@ describe("PromotionGate integration", () => {
         expectedHead: fixture.baseCommit,
         checks: [mandatoryCheck],
         loadPersistedSelectedCandidateId: async () => candidate.id,
+        persistPromotingEvidence: async () => {},
       });
       expect(result).toMatchObject({
         promoted: false,
@@ -963,6 +1003,34 @@ describe("PromotionGate integration", () => {
       await destroyFixture(fixture);
     }
   });
+
+  it.each(["another branch", "detached HEAD"] as const)(
+    "rejects promotion when the managed repository checkout is %s",
+    async (checkout) => {
+      const fixture = await createFixture();
+      try {
+        const { plane } = await createCandidate(fixture);
+        if (checkout === "another branch") {
+          await fixtureGit(fixture.repositoryPath, ["switch", "-c", "other"]);
+        } else {
+          await fixtureGit(fixture.repositoryPath, ["checkout", "--detach"]);
+        }
+        await expect(
+          fixture.manager.git.compareAndSwapFastForward(
+            "main",
+            fixture.baseCommit,
+            plane.headCommit!,
+          ),
+        ).rejects.toThrow(ProtectedGitMutationError);
+        expect(await fixtureGit(fixture.repositoryPath, ["rev-parse", "main"])).toBe(
+          fixture.baseCommit,
+        );
+        await fixture.manager.resetManagedPlanes();
+      } finally {
+        await destroyFixture(fixture);
+      }
+    },
+  );
 
   it("rolls the protected ref and checked-out worktree back when synchronization fails", async () => {
     const fixture = await createFixture({

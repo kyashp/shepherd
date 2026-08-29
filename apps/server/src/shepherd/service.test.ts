@@ -444,6 +444,33 @@ describe("Shepherd deterministic walking skeleton", () => {
     await expect(access(disposableAgent.workspacePath)).resolves.toBeUndefined();
     expect(await gitOutput(detail.project.repositoryPath, ["rev-parse", "HEAD"]))
       .toBe(protectedHeadBeforeWorkspaceMutation);
+
+    await gitOutput(detail.project.repositoryPath, ["switch", "-c", "unexpected"]);
+    const restarted = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot,
+      verifier: new HostTrustedFixtureVerifier(),
+      executor,
+    });
+    await expect(restarted.initialize()).rejects.toThrow(
+      "startup artifact reconciliation failed",
+    );
+    const afterMismatch = store.snapshot();
+    expect(afterMismatch.shepherd.missions.find((mission) => mission.id === missionId)?.state)
+      .toBe("completed");
+    expect(afterMismatch.shepherd.projects[0]?.protectedHeadCommit)
+      .toBe(protectedHeadBeforeWorkspaceMutation);
+    expect(afterMismatch.shepherd.events).toContainEqual(
+      expect.objectContaining({
+        type: "execution_interrupted",
+        missionId,
+        details: expect.objectContaining({
+          classification: "protected_worktree_mismatch",
+          expectedHead: protectedHeadBeforeWorkspaceMutation,
+        }),
+      }),
+    );
   }, 30_000);
 
   it("flips the selected strategy when the trusted project invariant flips", async () => {
@@ -481,7 +508,69 @@ describe("Shepherd deterministic walking skeleton", () => {
           ?.planes.find((plane) => plane.id === result.selectedCandidate.planeId)
           ?.headCommit
       : null);
-  });
+  }, 30_000);
+
+  it("persists a non-green compensated state when the protected head moves after the durable marker", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const managedRoot = path.join(caseRoot, "managed");
+    const repositoryPath = path.join(managedRoot, "repositories", "auth-demo");
+    let expectedTrustedHead: string | null = null;
+    const service = new ShepherdService({
+      store,
+      managedRoot,
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      executor: new ObservedConcurrentExecutor(),
+      faultCheckpoint: async (checkpoint) => {
+        if (checkpoint !== "promotion_ready_for_cas") return;
+        expectedTrustedHead = await gitOutput(repositoryPath, ["rev-parse", "main"]);
+        await writeFile(path.join(repositoryPath, "external-move.txt"), "external\n");
+        await gitOutput(repositoryPath, ["add", "--", "external-move.txt"]);
+        await gitOutput(repositoryPath, [
+          "-c",
+          "user.name=External",
+          "-c",
+          "user.email=external@example.invalid",
+          "commit",
+          "-m",
+          "external protected move",
+        ]);
+      },
+    });
+
+    await expect(service.runDeterministicDemo()).rejects.toThrow(
+      "Promotion failed: protected_branch_moved",
+    );
+    const missionId = store.snapshot().shepherd.missions[0]?.id;
+    if (!missionId) throw new Error("Compensated Mission was not persisted");
+    const detail = service.missionDetail(missionId);
+    expect(detail?.mission.state).toBe("attention_required");
+    expect(detail?.project.activeMissionId).toBe(missionId);
+    expect(detail?.project.protectedHeadCommit).toBe(expectedTrustedHead);
+    const externallyMovedHead = await gitOutput(repositoryPath, ["rev-parse", "main"]);
+    expect(externallyMovedHead).not.toBe(expectedTrustedHead);
+    expect(
+      detail?.candidates.find((candidate) => candidate.selectionState === "selected"),
+    ).toMatchObject({
+      promotionState: "failed",
+      promotionEvidence: { passed: true, targetType: "promotion" },
+      failure: { stage: "promotion" },
+    });
+    expect(detail?.collisions[0]?.state).toBe("attention_required");
+    const missionCount = store.snapshot().shepherd.missions.length;
+    await expect(service.runDeterministicDemo()).rejects.toThrow(
+      "already has a non-terminal Mission",
+    );
+    expect(store.snapshot().shepherd.missions).toHaveLength(missionCount);
+    expect(service.missionDetail(missionId)?.project.protectedHeadCommit).toBe(
+      expectedTrustedHead,
+    );
+    expect(await gitOutput(repositoryPath, ["rev-parse", "main"])).toBe(
+      externallyMovedHead,
+    );
+  }, 30_000);
 
   it("refuses a hostile symlink before any fixture or metadata write", async () => {
     const caseRoot = await makeCaseRoot();
@@ -493,9 +582,10 @@ describe("Shepherd deterministic walking skeleton", () => {
 
     await expect(
       initializeAuthDemoProject({ managedRoot }),
-    ).rejects.toThrow("cannot be a symlink");
-    expect(await readFile(path.join(managedRoot, ".shepherd-demo-root.json"), "utf8"))
-      .toContain("shepherd-managed-demo-root");
+    ).rejects.toThrow("Refusing to adopt a non-empty unsentinelled managed root");
+    await expect(
+      access(path.join(managedRoot, ".shepherd-demo-root.json")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
     await expect(access(path.join(outside, "auth-demo"))).rejects.toMatchObject({
       code: "ENOENT",
     });
@@ -503,6 +593,57 @@ describe("Shepherd deterministic walking skeleton", () => {
       code: "ENOENT",
     });
   });
+
+  it("rejects a second live Mission when the protected head moved externally", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      executor: new ObservedConcurrentExecutor(),
+    });
+    const first = await service.runDeterministicDemo();
+    const beforeExternalMove = store.snapshot();
+    const trustedHead = first.mission.projectId
+      ? beforeExternalMove.shepherd.projects.find(
+          (project) => project.id === first.mission.projectId,
+        )!.protectedHeadCommit
+      : "";
+    const repositoryPath = beforeExternalMove.shepherd.projects[0]!.repositoryPath;
+    await writeFile(path.join(repositoryPath, "external-live-move.txt"), "external\n");
+    await gitOutput(repositoryPath, ["add", "--", "external-live-move.txt"]);
+    await gitOutput(repositoryPath, [
+      "-c",
+      "user.name=External",
+      "-c",
+      "user.email=external@example.invalid",
+      "commit",
+      "-m",
+      "external live protected move",
+    ]);
+    const externalHead = await gitOutput(repositoryPath, ["rev-parse", "main"]);
+    expect(externalHead).not.toBe(trustedHead);
+    const immutableCounts = {
+      missions: beforeExternalMove.shepherd.missions.length,
+      agents: beforeExternalMove.agents.length,
+      planes: beforeExternalMove.shepherd.planes.length,
+      projects: beforeExternalMove.shepherd.projects.length,
+    };
+
+    await expect(service.runDeterministicDemo()).rejects.toThrow(
+      "Protected checkout differs from the durable trusted head",
+    );
+    const afterRejected = store.snapshot();
+    expect(afterRejected.shepherd.missions).toHaveLength(immutableCounts.missions);
+    expect(afterRejected.agents).toHaveLength(immutableCounts.agents);
+    expect(afterRejected.shepherd.planes).toHaveLength(immutableCounts.planes);
+    expect(afterRejected.shepherd.projects).toHaveLength(immutableCounts.projects);
+    expect(afterRejected.shepherd.projects[0]?.protectedHeadCommit).toBe(trustedHead);
+    expect(await gitOutput(repositoryPath, ["rev-parse", "main"])).toBe(externalHead);
+  }, 30_000);
 
   it("persists authority_denied and never touches the protected branch for an out-of-scope Contract diff", async () => {
     const caseRoot = await makeCaseRoot();

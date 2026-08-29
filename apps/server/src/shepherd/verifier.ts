@@ -94,6 +94,7 @@ export interface VerifierContainerResult {
 export interface VerifierContainerExecutor {
   run(invocation: VerifierContainerInvocation): Promise<VerifierContainerResult>;
   cancel(key: string): Promise<boolean>;
+  cleanupOwned?(input: { engine: string; ownerId: string }): Promise<string[]>;
 }
 
 interface ActiveContainer {
@@ -145,6 +146,61 @@ export class DockerVerifierExecutor implements VerifierContainerExecutor {
         () => resolve(),
       );
     });
+  }
+
+  private async listOwned(engine: string, ownerId: string): Promise<string[]> {
+    return await new Promise<string[]>((resolve, reject) => {
+      execFile(
+        engine,
+        [
+          "ps",
+          "--all",
+          "--quiet",
+          "--filter",
+          "label=io.codejam.shepherd=independent-verifier",
+          "--filter",
+          "label=io.codejam.verifier-owner=" + ownerId,
+        ],
+        {
+          env: verifierHostEnvironment(),
+          timeout: 8_000,
+          encoding: "utf8",
+          maxBuffer: 65_536,
+          windowsHide: true,
+        },
+        (error, stdout) => {
+          if (error) {
+            reject(new Error("Unable to inspect interrupted verifier containers"));
+            return;
+          }
+          const ids = stdout
+            .split(/\r?\n/u)
+            .map((value) => value.trim())
+            .filter((value) => value.length > 0);
+          if (ids.some((value) => !/^[a-f0-9]{12,64}$/u.test(value))) {
+            reject(new Error("Container engine returned an unsafe verifier identity"));
+            return;
+          }
+          resolve([...new Set(ids)].sort());
+        },
+      );
+    });
+  }
+
+  async cleanupOwned(input: { engine: string; ownerId: string }): Promise<string[]> {
+    const engine = assertSimpleValue(input.engine, "container engine");
+    if (!SAFE_IDENTIFIER.test(input.ownerId)) {
+      throw new Error("Invalid verifier owner ID");
+    }
+    if (this.active.size > 0 || this.reserved.size > 0) {
+      throw new Error("Cannot reconcile verifier containers while checks are active");
+    }
+    const owned = await this.listOwned(engine, input.ownerId);
+    for (const id of owned) await this.removeByName(engine, id);
+    if ((await this.listOwned(engine, input.ownerId)).length > 0) {
+      throw new Error("Interrupted verifier containers remain after reconciliation");
+    }
+    return owned;
   }
 
   private cleanup(active: ActiveContainer, kill: boolean): Promise<void> {
@@ -292,6 +348,8 @@ export interface ContainerVerifierOptions {
   containerEngine: string;
   containerImage: string;
   containerUser: string;
+  /** Stable per installation so restart cleanup cannot cross installation boundaries. */
+  ownerId: string;
   cpuLimit?: number;
   memoryLimit?: string;
   pidsLimit?: number;
@@ -309,6 +367,7 @@ interface NormalizedVerifierOptions {
   containerEngine: string;
   containerImage: string;
   containerUser: string;
+  ownerId: string;
   cpuLimit: number;
   memoryLimit: string;
   pidsLimit: number;
@@ -331,6 +390,7 @@ function normalizeOptions(options: ContainerVerifierOptions): NormalizedVerifier
     containerEngine: assertSimpleValue(options.containerEngine, "container engine"),
     containerImage: assertSimpleValue(options.containerImage, "container image"),
     containerUser: assertSimpleValue(options.containerUser, "container user"),
+    ownerId: options.ownerId,
     cpuLimit: options.cpuLimit ?? 1,
     memoryLimit: options.memoryLimit ?? "512m",
     pidsLimit: options.pidsLimit ?? 128,
@@ -339,6 +399,7 @@ function normalizeOptions(options: ContainerVerifierOptions): NormalizedVerifier
     tmpfsSize: options.tmpfsSize ?? "64m",
     sensitiveValues: (options.sensitiveValues ?? []).filter((value) => value.length >= 4),
   };
+  if (!SAFE_IDENTIFIER.test(normalized.ownerId)) throw new Error("Invalid verifier owner ID");
   if (!SAFE_IMAGE.test(normalized.containerImage)) throw new Error("Invalid verifier image reference");
   if (!Number.isFinite(normalized.cpuLimit) || normalized.cpuLimit <= 0 || normalized.cpuLimit > 16) {
     throw new Error("Invalid verifier CPU limit");
@@ -394,6 +455,8 @@ export function buildVerifierContainerArgs(input: {
     "io.codejam.shepherd=independent-verifier",
     "--label",
     "io.codejam.verification-target=" + input.targetId,
+    "--label",
+    "io.codejam.verifier-owner=" + input.options.ownerId,
     "--network",
     "none",
     "--read-only",
@@ -623,5 +686,14 @@ export class ContainerVerifier {
   async cancel(targetId: string): Promise<boolean> {
     if (!SAFE_IDENTIFIER.test(targetId)) throw new Error("Invalid verification target ID");
     return await this.executor.cancel(targetId);
+  }
+
+  /** Removes only verifier containers owned by this stable server identity. */
+  async reconcileInterrupted(): Promise<void> {
+    if (!this.executor.cleanupOwned) return;
+    await this.executor.cleanupOwned({
+      engine: this.options.containerEngine,
+      ownerId: this.options.ownerId,
+    });
   }
 }

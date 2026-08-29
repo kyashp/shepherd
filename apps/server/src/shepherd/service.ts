@@ -7,6 +7,12 @@ import type { Agent, Database } from "../types.js";
 import { WorkspaceManager } from "../workspace.js";
 import {
   AUTH_CLAIM_KEY,
+  AUTH_FRONTEND_CHECK_ID,
+  AUTH_FRONTEND_PROFILE_ID,
+  AUTH_BACKEND_CHECK_ID,
+  AUTH_BACKEND_PROFILE_ID,
+  AUTH_PROJECT_CHECK_ID,
+  AUTH_PROJECT_PROFILE_ID,
   BEARER_TRANSPORT,
   COOKIE_TRANSPORT,
   verifiedAuthTransportFact,
@@ -18,8 +24,11 @@ import {
 } from "./authority.js";
 import { detectDeterministicCollisions } from "./collision.js";
 import {
+  assertNoManagedProjectState,
   initializeAuthDemoProject,
   initializeShepherdManagedRoot,
+  resolveManagedProjectIdentity,
+  validateShepherdManagedRoot,
   type ManagedAuthDemoProject,
 } from "./demo-project.js";
 import type {
@@ -43,6 +52,7 @@ import {
   type ShepherdExecutor,
 } from "./executor.js";
 import { ingestContractResultManifest } from "./manifest.js";
+import { GitClient, type GitClientOptions } from "./git-client.js";
 import {
   PlaneAuthorityViolationError,
   PlaneManager,
@@ -50,6 +60,7 @@ import {
 } from "./plane-manager.js";
 import { PromotionGate } from "./promotion-gate.js";
 import { redactText, redactValue } from "./redaction.js";
+import { reconcileShepherdStartup } from "./recovery.js";
 import {
   applyWinnerDecision,
   decideResolutionWinner,
@@ -74,12 +85,14 @@ const VERIFIER_ACTOR = {
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$/u;
 const MAX_MANIFEST_BYTES = 64 * 1024;
 
-export const AUTH_FRONTEND_PROFILE_ID = "auth-frontend";
-export const AUTH_BACKEND_PROFILE_ID = "auth-backend";
-export const AUTH_PROJECT_PROFILE_ID = "auth-project-security";
+export {
+  AUTH_FRONTEND_PROFILE_ID,
+  AUTH_BACKEND_PROFILE_ID,
+  AUTH_PROJECT_PROFILE_ID,
+} from "./auth-fixture.js";
 
 const frontendCheck = (): AcceptanceCheck => ({
-  id: "frontend-contract",
+  id: AUTH_FRONTEND_CHECK_ID,
   name: "Frontend authentication contract",
   profileId: AUTH_FRONTEND_PROFILE_ID,
   mandatory: true,
@@ -87,7 +100,7 @@ const frontendCheck = (): AcceptanceCheck => ({
 });
 
 const backendCheck = (): AcceptanceCheck => ({
-  id: "backend-contract",
+  id: AUTH_BACKEND_CHECK_ID,
   name: "Backend authentication contract",
   profileId: AUTH_BACKEND_PROFILE_ID,
   mandatory: true,
@@ -95,7 +108,7 @@ const backendCheck = (): AcceptanceCheck => ({
 });
 
 const projectCheck = (): AcceptanceCheck => ({
-  id: "project-security",
+  id: AUTH_PROJECT_CHECK_ID,
   name: "Project authentication security invariant",
   profileId: AUTH_PROJECT_PROFILE_ID,
   mandatory: true,
@@ -134,6 +147,19 @@ function boundedContractAuthority(
 
 export interface ShepherdIndependentVerifier {
   verify(request: VerificationRequest): Promise<VerificationEvidence>;
+  reconcileInterrupted?(): Promise<void>;
+}
+
+export type ShepherdFaultCheckpoint =
+  | "contract_execution_workspace_ready"
+  | "contract_verification_snapshot_ready"
+  | "promotion_ready_for_cas"
+  | "promotion_cas_completed";
+
+export interface ShepherdFaultCheckpointContext {
+  missionId: string;
+  contractId?: string;
+  candidateId?: string;
 }
 
 export interface ShepherdServiceOptions {
@@ -144,6 +170,13 @@ export interface ShepherdServiceOptions {
   verifier: ShepherdIndependentVerifier;
   executor?: ShepherdExecutor;
   sensitiveValues?: readonly string[];
+  /** Deterministic process-kill test seam. Undefined in production composition. */
+  faultCheckpoint?: (
+    checkpoint: ShepherdFaultCheckpoint,
+    context: ShepherdFaultCheckpointContext,
+  ) => void | Promise<void>;
+  /** Internal test-only seam around the protected-ref/worktree CAS boundary. */
+  gitPromotionFaults?: GitClientOptions["promotionFaults"];
   now?: () => Date;
   idFactory?: (prefix: string) => string;
 }
@@ -322,8 +355,13 @@ export class ShepherdService {
   private readonly verifier: ShepherdIndependentVerifier;
   private readonly executor: ShepherdExecutor;
   private readonly sensitiveValues: string[];
+  private readonly faultCheckpoint:
+    | ShepherdServiceOptions["faultCheckpoint"]
+    | undefined;
+  private readonly gitPromotionFaults: GitClientOptions["promotionFaults"];
   private readonly now: () => Date;
   private readonly idFactory: (prefix: string) => string;
+  private initialization: Promise<void> | null = null;
   private readonly activeProjects = new Set<string>();
   private readonly backgroundRuns = new Map<
     string,
@@ -342,6 +380,8 @@ export class ShepherdService {
     this.sensitiveValues = [...new Set(options.sensitiveValues ?? [])].filter(
       (value) => value.length > 0,
     );
+    this.faultCheckpoint = options.faultCheckpoint;
+    this.gitPromotionFaults = options.gitPromotionFaults;
     this.now = options.now ?? (() => new Date());
     this.idFactory =
       options.idFactory ??
@@ -349,8 +389,8 @@ export class ShepherdService {
   }
 
   async initialize(): Promise<void> {
-    await initializeShepherdManagedRoot(this.managedRoot);
-    await this.initializeWorkspaceRoot();
+    this.initialization ??= this.initializeOnce();
+    await this.initialization;
     const snapshot = this.store.snapshot();
     for (const project of snapshot.shepherd.projects) {
       const missionIds = new Set(
@@ -367,6 +407,48 @@ export class ShepherdService {
         await this.ensureAgentWorkspace(agent, project.repositoryPath, null, true);
       }
     }
+  }
+
+  private async initializeOnce(): Promise<void> {
+    if (this.store.snapshot().shepherd.projects.length > 0) {
+      await validateShepherdManagedRoot(this.managedRoot);
+    } else {
+      await assertNoManagedProjectState(this.managedRoot);
+      await initializeShepherdManagedRoot(this.managedRoot);
+    }
+    await this.initializeWorkspaceRoot();
+    let verifierRecoveryError: unknown = null;
+    try {
+      await this.verifier.reconcileInterrupted?.();
+    } catch (error) {
+      verifierRecoveryError = error;
+    }
+    const recovery = await reconcileShepherdStartup({
+      store: this.store,
+      managedRoot: this.managedRoot,
+      now: this.now,
+    });
+    const inspectionFailure = recovery.observations.find(
+      (observation) =>
+        observation.inspectionError !== null ||
+        observation.classification === "protected_branch_moved" ||
+        observation.classification === "protected_worktree_mismatch",
+    );
+    if (inspectionFailure) {
+      throw new Error("Shepherd startup artifact reconciliation failed");
+    }
+    if (verifierRecoveryError) {
+      throw new Error("Independent verifier startup reconciliation failed", {
+        cause: verifierRecoveryError,
+      });
+    }
+  }
+
+  private async checkpoint(
+    checkpoint: ShepherdFaultCheckpoint,
+    context: ShepherdFaultCheckpointContext,
+  ): Promise<void> {
+    await this.faultCheckpoint?.(checkpoint, context);
   }
 
   state(): ShepherdDatabase {
@@ -538,16 +620,65 @@ export class ShepherdService {
     options: DeterministicDemoOptions,
   ): Promise<PreparedMission> {
     await this.initialize();
+    const requestedProjectId = options.projectId ?? "auth-demo";
+    const beforePreparation = this.store.snapshot();
+    const existingActive = beforePreparation.shepherd.missions.find(
+      (mission) =>
+        mission.projectId === requestedProjectId && !terminalMission(mission.state),
+    );
+    if (existingActive) {
+      throw new Error("The managed project already has a non-terminal Mission");
+    }
+    const persistedProject = beforePreparation.shepherd.projects.find(
+      (item) => item.id === requestedProjectId,
+    );
+    if (persistedProject) {
+      const identity = await resolveManagedProjectIdentity({
+        managedRoot: this.managedRoot,
+        projectId: persistedProject.id,
+        protectedBranch: persistedProject.protectedBranch,
+        persistedRepositoryPath: persistedProject.repositoryPath,
+      });
+      const inspectionClient = new GitClient(identity.repositoryPath, {
+        worktreeRoot: identity.planesRoot,
+        protectedBranch: identity.protectedBranch,
+      });
+      await inspectionClient.initialize();
+      const inspection = await inspectionClient.inspectProtectedWorktree(
+        identity.protectedBranch,
+      );
+      if (
+        inspection.branchHead !== persistedProject.protectedHeadCommit ||
+        !inspection.synchronized
+      ) {
+        throw new Error("Protected checkout differs from the durable trusted head");
+      }
+    }
     const project = await initializeAuthDemoProject({
       managedRoot: this.managedRoot,
-      projectId: options.projectId ?? "auth-demo",
+      projectId: requestedProjectId,
       allowClientReadableCredential:
         options.allowClientReadableCredential ?? false,
     });
+    if (
+      persistedProject &&
+      (project.headCommit !== persistedProject.protectedHeadCommit ||
+        project.repositoryPath !== persistedProject.repositoryPath ||
+        project.protectedBranch !== persistedProject.protectedBranch)
+    ) {
+      throw new Error("Managed project identity changed during Mission preparation");
+    }
     const planeManager = new PlaneManager({
       repositoryPath: project.repositoryPath,
       planesRoot: project.planesRoot,
       protectedBranch: project.protectedBranch,
+      git: new GitClient(project.repositoryPath, {
+        worktreeRoot: project.planesRoot,
+        protectedBranch: project.protectedBranch,
+        ...(this.gitPromotionFaults === undefined
+          ? {}
+          : { promotionFaults: this.gitPromotionFaults }),
+      }),
       now: this.now,
     });
     await planeManager.initialize();
@@ -952,7 +1083,59 @@ export class ShepherdService {
       selectedCandidate,
       selectedPlane,
     );
+    if (promotion.promoted) {
+      await this.checkpoint("promotion_cas_completed", {
+        missionId: prepared.missionId,
+        candidateId: selectedCandidate.id,
+      });
+    }
     if (!promotion.promoted) {
+      const failedAt = this.timestamp();
+      await this.store.mutate((database) => {
+        const promotionFailure = this.makeFailure(
+          new Error(`Promotion failed: ${promotion.reason}`),
+          "promotion",
+          failedAt,
+        );
+        const persistedCandidate = database.shepherd.candidates.find(
+          (item) => item.id === selectedCandidate.id,
+        );
+        const persistedPlane = database.shepherd.planes.find(
+          (item) => item.id === selectedPlane.id,
+        );
+        const persistedCollision = database.shepherd.collisions.find(
+          (item) => item.id === collision.id,
+        );
+        if (persistedCandidate) {
+          persistedCandidate.promotionState = "failed";
+          persistedCandidate.failure = promotionFailure;
+          persistedCandidate.updatedAt = failedAt;
+          if (persistedPlane) persistedPlane.updatedAt = failedAt;
+        }
+        if (persistedCollision) {
+          persistedCollision.state = "attention_required";
+          persistedCollision.updatedAt = failedAt;
+        }
+        const persistedMission = database.shepherd.missions.find(
+          (item) => item.id === prepared.missionId,
+        );
+        if (persistedMission && persistedMission.state !== "attention_required") {
+          transitionMissionAndRecord(
+            database,
+            persistedMission.id,
+            "attention_required",
+            {
+              actor: "control_plane",
+              eventActor: SHEPHERD_ACTOR,
+              timestamp: failedAt,
+              attentionReason: promotionFailure.message,
+              failure: promotionFailure,
+              summary: "Promotion failed after final gate evaluation",
+              details: { reason: promotion.reason },
+            },
+          );
+        }
+      });
       throw new Error(`Promotion failed: ${promotion.reason}`);
     }
 
@@ -979,11 +1162,14 @@ export class ShepherdService {
         throw new Error("Promotion records disappeared before final persistence");
       }
       persistedCandidate.promotionState = "promoted";
+      persistedCandidate.promotionEvidence = structuredClone(
+        promotion.verificationEvidence,
+      );
       persistedCandidate.result = `Promoted ${persistedCandidate.targetValue}`;
       persistedCandidate.updatedAt = completedAt;
-      persistedPlane.verificationEvidenceIds.push(
-        promotion.verificationEvidence.id,
-      );
+      if (!persistedPlane.verificationEvidenceIds.includes(promotion.verificationEvidence.id)) {
+        persistedPlane.verificationEvidenceIds.push(promotion.verificationEvidence.id);
+      }
       persistedPlane.state = "verified";
       persistedPlane.updatedAt = completedAt;
       persistedCollision.state = "resolved";
@@ -1141,6 +1327,10 @@ export class ShepherdService {
     try {
       executionWorkspace =
         await prepared.planeManager.createExecutionWorkspace(initialPlane);
+      await this.checkpoint("contract_execution_workspace_ready", {
+        missionId: prepared.missionId,
+        contractId: input.contractId,
+      });
       await this.executor.run({
         executionId: initialPlane.executionIdentity,
         workspacePath: executionWorkspace.path,
@@ -1416,14 +1606,19 @@ export class ShepherdService {
     const evidence = this.sanitizeEvidence(
       await prepared.planeManager.withVerificationSnapshot(
         plane.headCommit,
-        async (snapshot) =>
-          await this.verifier.verify({
+        async (snapshot) => {
+          await this.checkpoint("contract_verification_snapshot_ready", {
+            missionId: prepared.missionId,
+            contractId: input.contractId,
+          });
+          return await this.verifier.verify({
             targetType: "contract",
             targetId: input.contractId,
             planePath: snapshot.path,
             checks: contract.acceptance.checks,
             changedFiles: plane.changedFiles,
-          }),
+          });
+        },
       ),
     );
     const verifiedAt = this.timestamp();
@@ -1664,6 +1859,7 @@ export class ShepherdService {
         selectionState: "pending",
         promotionState: "not_started",
         verificationEvidence: null,
+        promotionEvidence: null,
         changedFiles: [],
         diffSummary: "",
         result: null,
@@ -1938,6 +2134,45 @@ export class ShepherdService {
               item.selectionState === "selected",
           );
         return selected.length === 1 ? (selected[0]?.id ?? null) : null;
+      },
+      persistPromotingEvidence: async ({ evidence, changedFiles, candidateHead }) => {
+        const promotingAt = this.timestamp();
+        await this.store.mutate((database) => {
+          const persistedCandidate = database.shepherd.candidates.find(
+            (item) => item.id === candidate.id,
+          );
+          const persistedPlane = database.shepherd.planes.find(
+            (item) => item.id === plane.id,
+          );
+          if (
+            !persistedCandidate ||
+            !persistedPlane ||
+            persistedCandidate.promotionState !== "reverifying" ||
+            persistedCandidate.selectionState !== "selected" ||
+            persistedCandidate.planeId !== persistedPlane.id ||
+            persistedPlane.candidateId !== persistedCandidate.id ||
+            persistedPlane.headCommit !== candidateHead ||
+            evidence.targetType !== "promotion" ||
+            evidence.targetId !== persistedCandidate.id ||
+            !evidence.passed ||
+            evidence.id === persistedCandidate.verificationEvidence?.id ||
+            changedFiles.length !== persistedCandidate.changedFiles.length ||
+            !changedFiles.every((file) => persistedCandidate.changedFiles.includes(file))
+          ) {
+            throw new Error("Promotion evidence no longer matches durable candidate state");
+          }
+          persistedCandidate.promotionState = "promoting";
+          persistedCandidate.promotionEvidence = structuredClone(evidence);
+          persistedCandidate.updatedAt = promotingAt;
+          if (!persistedPlane.verificationEvidenceIds.includes(evidence.id)) {
+            persistedPlane.verificationEvidenceIds.push(evidence.id);
+          }
+          persistedPlane.updatedAt = promotingAt;
+        });
+        await this.checkpoint("promotion_ready_for_cas", {
+          missionId: prepared.missionId,
+          candidateId: candidate.id,
+        });
       },
     });
   }

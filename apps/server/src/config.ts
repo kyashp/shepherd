@@ -1,6 +1,23 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
+import { constants } from "node:fs";
+import {
+  link,
+  lstat,
+  mkdir,
+  open,
+  unlink,
+  writeFile,
+  type FileHandle,
+} from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
+
+export const VERIFIER_INSTALLATION_NONCE_FILE = ".verifier-installation-nonce";
+export const VERIFIER_INSTALLATION_MARKER_FILE =
+  ".verifier-installation-established";
+
+const verifierInstallationNoncePattern = /^[a-f0-9]{32}$/u;
+const runtimeInstanceIdPattern = /^[a-zA-Z0-9_.-]{1,48}$/u;
 
 const booleanEnvironmentValue = z
   .enum(["true", "false"])
@@ -143,6 +160,179 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
       env.SHEPHERD_VERIFIER_IMAGE?.trim() || env.CONTAINER_RUNTIME_IMAGE,
     nodeEnv: env.NODE_ENV,
   };
+}
+
+function installationNonceFromFile(contents: string): string {
+  const nonce = contents.endsWith("\n") ? contents.slice(0, -1) : contents;
+  if (
+    !verifierInstallationNoncePattern.test(nonce) ||
+    (contents !== nonce && contents !== nonce + "\n")
+  ) {
+    throw new Error("Persisted verifier installation nonce is invalid");
+  }
+  return nonce;
+}
+
+async function readInstallationNonce(filePath: string): Promise<string> {
+  let handle: FileHandle;
+  try {
+    handle = await open(
+      filePath,
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+    );
+  } catch {
+    throw new Error("Unable to read the persisted verifier installation nonce");
+  }
+  try {
+    const metadata = await handle.stat();
+    if (!metadata.isFile() || metadata.size < 32 || metadata.size > 33) {
+      throw new Error("Persisted verifier installation nonce is invalid");
+    }
+    return installationNonceFromFile(await handle.readFile({ encoding: "utf8" }));
+  } finally {
+    await handle.close();
+  }
+}
+
+async function entryExists(filePath: string): Promise<boolean> {
+  try {
+    await lstat(filePath);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+async function readInstallationMarker(filePath: string): Promise<void> {
+  let handle: FileHandle;
+  try {
+    handle = await open(
+      filePath,
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+    );
+  } catch {
+    throw new Error("Unable to read the verifier installation marker");
+  }
+  try {
+    const metadata = await handle.stat();
+    if (!metadata.isFile() || metadata.size !== 3) {
+      throw new Error("Persisted verifier installation marker is invalid");
+    }
+    if ((await handle.readFile({ encoding: "utf8" })) !== "v1\n") {
+      throw new Error("Persisted verifier installation marker is invalid");
+    }
+  } finally {
+    await handle.close();
+  }
+}
+
+async function establishInstallationMarker(dataDirectory: string): Promise<void> {
+  const markerPath = path.join(dataDirectory, VERIFIER_INSTALLATION_MARKER_FILE);
+  if (await entryExists(markerPath)) {
+    await readInstallationMarker(markerPath);
+    return;
+  }
+  const temporaryPath =
+    markerPath + "." + process.pid + "." + randomBytes(8).toString("hex") + ".tmp";
+  let handle: FileHandle | undefined;
+  try {
+    handle = await open(
+      temporaryPath,
+      constants.O_CREAT |
+        constants.O_EXCL |
+        constants.O_WRONLY |
+        constants.O_NOFOLLOW,
+      0o600,
+    );
+    await handle.writeFile("v1\n", { encoding: "utf8" });
+    await handle.sync();
+    await handle.close();
+    handle = undefined;
+    try {
+      await link(temporaryPath, markerPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+        throw new Error("Unable to persist the verifier installation marker");
+      }
+    }
+    await readInstallationMarker(markerPath);
+  } finally {
+    if (handle) await handle.close();
+    await unlink(temporaryPath).catch(() => undefined);
+  }
+}
+
+async function loadOrCreateInstallationNonce(dataDirectory: string): Promise<string> {
+  await mkdir(dataDirectory, { recursive: true, mode: 0o700 });
+  const filePath = path.join(dataDirectory, VERIFIER_INSTALLATION_NONCE_FILE);
+  const markerPath = path.join(dataDirectory, VERIFIER_INSTALLATION_MARKER_FILE);
+  const markerExists = await entryExists(markerPath);
+  if (markerExists) await readInstallationMarker(markerPath);
+  if (await entryExists(filePath)) {
+    const existing = await readInstallationNonce(filePath);
+    await establishInstallationMarker(dataDirectory);
+    return existing;
+  }
+  if (markerExists) {
+    throw new Error(
+      "Persisted verifier installation nonce is missing for an existing installation",
+    );
+  }
+  const nonce = randomBytes(16).toString("hex");
+  const temporaryPath =
+    filePath + "." + process.pid + "." + randomBytes(8).toString("hex") + ".tmp";
+  let handle: FileHandle | undefined;
+  try {
+    handle = await open(
+      temporaryPath,
+      constants.O_CREAT |
+        constants.O_EXCL |
+        constants.O_WRONLY |
+        constants.O_NOFOLLOW,
+      0o600,
+    );
+  } catch {
+    throw new Error("Unable to create the verifier installation nonce");
+  }
+  try {
+    await handle.writeFile(nonce + "\n", { encoding: "utf8" });
+    await handle.sync();
+    await handle.close();
+    handle = undefined;
+    try {
+      await link(temporaryPath, filePath);
+      await establishInstallationMarker(dataDirectory);
+      return nonce;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+        const existing = await readInstallationNonce(filePath);
+        await establishInstallationMarker(dataDirectory);
+        return existing;
+      }
+      throw new Error("Unable to persist the verifier installation nonce");
+    }
+  } finally {
+    if (handle) await handle.close();
+    await unlink(temporaryPath).catch(() => undefined);
+  }
+}
+
+/**
+ * Resolves a restart-stable verifier owner scoped to one persisted installation.
+ * A shared app-data root intentionally represents one installation; separate
+ * roots receive separate nonces even when their configured Runtime IDs match.
+ */
+export async function resolveVerifierOwnerId(
+  config: Pick<AppConfig, "dataDirectory" | "runtimeInstanceId">,
+): Promise<string> {
+  if (!runtimeInstanceIdPattern.test(config.runtimeInstanceId)) {
+    throw new Error("Invalid Runtime instance ID for verifier ownership");
+  }
+  const nonce = await loadOrCreateInstallationNonce(
+    path.resolve(config.dataDirectory),
+  );
+  return "verifier." + config.runtimeInstanceId + "." + nonce;
 }
 
 export function isArkConfigured(config: AppConfig): boolean {

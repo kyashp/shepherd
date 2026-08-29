@@ -341,6 +341,7 @@ export type CandidatePromotionState =
   | "not_started"
   | "reverifying"
   | "promoting"
+  | "interrupted"
   | "promoted"
   | "failed";
 
@@ -356,6 +357,8 @@ export interface ResolutionCandidate {
   selectionState: CandidateSelectionState;
   promotionState: CandidatePromotionState;
   verificationEvidence: VerificationEvidence | null;
+  /** Final independent re-verification evidence produced by the promotion gate. */
+  promotionEvidence: VerificationEvidence | null;
   changedFiles: string[];
   diffSummary: string;
   result: string | null;

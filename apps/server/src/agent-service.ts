@@ -29,6 +29,9 @@ export class AgentService {
   async initialize(): Promise<void> {
     await this.store.initialize();
     await this.workspaces.initialize();
+    for (const agent of this.store.snapshot().agents) {
+      await this.workspaces.assertManagedWorkspace(agent);
+    }
     await this.store.mutate((database) => {
       for (const run of database.runs) {
         if (run.status === "queued" || run.status === "running") {
@@ -106,6 +109,16 @@ export class AgentService {
 
   async deleteAgent(id: string): Promise<{ deleted: true }> {
     const agent = this.getAgent(id);
+    if (
+      this.store
+        .snapshot()
+        .shepherd.contracts.some((contract) => contract.agentId === id)
+    ) {
+      throw new HttpError(
+        409,
+        "Cannot delete an Agent referenced by durable Shepherd contract history",
+      );
+    }
     await this.cancelExecution(id);
     await this.workspaces.archive(agent);
     await this.store.mutate((database) => {
@@ -244,6 +257,7 @@ export class AgentService {
       if (this.cancellationRequests.has(agentAtStart.id)) {
         throw new RunCancelledError();
       }
+      await this.workspaces.assertManagedWorkspace(agentAtStart);
       const result = await this.runner.run({
         agentId: agentAtStart.id,
         workspacePath: agentAtStart.workspacePath,

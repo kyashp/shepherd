@@ -1,9 +1,10 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { constants as fsConstants } from "node:fs";
 import {
   lstat,
   mkdir,
-  readFile,
+  open,
   realpath,
   readdir,
   writeFile,
@@ -47,6 +48,14 @@ export interface ManagedAuthDemoProject {
   headCommit: string;
   allowClientReadableCredential: boolean;
   created: boolean;
+}
+
+export interface ManagedProjectIdentity {
+  managedRoot: string;
+  projectId: string;
+  repositoryPath: string;
+  planesRoot: string;
+  protectedBranch: string;
 }
 
 function isInside(root: string, candidate: string): boolean {
@@ -129,6 +138,33 @@ async function assertRegularFileIfPresent(candidate: string): Promise<boolean> {
   }
 }
 
+async function readTrustedRegularFile(
+  candidate: string,
+  description: string,
+): Promise<string> {
+  const before = await lstat(candidate);
+  if (before.isSymbolicLink() || !before.isFile() || before.size > 65_536) {
+    throw new Error(`${description} must be a bounded regular file`);
+  }
+  const handle = await open(
+    candidate,
+    fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | fsConstants.O_NONBLOCK,
+  );
+  try {
+    const opened = await handle.stat();
+    if (
+      opened.dev !== before.dev ||
+      opened.ino !== before.ino ||
+      opened.size !== before.size
+    ) {
+      throw new Error(`${description} identity changed`);
+    }
+    return await handle.readFile("utf8");
+  } finally {
+    await handle.close();
+  }
+}
+
 async function ensureContainedDirectory(
   root: string,
   candidate: string,
@@ -170,9 +206,9 @@ function parseRootSentinel(raw: string): ManagedRootSentinel {
 }
 
 /**
- * Establishes a non-destructive, sentinel-bound root for the managed fixture.
- * Existing unrelated entries are tolerated because Shepherd only touches its
- * fixed `repositories`, `planes`, and `projects` children.
+ * Establishes a sentinel-bound root for the managed fixture. A missing root or
+ * an existing empty directory may be initialized; a non-empty unsentinelled
+ * directory is never adopted.
  */
 export async function initializeShepherdManagedRoot(
   managedRoot: string,
@@ -181,10 +217,26 @@ export async function initializeShepherdManagedRoot(
   if (resolved === path.parse(resolved).root) {
     throw new Error("The filesystem root cannot be used as a Shepherd managed root");
   }
-  await mkdir(resolved, { recursive: true });
+  let existed = true;
+  try {
+    const entry = await lstat(resolved);
+    if (entry.isSymbolicLink() || !entry.isDirectory()) {
+      throw new Error("Managed demo root must be a real directory");
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    existed = false;
+    await mkdir(resolved, { recursive: true });
+  }
   const canonical = await realpath(resolved);
+  if (canonical !== resolved) {
+    throw new Error("Managed demo root identity changed");
+  }
   const sentinelPath = path.join(canonical, ROOT_SENTINEL);
   if (!(await assertRegularFileIfPresent(sentinelPath))) {
+    if (existed && (await readdir(canonical)).length > 0) {
+      throw new Error("Refusing to adopt a non-empty unsentinelled managed root");
+    }
     const sentinel: ManagedRootSentinel = {
       schemaVersion: 1,
       marker: "shepherd-managed-demo-root",
@@ -201,7 +253,81 @@ export async function initializeShepherdManagedRoot(
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
     }
   }
-  const sentinel = parseRootSentinel(await readFile(sentinelPath, "utf8"));
+  const sentinel = parseRootSentinel(
+    await readTrustedRegularFile(sentinelPath, "Managed demo root sentinel"),
+  );
+  if (sentinel.rootPath !== canonical) {
+    throw new Error("Managed demo root identity does not match its sentinel");
+  }
+  return canonical;
+}
+
+/** Proves that an empty database cannot silently orphan/adopt managed project state. */
+export async function assertNoManagedProjectState(managedRoot: string): Promise<void> {
+  const resolved = path.resolve(managedRoot);
+  let rootEntry;
+  try {
+    rootEntry = await lstat(resolved);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  if (rootEntry.isSymbolicLink() || !rootEntry.isDirectory()) {
+    throw new Error("Empty Shepherd state requires a real managed root");
+  }
+  if ((await realpath(resolved)) !== resolved) {
+    throw new Error("Empty Shepherd state managed root identity changed");
+  }
+  const allowedDirectories = new Set([
+    "repositories",
+    "planes",
+    "projects",
+    "agent-workspaces",
+  ]);
+  for (const name of await readdir(resolved)) {
+    const candidate = path.join(resolved, name);
+    if (name === ROOT_SENTINEL) {
+      const sentinel = parseRootSentinel(
+        await readTrustedRegularFile(candidate, "Managed demo root sentinel"),
+      );
+      if (sentinel.rootPath !== resolved) {
+        throw new Error("Managed demo root identity does not match its sentinel");
+      }
+      continue;
+    }
+    if (!allowedDirectories.has(name)) {
+      throw new Error("Empty Shepherd state found an unknown managed-root entry");
+    }
+    const entry = await lstat(candidate);
+    if (entry.isSymbolicLink() || !entry.isDirectory()) {
+      throw new Error("Empty Shepherd state found an unsafe managed container");
+    }
+    if ((await realpath(candidate)) !== candidate || (await readdir(candidate)).length > 0) {
+      throw new Error("Empty Shepherd state found persisted managed project artifacts");
+    }
+  }
+}
+
+/** Validates an existing root without creating or adopting any sentinel. */
+export async function validateShepherdManagedRoot(
+  managedRoot: string,
+): Promise<string> {
+  const resolved = path.resolve(managedRoot);
+  const entry = await lstat(resolved);
+  if (!entry.isDirectory() || entry.isSymbolicLink()) {
+    throw new Error("Managed demo root must be a real directory");
+  }
+  const canonical = await realpath(resolved);
+  if (canonical !== resolved) {
+    throw new Error("Managed demo root identity changed");
+  }
+  const sentinelPath = path.join(canonical, ROOT_SENTINEL);
+  if (!(await assertRegularFileIfPresent(sentinelPath))) {
+    throw new Error("Managed demo root sentinel is missing");
+  }
+  const sentinel = parseRootSentinel(
+    await readTrustedRegularFile(sentinelPath, "Managed demo root sentinel"),
+  );
   if (sentinel.rootPath !== canonical) {
     throw new Error("Managed demo root identity does not match its sentinel");
   }
@@ -224,11 +350,11 @@ function parseProjectMetadata(raw: string): ManagedProjectMetadata {
   return value as ManagedProjectMetadata;
 }
 
-async function validateExistingProject(
+async function validateExistingProjectIdentity(
   root: string,
   metadata: ManagedProjectMetadata,
   expected: ManagedProjectMetadata,
-): Promise<string> {
+): Promise<void> {
   if (
     metadata.projectId !== expected.projectId ||
     metadata.repositoryPath !== expected.repositoryPath ||
@@ -265,7 +391,7 @@ async function validateExistingProject(
     throw new Error("Managed demo policy is not a regular file");
   }
   const policy = JSON.parse(
-    await readFile(policyPath, "utf8"),
+    await readTrustedRegularFile(policyPath, "Managed demo policy"),
   ) as { allowClientReadableCredential?: unknown };
   if (
     policy.allowClientReadableCredential !==
@@ -273,13 +399,74 @@ async function validateExistingProject(
   ) {
     throw new Error("Managed demo policy differs from its trusted metadata");
   }
+}
+
+async function validateExistingProject(
+  root: string,
+  metadata: ManagedProjectMetadata,
+  expected: ManagedProjectMetadata,
+): Promise<string> {
+  await validateExistingProjectIdentity(root, metadata, expected);
   return assertFullObjectId(
-    await runGit(repository, [
+    await runGit(metadata.repositoryPath, [
       "rev-parse",
       "--verify",
       "refs/heads/" + metadata.protectedBranch + "^{commit}",
     ]),
   );
+}
+
+/**
+ * Resolves the only repository identity recovery may pass to Git. Persisted
+ * path text is treated solely as a value to compare with sentinel-backed,
+ * server-derived paths; it never selects the Git working directory.
+ */
+export async function resolveManagedProjectIdentity(options: {
+  managedRoot: string;
+  projectId: string;
+  protectedBranch: string;
+  persistedRepositoryPath: string;
+}): Promise<ManagedProjectIdentity> {
+  const root = await validateShepherdManagedRoot(options.managedRoot);
+  if (!SAFE_PROJECT_ID.test(options.projectId)) {
+    throw new Error("Unsafe managed demo project ID");
+  }
+  const protectedBranch = assertSafeGitBranch(options.protectedBranch);
+  const repositoryPath = path.join(root, "repositories", options.projectId);
+  const planesRoot = path.join(root, "planes", options.projectId);
+  if (options.persistedRepositoryPath !== repositoryPath) {
+    throw new Error("Persisted repository path does not match managed identity");
+  }
+  const metadataDirectory = path.join(root, "projects");
+  const metadataDirectoryEntry = await lstat(metadataDirectory);
+  if (
+    !metadataDirectoryEntry.isDirectory() ||
+    metadataDirectoryEntry.isSymbolicLink() ||
+    (await realpath(metadataDirectory)) !== metadataDirectory
+  ) {
+    throw new Error("Managed project metadata directory identity changed");
+  }
+  const metadataPath = path.join(metadataDirectory, options.projectId + ".json");
+  if (!(await assertRegularFileIfPresent(metadataPath))) {
+    throw new Error("Managed demo project metadata is missing");
+  }
+  const metadata = parseProjectMetadata(
+    await readTrustedRegularFile(metadataPath, "Managed project metadata"),
+  );
+  await validateExistingProjectIdentity(root, metadata, {
+    ...metadata,
+    projectId: options.projectId,
+    repositoryPath,
+    planesRoot,
+    protectedBranch,
+  });
+  return {
+    managedRoot: root,
+    projectId: options.projectId,
+    repositoryPath,
+    planesRoot,
+    protectedBranch,
+  };
 }
 
 /** Safely creates or re-opens the dependency-free authentication fixture. */
@@ -318,7 +505,9 @@ export async function initializeAuthDemoProject(
   await ensureContainedDirectory(root, metadataDirectory);
 
   if (await assertRegularFileIfPresent(metadataPath)) {
-    const metadata = parseProjectMetadata(await readFile(metadataPath, "utf8"));
+    const metadata = parseProjectMetadata(
+      await readTrustedRegularFile(metadataPath, "Managed project metadata"),
+    );
     await ensureContainedDirectory(root, repositoryPath);
     await ensureContainedDirectory(root, planesRoot);
     const headCommit = await validateExistingProject(

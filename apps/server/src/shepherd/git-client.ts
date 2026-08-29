@@ -29,6 +29,16 @@ export interface GitWorktree {
   prunable: boolean;
 }
 
+export interface ProtectedWorktreeInspection {
+  branch: string;
+  branchHead: string;
+  checkedOutBranch: string | null;
+  worktreeHead: string;
+  indexMatchesHead: boolean;
+  clean: boolean;
+  synchronized: boolean;
+}
+
 interface GitExecutionOptions {
   cwd?: string;
   allowedExitCodes?: readonly number[];
@@ -645,6 +655,48 @@ export class GitClient {
   }
 
   /**
+   * Corroborates the protected ref against the checked-out HEAD, index tree,
+   * and worktree. `rev-parse HEAD` alone is insufficient after update-ref
+   * because symbolic HEAD follows the new ref before `read-tree -u` finishes.
+   */
+  async inspectProtectedWorktree(
+    protectedBranch: string,
+  ): Promise<ProtectedWorktreeInspection> {
+    await this.ensureInitialized();
+    const branch = assertSafeGitBranch(protectedBranch);
+    if (branch !== this.protectedBranch) {
+      throw new ProtectedGitMutationError("inspection of an unconfigured branch");
+    }
+    const branchHead = await this.branchHead(branch);
+    const symbolic = await this.execute(
+      ["symbolic-ref", "--quiet", "--short", "HEAD"],
+      { allowedExitCodes: [0, 1] },
+    );
+    const checkedOutBranch =
+      symbolic.exitCode === 0 ? symbolic.stdout.trim() : null;
+    const worktreeHead = await this.currentHead(this.repositoryPath);
+    const indexComparison = await this.execute(
+      ["diff-index", "--cached", "--quiet", branchHead, "--"],
+      { allowedExitCodes: [0, 1] },
+    );
+    const indexMatchesHead = indexComparison.exitCode === 0;
+    const clean = (await this.uncommittedFiles(this.repositoryPath)).length === 0;
+    return {
+      branch,
+      branchHead,
+      checkedOutBranch,
+      worktreeHead,
+      indexMatchesHead,
+      clean,
+      synchronized:
+        checkedOutBranch === branch &&
+        worktreeHead === branchHead &&
+        indexMatchesHead &&
+        clean,
+    };
+  }
+
+  /**
    * Atomically advances the protected ref only if it still equals expectedHead.
    * If that ref is checked out in the managed repository, the clean index and
    * worktree are synchronized after the compare-and-swap succeeds.
@@ -669,10 +721,13 @@ export class GitClient {
       allowedExitCodes: [0, 1],
     });
     const checkedOutBranch = symbolic.exitCode === 0 ? symbolic.stdout.trim() : null;
-    if (checkedOutBranch === branch) {
-      const dirty = await this.uncommittedFiles(this.repositoryPath);
-      if (dirty.length > 0) throw new DirtyProtectedWorktreeError(dirty);
+    if (checkedOutBranch !== branch) {
+      throw new ProtectedGitMutationError(
+        "the managed repository must have the protected branch checked out for promotion",
+      );
     }
+    const dirty = await this.uncommittedFiles(this.repositoryPath);
+    if (dirty.length > 0) throw new DirtyProtectedWorktreeError(dirty);
 
     try {
       await this.execute(["update-ref", "refs/heads/" + branch, candidate, expected]);
@@ -683,8 +738,6 @@ export class GitClient {
       }
       throw error;
     }
-
-    if (checkedOutBranch !== branch) return;
 
     const current = await this.branchHead(branch);
     if (current !== candidate) {

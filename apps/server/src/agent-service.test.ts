@@ -1,11 +1,17 @@
-import { mkdtemp } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
-import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentService } from "./agent-service.js";
 import { loadConfig } from "./config.js";
+import { emptyDatabase } from "./database.js";
 import { JsonStore } from "./store.js";
-import type { AgentRunner, RunnerRequest, RunnerResult } from "./types.js";
+import type { Agent, AgentRunner, Database, RunnerRequest, RunnerResult } from "./types.js";
 import { WorkspaceManager } from "./workspace.js";
 
 class FakeRunner implements AgentRunner {
@@ -36,7 +42,9 @@ afterEach(async () => {
 });
 
 async function makeService(runner: AgentRunner = new FakeRunner()): Promise<AgentService> {
-  const root = await mkdtemp(path.join(tmpdir(), "launchpad-test-"));
+  const testRoot = path.resolve(process.cwd(), ".tmp", "agent-service-tests");
+  await mkdir(testRoot, { recursive: true });
+  const root = await mkdtemp(path.join(testRoot, "case-"));
   temporaryDirectories.push(root);
   const config = loadConfig({
     NODE_ENV: "test",
@@ -56,7 +64,104 @@ async function makeService(runner: AgentRunner = new FakeRunner()): Promise<Agen
   return service;
 }
 
+const persistedAgent = (workspacePath: string): Agent => ({
+  id: "persisted-agent",
+  name: "Persisted Agent",
+  description: "Existing Agent",
+  instructions: "Stay within the managed workspace.",
+  status: "ready",
+  workspacePath,
+  codexThreadId: null,
+  lastError: null,
+  createdAt: "2026-08-29T12:00:00.000Z",
+  updatedAt: "2026-08-29T12:00:00.000Z",
+});
+
+async function makePersistedService(
+  root: string,
+  database: Database | (Omit<Database, "version" | "shepherd"> & { version: 1 }),
+): Promise<AgentService> {
+  const dataRoot = path.join(root, "data");
+  const workspaceRoot = path.join(root, "workspaces");
+  await mkdir(dataRoot, { recursive: true });
+  await writeFile(path.join(dataRoot, "db.json"), JSON.stringify(database), "utf8");
+  const config = loadConfig({
+    NODE_ENV: "test",
+    APP_DATA_DIR: dataRoot,
+    AGENT_WORKSPACE_ROOT: workspaceRoot,
+    CODEX_HOME: path.join(root, "codex"),
+    ARK_API_KEY: "test-key",
+    ARK_MODEL: "ep-test",
+  });
+  return new AgentService(
+    config,
+    new JsonStore(path.join(dataRoot, "db.json")),
+    new WorkspaceManager(workspaceRoot),
+    new FakeRunner(),
+  );
+}
+
 describe("Agent lifecycle", () => {
+  it("rejects an out-of-root persisted Agent workspace before the service starts", async () => {
+    const testRoot = path.resolve(process.cwd(), ".tmp", "agent-service-tests");
+    await mkdir(testRoot, { recursive: true });
+    const root = await mkdtemp(path.join(testRoot, "case-"));
+    temporaryDirectories.push(root);
+    const outside = path.join(root, "outside-managed-root");
+    await mkdir(outside);
+    await writeFile(path.join(outside, "sentinel.txt"), "preserve", "utf8");
+    const database = emptyDatabase("2026-08-29T12:00:00.000Z");
+    database.agents.push(persistedAgent(outside));
+    const service = await makePersistedService(root, database);
+
+    await expect(service.initialize()).rejects.toThrow(
+      "Agent workspace does not match its server-owned identity",
+    );
+    expect(await readFile(path.join(outside, "sentinel.txt"), "utf8")).toBe(
+      "preserve",
+    );
+  });
+
+  it("applies the same workspace binding after a valid lossless V1 migration", async () => {
+    const testRoot = path.resolve(process.cwd(), ".tmp", "agent-service-tests");
+    await mkdir(testRoot, { recursive: true });
+    const root = await mkdtemp(path.join(testRoot, "case-"));
+    temporaryDirectories.push(root);
+    const outside = path.join(root, "legacy-outside-root");
+    await mkdir(outside);
+    const agent = persistedAgent(outside);
+    const service = await makePersistedService(root, {
+      version: 1,
+      agents: [agent],
+      messages: [],
+      runs: [],
+    });
+
+    await expect(service.initialize()).rejects.toThrow(
+      "Agent workspace does not match its server-owned identity",
+    );
+  });
+
+  it("rejects a symlink at the exact persisted managed workspace path", async () => {
+    const testRoot = path.resolve(process.cwd(), ".tmp", "agent-service-tests");
+    await mkdir(testRoot, { recursive: true });
+    const root = await mkdtemp(path.join(testRoot, "case-"));
+    temporaryDirectories.push(root);
+    const workspaceRoot = path.join(root, "workspaces");
+    const outside = path.join(root, "symlink-target");
+    await mkdir(workspaceRoot);
+    await mkdir(outside);
+    const expected = path.join(workspaceRoot, "persisted-agent");
+    await symlink(outside, expected);
+    const database = emptyDatabase("2026-08-29T12:00:00.000Z");
+    database.agents.push(persistedAgent(expected));
+    const service = await makePersistedService(root, database);
+
+    await expect(service.initialize()).rejects.toThrow(
+      "Agent workspace cannot be a symlink or non-directory",
+    );
+  });
+
   it("creates, updates, stops, starts and deletes an Agent", async () => {
     const service = await makeService();
     const agent = await service.createAgent({ name: "Builder" });

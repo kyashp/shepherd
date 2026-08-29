@@ -7,6 +7,12 @@ export const AUTH_CLAIM_KEY = "auth.transport" as const;
 export const BEARER_TRANSPORT = "bearer-jwt" as const;
 export const COOKIE_TRANSPORT = "http-only-session-cookie" as const;
 export const AUTH_FACT_PREFIX = "shepherd-fact auth.transport=" as const;
+export const AUTH_FRONTEND_CHECK_ID = "frontend-contract" as const;
+export const AUTH_FRONTEND_PROFILE_ID = "auth-frontend" as const;
+export const AUTH_BACKEND_CHECK_ID = "backend-contract" as const;
+export const AUTH_BACKEND_PROFILE_ID = "auth-backend" as const;
+export const AUTH_PROJECT_CHECK_ID = "project-security" as const;
+export const AUTH_PROJECT_PROFILE_ID = "auth-project-security" as const;
 
 export type AuthTransport =
   | typeof BEARER_TRANSPORT

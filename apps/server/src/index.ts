@@ -1,7 +1,11 @@
 import path from "node:path";
 import { AgentService } from "./agent-service.js";
 import { createApp } from "./app.js";
-import { loadConfig, writeCodexConfig } from "./config.js";
+import {
+  loadConfig,
+  resolveVerifierOwnerId,
+  writeCodexConfig,
+} from "./config.js";
 import { createRunner } from "./runner-factory.js";
 import {
   AUTH_BACKEND_PROFILE_ID,
@@ -20,6 +24,7 @@ const config = loadConfig();
 await writeCodexConfig(config);
 
 const sensitiveValues = [config.arkApiKey, config.authToken];
+const verifierOwnerId = await resolveVerifierOwnerId(config);
 const store = new JsonStore(path.join(config.dataDirectory, "launchpad.json"), {
   sensitiveValues,
 });
@@ -58,6 +63,7 @@ const shepherdVerifier = new ContainerVerifier(shepherdChecks, {
   containerEngine: config.containerEngine,
   containerImage: config.shepherdVerifierImage,
   containerUser: config.containerUser,
+  ownerId: verifierOwnerId,
   cpuLimit: Math.min(config.containerCpuLimit, 16),
   memoryLimit: config.containerMemoryLimit,
   pidsLimit: Math.max(16, Math.min(config.containerPidsLimit, 4_096)),
