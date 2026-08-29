@@ -102,6 +102,7 @@ test("direct shell launch reads dotenv and localizes Docker-default data paths",
     [
       `ARK_API_KEY=${arkKeySentinel}`,
       `ARK_MODEL=${arkModelSentinel}`,
+      "HOST=0.0.0.0",
       "APP_DATA_DIR=/app/data",
       "AGENT_WORKSPACE_ROOT=/app/workspaces",
       "CODEX_HOME=/app/codex-home",
@@ -129,6 +130,7 @@ test("direct shell launch reads dotenv and localizes Docker-default data paths",
       '    printf "%s\\n" "${CODEX_HOME:-}"',
       '    printf "%s\\n" "${SHEPHERD_ROOT:-}"',
       '    printf "%s\\n" "${SHEPHERD_CODEX_HOME_ROOT:-}"',
+      '    printf "%s\\n" "${HOST:-}"',
       '  } > "$OPS_02_CAPTURE"',
       "fi",
       "",
@@ -163,6 +165,7 @@ test("direct shell launch reads dotenv and localizes Docker-default data paths",
     path.join(temporaryDirectory, ".local", "codex-home"),
     path.join(temporaryDirectory, ".local", "data", "shepherd"),
     path.join(temporaryDirectory, ".local", "data", "shepherd-codex-homes"),
+    "127.0.0.1",
   ]);
 
   const customPaths = [
@@ -177,6 +180,7 @@ test("direct shell launch reads dotenv and localizes Docker-default data paths",
     [
       `ARK_API_KEY=${arkKeySentinel}`,
       `ARK_MODEL=${arkModelSentinel}`,
+      "HOST=0.0.0.0",
       `APP_DATA_DIR=${customPaths[0]}`,
       `AGENT_WORKSPACE_ROOT=${customPaths[1]}`,
       `CODEX_HOME=${customPaths[2]}`,
@@ -196,5 +200,41 @@ test("direct shell launch reads dotenv and localizes Docker-default data paths",
   });
 
   assert.equal(customResult.code, 0, customResult.stderr);
-  assert.deepEqual((await readFile(capturePath, "utf8")).trim().split("\n").slice(2), customPaths);
+  assert.deepEqual(
+    (await readFile(capturePath, "utf8")).trim().split("\n").slice(2, 7),
+    customPaths,
+  );
+
+  for (const [configuredHost, expectedHost] of [
+    ["", "127.0.0.1"],
+    ["::", "127.0.0.1"],
+    ["192.0.2.10", "192.0.2.10"],
+  ]) {
+    await writeFile(
+      path.join(temporaryDirectory, ".env"),
+      [
+        `ARK_API_KEY=${arkKeySentinel}`,
+        `ARK_MODEL=${arkModelSentinel}`,
+        `HOST=${configuredHost}`,
+        `APP_DATA_DIR=${customPaths[0]}`,
+        `AGENT_WORKSPACE_ROOT=${customPaths[1]}`,
+        `CODEX_HOME=${customPaths[2]}`,
+        `SHEPHERD_ROOT=${customPaths[3]}`,
+        `SHEPHERD_CODEX_HOME_ROOT=${customPaths[4]}`,
+        "CONTAINER_ENGINE=docker",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    const hostResult = await run(path.join(scriptsDirectory, "start-local-poc.sh"), [], {
+      cwd: temporaryDirectory,
+      env: {
+        PATH: `${binDirectory}${path.delimiter}${process.env.PATH ?? ""}`,
+        OPS_02_CAPTURE: capturePath,
+      },
+    });
+
+    assert.equal(hostResult.code, 0, hostResult.stderr);
+    assert.equal((await readFile(capturePath, "utf8")).trim().split("\n").at(-1), expectedHost);
+  }
 });

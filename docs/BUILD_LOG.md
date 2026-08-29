@@ -7,6 +7,59 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## OPS-04 local loopback candidate
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Branch/commit:** `fix/29-ops-04-local-loopback` / `a0a2d60`
+**Issue:** [#29](https://github.com/kyashp/shepherd/issues/29)
+
+The first exact post-#28 command, `./scripts/start-local-poc.sh`, used the real
+ignored `.env` without printing values. Runtime preflight and both builds passed,
+but server configuration then failed closed because the inherited host was an
+any-address value and the configured application token was a placeholder. A
+classification-only check confirmed those facts without exposing either value.
+
+The candidate changes only the local launcher: an empty host or the exact container
+any-address values `0.0.0.0` and `::` become `127.0.0.1`. Other custom hosts remain
+unchanged, and the server's non-loopback token validation is untouched. The causal
+RED fixture captured `0.0.0.0`; GREEN captured `127.0.0.1` through the real launcher
+boundary.
+
+The exact direct command was then run from the candidate worktree against the real
+ignored `.env` through a temporary ignored symlink; no credential was copied,
+printed, or committed. Observed results:
+
+- listener: `127.0.0.1:3000` only;
+- `GET /api/health`: 200;
+- `GET /`: 200;
+- unauthenticated `GET /api/system`: 401;
+- authenticated `GET /api/system`: 200 with Ark configured, Codex available, and
+  the container/Docker Runtime selected;
+- SIGINT closed port 3000 and left zero Runtime containers owned by the configured
+  instance; the temporary `.env` symlink was removed;
+- no Agent or Shepherd model request was made.
+
+Final local verification before PR creation:
+
+```sh
+node --test scripts/start-local-poc-launcher.test.mjs
+# 2/2 passed
+
+npm run check
+# exit 0: both workspace typechecks passed
+# launcher tests 2/2 passed
+# 26 server test files passed, 1 opt-in live file skipped
+# 551 tests passed, 1 opt-in live test skipped
+# web and server production builds passed
+```
+
+The configured custom security-reviewer role was unavailable. An independent
+read-only fallback review reported no high or medium finding and confirmed that
+non-loopback hosts still reach the unchanged server token-enforcement boundary.
+It reported one Low test gap for empty, IPv6-any, and explicit custom hosts. The
+launcher regression now covers empty and `::` normalization plus preservation of
+the concrete documentation-range host `192.0.2.10`; the focused test remains 2/2.
+
 ## OPS-02 direct local startup candidate
 
 **Date:** 2026-08-29 (Asia/Singapore)
