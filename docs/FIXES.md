@@ -1,6 +1,6 @@
 # Shepherd Defect Queue
 
-**Assessed branch/SHA:** `mock-main` / `00c81ae067961d43ee63acb777bf070ca808c113`
+**Assessed branch/SHA:** `mock-main` / `949cec147cc4963866858f705bb466088e24e711`
 
 **Audited:** 2026-08-29, Asia/Singapore
 
@@ -27,6 +27,68 @@ that limitation is explicit.
    and audit status. Anything below scoped 100% remains review-required.
 
 ## Immediate queue
+
+### `TST-05` — E2E-01 visual evidence is non-reproducible and overclaims the down state
+
+- **Evidence class:** independently reproduced while auditing unintegrated candidate
+  `592699d140145165c5ca0d9511478171e5051271`.
+- **Failure contract:** a routine `npm run test:e2e:harness` passed its Node 3/3 and
+  Chromium 6/6 assertions but rewrote 16 of the 18 tracked E2E-01 PNGs plus the
+  unrelated tracked UI-03 1280 capture. Both `08-server-down.png` files remained
+  byte-identical, but visual inspection showed blank white canvases. The test only
+  proves that the original port is closed, catches the failed reload, and captures
+  the blank page without a DOM or visible-state assertion. The 1280 Create Agent
+  capture also does not show the primary action within the viewport, and the
+  journey does not fully prove actual Tab traversal, focus-visible treatment, or
+  lifecycle-action keyboard activation.
+- **Impact:** ordinary successful verification leaves a dirty tree and the checked-in
+  images cannot be reproduced exactly. The evidence log calls a blank canvas a
+  visually inspected down state and does not prove that the full Create Agent and
+  keyboard journey is reachable.
+- **Minimal correction:** keep routine generated screenshots under ignored `.tmp`
+  output, with a separate explicit deterministic review/update path for committed
+  evidence. Treat port closure as infrastructure evidence; do not invent or fake a
+  reconnect UI. At both required viewports capture and assert primary-action
+  reachability, actual Tab/focus-visible behavior, and keyboard activation of the
+  relevant lifecycle controls. Do not change production UI or its accepted design.
+- **Acceptance:** causal regression demonstrates the prior tracked-file mutation;
+  routine harness unit/browser runs leave an exactly clean tree; an explicit bounded
+  screenshot-update command is documented and reproducible; the down step is
+  truthfully recorded as port-down rather than rendered app evidence; Create Agent
+  completion and keyboard/focus behavior pass at `1280x800` and `1440x900`; full
+  harness, literal `npm run check`, independent rendered review, and integrated/
+  hosted gates pass.
+- **Owner/status:** Fixer / `READY`; blocks E2E-01 integration; **0%**, 0/5 gates,
+  not audited.
+
+### `TST-06` — E2E harness failure paths can retain or disclose sensitive evidence
+
+- **Evidence class:** independently source-confirmed in unintegrated candidate
+  `592699d140145165c5ca0d9511478171e5051271`; fault-path regressions are required
+  before claiming correction.
+- **Failure contract:** secret values are passed directly into Playwright matcher
+  arguments and therefore may be rendered in assertion output. A retained
+  `runRoot` cannot be removed by a later idempotent `stop()` after a stop/restart
+  failure. Repository containment checks validate the selected reusable root but
+  do not canonically reject symlinked managed harness ancestors before `mkdtemp` or
+  recursive removal. Opt-in live Playwright failure traces/screenshots can retain
+  prompt or model output.
+- **Impact:** a failing CI/local run may disclose a credential or live content and
+  may leave state/workspace artifacts behind; ancestor indirection weakens the
+  intended repository-confined cleanup boundary.
+- **Minimal correction:** assert only secret-safe booleans or hashes; make stop
+  idempotence permit a later explicit cleanup of a retained root; validate every
+  managed ancestor canonically inside the repository before creation/removal; and
+  suppress, sanitize, or safely isolate live failure artifacts. Add causal unit and
+  injected-failure coverage. Do not broaden child environment ingress, deletion
+  scope, filesystem authority, production debug behavior, or live-call count.
+- **Acceptance:** fault tests prove redacted matcher failures, retained-root cleanup
+  after restart failure, ancestor-symlink rejection before write/delete, and no
+  prompt/output/secret in bounded live failure artifacts. Existing run-root/
+  workspace/symlink/outside-canary tests, harness unit/browser suites, literal
+  `npm run check`, independent security review, and integrated/hosted gates pass.
+- **Owner/status:** Fixer / `READY`; blocks E2E-01 integration; **0%**, 0/5 gates,
+  not audited.
 
 ### `TST-04` — F-03 fail-fast verification can race service fixture teardown
 
@@ -299,6 +361,8 @@ that limitation is explicit.
 | `UI-03` | E2E-01 reproduced document widths of 2299/2579 on Create Agent because four transparent absolute preset radios retained global viewport-wide input sizing. | Resolved by bounding only the visually hidden preset-radio dimensions while preserving native semantics, labels, keyboard behavior, and accepted form visuals. | Integrated/browser-audited at `83954f7`; hosted `C` waits on TST-03 |
 | `TEST-TS` | Current server tsconfig explicitly excludes `src/**/*.test.ts`. | Add a separate no-emit test typecheck without changing production emit. | Worker / ready |
 | `CI-01` | Repository contains no `.github/workflows` required check. | Network/model-free Node install/typecheck/test/build workflow; preserve protected-main policy. | Integrator / ready |
+| `TST-05` | Candidate `592699d` routine harness run passed but modified 16/18 E2E PNGs plus an unrelated UI-03 image; the two stable down captures are unasserted blank canvases. | Ignored routine output plus explicit review-update path, truthful port-down evidence, reachable Create action and real keyboard/focus coverage; no production UI/design change. | Fixer / ready; blocks E2E-01 |
+| `TST-06` | Candidate `592699d` passes secrets to matcher output, cannot later clean a retained run root, does not canonically reject symlinked managed ancestors, and may retain live prompt/output in failure artifacts. | Secret-safe assertions, idempotent later cleanup, canonical ancestor confinement, safe live artifacts and causal fault tests; no authority broadening. | Fixer / ready; blocks E2E-01 |
 
 ## Assurance gaps that are not yet defects
 

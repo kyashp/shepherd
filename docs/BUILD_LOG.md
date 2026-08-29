@@ -7,6 +7,46 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## E2E-01 independent audit rejection: visual evidence and failure-path safety
+
+**Date:** 2026-08-30 (Asia/Singapore)
+**Candidate:** `592699d140145165c5ca0d9511478171e5051271` (parent `949cec1`)
+
+The Auditor reviewed the exact candidate in an isolated worktree. It remains
+**unintegrated**. No candidate product, test, screenshot, or documentation file was
+cherry-picked to `mock-main`.
+
+Passing evidence was substantial but insufficient for integration: harness unit
+tests passed 3/3; Chromium passed 6/6 across exact `1280x800` and `1440x900` projects;
+strict server test-source typecheck passed; and literal `npm run check` passed with
+launcher 3/3, server 563/563 plus one unchanged opt-in live skip, all typechecks and
+both builds. All 18 regenerated E2E captures were manually inspected. The previously
+bounded live evidence remains exactly two successful legacy ARK turns, no retry,
+one real Codex thread, generated artifact/test 2/2, restart persistence, redacted
+evidence and cleanup; the Auditor did not consume another live call.
+
+Two blocking gates failed. First, the successful routine harness run modified 16 of
+18 tracked E2E-01 PNGs and the unrelated tracked UI-03 1280 PNG. Only the two
+server-down files stayed byte-identical. Both were blank white canvases: the test
+asserts the port closed, catches reload failure, then screenshots without any DOM or
+visible-state assertion. Calling that a visually inspected application down state
+overclaims the evidence. The 1280 Create Agent image also does not demonstrate that
+the primary action is reachable, and actual Tab/focus-visible/lifecycle keyboard
+coverage is incomplete. This is recorded as `TST-05`; production UI and the accepted
+design must remain unchanged.
+
+Second, source audit found failure-path safety gaps recorded as `TST-06`: a secret is
+passed directly to Playwright matcher output; a retained run root cannot be cleaned
+by a later idempotent stop after restart failure; managed harness ancestor symlinks
+are not canonically rejected before temporary-root creation/removal; and opt-in live
+failure traces/screenshots may retain prompts or output. These require causal fault
+tests and the narrow redaction/confinement/cleanup changes in `FIXES.md`, without
+broadening environment or filesystem authority.
+
+**Verdict:** E2E-01 remains blocked and unintegrated. `TST-05` and `TST-06` must pass
+their targeted, browser/security-review, full, integrated and hosted gates before
+the journey can be marked audited.
+
 ## TST-04 independent integration audit and hosted closeout
 
 **Date:** 2026-08-30 (Asia/Singapore)
