@@ -86,6 +86,68 @@ store/API/log/DOM checks; no production trust boundary changed, so an independen
 security-reviewer is not required for this test-only candidate. `T`, `C`, `B`, and
 `S` are evidenced. Auditor integration and the `I` gate remain pending.
 
+### Independent Auditor integration
+
+**Candidate:** `fd4953defd4a2e9331bb7dc39f79aea8fbc05342`
+
+**Integrated implementation:** `5b152a0c54ac1ed97c69d69cc84a7e093f5250e9`
+
+The Auditor reviewed the exact parent-relative diff and dependency graph before
+integration. The implementation scope is the Playwright configuration, root test
+scripts, E2E support/fixtures/tests, two PNG baselines, and evidence documentation.
+The existing Playwright `1.62.1` lock entry is reused; `package-lock.json` did not
+change. No server source, web source, CSS, API route, runtime configuration,
+production launcher, `.env` example, or production debug/fault route changed.
+
+Source and focused runtime review confirmed that the built server is spawned
+directly with a constructed child-environment allowlist rather than `process.env`;
+there is no env-file flag or dotenv loader. Ark/model variables are empty, the
+runtime is deterministic and loopback-only, and no model request is possible in
+the exercised state. The real API still requires bearer authentication. The fake
+Codex limits invocation shape, prompt size and output; the fake container engine
+returns only an empty result for the two ownership-filtered startup `ps` probes.
+Readiness is capped at 15 seconds, captured output at 16 KiB, and shutdown at
+`SIGTERM` plus a bounded `SIGKILL` fallback. Each run uses a single exact
+repository-local ignored root; tests proved state-root deletion and port closure.
+
+The candidate was independently tested in a detached audit worktree, then the
+same gates were repeated after integration on `mock-main`:
+
+```sh
+npm run test:e2e:harness:unit
+# build passed; Node harness 2/2 passed
+
+PLAYWRIGHT_BROWSERS_PATH=.tmp/playwright-browsers \
+  npx playwright test --config=playwright.config.ts
+# Chromium 2/2 passed: 1280x800 and 1440x900
+
+npm run check
+# typechecks passed; launcher 3/3; server 26 files and 555 tests passed;
+# one opt-in live file/test skipped; web 40-module build and server build passed
+
+git diff --check
+# passed
+```
+
+Both fresh screenshots had the exact committed dimensions and hashes:
+
+- `1280x800.png`: `07acf85b0cdfe947aca71a3bf26c476a20305761aa7d2f4bf0dca334014bfd05`
+- `1440x900.png`: `3b54e1afe689acee16a8c6a0991e3178f7440f6d2cd9118a03a480bb975ed355`
+
+The Auditor visually inspected both captures. They preserve the accepted charcoal,
+cream and violet design language with legible empty-state hierarchy, no overlap,
+and no document/body X/Y overflow. The access token is absent from DOM text and
+the screenshots; the ambient Ark canary is absent from state, API payloads and
+bounded logs. No server process or per-run state remained after either run. Only
+the expected ignored browser binaries and Playwright last-run metadata remain.
+
+**Verdict:** `E2E-HARNESS` is **AUDITED at scoped 100%** with `T,C,B,S,I` 5/5.
+No independent UI or security reviewer was required because production UI and
+trust-boundary code did not change. This verdict covers only the deterministic
+authenticated clean-shell foundation. `E2E-01` through `E2E-08`, populated and
+composer interactions, accessibility, live-model acceptance, and `UI-GATE` remain
+separate pending work.
+
 ## TST-02 deterministic recovery fixture clock
 
 **Date:** 2026-08-29 (Asia/Singapore)

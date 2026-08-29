@@ -1,7 +1,7 @@
 # Shepherd Completion Task Ledger
 
 **Canonical implementation snapshot:** `mock-main` at
-`0cb431a0420e3d7f77784fe4c62b42f92710446c`
+`5b152a0c54ac1ed97c69d69cc84a7e093f5250e9`
 
 **Audited:** 2026-08-29, Asia/Singapore
 
@@ -57,10 +57,11 @@ scrolling.
 | Production build | Web: 40 modules; server TypeScript build passed | Pass |
 | Dependency audit | 0 vulnerabilities across 251 dependencies | Pass |
 | Script syntax | `bash -n` launcher and Node launcher syntax passed | Pass |
-| Browser/live/model gates | Not run in this audit | Pending |
+| Deterministic browser harness | Node harness 2/2 and Chromium 2/2 at `1280x800` and `1440x900`; screenshots inspected | Pass after audited `E2E-HARNESS` integration |
+| Full PRD journeys/live/model gates | Not run in this audit | Pending |
 
-No model request was made during either audit. The literal full gate is green at
-the integrated `TST-02` implementation SHA named above.
+No model request was made during these audits. The literal full gate and the
+deterministic clean-shell browser harness are green at the snapshot named above.
 
 ## External ownership holds — do not assign
 
@@ -125,7 +126,7 @@ without an open issue/PR are not active ownership claims.
 
 | ID | PRD ref | Status / dependencies | Required acceptance | Confidence; gates passed; audit |
 |---|---|---|---|---|
-| `E2E-HARNESS` | 0.4, 16 Phase 6 | **IMPLEMENTED — Worker; awaiting Auditor integration** | Playwright 1.62.1/Chromium 151 harness starts the real built authenticated app with an allowlisted environment, isolated ignored state, deterministic fake Codex/container executables, bounded readiness and cleanup, and no `.env`, Ark/model, debug-route, or production-UI changes. Node causal tests passed 2/2; browser smoke passed 2/2 at `1280x800` and `1440x900` with committed screenshots, exact viewport and no document/body X/Y overflow; literal `npm run check` passed 555 server tests plus all type/build gates. Secret canaries were absent from store/API/log/DOM. Auditor must independently rerun on integrated `origin/mock-main`. `T,C,B,S,I`. | **95% scoped**; `T,C,B,S` passed (4/5); not audited |
+| `E2E-HARNESS` | 0.4, 16 Phase 6 | **AUDITED** at integrated implementation `5b152a0` | Auditor independently verified the candidate and integrated SHA: allowlisted child environment with no `.env` or ambient Ark/model ingress; required bearer auth; bounded fake Codex/container fixtures, readiness, logs, termination, port and run-root cleanup; ignored artifacts; no production debug route or UI/runtime change. Node harness passed 2/2 and Chromium passed 2/2 at exact `1280x800` and `1440x900`; regenerated screenshot hashes matched, document/body X/Y overflow was absent, and both images preserved the accepted clean-shell UI. Literal `npm run check` passed launcher 3/3, server 555/555 with one opt-in live skip, typechecks and both builds. This foundation does not satisfy `E2E-01`–`08`, populated/composer states, accessibility, or `UI-GATE`. `T,C,B,S,I`. | **100% scoped**; `T,C,B,S,I` passed (5/5); audited |
 | `E2E-01` | 11.6.1, 17 baseline | `BLOCKED` by harness | Create Agent → live/fake Playground task → follow-up → restart continuity. Deterministic browser test plus one sparse live `ARK_MODEL` acceptance; `C,B,L,S,U,I`. | **35%**; 0/6; not audited |
 | `E2E-02` | 11.6.2, 15 | `BLOCKED` by harness/P0 | Full hero chain with every intermediate Contract/Plane/collision/candidate/promotion state and real backend data; `C,B,S,U,I`. | **50%**; 0/5; not audited |
 | `E2E-03` | 11.6.3 | `BLOCKED` by Group Chat work | Targeted Project Group Contract from click/type through Agent summary; `C,B,S,U,I`. | **10%**; 0/5; not audited |
@@ -155,7 +156,7 @@ without an open issue/PR are not active ownership claims.
 
 ## Count and current verdict
 
-- **44 tracked work items:** 1 audited, 4 externally held, and 39 other incomplete
+- **44 tracked work items:** 2 audited, 4 externally held, and 38 other incomplete
   items across P0/P1/P2.
 - **Next ready worker assignment:** `F-01/02` unless the integrator selects another
   non-overlapping ready row.
