@@ -876,6 +876,31 @@ demo Mission are proven across two fresh end-to-end Missions. Scheduler, Project
 Group parser, and Ark advisory-reviewer modules exist and are focused-test-backed, but
 their service/API integration remains Phase 4 work and is not claimed here.
 
+## 2026-08-29 — GC-01 draft correction
+
+[Draft PR #9](https://github.com/kyashp/shepherd/pull/9) implements the bounded
+`GC-01` correction discovered while verifying Project Group mentions:
+
+- Project Group mention buttons generate the parser's JSON-quoted syntax for Agent
+  names containing whitespace or unsafe token characters. The pure prepend contract
+  preserves existing multiline composer content; the page retains its existing
+  request-animation-frame focus/caret restoration.
+
+Strict TDD evidence:
+
+- Mention formatting RED received `@Frontend Agent` instead of
+  `@"Frontend Agent"`; focused GREEN passed 2/2.
+- Draft preservation RED reported a missing prepend contract; focused GREEN passed
+  3/3 after the helper and page integration.
+
+The final pre-merge `npm run check` passed with 25 test files passed and 2 skipped,
+544 tests passed and 2 skipped, and successful web/server typechecks and production
+builds.
+
+Browser interaction and screenshots are not claimed: the browser runtime exposed no
+attachable browser. `docs/HANDOVER.md` records the remaining `GC-01` keyboard,
+focus/caret, and `1280x800`/`1440x900` gates plus separate `GC-02..07` work.
+
 ## RST-01 — Idempotent and Serialized Demo Reset
 
 **Date:** 2026-08-29 (Asia/Singapore)
@@ -1504,3 +1529,180 @@ On final head `a14c3f71446ff5c46a84db6482fc445e9d1944d9`, `npm run check` passed
 builds completed. Six measured integration cases now have explicit 15-second
 Vitest budgets; the one 25-second internal completion wait remains confined to the
 already-30-second background real-Planes test.
+
+## 2026-08-29 — GC-01 post-#19 current-main browser gate
+
+[Draft PR #9](https://github.com/kyashp/shepherd/pull/9) was integrated on the
+merged [PR #19](https://github.com/kyashp/shepherd/pull/19) `main` commit
+`120fff066d962f4f30ed6cd62bc367cc869e02db` in a detached evidence worktree.
+The overlay contained exactly the three GC web files, and each blob matched the
+PR #9 head:
+
+```text
+apps/web/src/pages/ProjectGroupPage.tsx
+apps/web/src/pages/project-group-mention.test.ts
+apps/web/src/pages/project-group-mention.ts
+```
+
+Observed verification on that exact integration:
+
+```sh
+npx vitest run apps/web/src/pages/project-group-mention.test.ts \
+  --environment node --no-file-parallelism --maxWorkers=1
+# 1 file passed; 3 tests passed
+
+npm run check
+# exit 0: both workspace typechecks passed
+# 25 test files passed, 2 opt-in files skipped
+# 550 tests passed, 2 opt-in tests skipped
+# web and server production builds passed
+
+git diff --check
+# passed
+```
+
+A terminal Playwright run exercised the real Vite page with deterministic API
+interception in installed headless Chromium. At both exact `1280x800` and
+`1440x900` viewports, mouse click, keyboard Enter, and keyboard Space activation
+produced `@"Frontend Agent" Keep this draft\nincluding its second line`. After
+every activation, `#group-message` was the active element and its collapsed
+selection was `59..59` for a 59-character value. Keyboard focus matched
+`:focus-visible` with a solid 2 px outline. Both pages reported exact requested
+viewport dimensions, no horizontal overflow, no console/page error, and no
+unexpected API request.
+
+The two screenshots were visually inspected against `docs/UI.jpeg`. The dark
+sidebar, restrained purple accents, bordered conversation panel, spacing hierarchy,
+and bottom composer remained consistent; mention chips and the focused composer had
+no clipping or overlap. Screenshots and the one-off Playwright harness remained
+temporary and were not committed.
+
+This evidence closes the scoped `GC-01` interaction uncertainty only. `GC-02..07`,
+polling/reconnect and populated-history browser coverage, accessibility, a committed
+deterministic E2E harness/screenshot corpus, independent UI review, and post-merge
+verification after PR #9 itself lands remain separate.
+
+### GC-01 final parser-round-trip hardening
+
+A final review found that a quoted display name could still fail routing when the
+server's whole-message normalization changed the decoded lookup target. For example,
+`Frontend  Agent` was formatted as `@"Frontend  Agent"`, then collapsed to one
+space before lookup even though the stored Agent name retained two spaces.
+
+The focused RED failed 2/5 tests: normalization-changing spacing did not fall back
+to the Agent ID, and full-width quote characters were not normalized before JSON
+escaping. The minimal web-only fix now normalizes safe display-name mentions before
+escaping and falls back to the Agent UUID when a parser-valid name cannot survive
+the whole-message transformation and the shared ID/name namespace is unambiguous.
+The focused GREEN passed 5/5 and
+round-tripped those generated mentions through the production
+`parseProjectGroupMessage()` implementation.
+
+A second review found that U+037A gains leading spacing under NFKC and the parser
+directory trims after normalization. RED failed 1/6 because the formatter retained
+that introduced spacing; the minimal post-NFKC trim is GREEN at 6/6 through the
+production parser. No server files, stored records, or public schemas changed.
+
+The reviews also found two out-of-scope server directory mismatches, now tracked as
+`GC-07`: create/update accepts source-short Agent names whose NFKC+trim form exceeds
+the parser's 128-character directory-key limit, and names canonically equal to a
+different Agent's ID even though IDs/names share one parser lookup namespace. The
+parser rejects the first entire directory before resolving an ID and correctly
+rejects the second route as ambiguous, so no web fallback can correct either case.
+A separate server/schema task must align canonical length and namespace validation
+and plan non-destructive repair for existing invalid or colliding stored names.
+
+On the actual merge-resolved branch:
+
+```sh
+npx vitest run apps/web/src/pages/project-group-mention.test.ts
+# 1 file passed; 6 tests passed
+
+npm run check
+# exit 0: both workspace typechecks passed
+# 25 test files passed, 2 opt-in files skipped
+# 550 tests passed, 2 opt-in tests skipped
+# web and server production builds passed
+```
+
+Terminal Playwright was rerun at exact `1280x800` and `1440x900`. Mouse, Enter,
+and Space still inserted the readable `@"Frontend Agent"` form, preserved the
+multiline draft, restored focus, and left the collapsed caret at `59..59`.
+Keyboard focus remained visibly outlined; both viewports had no overflow,
+console/page errors, unexpected API requests, clipping, or overlap. The refreshed
+screenshots were visually inspected against `docs/UI.jpeg` and remained temporary.
+
+## 2026-08-30 — GC-01 current-main integration and default-gate packaging
+
+PR #9 was merged locally with current `origin/main` at
+`d27dea670108e5a06eac20de7df88f756b68e404`, the merge of PR #13. The only
+textual conflicts were this build log and `docs/HANDOVER.md`; the product diff
+remains limited to the Project Group mention helper and its use in
+`ProjectGroupPage.tsx`.
+
+Review correctly found that the original web-workspace test was not discovered by
+the repository's root test command. The pure regression moved to
+`apps/server/src/project-group-mention.test.ts`, whose existing Vitest workspace can
+import both the web helper and production server parser without new dependencies.
+The packaging RED command reported no matching test file before the move.
+
+Independent review then found an in-flight submission race: the textarea was
+disabled during the POST, but a mention button could mutate the retained draft
+before the successful request cleared it. The review also found that programmatic
+mention insertion could exceed the textarea's 2,000-character limit. The causal RED
+failed 2/8 because the submission-locked button and bounded prepend helper did not
+exist. The minimal correction gives the mention button native disabled semantics
+while sending plus a defensive callback guard, and rejects an over-limit insertion
+without changing the draft while showing a composer-scoped status message. GREEN
+passes all 8 formatter, parser-round-trip, draft-preservation, submission-lock, and
+exact-boundary cases:
+
+```sh
+npm run test -w @launchpad/server -- src/project-group-mention.test.ts
+# 1 file passed; 8 tests passed
+```
+
+The Node 24 Linux verification copy normalized only the checkout's CRLF shell
+launcher; repository blobs were not changed. The current-head `npm run check`
+completed both workspace typechecks, the 3/3 launcher suite, and all 8 GC-01 tests,
+but did **not** complete green. Two unchanged server cases failed under the complete
+suite: `recovery.process.test.ts` after `update-ref`, and `service.test.ts` while
+rejecting a second Mission after an external protected-head move (24 files passed,
+2 failed, 2 skipped; 557 tests passed, 2 failed, 5 skipped). The latter passes 1/1
+alone. The recovery-process file had passed 5/5 in an earlier isolation, then failed
+a different `promotion_ready_for_cas` case in a later 4/5 isolation. PR #9 has no
+diff in either server path. These rotating failures are recorded as existing
+shared-clock/process instability, not as a passing required gate and not as GC-01
+scope.
+
+Independent production builds passed for web and server, `git diff --check` passed,
+and `npm audit --audit-level=high` found 0 vulnerabilities.
+
+The current integrated browser run used terminal Playwright because the in-app
+browser exposed no attachable backend. At exact `1280x800` and `1440x900`, mouse,
+Enter, and Space each produced
+`@"Frontend Agent" Keep this draft\nincluding its second line`; focus returned to
+the composer, the collapsed caret was `59..59`, and keyboard focus had a solid
+2 px visible outline. During a deliberately deferred POST, both the mention button
+and composer were disabled, programmatic button activation left the submitted draft
+unchanged, and the successful response cleared only that submitted content. An
+exact 2,000-character mention insertion succeeded; one character over remained at
+2,000 and displayed the explicit limit error. Both viewports had no horizontal
+overflow, clipping, console or page errors, failed requests, unexpected API writes,
+or layout overlap. The temporary screenshots were visually checked against
+`docs/UI.jpeg`:
+
+```text
+1280x800  sha256 4d4e35b065f3c530dbb02b5d92e35830490799759b4bac85c855a4a5dd5a0039
+1440x900  sha256 7e09440db22781b45f4c11173580fecfc01d5ef7dcf8792ddaecc255e6c709a1
+```
+
+The independent reviewer reported no Critical issue. Its one Important race and
+one Minor length-boundary issue are corrected above. The read-only follow-up
+reviewed the final staged five-file effective diff, reported no Critical, Important,
+or Minor finding, and returned **Ready to merge: Yes**, subject to normal required
+checks and integrator disposition of the unrelated suite instability.
+
+PR #9 remains the bounded `GC-01` correction. The requested no-project composer
+behavior is `GC-05`, which issue #5 and this handover explicitly exclude; it needs
+its own issue, owner, branch, regression, and review.
