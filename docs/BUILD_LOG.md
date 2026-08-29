@@ -71,6 +71,54 @@ until the Auditor integrates it into `mock-main`, observes the real hosted Node
 protected/merge-queue rule consumes that stable status. No external model request
 was made.
 
+### Independent Auditor pre-hosted integration review
+
+**Candidate:** `bdab32da9305a3787ec4b0c1d2061d521230eeae`
+
+**Integrated workflow:** `cda2446584d0f5d6c07ec8d2521d08fb6711f971`
+
+The Auditor independently confirmed the exact three-file diff: the workflow plus
+`TASKS.md` and this log. Product, UI, server, tests, dependencies, lockfile, runtime
+configuration, and environment examples are unchanged. PyYAML `BaseLoader` parsing
+and structural assertions covered the complete event map, branch filters,
+`checks_requested`, permissions, concurrency expression, runner, timeout, child
+environment, action inputs, and exact command sequence.
+
+Current official GitHub documentation reviewed on 2026-08-29 confirms that
+`pull_request:` without filters runs every PR; `push.branches` limits pushes to the
+two named branches; merge queues require the separate `merge_group` trigger and
+currently support `checks_requested`; unspecified permissions become `none`; the
+workflow/ref concurrency expression cancels only an older matching run; and the
+20-minute positive integer is a valid bounded job timeout. Official action refs
+also resolve: `actions/checkout@v6` is still supported, while v7 is latest and its
+documented breaking safety change concerns `pull_request_target`, which this
+workflow does not use; `actions/setup-node@v7` is current and its npm cache hashes
+the named `package-lock.json` while caching npm data rather than `node_modules`.
+
+Independent local evidence on the candidate:
+
+```sh
+python3 -c '<BaseLoader parse and structural assertions>'
+# pass
+
+docker version --format 'client={{.Client.Version}} server={{.Server.Version}}'
+# client=29.7.2 server=29.7.2
+
+npm run check
+# typechecks passed; launcher 3/3; server 26 files and 555 tests passed;
+# one opt-in live file/test skipped; web 40-module and server builds passed
+
+git diff --check
+# pass
+```
+
+The workflow maps no repository secret and invokes no env loader, model/live test,
+artifact upload, deployment, privileged container, or write-capable command.
+`contents: read` is the only token permission and checkout credential persistence
+is disabled. Hosted Node 22, `npm ci`, Docker daemon availability, the emitted check
+identity, and the real trigger remain pending until the first `mock-main` push run
+completes; CI-01 is not yet marked audited.
+
 ## E2E-01 stopped at Create Agent overflow defect
 
 **Date:** 2026-08-29 (Asia/Singapore)
