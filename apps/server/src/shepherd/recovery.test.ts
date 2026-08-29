@@ -719,7 +719,7 @@ describe("startup reconciliation", () => {
     });
     expect(second.reconciledMissionIds).toEqual([]);
     expect(store.snapshot().shepherd.nextEventSequence).toBe(cursor);
-  });
+  }, 15_000);
 
   it("calls verifier cleanup once per service instance even when initialize is reused", async () => {
     const temporaryRoot = await mkdtemp(

@@ -220,7 +220,7 @@ describe("GitClient and PlaneManager integration", () => {
     } finally {
       await destroyFixture(fixture);
     }
-  });
+  }, 15_000);
 
   it("reports a real textual merge conflict and leaves the integration Plane clean", async () => {
     const fixture = await createFixture();

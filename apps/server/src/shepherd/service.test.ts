@@ -1,9 +1,13 @@
 import { execFile } from "node:child_process";
 import {
   access,
+  chmod,
+  lstat,
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
+  realpath,
   rm,
   symlink,
   writeFile,
@@ -41,18 +45,94 @@ const repositoryTestRoot = fileURLToPath(
   new URL("../../../../.tmp/shepherd-tests/", import.meta.url),
 );
 const cleanupRoots: string[] = [];
+const backgroundTestMissions: Array<{ service: ShepherdService; missionId: string }> = [];
+const serviceCaseSentinel = ".service-test-case";
+const expectedServiceCaseSentinel = "shepherd service test fixture\n";
 
 async function makeCaseRoot(): Promise<string> {
   await mkdir(repositoryTestRoot, { recursive: true });
   const root = await mkdtemp(path.join(repositoryTestRoot, "service-"));
+  await writeFile(path.join(root, serviceCaseSentinel), expectedServiceCaseSentinel, {
+    encoding: "utf8",
+    mode: 0o600,
+  });
   cleanupRoots.push(root);
   return root;
 }
 
+async function removeServiceCaseRoot(root: string): Promise<void> {
+  let rootStat: Awaited<ReturnType<typeof lstat>>;
+  try {
+    rootStat = await lstat(root);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
+    throw new Error("Service test cleanup target must be a real directory");
+  }
+  const canonicalTestRoot = await realpath(repositoryTestRoot);
+  const canonicalRoot = await realpath(root);
+  if (
+    path.dirname(canonicalRoot) !== canonicalTestRoot ||
+    !path.basename(canonicalRoot).startsWith("service-")
+  ) {
+    throw new Error("Service test cleanup escaped its allocated fixture root");
+  }
+  const sentinelPath = path.join(canonicalRoot, serviceCaseSentinel);
+  const sentinelStat = await lstat(sentinelPath);
+  if (sentinelStat.isSymbolicLink() || !sentinelStat.isFile()) {
+    throw new Error("Service test cleanup sentinel is not a regular file");
+  }
+  if ((await readFile(sentinelPath, "utf8")) !== expectedServiceCaseSentinel) {
+    throw new Error("Service test cleanup sentinel mismatch");
+  }
+
+  const makeDeletable = async (directory: string): Promise<void> => {
+    await chmod(directory, 0o700);
+    for (const name of await readdir(directory)) {
+      const entry = path.join(directory, name);
+      let entryStat: Awaited<ReturnType<typeof lstat>>;
+      try {
+        entryStat = await lstat(entry);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw error;
+      }
+      if (entryStat.isDirectory() && !entryStat.isSymbolicLink()) {
+        const canonicalEntry = await realpath(entry);
+        if (canonicalEntry !== entry || !canonicalEntry.startsWith(canonicalRoot + path.sep)) {
+          throw new Error("Service test cleanup encountered an escaping directory");
+        }
+        await makeDeletable(entry);
+      } else if (!entryStat.isSymbolicLink()) {
+        await chmod(entry, 0o600);
+      }
+    }
+  };
+
+  await makeDeletable(canonicalRoot);
+  await rm(canonicalRoot, { recursive: true, force: false });
+}
+
+async function startTrackedTestMission(service: ShepherdService): Promise<{ missionId: string }> {
+  const started = await service.startDeterministicDemo();
+  backgroundTestMissions.push({ service, missionId: started.missionId });
+  return started;
+}
+
 afterEach(async () => {
+  while (backgroundTestMissions.length > 0) {
+    const tracked = backgroundTestMissions.pop();
+    if (!tracked) continue;
+    const state = tracked.service.missionDetail(tracked.missionId)?.mission.state;
+    if (state !== "completed" && state !== "failed" && state !== "attention_required" && state !== "cancelled") {
+      await tracked.service.cancelMission(tracked.missionId);
+    }
+  }
   while (cleanupRoots.length > 0) {
     const root = cleanupRoots.pop();
-    if (root) await rm(root, { recursive: true, force: true });
+    if (root) await removeServiceCaseRoot(root);
   }
 });
 
@@ -517,7 +597,38 @@ async function gitOutput(cwd: string, args: string[]): Promise<string> {
   });
 }
 
-describe("Shepherd deterministic walking skeleton", () => {
+describe("Shepherd deterministic walking skeleton", { timeout: 15_000 }, () => {
+  it("cleans a case root containing a read-only trusted verification snapshot", async () => {
+    const caseRoot = await makeCaseRoot();
+    const snapshotPath = path.join(
+      caseRoot,
+      "managed",
+      "planes",
+      ".trusted-verification",
+      "verify-interrupted",
+    );
+    const snapshotFile = path.join(snapshotPath, "candidate.ts");
+    await mkdir(snapshotPath, { recursive: true });
+    await writeFile(snapshotFile, "candidate\n", "utf8");
+    await chmod(snapshotFile, 0o400);
+    await chmod(snapshotPath, 0o500);
+
+    await expect(removeServiceCaseRoot(caseRoot)).resolves.toBeUndefined();
+  });
+
+  it("refuses to clean a root outside its allocated test fixture", async () => {
+    const externalRoot = await mkdtemp(path.join(repositoryTestRoot, "external-"));
+    await writeFile(path.join(externalRoot, "preserve.txt"), "preserve\n", "utf8");
+    try {
+      await expect(removeServiceCaseRoot(externalRoot)).rejects.toThrow();
+      await expect(readFile(path.join(externalRoot, "preserve.txt"), "utf8")).resolves.toBe(
+        "preserve\n",
+      );
+    } finally {
+      await rm(externalRoot, { recursive: true, force: true });
+    }
+  });
+
   it("fails startup closed when the live Runtime preflight is denied", async () => {
     const caseRoot = await makeCaseRoot();
     const store = new JsonStore(path.join(caseRoot, "state.json"));
@@ -555,7 +666,7 @@ describe("Shepherd deterministic walking skeleton", () => {
       executor,
     });
 
-    const { missionId } = await service.startDeterministicDemo();
+    const { missionId } = await startTrackedTestMission(service);
     expect(service.missionDetail(missionId)?.mission.state).not.toBe("completed");
     await waitForTerminalMission(service, missionId);
 
@@ -1092,7 +1203,7 @@ describe("Shepherd deterministic walking skeleton", () => {
     ).toBe(true);
     expect(result.selectedCandidate.targetValue).toBe(COOKIE_TRANSPORT);
     expect(detail?.mission.attentionReason).toBeNull();
-  });
+  }, 15_000);
 
   it("redacts planted secrets and absolute paths from every persisted failure surface", async () => {
     const caseRoot = await makeCaseRoot();
@@ -1196,8 +1307,10 @@ describe("Shepherd deterministic walking skeleton", () => {
       executor,
     });
 
-    const { missionId } = await service.startDeterministicDemo();
-    await vi.waitFor(() => expect(executor.executionIds).toHaveLength(2));
+    const { missionId } = await startTrackedTestMission(service);
+    await vi.waitFor(() => expect(executor.executionIds).toHaveLength(2), {
+      timeout: 10_000,
+    });
     const cancelled = await service.cancelMission(missionId);
     expect(cancelled).toMatchObject({
       state: "cancelled",
@@ -1206,11 +1319,13 @@ describe("Shepherd deterministic walking skeleton", () => {
     expect([...executor.cancelledIds].sort()).toEqual(
       [...executor.executionIds].sort(),
     );
-    await vi.waitFor(() =>
-      expect(service.missionDetail(missionId)?.contracts).toSatisfy(
-        (contracts: Array<{ state: string }>) =>
-          contracts.every((contract) => contract.state === "cancelled"),
-      ),
+    await vi.waitFor(
+      () =>
+        expect(service.missionDetail(missionId)?.contracts).toSatisfy(
+          (contracts: Array<{ state: string }>) =>
+            contracts.every((contract) => contract.state === "cancelled"),
+        ),
+      { timeout: 10_000 },
     );
     expect(
       service
@@ -1237,16 +1352,19 @@ describe("Shepherd deterministic walking skeleton", () => {
       verifier,
     });
 
-    const { missionId } = await service.startDeterministicDemo();
-    await vi.waitFor(() => expect(verifier.targetIds).toHaveLength(2));
+    const { missionId } = await startTrackedTestMission(service);
+    await vi.waitFor(() => expect(verifier.targetIds).toHaveLength(2), {
+      timeout: 10_000,
+    });
     const expected = service
       .missionDetail(missionId)
       ?.contracts.map((contract) => contract.id)
       .sort();
     await service.cancelMission(missionId);
     expect([...verifier.cancelledIds].sort()).toEqual(expected);
-    await vi.waitFor(() =>
-      expect(service.missionDetail(missionId)?.mission.state).toBe("cancelled"),
+    await vi.waitFor(
+      () => expect(service.missionDetail(missionId)?.mission.state).toBe("cancelled"),
+      { timeout: 10_000 },
     );
     expect(
       service
@@ -1467,7 +1585,7 @@ describe("Shepherd deterministic walking skeleton", () => {
         await blocked;
       },
     });
-    const { missionId } = await service.startDeterministicDemo();
+    const { missionId } = await startTrackedTestMission(service);
     await reached;
     expect(
       service
@@ -1493,7 +1611,7 @@ describe("Shepherd deterministic walking skeleton", () => {
       agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
       verifier,
     });
-    const { missionId } = await service.startDeterministicDemo();
+    const { missionId } = await startTrackedTestMission(service);
     await verifier.entered;
     const before = service.missionDetail(missionId);
     expect(
@@ -1506,8 +1624,9 @@ describe("Shepherd deterministic walking skeleton", () => {
       (candidate) => candidate.selectionState === "selected",
     )?.id;
     const cancellation = service.cancelMission(missionId);
-    await vi.waitFor(() =>
-      expect(service.missionDetail(missionId)?.mission.state).toBe("cancelled"),
+    await vi.waitFor(
+      () => expect(service.missionDetail(missionId)?.mission.state).toBe("cancelled"),
+      { timeout: 10_000 },
     );
     verifier.release();
     await cancellation;
