@@ -966,7 +966,13 @@ value rather than dropping it or naming a caller-side mistake.
 
 - The live gate has never observed a `completed` review; only the degradation path is
   live-proven. Until `MR-03` is fixed, the advisory reviewer is safe but silent.
-- Mid-review cancellation (the poller) has a test seam but no test.
+- Mid-review cancellation is covered by `MR-T13`, which blocks a reviewer until its
+  caller signal aborts, cancels the Mission in flight, and asserts the signal was
+  aborted, that no advisory event was recorded, and that no collision, candidate, or
+  protected-head change survived. The test pins `deadlineMs` far out of reach so only
+  the cancellation poller can settle the review: an earlier version passed with the
+  poller disabled because the service deadline aborted instead, which mutation
+  testing caught.
 - Both UI changes (the Verification stream filter and the `degraded` tone) are
   untested: the web workspace has no test runner, so there is nowhere to put one.
 - `apps/server/src/index.ts` is a top-level-`await` entrypoint with no export, so its

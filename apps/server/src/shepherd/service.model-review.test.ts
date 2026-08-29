@@ -97,6 +97,30 @@ const completed =
   (findings: ModelReviewFinding[]) =>
   async (): Promise<ModelReviewResult> => ({ status: "completed", findings });
 
+/**
+ * Settles only when its caller signal aborts, mirroring ArkModelReviewer's real
+ * behaviour (`model-reviewer.ts` returns {status:"cancelled"} on caller abort).
+ * A reviewer that ignored the signal would hang the Mission, which is the point.
+ */
+class BlockingReviewer implements ModelReviewer {
+  readonly inputs: unknown[] = [];
+  readonly signals: Array<AbortSignal | undefined> = [];
+
+  async review(input: unknown, signal?: AbortSignal): Promise<ModelReviewResult> {
+    this.inputs.push(structuredClone(input));
+    this.signals.push(signal);
+    return await new Promise<ModelReviewResult>((resolve) => {
+      if (signal?.aborted) {
+        resolve({ status: "cancelled" });
+        return;
+      }
+      signal?.addEventListener("abort", () => resolve({ status: "cancelled" }), {
+        once: true,
+      });
+    });
+  }
+}
+
 async function makeService(options: {
   reviewer?: ModelReviewer;
   sensitiveValues?: string[];
@@ -505,4 +529,53 @@ describe("Shepherd advisory model review composition", () => {
       false,
     );
   });
+
+  it("MR-T13 lets durable cancellation win while a review is in flight", async () => {
+    const reviewer = new BlockingReviewer();
+    const { service } = await makeService({
+      reviewer,
+      // Poll fast, and push the service deadline far out of reach so that only the
+      // cancellation poller can abort the review. Without this the deadline would
+      // eventually abort anyway and the test would pass with a broken poller.
+      modelReviewBounds: { cancellationPollMs: 25, deadlineMs: 600_000 },
+    });
+
+    const { missionId } = await service.startDeterministicDemo();
+    // The review runs after both Contracts verify and integrate, so wait for the
+    // reviewer to actually be in flight rather than racing the Mission start.
+    await vi.waitFor(() => expect(reviewer.inputs).toHaveLength(1), {
+      timeout: 60_000,
+      interval: 25,
+    });
+
+    const detailBefore = service.missionDetail(missionId);
+    const headBefore = detailBefore?.project.protectedHeadCommit;
+    expect(headBefore).toBeTruthy();
+
+    await service.cancelMission(missionId);
+
+    // The poller must observe durable cancellation and abort the in-flight review,
+    // otherwise cancelMission would block on the background run until the deadline.
+    expect(reviewer.signals[0]?.aborted).toBe(true);
+
+    await vi.waitFor(
+      () => expect(service.missionDetail(missionId)?.mission.state).toBe("cancelled"),
+      { timeout: 60_000, interval: 25 },
+    );
+
+    const detail = service.missionDetail(missionId);
+    if (!detail) throw new Error("Mission detail was not persisted");
+    // A cancelled Mission records no advisory outcome: cancellation is not a
+    // degradation, and nothing may look like advisory evidence after the stop.
+    const events = advisoryEvents(service, missionId);
+    expect(events.completed).toHaveLength(0);
+    expect(events.degraded).toHaveLength(0);
+    // Durable cancellation wins over everything downstream of the review.
+    expect(detail.collisions).toHaveLength(0);
+    expect(detail.candidates).toHaveLength(0);
+    expect(detail.project.protectedHeadCommit).toBe(headBefore);
+    expect(
+      await gitOutput(detail.project.repositoryPath, ["rev-parse", "HEAD"]),
+    ).toBe(headBefore);
+  }, ONE_MISSION_BUDGET_MS);
 });
