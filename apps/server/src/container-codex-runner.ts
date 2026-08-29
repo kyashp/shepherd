@@ -11,7 +11,12 @@ import {
   type ParsedEvents,
 } from "./codex-runner.js";
 import { RunCancelledError } from "./errors.js";
-import type { AgentRunner, RunnerRequest, RunnerResult } from "./types.js";
+import type {
+  AgentRunner,
+  EphemeralPreflightResult,
+  RunnerRequest,
+  RunnerResult,
+} from "./types.js";
 import { isFreshEphemeralRunnerRequest } from "./types.js";
 
 const execFileAsync = promisify(execFile);
@@ -27,6 +32,25 @@ const ownerPattern =
 const containerIdPattern = /^[a-f0-9]{12,128}$/iu;
 const PREFLIGHT_SUCCESS = "SHEPHERD_RUNTIME_PREFLIGHT_OK";
 const EXPECTED_CODEX_VERSION = "codex-cli 0.111.0";
+
+const preflightExitReasons = new Map<number, Extract<EphemeralPreflightResult, { available: false }>["reason"]>([
+  [40, "non_root_required"],
+  [41, "private_home_must_be_read_only"],
+  [42, "codex_version_probe_failed"],
+  [43, "sandbox_listen_denial_failed"],
+  [44, "sandbox_listen_denial_failed"],
+  [45, "sandbox_listen_denial_failed"],
+  [46, "sandbox_connect_denial_failed"],
+  [47, "sandbox_connect_denial_failed"],
+  [48, "sandbox_connect_denial_failed"],
+  [49, "sandbox_probe_failed"],
+]);
+
+function boundedPreflightExitCode(error: unknown): number | null {
+  if (!error || typeof error !== "object" || !("code" in error)) return null;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "number" && Number.isSafeInteger(code) ? code : null;
+}
 
 type RuntimeSpawner = (
   command: string,
@@ -354,9 +378,13 @@ export function buildEphemeralPreflightCreateArgs(
       shellSingleQuote(privateHomeProbe) +
       "; }",
     "trap cleanup EXIT HUP INT TERM",
-    'test "$(id -u)" -ne 0',
-    "codex --version",
+    'test "$(id -u)" -ne 0 || exit 40',
+    "codex --version || exit 42",
+    "set +e",
     "codex sandbox linux --full-auto sh -c " + shellSingleQuote(sandboxProbe),
+    "sandbox_status=$?",
+    "set -e",
+    'if test "$sandbox_status" -ne 0; then case "$sandbox_status" in 41|43|44|45|46|47|48) exit "$sandbox_status" ;; *) exit 49 ;; esac; fi',
     "cleanup",
     "trap - EXIT HUP INT TERM",
     "printf '%s\\n' " + PREFLIGHT_SUCCESS,
@@ -430,7 +458,7 @@ export class ContainerCodexRunner implements AgentRunner {
   async isEphemeralAvailable(
     workspacePath: string,
     codexHome: string,
-  ): Promise<boolean> {
+  ): Promise<EphemeralPreflightResult> {
     const ownerId = requireOwner(this.shepherdOwnerId);
     let containerId: string | null = null;
     const preflight = buildEphemeralPreflightCreateArgs(
@@ -439,7 +467,11 @@ export class ContainerCodexRunner implements AgentRunner {
       this.config,
       ownerId,
     );
-    let available = false;
+    let result: EphemeralPreflightResult = {
+      available: false,
+      stage: "container_create",
+      reason: "engine_error",
+    };
     try {
       const created = await this.execRuntime(
         this.config.containerEngine,
@@ -448,21 +480,37 @@ export class ContainerCodexRunner implements AgentRunner {
       );
       const createOutput = outputText(created.stdout).trim();
       if (!containerIdPattern.test(createOutput)) {
-        throw new Error("Container engine returned an invalid preflight ID");
+        result = {
+          available: false,
+          stage: "container_create",
+          reason: "invalid_container_id",
+        };
+      } else {
+        containerId = createOutput;
+        try {
+          const started = await this.execRuntime(
+            this.config.containerEngine,
+            buildContainerStartArgs(containerId),
+            { timeout: 30_000, env: this.childEnvironment(false) },
+          );
+          const output = outputText(started.stdout);
+          result = Buffer.byteLength(output, "utf8") > 65_536
+            ? { available: false, stage: "output_validation", reason: "output_too_large" }
+            : !output.split(/\r?\n/u).includes(EXPECTED_CODEX_VERSION)
+              ? { available: false, stage: "output_validation", reason: "codex_version_mismatch" }
+              : !output.includes(PREFLIGHT_SUCCESS)
+                ? { available: false, stage: "output_validation", reason: "success_marker_missing" }
+                : { available: true };
+        } catch (error) {
+          result = {
+            available: false,
+            stage: "container_start",
+            reason: preflightExitReasons.get(boundedPreflightExitCode(error) ?? -1) ?? "engine_error",
+          };
+        }
       }
-      containerId = createOutput;
-      const started = await this.execRuntime(
-        this.config.containerEngine,
-        buildContainerStartArgs(containerId),
-        { timeout: 30_000, env: this.childEnvironment(false) },
-      );
-      const output = outputText(started.stdout);
-      available =
-        Buffer.byteLength(output, "utf8") <= 65_536 &&
-        output.split(/\r?\n/u).includes(EXPECTED_CODEX_VERSION) &&
-        output.includes(PREFLIGHT_SUCCESS);
     } catch {
-      available = false;
+      result = { available: false, stage: "container_create", reason: "engine_error" };
     }
     try {
       if (containerId) {
@@ -474,9 +522,9 @@ export class ContainerCodexRunner implements AgentRunner {
       }
       await this.removeOwnedContainerByName(preflight.containerName);
     } catch {
-      available = false;
+      result = { available: false, stage: "cleanup", reason: "cleanup_failed" };
     }
-    return available;
+    return result;
   }
 
   async cancel(agentId: string): Promise<boolean> {

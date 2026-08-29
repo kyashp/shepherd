@@ -7,6 +7,31 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — OPS-06 bounded live-preflight diagnostics candidate
+
+The Fixer source-traced the macOS message loss without a live/model request:
+`ContainerCodexRunner.isEphemeralAvailable` caught create/start/output/cleanup
+failures into one boolean. The candidate uses a closed typed result limited to safe
+stage/reason enums. Explicit exits distinguish non-root, private-home denial,
+Codex-version and sandbox listen/connect/generic probe classes; unknown engine
+failures discard raw content. No path, command, secret, endpoint, prompt, stderr or
+fallback is exposed.
+
+All original gates remain mandatory: non-root, read-only root with bounded tmpfs,
+writable workspace, denied private-home write, denied listen/connect, exact version,
+bounded output, success marker and owner-scoped cleanup. Cleanup failure overrides
+success. Runner/executor tests passed 33/33; config/runner/executor/service/default-
+live adjacency passed 87 plus one opt-in skip; production/strict Server typechecks
+passed. Independent security review found no issue; its mapping/cleanup coverage
+note was closed with final table and cleanup regressions. Two final literal checks
+passed: launcher 3/3, Server 601/601 with two opt-in live skips, Web 17/17, strict
+test projects and both builds. Diff, credential, dependency and artifact scans
+passed before commit.
+
+No live/model call ran. Mocked Linux/engine evidence is not affected-macOS evidence:
+macOS validation and Auditor integration remain pending, with no compatibility
+bypass or full OPS-06 claim.
+
 ## 2026-08-30 — E2E-02, TST-10 and TST-11 independently audited
 
 The Auditor integrated exact corrected chain `338f1e4` into `mock-main` only after

@@ -14,6 +14,7 @@ import { RunCancelledError } from "../errors.js";
 import { JsonStore } from "../store.js";
 import type {
   EphemeralContainerRunner,
+  EphemeralPreflightResult,
   RunnerRequest,
   RunnerResult,
 } from "../types.js";
@@ -87,6 +88,7 @@ class FakeContainerRunner implements EphemeralContainerRunner {
   reconcileCount = 0;
   preflightCount = 0;
   preflightAvailable = true;
+  preflightResult: boolean | EphemeralPreflightResult | null = null;
   preflightHomes: string[] = [];
   preflightWorkspaces: string[] = [];
   runError: Error | null = null;
@@ -124,13 +126,13 @@ class FakeContainerRunner implements EphemeralContainerRunner {
   async isEphemeralAvailable(
     workspacePath: string,
     codexHome: string,
-  ): Promise<boolean> {
+  ): Promise<boolean | EphemeralPreflightResult> {
     this.preflightCount += 1;
     this.preflightWorkspaces.push(workspacePath);
     this.preflightHomes.push(codexHome);
     expect((await stat(codexHome)).mode & 0o777).toBe(0o700);
     expect((await stat(workspacePath)).mode & 0o777).toBe(0o700);
-    return this.preflightAvailable;
+    return this.preflightResult ?? this.preflightAvailable;
   }
 }
 
@@ -470,6 +472,23 @@ describe("CodexShepherdExecutor", () => {
     runner.preflightAvailable = true;
     await expect(executor.preflight()).resolves.toBeUndefined();
     expect(runner.preflightCount).toBe(2);
+  });
+
+  it("surfaces only the bounded preflight stage and reason", async () => {
+    const test = await environment();
+    const runner = new FakeContainerRunner();
+    runner.preflightResult = {
+      available: false,
+      stage: "container_start",
+      reason: "sandbox_listen_denial_failed",
+    };
+    const executor = new CodexShepherdExecutor(test.config, OWNER, runner);
+
+    await expect(executor.preflight()).rejects.toThrow(
+      "Live Shepherd Runtime preflight failed (stage=container_start reason=sandbox_listen_denial_failed)",
+    );
+    await expect(stat(runner.preflightHomes[0]!)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(runner.preflightWorkspaces[0]!)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("fails closed on unsafe live composition", async () => {

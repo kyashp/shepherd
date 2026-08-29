@@ -471,17 +471,23 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
         path.join(canonicalShepherdRoot, PREFLIGHT_WORKSPACE_PREFIX),
       );
       await chmod(workspace, 0o700);
-      let available: boolean;
+      let preflightResult: Awaited<ReturnType<NonNullable<typeof this.runner.isEphemeralAvailable>>>;
       try {
-        available = await this.runner.isEphemeralAvailable(
+        preflightResult = await this.runner.isEphemeralAvailable(
           workspace,
           privateHome,
         );
       } catch (error) {
         throw safeRuntimeError(error, this.config);
       }
-      if (!available) {
-        throw new Error("Live Shepherd Runtime preflight failed");
+      if (preflightResult === false) {
+        throw new Error(
+          "Live Shepherd Runtime preflight failed (stage=runtime_probe reason=unavailable)",
+        );
+      }
+      if (typeof preflightResult !== "boolean" && !preflightResult.available) {
+        const diagnostic = `stage=${preflightResult.stage} reason=${preflightResult.reason}`;
+        throw new Error(`Live Shepherd Runtime preflight failed (${diagnostic})`);
       }
     } finally {
       for (const target of [workspace, privateHome]) {

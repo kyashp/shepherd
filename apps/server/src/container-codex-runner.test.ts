@@ -534,7 +534,7 @@ describe("Container Codex runner", () => {
         "/tmp/preflight-workspace",
         "/tmp/app-data/shepherd-codex-homes/preflight-home",
       ),
-    ).resolves.toBe(true);
+    ).resolves.toEqual({ available: true });
     expect(calls.find((call) => call.args[0] === "create")?.env.ARK_API_KEY).toBe(
       undefined,
     );
@@ -564,6 +564,70 @@ describe("Container Codex runner", () => {
         "/tmp/preflight-workspace",
         "/tmp/app-data/shepherd-codex-homes/preflight-home",
       ),
-    ).resolves.toBe(false);
+    ).resolves.toEqual({
+      available: false,
+      stage: "output_validation",
+      reason: "codex_version_mismatch",
+    });
+  });
+
+  it.each([
+    [40, "non_root_required"],
+    [41, "private_home_must_be_read_only"],
+    [42, "codex_version_probe_failed"],
+    [43, "sandbox_listen_denial_failed"],
+    [46, "sandbox_connect_denial_failed"],
+    [49, "sandbox_probe_failed"],
+    [1, "engine_error"],
+  ] as const)("maps preflight exit %i to bounded reason %s", async (exitCode, reason) => {
+    const privateDiagnostic = "OPS06_PRIVATE_DIAGNOSTIC_CANARY";
+    const runner = new ContainerCodexRunner(config(), {
+      shepherdOwnerId: OWNER,
+      execFile: async (_command, args) => {
+        if (args[0] === "create") {
+          return { stdout: CONTAINER_ID + "\n", stderr: "" };
+        }
+        if (args[0] === "start") {
+          throw Object.assign(new Error(privateDiagnostic), { code: exitCode });
+        }
+        return { stdout: "", stderr: "" };
+      },
+    });
+
+    const result = await runner.isEphemeralAvailable(
+      "/tmp/preflight-workspace",
+      "/tmp/app-data/shepherd-codex-homes/preflight-home",
+    );
+    expect(result).toEqual({
+      available: false,
+      stage: "container_start",
+      reason,
+    });
+    expect(JSON.stringify(result)).not.toContain(privateDiagnostic);
+  });
+
+  it("fails closed with a bounded cleanup diagnostic", async () => {
+    const runner = new ContainerCodexRunner(config(), {
+      shepherdOwnerId: OWNER,
+      execFile: async (_command, args) => {
+        if (args[0] === "create") return { stdout: CONTAINER_ID + "\n", stderr: "" };
+        if (args[0] === "start") {
+          return { stdout: "codex-cli 0.111.0\nSHEPHERD_RUNTIME_PREFLIGHT_OK\n", stderr: "" };
+        }
+        if (args[0] === "ps") throw new Error("/private/cleanup command secret");
+        return { stdout: "", stderr: "" };
+      },
+    });
+
+    await expect(
+      runner.isEphemeralAvailable(
+        "/tmp/preflight-workspace",
+        "/tmp/app-data/shepherd-codex-homes/preflight-home",
+      ),
+    ).resolves.toEqual({
+      available: false,
+      stage: "cleanup",
+      reason: "cleanup_failed",
+    });
   });
 });

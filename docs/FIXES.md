@@ -591,8 +591,17 @@ that limitation is explicit.
   explicit live request.
 - **Acceptance:** Linux plus macOS/container-engine regressions, full gate, security
   review, and one sparse live startup/Mission smoke on the affected platform.
-- **Owner/status:** Fixer / `READY WHEN MAC EVIDENCE AVAILABLE`; **20%**, 0/6 gates,
-  not audited.
+- **Observed correction:** the runner returns a closed typed availability result
+  instead of collapsing every failure to false. Safe stage/reason enums cover
+  container create/start, output validation and cleanup plus bounded probe classes.
+  Unknown/raw engine errors discard their message and become `engine_error`.
+  Non-root, read-only/tmpfs, workspace write, private-home denial, listen/connect
+  denial, exact version, bounded output/marker and owner cleanup remain mandatory;
+  cleanup failure overrides apparent success.
+- **Owner/status:** Fixer / `CANDIDATE PENDING AFFECTED MAC`; **80% scoped**,
+  `T,A,C,S` 4/6. Runner/executor 33/33, adjacent 87 plus one live skip,
+  strict/full checks and security review passed. No live/model call ran. Affected-
+  macOS `L` and Auditor `I` remain pending; this is diagnostic, not compatibility.
 
 ## Confirmed defect inventory
 

@@ -135,8 +135,31 @@ export interface AgentRunner {
   isAvailable(): Promise<boolean>;
 }
 
+export type EphemeralPreflightResult =
+  | { available: true }
+  | {
+      available: false;
+      stage: "container_create" | "container_start" | "output_validation" | "cleanup";
+      reason:
+        | "engine_error"
+        | "invalid_container_id"
+        | "non_root_required"
+        | "private_home_must_be_read_only"
+        | "codex_version_probe_failed"
+        | "sandbox_listen_denial_failed"
+        | "sandbox_connect_denial_failed"
+        | "sandbox_probe_failed"
+        | "output_too_large"
+        | "codex_version_mismatch"
+        | "success_marker_missing"
+        | "cleanup_failed";
+    };
+
 export interface EphemeralContainerRunner extends AgentRunner {
   readonly runtimeKind: "container";
   reconcileInterrupted?(): Promise<number>;
-  isEphemeralAvailable?(workspacePath: string, codexHome: string): Promise<boolean>;
+  isEphemeralAvailable?(
+    workspacePath: string,
+    codexHome: string,
+  ): Promise<boolean | EphemeralPreflightResult>;
 }
