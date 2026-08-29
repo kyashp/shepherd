@@ -3806,3 +3806,35 @@ F-01/02 remains at 95% pending independent Auditor and hosted integration eviden
   universal canary absence. No timeout/product change was made. Two post-correction
   literal checks pass identically (launcher 3/3, Server 615 + two explicit skips,
   Web 17/17, strict types and builds). Auditor U/I remain required.
+## 2026-08-30 — TST-15 bounded sentinel/reconciliation filesystem policy
+
+- **Branch/base:** `fix/f-01-02-sentinel-cleanup` from Auditor evidence `6eb20d0`
+  atop TST-14 `3afc452`; pushed before edits.
+- **RED:** sentinel adoption open attached raw cause; validation/adoption close could
+  override bounded primary errors; failed unlink was swallowed; interrupted private-
+  home and preflight-workspace rm escaped raw errno/path/OS diagnostics. Independent
+  review then identified the adjacent pre-open lstat/chmod/readdir family.
+- **Correction:** one internal `BoundedFilesystemError` policy emits only closed
+  stage/reason text for sentinel validation/adoption and private-home/preflight-
+  workspace reconciliation. It never retains raw cause/detail. Primary failure wins
+  over close/unlink double faults, cleanup-only fails closed, and all exact cleanup
+  attempts still run. Same-process failed sentinel unlink is remembered for exact
+  retry; rm failures retain the exact contained target. No broad delete, fallback,
+  symlink relaxation or public error code was added.
+- **Causal evidence:** faults cover adoption open; existing-sentinel lstat/chmod;
+  pre-adoption readdir/chmod; validation close and read+close; adoption close-only and
+  write+close+unlink; a second failed pending unlink then success; interrupted home
+  and preflight-workspace rm. Opaque/secret/Mac/Linux/errno/path canaries are absent
+  from Error/string/stack/inspection/cause and service initialization Error/cause,
+  store and console logs. Every retained target is observed, retried and removed.
+- **Residual:** pending sentinel ownership is process-local. After restart, an
+  invalid retained sentinel fails closed and may require operator cleanup. This is
+  intentionally not described as automatic cross-process recovery.
+- **Observed checks:** executor 33/33 (also independently rerun); focused/adjacent
+  120/120; strict Server test types; two literal `npm run check` passes, each with
+  launcher 3/3, Server 627 passed + two explicit skips, Web 17/17 and both builds.
+  No live/model/UI/network call ran.
+- **Security review:** first pass found one Medium pre-open family and four evidence
+  gaps. After correction, final read-only re-review reports PASS with no High,
+  Medium or material gap; containment and symlink protections remain unchanged.
+  Auditor U/I remain pending.

@@ -44,9 +44,25 @@ that limitation is explicit.
   retain unremoved owned artifacts for safe later retry. Prove String/stack/inspect/
   cause/log/startup surfaces clean. Preserve TST-12/TST-14, OPS-06 and all typed
   runtime behavior; no swallowed cleanup or broad filesystem refactor.
-- **Acceptance/status:** **OPEN / READY for Fixer.** Full sentinel/reconcile fault
-  matrix, retry/ownership proof, focused executor/OPS-06/F-01/TST-13/14, strict/
-  literal check, scans and independent security re-review.
+- **Observed correction:** candidate `fix/f-01-02-sentinel-cleanup` applies one
+  internal closed stage/reason filesystem policy across sentinel validation/adoption
+  and interrupted private-home/preflight-workspace reconciliation. Raw open/lstat/
+  chmod/readdir/read/write/close/unlink/rm failures never become a cause or field.
+  Primary bounded failures win over double cleanup faults; cleanup-only fails closed;
+  every exact scoped cleanup is attempted. Failed same-process sentinel unlink and
+  retained reconciliation targets retry exactly; containment, `O_EXCL`/`O_NOFOLLOW`,
+  direct-child and symlink gates are unchanged. A process restart with an invalid
+  retained sentinel remains fail-closed and may require operator cleanup; no
+  cross-process automatic retry is claimed. The matrix covers adoption open,
+  validation close/body+close, adoption close-only/write+close+unlink, repeated
+  pending unlink, pre-open lstat/chmod/readdir and both reconciliation rm paths.
+  Service initialize Error/cause/store/console surfaces are canary-free and retry
+  succeeds. Executor 33/33, focused/adjacent 120/120, strict types and two literal
+  checks pass (launcher 3/3, Server 627 + two explicit skips, Web 17/17, builds).
+  External calls: 0.
+- **Acceptance/status:** **FIX CANDIDATE / Auditor integration pending.** Initial
+  security review found the pre-open family; correction and added precedence/startup
+  tests received final PASS with no High/Medium/material gap.
 
 ### `TST-14` — Execution-home cleanup leaks and overrides causal failure identity
 

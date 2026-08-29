@@ -42,6 +42,48 @@ const MAX_EXECUTION_ID_BYTES = 512;
 const ownerPattern =
   /^verifier\.[a-zA-Z0-9_.-]{1,48}\.[a-f0-9]{32}$/u;
 
+type FilesystemStage =
+  | "sentinel_validation"
+  | "sentinel_adoption"
+  | "private_home_reconciliation"
+  | "preflight_workspace_reconciliation";
+type FilesystemReason =
+  | "operation_failed"
+  | "cleanup_failed"
+  | "validation_failed"
+  | "adoption_changed";
+
+class BoundedFilesystemError extends Error {
+  constructor(
+    stage: FilesystemStage,
+    reason: FilesystemReason,
+  ) {
+    super(`Shepherd filesystem operation failed (stage=${stage} reason=${reason})`);
+    this.name = "BoundedFilesystemError";
+  }
+}
+
+function boundedFilesystemError(
+  error: unknown,
+  stage: FilesystemStage,
+  reason: FilesystemReason = "operation_failed",
+): BoundedFilesystemError {
+  return error instanceof BoundedFilesystemError
+    ? error
+    : new BoundedFilesystemError(stage, reason);
+}
+
+async function boundedFilesystemOperation<T>(
+  stage: FilesystemStage,
+  operation: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    throw boundedFilesystemError(error, stage);
+  }
+}
+
 function fingerprint(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -162,6 +204,7 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
   private readonly usedExecutionFingerprints = new Set<string>();
   private readonly usedSessionFingerprints = new Set<string>();
   private successfulPreflight: Promise<void> | null = null;
+  private pendingSentinelCleanup: string | null = null;
 
   constructor(
     private readonly config: AppConfig,
@@ -210,45 +253,97 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
   private async validatePrivateRootSentinel(
     sentinelPath: string,
   ): Promise<void> {
-    const handle = await open(
-      sentinelPath,
-      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
-    );
+    let handle: Awaited<ReturnType<typeof open>>;
+    try {
+      handle = await open(
+        sentinelPath,
+        constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+      );
+    } catch (error) {
+      throw boundedFilesystemError(error, "sentinel_validation");
+    }
+    let failure: Error | null = null;
     try {
       const metadata = await handle.stat();
       if (
         !metadata.isFile() ||
         metadata.size !== Buffer.byteLength(PRIVATE_ROOT_SENTINEL_CONTENT)
       ) {
-        throw new Error("Shepherd private CODEX_HOME root sentinel is invalid");
+        throw new BoundedFilesystemError(
+          "sentinel_validation",
+          "validation_failed",
+        );
       }
       if (
         (await handle.readFile({ encoding: "utf8" })) !==
         PRIVATE_ROOT_SENTINEL_CONTENT
       ) {
-        throw new Error("Shepherd private CODEX_HOME root sentinel is invalid");
+        throw new BoundedFilesystemError(
+          "sentinel_validation",
+          "validation_failed",
+        );
       }
-    } finally {
-      await handle.close();
+    } catch (error) {
+      failure = boundedFilesystemError(error, "sentinel_validation");
     }
+    try {
+      await handle.close();
+    } catch (error) {
+      failure ??= boundedFilesystemError(
+        error,
+        "sentinel_validation",
+        "cleanup_failed",
+      );
+    }
+    if (failure) throw failure;
   }
 
   private async ensurePrivateRootSentinel(root: string): Promise<void> {
     const sentinelPath = path.join(root, PRIVATE_ROOT_SENTINEL);
+    if (this.pendingSentinelCleanup === sentinelPath) {
+      try {
+        await unlink(sentinelPath);
+        this.pendingSentinelCleanup = null;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+          this.pendingSentinelCleanup = null;
+        } else {
+          throw boundedFilesystemError(
+            error,
+            "sentinel_adoption",
+            "cleanup_failed",
+          );
+        }
+      }
+    }
     try {
       await lstat(sentinelPath);
-      await chmod(root, 0o700);
+      await boundedFilesystemOperation("sentinel_validation", async () =>
+        await chmod(root, 0o700),
+      );
       await this.validatePrivateRootSentinel(sentinelPath);
       return;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw boundedFilesystemError(error, "sentinel_validation");
+      }
     }
 
-    if ((await readdir(root)).length > 0) {
+    if (
+      (await boundedFilesystemOperation("sentinel_adoption", async () =>
+        await readdir(root),
+      )).length > 0
+    ) {
       throw new Error("Shepherd private CODEX_HOME unsentinelled root is not empty");
     }
-    await chmod(root, 0o700);
-    if ((await readdir(root)).length > 0) {
+    await boundedFilesystemOperation("sentinel_adoption", async () =>
+      await chmod(root, 0o700),
+    );
+    if (
+      (await boundedFilesystemOperation("sentinel_adoption", async () =>
+        await readdir(root),
+      )).length > 0
+    ) {
       throw new Error(
         "Shepherd private CODEX_HOME root changed during adoption",
       );
@@ -265,13 +360,11 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
         0o600,
       );
     } catch (error) {
-      throw new Error(
-        "Shepherd private CODEX_HOME root changed during adoption",
-        { cause: error },
-      );
+      throw boundedFilesystemError(error, "sentinel_adoption");
     }
 
     let finalized = false;
+    let failure: Error | null = null;
     try {
       // Keep the exclusive sentinel empty (and therefore invalid) until the
       // directory still contains only the entry created by this adoption.
@@ -280,8 +373,9 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
         entriesAfterCreate.length !== 1 ||
         entriesAfterCreate[0] !== PRIVATE_ROOT_SENTINEL
       ) {
-        throw new Error(
-          "Shepherd private CODEX_HOME root changed during adoption",
+        throw new BoundedFilesystemError(
+          "sentinel_adoption",
+          "adoption_changed",
         );
       }
       await handle.writeFile(PRIVATE_ROOT_SENTINEL_CONTENT, {
@@ -295,18 +389,37 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
       ) {
         await handle.truncate(0);
         await handle.sync();
-        throw new Error(
-          "Shepherd private CODEX_HOME root changed during adoption",
+        throw new BoundedFilesystemError(
+          "sentinel_adoption",
+          "adoption_changed",
         );
       }
       finalized = true;
-    } finally {
+    } catch (error) {
+      failure = boundedFilesystemError(error, "sentinel_adoption");
+    }
+    try {
+      await handle.close();
+    } catch (error) {
+      failure ??= boundedFilesystemError(
+        error,
+        "sentinel_adoption",
+        "cleanup_failed",
+      );
+    }
+    if (!finalized) {
       try {
-        await handle.close();
-      } finally {
-        if (!finalized) await unlink(sentinelPath).catch(() => undefined);
+        await unlink(sentinelPath);
+      } catch (error) {
+        this.pendingSentinelCleanup = sentinelPath;
+        failure ??= boundedFilesystemError(
+          error,
+          "sentinel_adoption",
+          "cleanup_failed",
+        );
       }
     }
+    if (failure) throw failure;
     await this.validatePrivateRootSentinel(sentinelPath);
   }
 
@@ -388,7 +501,15 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
       ) {
         throw new Error("Interrupted Shepherd CODEX_HOME escaped its root");
       }
-      await rm(canonicalCandidate, { recursive: true, force: true });
+      try {
+        await rm(canonicalCandidate, { recursive: true, force: true });
+      } catch (error) {
+        throw boundedFilesystemError(
+          error,
+          "private_home_reconciliation",
+          "cleanup_failed",
+        );
+      }
       removed += 1;
     }
     return removed;
@@ -412,7 +533,15 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
       ) {
         throw new Error("Interrupted Shepherd preflight escaped its root");
       }
-      await rm(canonicalCandidate, { recursive: true, force: true });
+      try {
+        await rm(canonicalCandidate, { recursive: true, force: true });
+      } catch (error) {
+        throw boundedFilesystemError(
+          error,
+          "preflight_workspace_reconciliation",
+          "cleanup_failed",
+        );
+      }
       removed += 1;
     }
     return removed;

@@ -38,17 +38,89 @@ const cleanupFault = vi.hoisted(() => ({
   targets: new Set<string>(),
   error: null as Error | null,
 }));
+const sentinelFault = vi.hoisted(() => ({
+  openTarget: null as string | null,
+  closeTarget: null as string | null,
+  writeTarget: null as string | null,
+  unlinkTarget: null as string | null,
+  readTarget: null as string | null,
+  error: null as Error | null,
+}));
+const operationFault = vi.hoisted(() => ({
+  kind: null as "lstat" | "chmod" | "readdir" | null,
+  target: null as string | null,
+  error: null as Error | null,
+}));
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
   return {
     ...actual,
+    chmod: async (...args: Parameters<typeof actual.chmod>) => {
+      if (operationFault.kind === "chmod" && operationFault.target === String(args[0])) {
+        throw operationFault.error;
+      }
+      return await actual.chmod(...args);
+    },
+    lstat: async (...args: Parameters<typeof actual.lstat>) => {
+      if (operationFault.kind === "lstat" && operationFault.target === String(args[0])) {
+        throw operationFault.error;
+      }
+      return await actual.lstat(...args);
+    },
+    open: async (...args: Parameters<typeof actual.open>) => {
+      const targetPath = String(args[0]);
+      if (sentinelFault.openTarget === targetPath) throw sentinelFault.error;
+      const handle = await actual.open(...args);
+      return new Proxy(handle, {
+        get(target, property) {
+          if (property === "close") {
+            return async () => {
+              await target.close();
+              if (sentinelFault.closeTarget === targetPath) {
+                throw sentinelFault.error;
+              }
+            };
+          }
+          if (property === "writeFile") {
+            return async (...writeArgs: Parameters<typeof target.writeFile>) => {
+              if (sentinelFault.writeTarget === targetPath) {
+                throw sentinelFault.error;
+              }
+              return await target.writeFile(...writeArgs);
+            };
+          }
+          if (property === "readFile") {
+            return async (...readArgs: Parameters<typeof target.readFile>) => {
+              if (sentinelFault.readTarget === targetPath) {
+                throw sentinelFault.error;
+              }
+              return await target.readFile(...readArgs);
+            };
+          }
+          const value = Reflect.get(target, property, target) as unknown;
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+    },
     rm: async (...args: Parameters<typeof actual.rm>) => {
       if (
         cleanupFault.target === args[0] ||
         (typeof args[0] === "string" && cleanupFault.targets.has(args[0]))
       ) throw cleanupFault.error;
       return actual.rm(...args);
+    },
+    readdir: async (...args: Parameters<typeof actual.readdir>) => {
+      if (operationFault.kind === "readdir" && operationFault.target === String(args[0])) {
+        throw operationFault.error;
+      }
+      return await actual.readdir(...args);
+    },
+    unlink: async (...args: Parameters<typeof actual.unlink>) => {
+      if (sentinelFault.unlinkTarget === String(args[0])) {
+        throw sentinelFault.error;
+      }
+      return await actual.unlink(...args);
     },
   };
 });
@@ -168,6 +240,15 @@ afterEach(async () => {
   cleanupFault.target = null;
   cleanupFault.targets.clear();
   cleanupFault.error = null;
+  sentinelFault.openTarget = null;
+  sentinelFault.closeTarget = null;
+  sentinelFault.writeTarget = null;
+  sentinelFault.unlinkTarget = null;
+  sentinelFault.readTarget = null;
+  sentinelFault.error = null;
+  operationFault.kind = null;
+  operationFault.target = null;
+  operationFault.error = null;
   await Promise.all(
     temporaryRoots.splice(0).map((root) =>
       rm(root, { recursive: true, force: true }),
@@ -695,6 +776,328 @@ describe("CodexShepherdExecutor", () => {
     ]);
     expect(runner.preflightCount).toBe(0);
   });
+
+  it("bounds sentinel adoption open faults and permits exact retry", async () => {
+    const test = await environment();
+    const sentinelPath = path.join(
+      test.config.shepherdCodexHomeRoot,
+      ".shepherd-codex-home-root",
+    );
+    const diagnostic =
+      "TST15_OPEN_SECRET EACCES Darwin /Users/private/runtime/sentinel";
+    sentinelFault.openTarget = sentinelPath;
+    sentinelFault.error = new Error(diagnostic);
+    const executor = new CodexShepherdExecutor(
+      test.config,
+      OWNER,
+      new FakeContainerRunner(),
+    );
+
+    const failure = await executor.reconcileInterrupted().catch((error: unknown) => error);
+    expect(failure).toMatchObject({
+      message:
+        "Shepherd filesystem operation failed (stage=sentinel_adoption reason=operation_failed)",
+    });
+    expect((failure as Error & { cause?: unknown }).cause).toBeUndefined();
+    const visible = [String(failure), (failure as Error).stack ?? "", inspect(failure, { depth: 5 })].join("\n");
+    expect(visible).not.toContain(diagnostic);
+    expect(visible).not.toContain("/Users/private/runtime/sentinel");
+    expect(await readdir(test.config.shepherdCodexHomeRoot)).toEqual([]);
+
+    sentinelFault.openTarget = null;
+    sentinelFault.error = null;
+    await expect(executor.reconcileInterrupted()).resolves.toBe(0);
+    await expect(readFile(sentinelPath, "utf8")).resolves.toBe(
+      "shepherd-codex-home-root-v1\n",
+    );
+  });
+
+  it("bounds sentinel validation close faults without invalidating the sentinel", async () => {
+    const test = await environment();
+    const sentinelPath = path.join(
+      test.config.shepherdCodexHomeRoot,
+      ".shepherd-codex-home-root",
+    );
+    const executor = new CodexShepherdExecutor(
+      test.config,
+      OWNER,
+      new FakeContainerRunner(),
+    );
+    await executor.reconcileInterrupted();
+    const diagnostic =
+      "TST15_CLOSE_SECRET EBADF Linux /private/tmp/runtime/sentinel";
+    sentinelFault.closeTarget = sentinelPath;
+    sentinelFault.error = new Error(diagnostic);
+
+    const failure = await executor.reconcileInterrupted().catch((error: unknown) => error);
+    expect(failure).toMatchObject({
+      message:
+        "Shepherd filesystem operation failed (stage=sentinel_validation reason=cleanup_failed)",
+    });
+    expect((failure as Error & { cause?: unknown }).cause).toBeUndefined();
+    expect(inspect(failure, { depth: 5 })).not.toContain(diagnostic);
+    await expect(readFile(sentinelPath, "utf8")).resolves.toBe(
+      "shepherd-codex-home-root-v1\n",
+    );
+
+    sentinelFault.closeTarget = null;
+    sentinelFault.error = null;
+    await expect(executor.reconcileInterrupted()).resolves.toBe(0);
+  });
+
+  it.each([
+    { kind: "lstat" as const, existing: true, stage: "sentinel_validation" },
+    { kind: "chmod" as const, existing: true, stage: "sentinel_validation" },
+    { kind: "readdir" as const, existing: false, stage: "sentinel_adoption" },
+    { kind: "chmod" as const, existing: false, stage: "sentinel_adoption" },
+  ])("bounds sentinel pre-open $kind faults during $stage", async ({ kind, existing, stage }) => {
+    const test = await environment();
+    const sentinelPath = path.join(
+      test.config.shepherdCodexHomeRoot,
+      ".shepherd-codex-home-root",
+    );
+    const executor = new CodexShepherdExecutor(
+      test.config,
+      OWNER,
+      new FakeContainerRunner(),
+    );
+    if (existing) await executor.reconcileInterrupted();
+    const diagnostic =
+      "TST15_PREOPEN_SECRET EACCES Darwin /Users/private/runtime/preopen";
+    operationFault.kind = kind;
+    operationFault.target = kind === "lstat" ? sentinelPath : test.config.shepherdCodexHomeRoot;
+    operationFault.error = new Error(diagnostic);
+
+    const failure = await executor.reconcileInterrupted().catch((error: unknown) => error);
+    expect((failure as Error).message).toBe(
+      `Shepherd filesystem operation failed (stage=${stage} reason=operation_failed)`,
+    );
+    const visible = [String(failure), (failure as Error).stack ?? "", inspect(failure, { depth: 5 })].join("\n");
+    expect(visible).not.toContain(diagnostic);
+    expect((failure as Error & { cause?: unknown }).cause).toBeUndefined();
+
+    operationFault.kind = null;
+    operationFault.target = null;
+    operationFault.error = null;
+    await expect(executor.reconcileInterrupted()).resolves.toBe(0);
+    await expect(readFile(sentinelPath, "utf8")).resolves.toBe(
+      "shepherd-codex-home-root-v1\n",
+    );
+  });
+
+  it("preserves sentinel validation body failure across close failure", async () => {
+    const test = await environment();
+    const sentinelPath = path.join(
+      test.config.shepherdCodexHomeRoot,
+      ".shepherd-codex-home-root",
+    );
+    const executor = new CodexShepherdExecutor(
+      test.config,
+      OWNER,
+      new FakeContainerRunner(),
+    );
+    await executor.reconcileInterrupted();
+    const diagnostic =
+      "TST15_VALIDATION_DOUBLE_SECRET EIO Linux /private/tmp/sentinel";
+    sentinelFault.readTarget = sentinelPath;
+    sentinelFault.closeTarget = sentinelPath;
+    sentinelFault.error = new Error(diagnostic);
+
+    const failure = await executor.reconcileInterrupted().catch((error: unknown) => error);
+    expect((failure as Error).message).toBe(
+      "Shepherd filesystem operation failed (stage=sentinel_validation reason=operation_failed)",
+    );
+    expect(inspect(failure, { depth: 5 })).not.toContain(diagnostic);
+
+    sentinelFault.readTarget = null;
+    sentinelFault.closeTarget = null;
+    sentinelFault.error = null;
+    await expect(executor.reconcileInterrupted()).resolves.toBe(0);
+  });
+
+  it("fails closed on adoption close-only cleanup and retries the valid sentinel", async () => {
+    const test = await environment();
+    const sentinelPath = path.join(
+      test.config.shepherdCodexHomeRoot,
+      ".shepherd-codex-home-root",
+    );
+    const diagnostic =
+      "TST15_ADOPTION_CLOSE_SECRET EBADF macOS /Users/private/adoption";
+    sentinelFault.closeTarget = sentinelPath;
+    sentinelFault.error = new Error(diagnostic);
+    const executor = new CodexShepherdExecutor(
+      test.config,
+      OWNER,
+      new FakeContainerRunner(),
+    );
+
+    const failure = await executor.reconcileInterrupted().catch((error: unknown) => error);
+    expect((failure as Error).message).toBe(
+      "Shepherd filesystem operation failed (stage=sentinel_adoption reason=cleanup_failed)",
+    );
+    expect(inspect(failure, { depth: 5 })).not.toContain(diagnostic);
+    await expect(readFile(sentinelPath, "utf8")).resolves.toBe(
+      "shepherd-codex-home-root-v1\n",
+    );
+
+    sentinelFault.closeTarget = null;
+    sentinelFault.error = null;
+    await expect(executor.reconcileInterrupted()).resolves.toBe(0);
+  });
+
+  it("preserves adoption primary failure across close and unlink double faults", async () => {
+    const test = await environment();
+    const sentinelPath = path.join(
+      test.config.shepherdCodexHomeRoot,
+      ".shepherd-codex-home-root",
+    );
+    const diagnostic =
+      "TST15_DOUBLE_SECRET EIO macOS /Users/private/runtime/adoption";
+    sentinelFault.writeTarget = sentinelPath;
+    sentinelFault.closeTarget = sentinelPath;
+    sentinelFault.unlinkTarget = sentinelPath;
+    sentinelFault.error = new Error(diagnostic);
+    const executor = new CodexShepherdExecutor(
+      test.config,
+      OWNER,
+      new FakeContainerRunner(),
+    );
+
+    const failure = await executor.reconcileInterrupted().catch((error: unknown) => error);
+    expect(failure).toMatchObject({
+      message:
+        "Shepherd filesystem operation failed (stage=sentinel_adoption reason=operation_failed)",
+    });
+    expect((failure as Error & { cause?: unknown }).cause).toBeUndefined();
+    const visible = [String(failure), (failure as Error).stack ?? "", inspect(failure, { depth: 5 })].join("\n");
+    expect(visible).not.toContain(diagnostic);
+    await expect(stat(sentinelPath)).resolves.toBeDefined();
+
+    sentinelFault.writeTarget = null;
+    sentinelFault.closeTarget = null;
+    const retryFailure = await executor
+      .reconcileInterrupted()
+      .catch((error: unknown) => error);
+    expect((retryFailure as Error).message).toBe(
+      "Shepherd filesystem operation failed (stage=sentinel_adoption reason=cleanup_failed)",
+    );
+    expect(inspect(retryFailure, { depth: 5 })).not.toContain(diagnostic);
+    await expect(stat(sentinelPath)).resolves.toBeDefined();
+
+    sentinelFault.unlinkTarget = null;
+    sentinelFault.error = null;
+    await expect(executor.reconcileInterrupted()).resolves.toBe(0);
+    await expect(readFile(sentinelPath, "utf8")).resolves.toBe(
+      "shepherd-codex-home-root-v1\n",
+    );
+  });
+
+  it.each([
+    {
+      kind: "private-home" as const,
+      stage: "private_home_reconciliation",
+    },
+    {
+      kind: "preflight-workspace" as const,
+      stage: "preflight_workspace_reconciliation",
+    },
+  ])("bounds interrupted $kind removal and retries the retained target", async ({ kind, stage }) => {
+    const test = await environment();
+    const executor = new CodexShepherdExecutor(
+      test.config,
+      OWNER,
+      new FakeContainerRunner(),
+    );
+    await executor.reconcileInterrupted();
+    const target = await mkdtemp(
+      path.join(
+        kind === "private-home"
+          ? test.config.shepherdCodexHomeRoot
+          : test.config.shepherdRoot,
+        kind === "private-home"
+          ? "launchpad-shepherd-codex-"
+          : ".shepherd-runtime-preflight-",
+      ),
+    );
+    const diagnostic =
+      "TST15_RECONCILE_SECRET EPERM Linux /private/tmp/runtime/reconcile";
+    cleanupFault.target = target;
+    cleanupFault.error = new Error(diagnostic);
+
+    const failure = await executor.reconcileInterrupted().catch((error: unknown) => error);
+    expect(failure).toMatchObject({
+      message: `Shepherd filesystem operation failed (stage=${stage} reason=cleanup_failed)`,
+    });
+    expect((failure as Error & { cause?: unknown }).cause).toBeUndefined();
+    const visible = [String(failure), (failure as Error).stack ?? "", inspect(failure, { depth: 5 })].join("\n");
+    expect(visible).not.toContain(diagnostic);
+    await expect(stat(target)).resolves.toBeDefined();
+
+    cleanupFault.target = null;
+    cleanupFault.error = null;
+    await expect(executor.reconcileInterrupted()).resolves.toBe(1);
+    await expect(stat(target)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("keeps sentinel filesystem diagnostics out of service startup and logs", async () => {
+    const test = await environment();
+    const sentinelPath = path.join(
+      test.config.shepherdCodexHomeRoot,
+      ".shepherd-codex-home-root",
+    );
+    const runner = new FakeContainerRunner();
+    const executor = new CodexShepherdExecutor(test.config, OWNER, runner);
+    await executor.reconcileInterrupted();
+    const diagnostic =
+      "TST15_STARTUP_SECRET EACCES Darwin /Users/private/runtime/startup";
+    operationFault.kind = "lstat";
+    operationFault.target = sentinelPath;
+    operationFault.error = new Error(diagnostic);
+    const storePath = path.join(test.root, "sentinel-startup-state.json");
+    const store = new JsonStore(storePath, {
+      sensitiveValues: [test.config.arkApiKey],
+    });
+    await store.initialize();
+    const service = new ShepherdService({
+      store,
+      managedRoot: test.config.shepherdRoot,
+      agentWorkspaceRoot: test.config.workspaceRoot,
+      executor,
+      verifier: new HostTrustedFixtureVerifier(),
+      sensitiveValues: [test.config.arkApiKey],
+    });
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const warningLog = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const failure = await service.initialize().catch((error: unknown) => error);
+    expect((failure as Error).message).toBe(
+      "Agent Runtime startup reconciliation failed",
+    );
+    const visible = [
+      String(failure),
+      (failure as Error).stack ?? "",
+      inspect(failure, { depth: 8 }),
+      inspect((failure as Error & { cause?: unknown }).cause, { depth: 8 }),
+      JSON.stringify(errorLog.mock.calls),
+      JSON.stringify(warningLog.mock.calls),
+      await readFile(storePath, "utf8"),
+    ].join("\n");
+    expect(visible).not.toContain(diagnostic);
+    expect(visible).not.toContain("/Users/private/runtime/startup");
+
+    operationFault.kind = null;
+    operationFault.target = null;
+    operationFault.error = null;
+    const retryService = new ShepherdService({
+      store,
+      managedRoot: test.config.shepherdRoot,
+      agentWorkspaceRoot: test.config.workspaceRoot,
+      executor,
+      verifier: new HostTrustedFixtureVerifier(),
+    });
+    await expect(retryService.initialize()).resolves.toBeUndefined();
+    expect(runner.preflightCount).toBe(1);
+  }, 30_000);
 
   it("does not adopt or alter a nonempty unsentinelled private-home root", async () => {
     const test = await environment();
