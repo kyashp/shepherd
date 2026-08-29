@@ -4,11 +4,31 @@ import { Link } from "../router";
 import { useShepherdPolling } from "../shepherd-hooks";
 import type { Agent, ProjectGroupMessage } from "../types";
 import { EmptyState, ErrorState, Icon, LoadingPanel, PageHeader, Spinner, StatePill, formatTime, shortId } from "../ui";
+import {
+  MAX_PROJECT_GROUP_MESSAGE_LENGTH,
+  prependProjectGroupMentionWithinLimit,
+} from "./project-group-mention";
 
 function senderName(message: ProjectGroupMessage, agents: Agent[]): string {
   if (message.senderType === "human") return "You";
   if (message.senderType === "shepherd") return "Shepherd";
   return agents.find((agent) => agent.id === message.senderId)?.name ?? "Agent";
+}
+
+export function ProjectGroupMentionButton({
+  agentName,
+  sending,
+  onActivate,
+}: {
+  agentName: string;
+  sending: boolean;
+  onActivate: () => void;
+}) {
+  return (
+    <button type="button" disabled={sending} onClick={onActivate}>
+      @{agentName}
+    </button>
+  );
 }
 
 export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
@@ -18,9 +38,28 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
   const [messageError, setMessageError] = useState<string | null>(null);
   const [messagesLoading, setMessagesLoading] = useState(true);
   const [content, setContent] = useState("");
+  const [composerError, setComposerError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const messageEnd = useRef<HTMLDivElement>(null);
+  const messageComposer = useRef<HTMLTextAreaElement>(null);
   const inFlight = useRef(false);
+
+  const insertMention = (agent: Agent) => {
+    if (sending) return;
+    const nextContent = prependProjectGroupMentionWithinLimit(agent.name, agent.id, content);
+    if (nextContent === null) {
+      setComposerError("Mention would exceed the 2,000-character message limit.");
+    } else {
+      setComposerError(null);
+      setContent(nextContent);
+    }
+    window.requestAnimationFrame(() => {
+      const composer = messageComposer.current;
+      if (!composer) return;
+      composer.focus();
+      composer.setSelectionRange(composer.value.length, composer.value.length);
+    });
+  };
 
   const refreshMessages = useCallback(async () => {
     if (!project || inFlight.current) return;
@@ -62,6 +101,7 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
     const nextContent = content.trim();
     setSending(true);
     setMessageError(null);
+    setComposerError(null);
     try {
       await api.sendGroupMessage(project.id, {
         clientMessageId: crypto.randomUUID(),
@@ -91,7 +131,12 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
         <div className="group-members" aria-label="Available mention targets">
           <span>Route directly:</span>
           {agents.map((agent) => (
-            <button key={agent.id} onClick={() => setContent((current) => current || `@${agent.name} `)}>@{agent.name}</button>
+            <ProjectGroupMentionButton
+              key={agent.id}
+              agentName={agent.name}
+              sending={sending}
+              onActivate={() => insertMention(agent)}
+            />
           ))}
         </div>
         {messageError ? (
@@ -128,10 +173,14 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
         <form className="chat-composer" onSubmit={submit}>
           <label htmlFor="group-message" className="sr-only">Message Project Group</label>
           <textarea
+            ref={messageComposer}
             id="group-message"
             rows={2}
             value={content}
-            onChange={(event) => setContent(event.target.value)}
+            onChange={(event) => {
+              setContent(event.target.value);
+              setComposerError(null);
+            }}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
@@ -140,9 +189,15 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
             }}
             placeholder="Message Project Group…"
             disabled={!project || sending}
-            maxLength={2_000}
+            maxLength={MAX_PROJECT_GROUP_MESSAGE_LENGTH}
+            aria-describedby={composerError ? "group-message-error" : undefined}
           />
-          <div><span>Unmentioned → Shepherd · @AgentName → targeted contract</span><button className="send-button" aria-label="Send group message" disabled={!content.trim() || sending}>{sending ? <Spinner /> : <Icon name="send" />}</button></div>
+          <div>
+            <span id={composerError ? "group-message-error" : undefined} role={composerError ? "status" : undefined}>
+              {composerError ?? "Unmentioned → Shepherd · @AgentName → targeted contract"}
+            </span>
+            <button className="send-button" aria-label="Send group message" disabled={!content.trim() || sending}>{sending ? <Spinner /> : <Icon name="send" />}</button>
+          </div>
         </form>
       </section>
     </div>
