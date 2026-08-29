@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type {
   ContractResultManifest,
+  ExpectedArtifact,
   SemanticClaim,
   ShepherdFailureCode,
 } from "./domain.js";
@@ -111,6 +112,7 @@ export type ManifestIssueCode =
   | "contract_id_mismatch"
   | "invalid_artifact_path"
   | "missing_artifact"
+  | "missing_required_artifact"
   | "artifact_not_changed"
   | "invalid_claim"
   | "duplicate_claim"
@@ -134,6 +136,8 @@ export interface ManifestIngestionContext {
   existingPaths: readonly string[];
   /** Concrete repo-relative paths from the trusted Git diff. */
   changedPaths: readonly string[];
+  /** Contract-owned output requirements; required items must exist and be declared. */
+  expectedArtifacts?: readonly ExpectedArtifact[];
   /** Optional unchanged paths intentionally supplied as relevant context. */
   relevantEvidencePaths?: readonly string[];
   createdAt: string;
@@ -318,6 +322,34 @@ export function ingestContractResultManifest(
     }
     return [{ ...artifact, path: safe.path }];
   });
+  const declaredArtifactPaths = new Set(artifacts.map((artifact) => artifact.path));
+  for (const expected of context.expectedArtifacts ?? []) {
+    if (!expected.required) continue;
+    let expectedPath: string;
+    try {
+      expectedPath = normalizeRepoPath(expected.path);
+    } catch {
+      issues.push({
+        code: "missing_required_artifact",
+        path: "$.artifacts",
+        message: "A required Contract artifact has an invalid trusted path",
+      });
+      continue;
+    }
+    if (!declaredArtifactPaths.has(expectedPath)) {
+      issues.push({
+        code: "missing_required_artifact",
+        path: "$.artifacts",
+        message: `Manifest omitted required Contract artifact '${expectedPath}'`,
+      });
+    } else if (!existing.has(expectedPath)) {
+      issues.push({
+        code: "missing_required_artifact",
+        path: "$.artifacts",
+        message: `Required Contract artifact '${expectedPath}' does not exist in the Plane`,
+      });
+    }
+  }
   if (issues.length > 0) return malformed(issues);
 
   const declaredKeys = new Set(
