@@ -26,6 +26,150 @@ The remaining work is material:
 
 Do not merge this branch merely because the current test suite is green. Close the P0 items in Section 10, run the review gates, then merge and rerun the post-merge gate.
 
+## Canonical implementation and verification ledger
+
+This section is the authoritative status inventory for the checkpoint. If a later descriptive section sounds more optimistic, this ledger wins. Confidence is scoped to the behavior named in the row; it is not a claim that adjacent behavior works.
+
+### Status definitions
+
+| Label | Meaning |
+|---|---|
+| **Implemented + tested** | The production path exists and relevant automated evidence passed. Browser confidence still requires a browser test where the behavior is user-facing. |
+| **Implemented, not fully tested** | Production code exists, but one or more required integration, failure, live, browser, accessibility, responsive, or repeated-run checks are absent. |
+| **Defective / partial** | The path exists but a reproduced defect, misleading control, unsafe generic failure, stranded state, or material requirement mismatch is known. |
+| **Unimplemented** | No production composition exists for the required behavior; standalone helpers or UI shells do not count. |
+
+### Mandatory change policy for every next agent
+
+All fixes must make the **smallest coherent change** that completely restores the named requirement:
+
+- Do not perform unrelated refactoring, renaming, formatting, dependency changes, architecture replacement, or speculative cleanup.
+- Preserve existing public contracts, trust boundaries, persistence invariants, security checks, tests, and working starter behavior unless the supported root cause requires a narrowly documented contract change.
+- Add or strengthen the smallest regression test that reproduces the defect. Never weaken an assertion or remove a quality gate merely to make a check pass.
+- Work feature-by-feature on a branch. Commit only coherent, tested checkpoints. Merge to `main` only after the feature-specific gate and the combined gate pass.
+- Continue to protect the untracked user-provided TechJam brief and all secrets.
+
+For **every UI fix**, the following additional rules are mandatory:
+
+- Preserve the existing Launchpad visual language and layout: dark charcoal sidebar, cream/off-white work surfaces, restrained purple primary accent, green success, red failure/collision, compact starter typography, restrained borders/shadows, and the existing spacing rhythm.
+- Reuse the current React components, CSS variables, classes, layout primitives, and interaction patterns before adding new primitives.
+- Fix the affected component or state only. Do not redesign unrelated pages, replace the navigation, introduce a new visual system, or apply generic AI-dashboard styling.
+- Keep the result human-faithful to `docs/UI.jpeg`; pixel-perfect matching is not required, but it must remain immediately recognizable as the same product.
+- Do not add decorative gradients, neon effects, particles, 3D effects, excessive motion, or unrelated animation. The timeline grid gradient is a functional line-rendering exception.
+- Preserve complete loading, empty, error, disabled, reconnecting, success, failure, focus, and keyboard states.
+- Verify every material UI fix in a real browser at both `1280x800` and `1440x900`, including overflow, overlap, truncation/title behavior, keyboard focus, and screenshots. Source inspection or a successful TypeScript build is not visual verification.
+
+### Fully implemented and tested features
+
+| Feature | Evidence observed | Confidence it is correct within the stated scope |
+|---|---|---:|
+| Versioned JSON persistence, V1 migration, serialized atomic mutation, validation, secret redaction, and monotonic event high-water cursor | Database/store suites; full server suite; persistence rollback and cursor-gap regressions | **96%** |
+| Agent CRUD, lifecycle state, workspace binding, conversation/run persistence, and one-active-run guard | AgentService and API suites; full server suite | **95%** |
+| Agent roles, safe authority presets, advanced-authority normalization, role-only preset reset, and hostile path/glob rejection | AgentService/API tests; full server suite | **96%** |
+| Prompt envelope construction, prompt size/control rules, and sensitive-value exclusion | Prompt/runtime tests and Phase 3 live gate | **95%** |
+| Plane path confinement, Git argv operations, branch/ID sanitization, diff inspection, and protected-path authority enforcement | Authority, Plane/Git, promotion, and service tests | **95%** |
+| Strict result-manifest parser and independently corroborated structured semantic claims for the valid hero path | Manifest, service, and live-runtime tests | **94%** |
+| Independent verifier boundary, trusted check registry, bounded container resources/output, secret-free environment, and no-network fixture verification | Verifier container tests and full server suite | **94%** |
+| Deterministic exclusive-claim collision rule, including near misses and dependency supersession | Collision unit tests and complete deterministic Mission test | **97%** |
+| Two resolution Planes from one immutable integration SHA, independent execution identities, evidence-based mandatory checks, and no hard-coded strategy winner | Service/resolution/live tests and winner-flip test | **96%** |
+| Final promotion gate: authority recheck, independent re-verification, selected-candidate validation, protected-head consistency, and trusted Git promotion | Promotion-gate negative tests, Git integration tests, service compensation tests | **96%** |
+| Restart recovery at four process-kill checkpoints, with no falsely completed Mission | Recovery unit/process tests and full server suite | **95%** |
+| Cancellation linearization in both promotion race directions and exact executor/verifier cancellation targets | Dedicated service race tests; full server suite | **95%** |
+| Guarded `auth-demo` reset, unrelated-data preservation, cursor preservation, hostile-path protection, and recovery after Git-reset/store-persist failure | Reset/service/database tests; full server suite | **95%** |
+| Authenticated Shepherd HTTP schemas, stable error statuses, path-free controls, demo-mode guards, and public DTO redaction | API tests; focused 116-test gate; full server suite | **95%** |
+| Project Group **parser only**: bounded normalization, exact/quoted mentions, ambiguity rejection, and inert untrusted content | `group-routing.test.ts`: 10/10 passed | **97%** |
+| Standalone `ArkModelReviewer` adapter only: schema validation, bounded I/O, timeout/cancellation, sensitive-value rejection, and explicit degradation results | `model-reviewer.test.ts` and Phase 3 full suite | **94%** |
+| Phase 3 live Codex runtime isolation at the Phase 3 checkpoint | Two fresh live Missions, eight isolated sessions, real collision/promotion evidence recorded in `docs/BUILD_LOG.md` | **88%**; not rerun after Phase 4 changes |
+
+The following are **not** included in the fully-tested claim above: rendered UI behavior, complete Group Chat behavior, general DAG scheduling, model-review Mission composition, and every missing/partial row in the failure matrix.
+
+### Confirmed defects and partial behavior
+
+| ID | Area | Confirmed defect / mismatch | User-visible or safety impact | Required minimal correction |
+|---|---|---|---|---|
+| `GC-01` | Group Chat mention buttons | UI inserts `@Frontend Agent`, while names containing spaces require `@"Frontend Agent"`. The UI-generated value reproduces `unknown_agent`. | Mention buttons do not route the demo Agents. | Quote/escape whitespace-containing names using the parser's existing JSON mention syntax; add a browser regression test. |
+| `GC-02` | Unmentioned Group Chat messages | The backend persists a human message with no target, but does not invoke Shepherd, create work, or post a Shepherd response. | UI says “Unmentioned → Shepherd,” but no Shepherd action occurs. | Route through an existing bounded Shepherd action/response contract; do not add free-form shell/model authority. |
+| `GC-03` | `@Agent` assignment | It only links to an already-created Contract in an active Mission; it cannot create a new bounded Contract. | The required targeted Contract journey is incomplete. | Add a constrained, schema-validated Contract-creation path or change the copy/acceptance contract if product direction is explicitly revised. |
+| `GC-04` | Mission timing | `@Agent` returns `409` after the active Mission finishes, and the deterministic Mission may finish before a human can use Group Chat. | The demo interaction is unreliable. | Make the bounded targeted journey independent of a narrow timing race while retaining one-project/one-mutation safety. |
+| `GC-05` | Pre-Mission chat | Composer is disabled until a Shepherd project exists. | Group Chat appears broken on a clean start. | Either initialize the safe demo project read model without starting execution or provide a clear in-panel Mission-start action. |
+| `GC-06` | Agent summaries | Lifecycle summaries are sent as Shepherd; Agents do not post concise manifest-derived completion summaries as `senderType: agent`. | Required human/Shepherd/Agent conversation is incomplete. | Map verified manifest summaries to bounded server-authored Agent messages after verification. |
+| `MR-01` | Shepherd advisory model | `ArkModelReviewer` is not injected into `ShepherdService` or composed in `index.ts`. | `SHEPHERD_MODEL` is unused by Missions. | Add advisory-only composition after trusted Contract evidence exists; deterministic collision/winner/promotion must remain authoritative. |
+| `MR-02` | Model-review setting | `modelReviewEnabled` persists and the UI presents it as functional, but it changes no execution behavior. | Misleading control. | Wire `MR-01`, or disable and label the control unavailable until wired. |
+| `ST-01` | Startup settings | `SHEPHERD_AUTO_RESOLUTION` and `SHEPHERD_MAX_PARALLEL_PLANES` are parsed by config but not passed to `ShepherdService` as initial settings. | Environment configuration can be silently ignored. | Add explicit initial-setting composition and tests without overriding later persisted operator settings unexpectedly. |
+| `ST-02` | Notifications | Notification toggles persist but no notification delivery or in-app notification behavior consumes them. | Functional-looking settings have no effect. | Implement a bounded in-app behavior or label the preferences as reserved/unavailable; no external integration without approval. |
+| `F-01` | Contract timeout | Contract timeouts can flow through `makeFailure()` as `unknown` instead of `agent_timeout`. | Failure evidence is generic. | Preserve a typed timeout error through Contract, Plane, Agent, Mission, event, API, and UI state. |
+| `F-02` | Contract runtime error | Candidate runtime errors are typed, but Contract runtime errors can become `unknown`. | Failure matrix is incomplete. | Introduce typed stage errors and one causal regression test. |
+| `F-03` | Contract verifier exception | A thrown verifier infrastructure error can leave Contract=`verifying`, Plane=`inspecting`, Agent=`busy` while the Mission fails generically. | Stranded active-looking UI and incorrect durable state. | Atomically land all affected entities in an evidenced non-green terminal/attention state. |
+| `F-04` | Worktree/Plane creation failure | Initial Plane creation can fail before a durable Plane/failure event exists; a later `PlaneCreationError` mapper is unreachable for that point. | No durable visible evidence. | Persist an attempted-stage failure on the owning Contract/Mission before returning. |
+| `F-05` | Git textual integration conflict | Git detects the conflict, but `integrateContracts()` converts it to a generic throw. | Required `git_conflict` state/evidence is missing. | Persist conflict files, integration Plane state, Mission failure/attention, and a typed event. |
+| `F-06` | Persistence failure | Store rollback is atomic, but there is no recovery-visible `persistence_failed` Mission event/path. | Failure may only appear as an HTTP/process error. | Add a safe recovery/journal/reconciliation mechanism; do not claim durability through the same unavailable write. |
+| `F-07` | Candidate timeout | Some timeout paths use `failed` rather than `timed_out`; runtime timeout classification partly relies on message regex. | Inconsistent UI/state and brittle retry decision. | Use typed timeout errors and one canonical state mapping. |
+| `F-08` | Retry eligibility | Retry is capped at one, but most non-authority candidate execution exceptions are treated as retryable. | Non-transient failures may waste a retry and obscure cause. | Retry only typed transient/runtime/infrastructure failures; add a second-failure/no-second-retry test. |
+| `SCH-01` | General DAG execution | Service calls the scheduler for one fixed initial two-Contract batch with no real busy-Agent, lock, or active-Plane inputs. | PRD general dependency-wave behavior is absent. | Extend the existing scheduler/service boundary rather than replacing it. |
+| `SCH-02` | Cycle timing | Cycles are rejected during scheduler evaluation, not before graph persistence/creation. | Invalid graphs may persist until execution. | Validate before persistence using the existing DAG validator. |
+| `UI-01` | Failed Mission evidence | Detailed failure UI is focused on `attention_required`; ordinary `failed` Missions can hide the specific failure. | A failed run may look unexplained. | Reuse the current attention/failure components for all non-green terminal Mission failures. |
+
+### Implemented but not fully tested
+
+| Feature/path | What exists | Missing evidence before it may be called complete |
+|---|---|---|
+| Six UI surfaces and shared navigation/design system | All requested routes compile and production-build | Real browser interaction, screenshots, responsive review, accessibility, and independent UI review |
+| Shepherd stream, filters, timeline, Plane Tree, detail drawer, cancel/selection controls | React components and API bindings exist | Populated deterministic browser journey, real Git/tree comparison, event visibility timing, failure slices |
+| Project Group message display/polling | Read API, sorting, connection/error/empty states exist | Browser polling/reconnect test plus fixes for `GC-01..06` |
+| Legacy Playground in the new shell | Existing workflow retained in source | Create → task → follow-up → stop/restart Playwright regression |
+| Create/Edit Agent UI | Role/preset/advanced forms compile | Browser validation, keyboard/accessibility, and persistence round-trip |
+| Settings UI | Timeout/concurrency/auto-resolution values call real API | Browser round-trip; fix misleading model/notification controls and startup-env composition |
+| One automatic candidate retry | Fresh Plane and prior-attempt archive are tested | Typed eligibility and failed-second-attempt/no-second-retry test |
+| Manual confirmation and candidate selection | Service/API path promotes an independently passing candidate | A service-generated objective tie, browser choice, and chosen-candidate promotion journey |
+| Missing manifest durable transition | Code persists `manifest_missing` | Service fault injection asserting Contract/Plane/Mission/event/API/UI |
+| Malformed manifest durable transition | Code persists `manifest_malformed`; parser is tested | Service-level state/event/API/UI test |
+| Omitted declared claim key | Parser rejects it | Service-level state/event/API/UI test |
+| Contract independent-acceptance failure | Code path exists | Contract-specific verifier-failure orchestration test |
+| Final re-verification failure | PromotionGate unit behavior exists | Durable Shepherd Candidate/Mission/event/API/UI test |
+| Candidate timeout | Partial code path exists | Correct typed state mapping, retry behavior, API/UI evidence test |
+| Repeated cancellation | Single cancellation and both promotion races are tested | Explicit idempotent repeated-cancel API/service test |
+| UI reconnect handling | Poller retains state and retries | Browser interruption, visible reconnect, cursor reconciliation, no-duplicate event test |
+| Live Mission on Phase 4 branch | Phase 3 runtime previously passed | One sparse post-integration live Mission after P0 fixes; no repeated unnecessary model calls |
+
+### Unimplemented required behavior
+
+| Required behavior | Status |
+|---|---|
+| Mission-composed bounded `SHEPHERD_MODEL` semantic review and durable `model_review_degraded` event | **Unimplemented**; standalone adapter only |
+| General multi-wave DAG scheduling with actual Agent occupancy, mutation lock, active Plane capacity, and downstream re-evaluation | **Unimplemented in service orchestration**; scheduler module exists |
+| Complete unmentioned-message → Shepherd action/reply behavior | **Unimplemented**; persistence only |
+| Bounded Project Group `@Agent` Contract creation independent of an already-existing active Contract | **Unimplemented** |
+| Manifest-derived Agent completion messages in Project Group | **Unimplemented** |
+| Durable recovery-visible persistence-failure evidence | **Unimplemented** |
+| Complete typed implementation for every PRD Section 12 failure row | **Unimplemented/partial**, itemized above and in the failure matrix |
+| Playwright configuration, deterministic browser harness, fake Codex CLI, and all eight journeys | **Unimplemented** |
+| Required screenshot corpus and visual checklist report | **Unimplemented** |
+| Notification delivery/consumption for the added notification settings | **Unimplemented** |
+| Final generated architecture document, final test report, final README refresh, and final PRD `HANDOFF.md` | **Unimplemented** |
+
+### Pending test and review ledger
+
+The next agent must explicitly mark each item pass/fail with the exact command and observed evidence:
+
+1. Add service fault-injection tests for `F-01..08`, missing/malformed/omitted manifests, Contract acceptance failure, objective tie, final re-verification, repeated cancellation, and persistence recovery.
+2. Add Group Chat unit/API/browser regressions for `GC-01..06`, including quoted whitespace names, a clean-start state, a message that produces a bounded Shepherd result, a targeted Contract, post-Mission behavior, and manifest-derived Agent summaries.
+3. Add fake-reviewer Mission tests for completed findings, zero findings, disabled review, timeout, cancellation, malformed response, transport/provider/config failure, sensitive-value rejection, and deterministic-collision independence.
+4. Run at most one opt-in live `SHEPHERD_MODEL` structured smoke after item 3 passes; never print credentials.
+5. Add real service DAG-wave tests for dependencies, failed-required blocking, busy Agent, mutation lock, capacity, cycle rejection before persistence, and overlapping timestamps.
+6. Implement and run all eight PRD Playwright journeys: baseline Playground, Mission, `@Agent`, authority failure, all-fail attention, objective tie/human choice, cancellation, and restart.
+7. Capture and review every required browser stage at `1280x800` and `1440x900`; verify no overlap/truncation, loading/empty/error/disabled/reconnect states, keyboard navigation, focus visibility, labels, contrast, and long-ID titles.
+8. Measure event persistence → browser visibility `<=1.5s`, candidate timestamp overlap, Plane creation time, collision-to-promotion time, and full demo time.
+9. Verify Plane Tree nodes/branches/SHAs against real persisted Plane data and `git worktree list`/branch reality.
+10. Run the read-only `ui-reviewer` after screenshots and fix every high/medium finding with the mandatory minimal UI policy above.
+11. Run the read-only `security-reviewer` after Group Chat/model/failure changes and fix material findings.
+12. Add TypeScript checking for test files; current server production typecheck excludes `*.test.ts`.
+13. Run the literal `npm run check` on the final feature commit.
+14. Run the complete suite at least five consecutive times and fix flakiness by root cause.
+15. Run secret scans over source, generated prompts, persisted store, API payloads, and browser DOM after a complete demo.
+16. Perform three clean reset-to-completion rehearsals and record exact timings; use a second machine/state only if genuinely available.
+17. Run one final clean deterministic demo and the separately gated sparse live smoke on the final commit.
+18. After merge, rerun typecheck, full tests, production build, browser smoke, secret scan, and one clean demo on `main`.
+
 ## 2. Repository and worktree state
 
 At handover:
@@ -99,7 +243,7 @@ Implemented behavior:
 - Human confirmation/selection accepts only independently passing candidates and resumes the same trusted promotion gate.
 - Human-selection verifier/infrastructure failures return durably to `attention_required` rather than stranding `resolving` state.
 - Demo reset is fixed to the trusted `auth-demo` sentinel. It removes only Shepherd-managed Planes/branches/state, restores the known initial commit, preserves unrelated Launchpad data, preserves unrelated event sequence numbers, never reuses the high-water cursor, and resumes if Git reset succeeded but store persistence failed.
-- Project Group messages are bounded and idempotent. Unmentioned text routes to Shepherd; the only executable `@Agent` path is the trusted `auth-demo-contract` preset targeting an existing active demo Contract.
+- Project Group messages are bounded and idempotent, but the complete chat workflow is defective: unmentioned text is currently persisted without Shepherd processing/reply, and the only executable `@Agent` path targets an existing active demo Contract. See `GC-01..06` in the canonical ledger.
 - Shepherd emits bounded lifecycle summaries for Mission accepted, verified manifests, collision, candidate outcomes, attention, promotion, completion, and cancellation.
 
 ### 3.3 Strict HTTP API and public data boundary
@@ -167,12 +311,12 @@ Implemented UI capabilities:
 - Project Group polling, bounded `@Agent` routing, and Contract links.
 - Agents table, legacy Playground, lifecycle controls, role/current-Contract/Plane information.
 - Create/Edit role selector, authority presets, and advanced authority section.
-- Settings tabs for real timeout/concurrency/automatic-resolution/model-review/notification values, plus locked mode/retention/authority controls and safe demo reset.
+- Settings tabs for real timeout/concurrency/automatic-resolution values, persisted-only model-review/notification values, locked mode/retention/authority controls, and safe demo reset. The model-review and notification controls must be fixed or labeled unavailable; see `MR-02` and `ST-02`.
 - Loading, empty, error, and reconnect states.
 
 Decorative gradients were removed. The remaining CSS gradient draws timeline grid lines. `prefers-reduced-motion` is present.
 
-Rendered verification is still pending; do not claim the UI matches `docs/UI.jpeg` until Section 10.3 is complete.
+Rendered verification is still pending; do not claim the UI matches `docs/UI.jpeg` until the browser and visual gate in the canonical pending-test ledger is complete.
 
 ## 4. How a Mission currently works
 
@@ -371,29 +515,36 @@ Because this checkpoint materially changed scoped authority, public DTOs, cancel
 
 4. **Fix or disable misleading UI states**
    - Until item 3 is complete, disable or clearly label the model-review setting as unavailable.
+   - Until notification behavior exists, label notification preferences as reserved/unavailable.
    - Show typed failure evidence for ordinary `failed` Missions, not only `attention_required` Missions.
+   - Follow the mandatory minimal UI and visual-preservation policy in the canonical ledger.
+
+5. **Repair Project Group end to end**
+   - Fix `GC-01..06` with the smallest coherent changes.
+   - Preserve the existing bounded parser and security boundary; do not turn chat text into arbitrary commands or model-controlled host actions.
+   - Add causal service/API tests and real browser journeys for every corrected behavior.
 
 ### P1 — browser and visual gate
 
-5. Create `playwright.config.ts`, a repo-local deterministic startup harness, and a fake Codex CLI for legacy Playground tests. Keep all state/browser cache under repository `.tmp` and never read `.env`.
-6. Drive all eight PRD journeys. Use real HTTP/service behavior where safe. For visual states that require fault injection, use test-only composition/network fixtures and pair each with its backend causal test; do not expose production debug routes.
-7. Capture every stage at `1280x800` and `1440x900` under `docs/ui-review/`.
-8. Measure event persistence-to-visible latency (`<=1.5s`), retry/reconnect cursor reconciliation, responsive overflow, focus/labels/contrast, long-ID title behavior, and loading/empty/error states.
-9. Compare the result to `docs/UI.jpeg` with the PRD checklist, then invoke the read-only `ui-reviewer` and fix every high/medium finding.
+6. Create `playwright.config.ts`, a repo-local deterministic startup harness, and a fake Codex CLI for legacy Playground tests. Keep all state/browser cache under repository `.tmp` and never read `.env`.
+7. Drive all eight PRD journeys. Use real HTTP/service behavior where safe. For visual states that require fault injection, use test-only composition/network fixtures and pair each with its backend causal test; do not expose production debug routes.
+8. Capture every stage at `1280x800` and `1440x900` under `docs/ui-review/`.
+9. Measure event persistence-to-visible latency (`<=1.5s`), retry/reconnect cursor reconciliation, responsive overflow, focus/labels/contrast, long-ID title behavior, and loading/empty/error states.
+10. Compare the result to `docs/UI.jpeg` with the PRD checklist, then invoke the read-only `ui-reviewer` and fix every high/medium finding.
 
 Repository-local Chromium was reported present at `.tmp/playwright-browsers/`; no Playwright harness/files were created during this checkpoint.
 
 ### P1 — scheduler and review gates
 
-10. Extend service scheduling to real DAG waves with actual busy-Agent IDs, mutation lock, active Plane count, dependency blocking, and pre-persistence cycle rejection.
-11. Run the read-only `security-reviewer` after all failure/model/browser changes. Fix findings, then rerun targeted and full gates.
+11. Extend service scheduling to real DAG waves with actual busy-Agent IDs, mutation lock, active Plane count, dependency blocking, and pre-persistence cycle rejection.
+12. Run the read-only `security-reviewer` after all failure/model/browser changes. Fix findings, then rerun targeted and full gates.
 
 ### P2 — freeze and deliverables
 
-12. Add test-file TypeScript checking; production `apps/server/tsconfig.json` excludes `*.test.ts`.
-13. Run the complete suite at least five consecutive times and fix flakiness by cause.
-14. Run three clean reset-to-completion demo rehearsals and record timings. Use a second machine/state only if genuinely available; otherwise document that limitation.
-15. Finish/update:
+13. Add test-file TypeScript checking; production `apps/server/tsconfig.json` excludes `*.test.ts`.
+14. Run the complete suite at least five consecutive times and fix flakiness by cause.
+15. Run three clean reset-to-completion demo rehearsals and record timings. Use a second machine/state only if genuinely available; otherwise document that limitation.
+16. Finish/update:
     - `docs/SHEPHERD.md`
     - `docs/BUILD_LOG.md`
     - `docs/DEVIATIONS.md`
@@ -401,8 +552,8 @@ Repository-local Chromium was reported present at `.tmp/playwright-browsers/`; n
     - `docs/SHEPHERD_TEST_REPORT.md`
     - `README.md`
     - final `HANDOFF.md` if the project still wants the original PRD filename in addition to this requested `docs/HANDOVER.md`
-16. Run `npm run check`, secret/store/DOM scans, artifact audit, final deterministic demo, and the separately opt-in live smoke.
-17. Commit each coherent feature/gate on its branch. Merge to `main` only after all relevant gates pass, then rerun typecheck, full tests, build, browser smoke, and one clean demo on `main`.
+17. Run `npm run check`, secret/store/DOM scans, artifact audit, final deterministic demo, and the separately opt-in live smoke.
+18. Commit each coherent feature/gate on its branch. Merge to `main` only after all relevant gates pass, then rerun typecheck, full tests, build, browser smoke, and one clean demo on `main`.
 
 ## 11. File map for the next agent
 
