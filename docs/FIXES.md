@@ -1,6 +1,6 @@
 # Shepherd Defect Queue
 
-**Assessed branch/SHA:** `mock-main` / `f6df2d9503a3a482da2cb2882eb913ca2285501c`
+**Assessed branch/SHA:** `mock-main` / `de3e631361763a91272f044e94bbf7a50f1a7d98`
 
 **Audited:** 2026-08-29, Asia/Singapore
 
@@ -59,8 +59,13 @@ that limitation is explicit.
   `npm run check` passed twice with launcher 3/3, Server 563/563 plus one unchanged
   opt-in skip, Web 9/9 and both builds. Lock dry-run and audit reported zero
   vulnerabilities. No product, Server JSX/rootDir or assertion change.
-- **Owner/status:** Fixer / `CANDIDATE`; **96% scoped**, `T,C` 2/3; independent
-  `I` plus GC-01 browser/hosted gates pending, not audited.
+- **Audit closeout:** Auditor passed focused Web 8/8, full Web 9/9, Server
+  routing 10/10, both strict test typechecks, the full deterministic harness
+  (unit 6/6 and Chromium 6/6), literal `npm run check`, and the complete GC-01
+  browser protocol 2/2. Hosted Node 22 run `33266624301` passed on integrated
+  `de3e631`; no product/UI/Server-config change belongs to this correction.
+- **Owner/status:** **RESOLVED + AUDITED** at `de3e631`; **100% scoped**,
+  `T,C,I` 3/3.
 
 ### `TST-05` — E2E-01 visual evidence is non-reproducible and overclaims the down state
 
@@ -400,7 +405,7 @@ that limitation is explicit.
 | `F-06` | Store rollback is tested; recovery-visible `persistence_failed` evidence is absent. | Journal/reconciliation-safe evidence; never claim a failed write persisted itself. | Worker / depends typed foundation |
 | `F-07` | Source-evidenced: candidate timeout state mapping is inconsistent and partly regex-based. | One typed timeout class and canonical state mapping. | Worker / ready |
 | `F-08` | Source-evidenced: most non-authority candidate exceptions are retryable; second-failure coverage absent. | Retry only typed transient failures, once, from the immutable base. | Worker / ready |
-| `GC-01` | Earlier reproduction and current UI source: buttons insert bare `@Name With Spaces`, while parser requires JSON quoting. | Parser-safe mention formatting plus draft-preservation/browser regression; no parser weakening. | **Held external: PR #9** |
+| `GC-01` | Earlier reproduction proved buttons inserted bare `@Name With Spaces`, while the parser requires JSON quoting. | Resolved with parser-safe mention formatting, exact Agent-ID fallback, draft-preservation and two-viewport browser coverage; no parser weakening. | **RESOLVED + AUDITED** at `de3e631`; hosted run `33266624301` |
 | `GC-02` | Current service/UI evidence: unmentioned message persists, but no bounded Shepherd action/reply occurs despite UI copy. | Use an existing schema-bounded Shepherd action; no free-form host/model authority. | Worker / ready |
 | `GC-03` | Current service path only links an assignment to an already-created active Contract. | Add schema-validated targeted Contract creation under existing authority. | Worker / blocked by GC-01/02 |
 | `GC-04` | Earlier reproduction: assignment returns conflict after the fast Mission finishes. | Remove the narrow timing dependency while keeping one mutation owner. | Worker / blocked by GC-03 |
@@ -415,12 +420,12 @@ that limitation is explicit.
 | `SCH-02` | Cycles are rejected during scheduling rather than before graph persistence. | Call existing DAG validator before durable Contract creation. | Worker / ready |
 | `UI-01` | Current detailed failure panel is attention-focused; ordinary failed Missions may hide typed detail. | Reuse existing failure/attention primitives; no visual redesign. | Worker / blocked by typed failures |
 | `UI-02` | Current web type has optional `estimatedDurationMs`, but no server/domain producer exists. | Persist and serve trusted estimates, clearly distinct from actuals; preserve timeline design. | Worker / ready |
-| `UI-03` | E2E-01 reproduced document widths of 2299/2579 on Create Agent because four transparent absolute preset radios retained global viewport-wide input sizing. | Resolved by bounding only the visually hidden preset-radio dimensions while preserving native semantics, labels, keyboard behavior, and accepted form visuals. | Integrated/browser-audited at `83954f7`; hosted `C` waits on TST-03 |
-| `TEST-TS` | Current server tsconfig explicitly excludes `src/**/*.test.ts`. | Add a separate no-emit test typecheck without changing production emit. | Worker / ready |
-| `CI-01` | Repository contains no `.github/workflows` required check. | Network/model-free Node install/typecheck/test/build workflow; preserve protected-main policy. | Integrator / ready |
+| `UI-03` | E2E-01 reproduced document widths of 2299/2579 on Create Agent because four transparent absolute preset radios retained global viewport-wide input sizing. | Resolved by bounding only the visually hidden preset-radio dimensions while preserving native semantics, labels, keyboard behavior, and accepted form visuals. | **RESOLVED + AUDITED** at `83954f7`; hosted closeout restored by TST-03 `0b1c401` |
+| `TEST-TS` | Server production config deliberately excludes tests, which previously had no separate strict typecheck. | Resolved with a separate no-emit strict test project without changing production emit. | **RESOLVED + AUDITED** at `8995605` |
+| `CI-01` | Repository previously had no required hosted repository gate. | Resolved with network/model-free Node 22 install/typecheck/test/build plus Docker verification; preserve protected-main policy. | **RESOLVED + AUDITED** at `cda2446`; hosted `33259565232` |
 | `TST-05` | Candidate `592699d` routine harness run passed but modified 16/18 E2E PNGs plus an unrelated UI-03 image; the two stable down captures were unasserted blank canvases. | Resolved with ignored routine output, explicit review-update path, truthful port-down evidence, reachable Create action and real keyboard/focus coverage; no production UI/design change. | **RESOLVED + AUDITED** at `f6df2d9`, evidence `284994d` |
 | `TST-06` | Candidate `592699d` passed secrets to matcher output, could not later clean a retained run root, did not canonically reject symlinked managed ancestors, and could retain live prompt/output in failure artifacts. | Resolved with secret-safe assertions, idempotent later cleanup, canonical ancestor confinement, disabled live artifacts and causal fault tests; no authority broadening. | **RESOLVED + AUDITED** at `f6df2d9` |
-| `TST-07` | Local GC-01/current-main merge fails strict Server test typecheck with TS6142/TS6059 because a Server test imports Web TS/TSX outside its JSX/rootDir contract. | Split/relocate into correctly owned, discovered and strictly typed Web/Server tests; preserve every assertion; no config weakening or product edit. | Fixer / ready; blocks GC-01 integration |
+| `TST-07` | Local GC-01/current-main merge failed strict Server test typecheck with TS6142/TS6059 because a Server test imported Web TS/TSX outside its JSX/rootDir contract. | Resolved by assigning the complete regression to discovered, strictly typed Web ownership; no config weakening, assertion loss or product edit. | **RESOLVED + AUDITED** at `de3e631`; hosted run `33266624301` |
 
 ## Assurance gaps that are not yet defects
 

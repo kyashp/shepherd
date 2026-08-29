@@ -7,6 +7,43 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — GC-01 and TST-07 integrated audit
+
+The Auditor merged current `main` `662a7e7` into the previously audited
+`mock-main` line as merge `c834c39`, preserved every prior audited mock commit,
+then integrated the test-ownership correction as `de3e631`. The effective product
+change is the bounded GC-01 parser-safe mention helper and Project Group buttons;
+TST-07 only moves the complete eight-case regression to Web ownership and adds
+explicit Web Vitest/strict-test configuration plus root scripts and the matching
+lockfile entries. Server JSX/rootDir, product authority, Shepherd lifecycle, CSS
+and schemas are unchanged. Both CI workflows are retained: `required-checks.yml`
+remains the stable push/PR/merge-queue Docker gate, while the main-sourced
+`pull-request-checks.yml` is a narrower PR/merge-queue duplicate that should be
+consolidated only as a separately owned CI task.
+
+Independent focused evidence passed: Web GC 8/8, full Web 9/9, Server group
+routing 10/10, strict Server and Web test typechecks, `npm ci`, and `npm audit`
+with zero vulnerabilities. The real browser protocol passed 2/2 at 1280x800 and
+1440x900 for mouse and real Tab/Enter/Space activation, focus-visible and composer
+refocus/caret, multiline preservation, safe/spaced/escaped/Unicode/NFKC/ID-fallback
+mentions, exact 2,000 acceptance/2,001 unchanged rejection, in-flight native
+disable/no duplicate submission, parser-exact Agent ID, zero document/body X/Y
+overflow, and absence of the auth token/private run root in rendered text. The
+top-of-page frame places the composer partly below the visible area when the
+runtime banner is present; the accepted internal main-content scroll brings the
+entire composer/helper/send control into both viewports with no overlap. This is
+recorded honestly as a Low UI-GATE framing item, together with the mention button's
+subtle disabled visual distinction; it is not a document-overflow or GC-01 blocker.
+The configured `ui-reviewer` role was unavailable, so an independent read-only
+fallback inspected both frames and the source.
+
+The full deterministic harness passed Node 6/6 and Chromium 6/6. Literal
+`npm run check` passed launcher 3/3, Server 563/563 with one unchanged opt-in live
+skip, Web 9/9, both strict test-source projects and both production builds. No
+live/model call was made. Hosted Node 22 Required checks run
+`33266624301` passed on `de3e631`. GC-01 and TST-07 are therefore independently
+audited at scoped 100%; this does not claim GC-03/04 targeted lifecycle completion.
+
 ## TST-07 correct Web test ownership candidate
 
 **Date:** 2026-08-30 (Asia/Singapore)
