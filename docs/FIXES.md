@@ -193,6 +193,24 @@ that limitation is explicit.
   same-user TOCTOU and exceptional spawn/concurrent-mkdir residuals are documented
   and do not broaden the local harness threat model.
 
+### `TST-09` — reviewer-only live gate inherits unrelated hosting validation
+
+- **Evidence class:** the sole authorized live command failed deterministically at
+  `loadConfig` before reviewer construction or network egress.
+- **Failure contract:** a non-loopback `HOST` plus placeholder/short
+  `APP_AUTH_TOKEN` from local `.env` triggers production HTTP-server validation.
+  This isolated reviewer test starts no HTTP server. External reviewer/network
+  calls are 0; no live root or outcome artifact remained; no retry occurred.
+- **Minimal correction:** test/launcher only. Force a safe loopback `HOST` for this
+  explicit process while still loading real Ark/SHEPHERD key, model, base URL and
+  the production reviewer configuration predicate/filter. Do not weaken production
+  non-loopback auth, edit `.env`, hide fatal reviewer configuration/auth, or add an
+  automatic retry. Add causal environment-precedence coverage if practical.
+- **Acceptance/status:** Fixer **READY**. Preflight/config regression, strict/full
+  deterministic and security gates pass; then Auditor may execute the corrected
+  command exactly once. Total external reviewer requests must be one overall
+  (currently zero).
+
 ### `TST-08` — returned verifier evidence can race fixture teardown
 
 - **Evidence class:** literal `npm run check` RED on local MR-03 merge `3c878b3`;

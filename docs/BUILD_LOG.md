@@ -7,7 +7,7 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
-## 2026-08-30 — MR-03 deterministic audit green; live gate blocked before egress
+## 2026-08-30 — TST-09: MR-03 live gate blocked before egress
 
 The Auditor independently passed the TST-08 returned row 20/20, paired
 infrastructure rows 40/40, MR-03 reviewer/service/config 164/164, adjacent 100/100,
