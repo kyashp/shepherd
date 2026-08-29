@@ -28,6 +28,26 @@ that limitation is explicit.
 
 ## Immediate queue
 
+### `TST-15` — Sentinel and reconciliation cleanup paths expose raw filesystem errors
+
+- **Evidence class:** independent exhaustive executor cleanup review of unintegrated
+  chain `3afc452`; source-confirmed beyond the corrected TST-14 run-finally branch.
+- **Failure contract:** sentinel adoption `open` retains raw error as `cause`;
+  validation/adoption `handle.close()` can override bounded primary errors; failed
+  adoption `unlink` is silently swallowed; interrupted private-home and preflight-
+  workspace `rm()` failures escape raw. These paths can expose private path/OS detail,
+  lose causal precedence or retain an invalid sentinel without an actionable error.
+- **Minimal correction:** inject opaque/secret/path faults for sentinel open,
+  validation close, adoption close+unlink, private-home reconcile rm and preflight-
+  workspace reconcile rm. Discard raw causes; preserve bounded primary precedence;
+  emit fixed cleanup/reconciliation diagnostics when cleanup is the only failure;
+  retain unremoved owned artifacts for safe later retry. Prove String/stack/inspect/
+  cause/log/startup surfaces clean. Preserve TST-12/TST-14, OPS-06 and all typed
+  runtime behavior; no swallowed cleanup or broad filesystem refactor.
+- **Acceptance/status:** **OPEN / READY for Fixer.** Full sentinel/reconcile fault
+  matrix, retry/ownership proof, focused executor/OPS-06/F-01/TST-13/14, strict/
+  literal check, scans and independent security re-review.
+
 ### `TST-14` — Execution-home cleanup leaks and overrides causal failure identity
 
 - **Evidence class:** independent exhaustive security review of unintegrated
@@ -56,11 +76,10 @@ that limitation is explicit.
   Console error/warn capture is canary-free. Executor/OPS-06 slice 21/21, focused and
   adjacent 108/108, strict test typecheck and first literal check pass (launcher 3/3,
   Server 615 + two explicit skips, Web 17/17, builds). External calls: 0.
-- **Acceptance/status:** **FIX CANDIDATE / Auditor integration pending.** Independent
-  security review found no High/Medium issue; its initial evidence gaps were closed
-  with inactive-cancel, log-capture and real HTTP assertions. Final re-review reports
-  no material gap and two post-correction literal checks pass; scans are recorded in
-  BUILD_LOG.
+- **Acceptance/status:** **AUDITOR VERIFIED locally / integration held by TST-15.**
+  Auditor passed focused 81/81, adjacent 66/66, literal check and the four execution-
+  home precedence cases. A distinct sentinel/reconciliation cleanup family remains
+  open as TST-15, so the chain is not integrated.
 
 ### `TST-13` — Arbitrary Agent Runtime stderr reaches durable/public failures
 

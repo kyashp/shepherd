@@ -7,6 +7,24 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — TST-14 passes; F-01/02 blocked by TST-15 cleanup family
+
+The Auditor reviewed exact unintegrated chain `3afc452`. Focused runner/executor/
+service passed 81/81; API/store/container-service/state-machine/recovery/verifier
+adjacency passed 66/66; literal `npm run check` passed launcher 3/3, Server 615/615
+plus two explicit opt-in skips, Web 17/17, strict test/source types and both builds.
+TST-14's success/cancel/timeout/execution precedence, fixed cleanup-only failure,
+retained-home reconciliation, retry, Contract/candidate durable/public/Fastify HTTP/
+log canary exclusion and no-promotion/head-move behavior passed. No external call ran.
+
+The required exhaustive executor review found one remaining Medium cleanup family:
+sentinel open carries raw cause; sentinel validation/adoption close can override
+bounded primary errors; failed adoption unlink is swallowed; and interrupted-home/
+preflight-workspace reconciliation rm failures escape raw. These paths lack causal
+fault coverage. The chain was not pushed to `mock-main`; TST-15 requires fixed
+bounded precedence, actionable retained-artifact retry and clean startup/log Error
+surfaces before integration.
+
 ## 2026-08-30 — F-01/02 + TST-13 remain blocked by TST-14 cleanup path
 
 The Auditor reviewed exact corrected chain `c7b5175`. Focused runner/executor/
