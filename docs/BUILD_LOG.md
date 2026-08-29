@@ -7,6 +7,193 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## TST-02 recovery fixture clock candidate
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Branch:** `fix/33-recovery-fixture-clock`
+**Issue:** [#33](https://github.com/kyashp/shepherd/issues/33)
+**Draft PR:** [#34](https://github.com/kyashp/shepherd/pull/34)
+
+The exact post-CAS recovery test created its Plane through a `PlaneManager` using
+the real wall clock, then reconciled it with fixed `recoveredAt`
+`2026-08-29T12:05:00.000Z`. Once real time passed 12:05Z, recovery assigned an
+`updatedAt` earlier than the Plane's real `createdAt`, and database validation
+correctly rejected the state. The unmodified targeted test reproduced the causal
+RED with `Refusing to persist invalid database state` after 12:05Z.
+
+The candidate injects the test's existing `2026-08-29T12:00:00.000Z` timestamp
+through `PlaneManager`'s existing `now` option. It changes no production code,
+schema, validator, assertion, launcher, dependency, UI file, or ST-02/PR #13 file.
+
+Observed against code commit
+`1dc3133c332b9fd31ec27d2ed5e8d620a0dae08f`:
+
+- the exact targeted test passed 1/1 at the real post-rollover time 15:08Z;
+- the complete `recovery.test.ts` file passed 17/17 at the real post-rollover time;
+- literal `npm run check` in a clean Node 24 Linux workspace, with only the process
+  wall clock held at the shared 12:00Z fixture baseline, passed: launcher 3/3,
+  server 25 files passed and 2 opt-in files skipped, 551 tests passed and 5 skipped,
+  and both production builds completed;
+- unconstrained real-clock full-suite attempts still exposed unrelated current-main
+  cross-suite instability in unchanged service/recovery-process cases, while the
+  changed recovery file remained 17/17; the full unchanged `service.test.ts` and
+  `recovery.process.test.ts` files then passed 28/28 and 5/5 in isolation;
+- `npm audit --json` reported 0 vulnerabilities across 251 dependencies;
+- `git diff --check` passed.
+
+An independent read-only review of the exact code range
+`349897d3d9167fe711bf720f7c3fadd213938d11...1dc3133c332b9fd31ec27d2ed5e8d620a0dae08f`
+reported no Critical, Important, or Minor finding and returned **Ready to merge:
+Yes**. It confirmed the injected clock owns the persisted Plane lifecycle
+timestamps, produces a fresh fixed `Date` on each call, precedes recovery by five
+minutes, and leaves every fail-closed, cleanup, event, and idempotency assertion
+unchanged.
+
+The clock-controlled full check is recorded as controlled evidence, not as an
+unconstrained real-clock pass. The real-clock targeted and full-file results are the
+post-rollover proof for this narrowly scoped correction.
+
+## OPS-05 canonical launcher-entry candidate
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Branch:** `fix/31-ops-05-canonical-launcher-entry`
+**Issue:** [#31](https://github.com/kyashp/shepherd/issues/31)
+
+On macOS, `os.tmpdir()` returned a lexical `/var/...` path while `realpath()`
+returned its `/private/var/...` filesystem identity. The launcher compared the
+lexical `process.argv[1]` with ESM's canonical module path, misclassified direct
+execution as an import, and exited before starting its child. The preserved initial
+launcher suite RED was 1/2: the direct-shell fixture failed with missing
+`startup-environment`. A new deterministic symlink-entry RED then failed 0/1
+because its child-side-effect marker was absent even though the launcher exited 0.
+
+The launcher now canonicalizes both entry paths with `realpath()` before comparing
+them. An identity-resolution failure is an explicit generic launcher error (exit 1),
+never a safe import classification. The regression invokes a symlink alias and
+asserts that its child writes the marker. The existing direct-shell fixture now uses
+a temporary `HOME` and asserts Darwin's documented user-local state root while
+retaining Linux's repository-local root; exact Docker-default localization, explicit
+custom paths, Node-only dotenv parsing, inherited child environment, and secret
+non-disclosure assertions remain intact.
+
+Observed GREEN verification:
+
+```sh
+node --test scripts/start-local-poc-launcher.test.mjs
+# 3/3 passed, repeated five consecutive times
+
+npm run check
+# exit 0: workspace typechecks passed; launcher 3/3; server 25 files passed,
+# 550 tests passed, 2 opt-in tests skipped; web and server production builds passed
+
+npm audit
+# found 0 vulnerabilities
+```
+
+No Ark or Shepherd model request was made. A real zero-parameter Docker smoke was
+unavailable in this session: the Docker CLI was installed but `docker info` exited
+1, so no live Runtime claim is recorded.
+
+## OPS-04 local loopback candidate
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Branch/commit:** `fix/29-ops-04-local-loopback` / `a0a2d60`
+**Issue:** [#29](https://github.com/kyashp/shepherd/issues/29)
+
+The first exact post-#28 command, `./scripts/start-local-poc.sh`, used the real
+ignored `.env` without printing values. Runtime preflight and both builds passed,
+but server configuration then failed closed because the inherited host was an
+any-address value and the configured application token was a placeholder. A
+classification-only check confirmed those facts without exposing either value.
+
+The candidate changes only the local launcher: an empty host or the exact container
+any-address values `0.0.0.0` and `::` become `127.0.0.1`. Other custom hosts remain
+unchanged, and the server's non-loopback token validation is untouched. The causal
+RED fixture captured `0.0.0.0`; GREEN captured `127.0.0.1` through the real launcher
+boundary.
+
+The exact direct command was then run from the candidate worktree against the real
+ignored `.env` through a temporary ignored symlink; no credential was copied,
+printed, or committed. Observed results:
+
+- listener: `127.0.0.1:3000` only;
+- `GET /api/health`: 200;
+- `GET /`: 200;
+- unauthenticated `GET /api/system`: 401;
+- authenticated `GET /api/system`: 200 with Ark configured, Codex available, and
+  the container/Docker Runtime selected;
+- SIGINT closed port 3000 and left zero Runtime containers owned by the configured
+  instance; the temporary `.env` symlink was removed;
+- no Agent or Shepherd model request was made.
+
+Final local verification before PR creation:
+
+```sh
+node --test scripts/start-local-poc-launcher.test.mjs
+# 2/2 passed
+
+npm run check
+# exit 0: both workspace typechecks passed
+# launcher tests 2/2 passed
+# 26 server test files passed, 1 opt-in live file skipped
+# 551 tests passed, 1 opt-in live test skipped
+# web and server production builds passed
+```
+
+The configured custom security-reviewer role was unavailable. An independent
+read-only fallback review reported no high or medium finding and confirmed that
+non-loopback hosts still reach the unchanged server token-enforcement boundary.
+It reported one Low test gap for empty, IPv6-any, and explicit custom hosts. The
+launcher regression now covers empty and `::` normalization plus preservation of
+the concrete documentation-range host `192.0.2.10`; the focused test remains 2/2.
+
+## OPS-02 direct local startup candidate
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Branch/commit:** `fix/27-ops-02-direct-env-launch` / `e4cb2e5`
+**Draft PR:** [#28](https://github.com/kyashp/shepherd/pull/28)
+
+Direct `./scripts/start-local-poc.sh` previously exited 2 before Runtime detection
+because it did not read the repository `.env`. The preserved RED launcher fixture
+observed the generic missing-Ark-variable error. The candidate performs one guarded
+handoff through Node's dotenv parser and marks the returned shell environment to
+prevent recursion; `.env` is never sourced or printed.
+
+The same fixture established the adjacent host-path defect: `.env.example` Docker
+defaults would otherwise remain `/app/...`. The candidate maps only those exact
+defaults into the existing platform local-state root and leaves explicit custom host
+paths unchanged. The fake engine/npm boundary captures values only in a private
+temporary test file and asserts that planted Ark/model sentinels never reach stdout
+or stderr.
+
+Observed verification:
+
+```sh
+node --test scripts/start-local-poc-launcher.test.mjs
+# 2/2 passed: npm launcher compatibility; direct dotenv/path behavior
+
+bash -n scripts/start-local-poc.sh
+node --check scripts/start-local-poc-launcher.mjs
+git diff --check
+# all passed
+
+npm run check
+# exit 0: both workspace typechecks passed
+# launcher tests 2/2 passed
+# 26 server test files passed, 1 opt-in live file skipped
+# 551 tests passed, 1 opt-in live test skipped
+# web and server production builds passed
+```
+
+No live Ark or Shepherd-model request was made. The configured custom security
+reviewer role was unavailable, so an independent read-only fallback reviewer
+inspected the exact `origin/main...8266c46` delta. It reported no critical, high,
+medium, or low finding: Node parses rather than executes `.env`; the recursion
+marker adds no privilege boundary; paths remain quoted; only exact Docker defaults
+are localized; and container isolation is unchanged. It reran the launcher suite
+2/2. A post-merge real zero-parameter startup smoke remains before `OPS-02` may be
+marked complete on `main`.
+
 ## Phase 0 — Baseline Lock
 
 **Date:** 2026-08-29 (Asia/Singapore)
@@ -713,6 +900,269 @@ Browser interaction and screenshots are not claimed: the browser runtime exposed
 attachable browser. `docs/HANDOVER.md` records the remaining `GC-01` keyboard,
 focus/caret, and `1280x800`/`1440x900` gates plus separate `GC-02..07` work.
 
+## RST-01 — Idempotent and Serialized Demo Reset
+
+**Date:** 2026-08-29 (Asia/Singapore)
+
+**Branch:** `fix/7-rst-01-idempotent-reset`
+
+**Draft PR:** [#10](https://github.com/kyashp/shepherd/pull/10)
+
+**Reviewed implementation commit:** `19a2e45f7a67c575d9acced3dfcfbc6a32f5718e`
+
+### Root cause and correction
+
+`resetDeterministicDemo()` classified a missing durable `auth-demo` project as
+`not_found`, although a missing project is the expected state before the first demo
+Mission. The initial empty-result correction then exposed a check-without-reserve
+race: reset checked `activeProjects` but did not claim `auth-demo` across its later
+asynchronous validation and cleanup work.
+
+The scoped correction:
+
+- returns a deliberate path-free empty success with `restoredHead: null` and zero
+  removal counts when the durable project is absent;
+- creates no Mission, Agent, repository, worktree, or fixture merely to reset;
+- still calls `assertNoManagedProjectState()` so the empty path fails closed on
+  orphaned, symlinked, or unknown managed-root artifacts;
+- synchronously reserves `auth-demo` before the first reset await and releases it in
+  `finally`, serializing both clean and initialized resets against Mission startup;
+- leaves initialized trusted-identity checks, guarded Git/Plane cleanup, unrelated
+  data preservation, cursor high-water preservation, and partial-reset recovery
+  intact.
+
+### TDD and verification evidence
+
+Original clean-start RED:
+
+```sh
+npm test -w @launchpad/server -- src/shepherd/service.test.ts src/app.test.ts \
+  -t "returns the same empty result|returns an authenticated empty demo reset"
+# 2 failed as intended: service rejected "Auth demo was not found";
+# authenticated API returned 404 instead of 200
+```
+
+Concurrency RED and GREEN:
+
+```sh
+npm test -w @launchpad/server -- src/shepherd/service.test.ts \
+  -t "reserves .* demo reset against a concurrent Mission start"
+# RED: 2 failed; clean start reached the executor and initialized reset lost the race
+# GREEN after reservation: 2 passed, 21 skipped
+```
+
+Additional observed results:
+
+- reset-focused service/API selection: **8 passed, 34 skipped**;
+- adjacent persistence/recovery suites: **100 passed**;
+- complete Shepherd service suite: **23 passed**;
+- complete server suite with one worker: **25 files passed, 2 skipped; 547 tests
+  passed, 2 skipped**;
+- `npm run check` under Node 24.17.0/npm 11.17.0 with Vitest externally constrained
+  to one worker: both workspace typechecks, the same complete server suite, and both
+  production builds passed;
+- `npm audit --json`: **0 vulnerabilities across 251 dependencies**;
+- `git diff --check`: passed.
+
+Three unconstrained `npm run check` attempts after the concurrency correction hit
+different existing fixed 1-second/5-second timeouts in Git-heavy service, recovery,
+and Plane integration tests. Every affected test passed isolated, and the complete
+suite passed serialized without weakening assertions. This is recorded as `TST-01`
+in `HANDOVER.md`; no unrelated timeout or test behavior changed in PR #10.
+
+### Current-main integration verification
+
+After OPS-05 merged through PR #32 at
+`8110aa3ed49bd0586cbb275d7c4067552cd9a144`, only `origin/main` was merged into
+the RST-01 branch. Merge commit
+`4673edfff0d6a205b48ca4d90821ce852a9952e4` had conflicts only in this file and
+`docs/HANDOVER.md`; resolution preserved current-main evidence and reapplied only
+RST-01-specific entries. The effective diff against `origin/main` remained limited
+to the three reset implementation/test files and these two evidence files.
+
+Fresh results observed on that integrated commit:
+
+- reset-focused service/API selection: **2 files passed; 8 tests passed, 39
+  skipped**;
+- complete `service.test.ts`: **28/28 passed**;
+- complete `app.test.ts`: **19/19 passed**;
+- `npm run typecheck`: both workspace typechecks passed;
+- `npm run build`: web and server production builds passed;
+- literal `npm run check` with no worker or timeout override: launcher tests
+  **3/3 passed**; server **25 files passed, 2 skipped; 554 tests passed, 2
+  skipped**; both production builds passed;
+- `npm audit --json`: **0 vulnerabilities across 251 dependencies**;
+- `git diff --check origin/main...HEAD`: passed; worktree status was clean.
+
+Browser evidence is not applicable to this service/API-only correction. No UI
+source, layout, interaction, or response consumer changed; the authenticated
+reset route is exercised through the real Fastify injection boundary in
+`app.test.ts`.
+
+### Independent review and remaining gates
+
+An independent read-only security/correctness review found the reset/start race.
+After causal regressions and the reservation fix, its follow-up reported no Critical,
+Important, or Minor finding and marked the implementation ready to merge.
+
+A final independent read-only review of the OPS-05-bearing integrated diff at
+`ecd14228e0b83f8a9087d8bce675a3ae689fd29e` likewise reported no Critical,
+Important, or Minor finding. It confirmed the synchronous reservation and `finally`
+release, fail-closed empty-root validation, initialized path/head guards, causal
+concurrency and authenticated API coverage, exact five-file scope, and browser
+non-applicability, with a **Ready to merge: Yes** verdict.
+
+GitHub reported the draft PR open and mergeable at this checkpoint, but with no
+automated status checks. `CI-01` tracks required pull-request automation separately.
+The remaining RST-01 work is lifecycle evidence: the final literal check/push gate,
+required/merge-group checks when available, clean and initialized reset verification
+on updated `main`, issue closure, and a merged-SHA ledger update. None requires
+another scoped product-code change on this branch.
+
+## ST-02 — Truthful unavailable notification preferences
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Branch:** `fix/6-st-02-notification-truth`
+**Pull request:** [#13](https://github.com/kyashp/shepherd/pull/13)
+
+### Root cause and bounded correction
+
+The notification booleans were persisted and round-tripped by the settings API, but
+no delivery or in-app behavior read them. `SettingsPage` nevertheless bound all three
+values to enabled toggles with functional descriptions, so the browser presented
+stored-only values as active product controls.
+
+The Notifications tab now identifies the capability as **Reserved for a future
+release** and **Unavailable**. It continues to render each stored value through a
+native disabled toggle paired with a `Reserved` label. The settings schema,
+persistence, model-review control, other tabs, and notification delivery remain
+unchanged.
+
+### Original RED/GREEN and branch evidence
+
+The focused server-rendered React regression was added before the section component.
+Its first valid run failed because `NotificationSettingsSection` was undefined; after
+the minimal implementation, the same test passed and proved all three controls were
+disabled while two supplied checked values remained visible.
+
+Before current-main integration, fresh branch-local evidence passed:
+
+```sh
+npx vitest run apps/web/src/pages/SettingsPage.test.tsx
+# 1 file / 1 test passed
+
+npm run typecheck -w @launchpad/web
+# passed
+
+npm run build -w @launchpad/web
+# passed; Vite transformed 40 modules
+
+git diff --check
+# passed
+```
+
+A disposable terminal Playwright/Chromium proof rendered the real Vite application
+with deterministic API responses at `1280x800` and `1440x900`. At both viewports it
+observed stored states `[true, false, true]`, three natively disabled controls,
+rejected programmatic and sequential focus, unchanged mouse/keyboard activation
+attempts, disabled Save, zero settings `PATCH` requests, zero horizontal overflow,
+zero clipping/overlap, and no console, page, or request errors. Temporary screenshots
+were visually inspected against `docs/UI.jpeg` and were not committed.
+
+### Current-main integration
+
+OPS-05 merged through PR #32 at `8110aa3ed49bd0586cbb275d7c4067552cd9a144`,
+then priority PR #10 merged at `349897d3d9167fe711bf720f7c3fadd213938d11`.
+Only that latest `origin/main` was merged into this branch. Source and regression
+files merged automatically; conflicts were limited to this file and `HANDOVER.md`.
+Resolution restored current-main documentation and reapplied only ST-02-specific
+evidence. Fresh integrated verification and independent-review results are recorded
+in a follow-up entry only after they are observed.
+
+### Integrated current-main verification
+
+On merge commit `066009b6eda658eee9a66135224d69b3a4dae515`, the effective
+diff against `origin/main` contained exactly the notification page section, its
+focused regression, and these two ST-02 evidence files. Observed results:
+
+```sh
+npx vitest run apps/web/src/pages/SettingsPage.test.tsx
+# 1 file / 1 test passed
+
+npm run typecheck -w @launchpad/web
+# passed
+
+npm run build -w @launchpad/web
+# passed; Vite transformed 40 modules
+
+npm run check
+# launcher 3/3 passed
+# server: 25 files passed, 2 skipped; 554 tests passed, 2 skipped
+# web and server production builds passed
+
+npm audit --json
+# 0 vulnerabilities across 251 dependencies
+
+git diff --check origin/main...HEAD
+# passed
+```
+
+Terminal Playwright/Chromium then repeated the real Vite-page proof at `1280x800`
+and `1440x900`. Both viewports preserved `[true, false, true]`, exposed all three
+checkboxes as natively disabled, rejected direct and sequential focus, and remained
+unchanged after forced label clicks and keyboard activation attempts. Save stayed
+disabled, no settings `PATCH` occurred, and automated geometry checks found no
+horizontal overflow, clipping, or overlap. Console, page, and request error lists
+were empty. The final temporary screenshots were visually inspected against
+`docs/UI.jpeg`; current-main's cream canvas, dark sidebar, updated Shepherd icon,
+purple accent, restrained borders, typography, spacing, and locked-control language
+were preserved. No screenshot binary was added to the effective branch diff.
+
+### Independent final review
+
+An independent read-only quality audit reviewed the exact
+`349897d3d9167fe711bf720f7c3fadd213938d11..87b4b12e894233e2a2d852db90bfde2fe1714386`
+diff plus both final screenshots. It confirmed the exact four-file scope, native
+disabled semantics, stored-value preservation, absence of a notification interaction
+path to the unchanged `PATCH` submit handler, regression coverage, current-main UI
+preservation, and honest documentation of unimplemented delivery and broader UI
+gaps. It reported no Critical, Important, or Minor finding and returned **Ready to
+merge: Yes**. This review-status entry is documentation-only; the same auditor must
+confirm the final follow-up diff before push.
+
+### Final dependency-gated current-main refresh
+
+TST-02 merged through PR #34 at
+`8149a7cf3b52c4f0c7d20b31f14c4d2ddbc52b12`. The latest `origin/main` was
+then merged conflict-free into ST-02 at
+`f1ad0b9811e9b77dddc933c11df6a6e3fd17cf61`; no source, test, or
+documentation conflict required manual resolution. The effective diff against
+that updated base remained exactly `SettingsPage.tsx`, its focused regression,
+and the two ST-02 evidence files.
+
+Fresh evidence on the integrated merge passed the focused ST-02 test (1/1), the
+formerly blocked recovery target with its canonical temporary path (1/1, 16
+skipped), web typecheck, and the web production build (40 transformed modules).
+The required literal `npm run check` then passed without an environment override:
+launcher 3/3, server 25 files passed with 2 skipped and 554 tests passed with 2
+skipped, plus web and server production builds. `npm audit --json` reported zero
+vulnerabilities across 251 dependencies, and `git diff --check
+origin/main...HEAD` passed.
+
+Terminal Playwright/Chromium repeated the proof against the integrated Vite page.
+At both `1280x800` and `1440x900`, stored values remained
+`[true, false, true]`; all controls were natively disabled, rejected direct and
+sequential focus, and ignored mouse/keyboard activation. Save remained disabled,
+zero settings `PATCH` requests occurred, geometry checks reported no horizontal
+overflow, clipping, or overlap, and console/page/request error lists were empty.
+The visually inspected temporary screenshots remained faithful to `docs/UI.jpeg`
+and were not added to the branch diff:
+
+- `st-02-1280x800.png` — SHA-256
+  `8dc439b849eac9aeb84f3353145ff106ff4518f0b007a8fd7c61f5038a2ab22c`
+- `st-02-1440x900.png` — SHA-256
+  `c6d5c9e0831f9c7cc187827e574f1ca1c98b2fbd322738b96b19e6b45a33d95b`
+
 ## Test-lifecycle stabilization candidate (`#11`)
 
 **Date:** 2026-08-29 (Asia/Singapore)
@@ -904,3 +1354,78 @@ multiline draft, restored focus, and left the collapsed caret at `59..59`.
 Keyboard focus remained visibly outlined; both viewports had no overflow,
 console/page errors, unexpected API requests, clipping, or overlap. The refreshed
 screenshots were visually inspected against `docs/UI.jpeg` and remained temporary.
+
+## 2026-08-30 — GC-01 current-main integration and default-gate packaging
+
+PR #9 was merged locally with current `origin/main` at
+`d27dea670108e5a06eac20de7df88f756b68e404`, the merge of PR #13. The only
+textual conflicts were this build log and `docs/HANDOVER.md`; the product diff
+remains limited to the Project Group mention helper and its use in
+`ProjectGroupPage.tsx`.
+
+Review correctly found that the original web-workspace test was not discovered by
+the repository's root test command. The pure regression moved to
+`apps/server/src/project-group-mention.test.ts`, whose existing Vitest workspace can
+import both the web helper and production server parser without new dependencies.
+The packaging RED command reported no matching test file before the move.
+
+Independent review then found an in-flight submission race: the textarea was
+disabled during the POST, but a mention button could mutate the retained draft
+before the successful request cleared it. The review also found that programmatic
+mention insertion could exceed the textarea's 2,000-character limit. The causal RED
+failed 2/8 because the submission-locked button and bounded prepend helper did not
+exist. The minimal correction gives the mention button native disabled semantics
+while sending plus a defensive callback guard, and rejects an over-limit insertion
+without changing the draft while showing a composer-scoped status message. GREEN
+passes all 8 formatter, parser-round-trip, draft-preservation, submission-lock, and
+exact-boundary cases:
+
+```sh
+npm run test -w @launchpad/server -- src/project-group-mention.test.ts
+# 1 file passed; 8 tests passed
+```
+
+The Node 24 Linux verification copy normalized only the checkout's CRLF shell
+launcher; repository blobs were not changed. The current-head `npm run check`
+completed both workspace typechecks, the 3/3 launcher suite, and all 8 GC-01 tests,
+but did **not** complete green. Two unchanged server cases failed under the complete
+suite: `recovery.process.test.ts` after `update-ref`, and `service.test.ts` while
+rejecting a second Mission after an external protected-head move (24 files passed,
+2 failed, 2 skipped; 557 tests passed, 2 failed, 5 skipped). The latter passes 1/1
+alone. The recovery-process file had passed 5/5 in an earlier isolation, then failed
+a different `promotion_ready_for_cas` case in a later 4/5 isolation. PR #9 has no
+diff in either server path. These rotating failures are recorded as existing
+shared-clock/process instability, not as a passing required gate and not as GC-01
+scope.
+
+Independent production builds passed for web and server, `git diff --check` passed,
+and `npm audit --audit-level=high` found 0 vulnerabilities.
+
+The current integrated browser run used terminal Playwright because the in-app
+browser exposed no attachable backend. At exact `1280x800` and `1440x900`, mouse,
+Enter, and Space each produced
+`@"Frontend Agent" Keep this draft\nincluding its second line`; focus returned to
+the composer, the collapsed caret was `59..59`, and keyboard focus had a solid
+2 px visible outline. During a deliberately deferred POST, both the mention button
+and composer were disabled, programmatic button activation left the submitted draft
+unchanged, and the successful response cleared only that submitted content. An
+exact 2,000-character mention insertion succeeded; one character over remained at
+2,000 and displayed the explicit limit error. Both viewports had no horizontal
+overflow, clipping, console or page errors, failed requests, unexpected API writes,
+or layout overlap. The temporary screenshots were visually checked against
+`docs/UI.jpeg`:
+
+```text
+1280x800  sha256 4d4e35b065f3c530dbb02b5d92e35830490799759b4bac85c855a4a5dd5a0039
+1440x900  sha256 7e09440db22781b45f4c11173580fecfc01d5ef7dcf8792ddaecc255e6c709a1
+```
+
+The independent reviewer reported no Critical issue. Its one Important race and
+one Minor length-boundary issue are corrected above. The read-only follow-up
+reviewed the final staged five-file effective diff, reported no Critical, Important,
+or Minor finding, and returned **Ready to merge: Yes**, subject to normal required
+checks and integrator disposition of the unrelated suite instability.
+
+PR #9 remains the bounded `GC-01` correction. The requested no-project composer
+behavior is `GC-05`, which issue #5 and this handover explicitly exclude; it needs
+its own issue, owner, branch, regression, and review.

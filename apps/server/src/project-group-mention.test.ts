@@ -1,9 +1,14 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { parseProjectGroupMessage } from "../../../server/src/shepherd/group-routing.js";
+import { parseProjectGroupMessage } from "./shepherd/group-routing.js";
+import { ProjectGroupMentionButton } from "../../web/src/pages/ProjectGroupPage.js";
 import {
+  MAX_PROJECT_GROUP_MESSAGE_LENGTH,
   formatProjectGroupMention,
   prependProjectGroupMention,
-} from "./project-group-mention.js";
+  prependProjectGroupMentionWithinLimit,
+} from "../../web/src/pages/project-group-mention.js";
 
 describe("formatProjectGroupMention", () => {
   it("quotes and JSON-escapes Agent names that are not safe mention tokens", () => {
@@ -69,5 +74,32 @@ describe("prependProjectGroupMention", () => {
         "Keep this draft\nincluding its second line",
       ),
     ).toBe('@"Frontend Agent" Keep this draft\nincluding its second line');
+  });
+
+  it("accepts an exact-boundary insertion and rejects one character over it", () => {
+    const mentionLength = '@"Frontend Agent" '.length;
+    const exactDraft = "x".repeat(MAX_PROJECT_GROUP_MESSAGE_LENGTH - mentionLength);
+
+    expect(
+      prependProjectGroupMentionWithinLimit("Frontend Agent", "agent-frontend", exactDraft),
+    ).toHaveLength(MAX_PROJECT_GROUP_MESSAGE_LENGTH);
+    expect(
+      prependProjectGroupMentionWithinLimit("Frontend Agent", "agent-frontend", `${exactDraft}x`),
+    ).toBeNull();
+  });
+});
+
+describe("ProjectGroupMentionButton", () => {
+  it("is natively disabled while a message submission is in flight", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ProjectGroupMentionButton, {
+        agentName: "Frontend Agent",
+        sending: true,
+        onActivate: () => undefined,
+      }),
+    );
+
+    expect(markup).toContain('disabled=""');
+    expect(markup).toContain("@Frontend Agent");
   });
 });

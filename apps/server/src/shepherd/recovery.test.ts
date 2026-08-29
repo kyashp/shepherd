@@ -305,6 +305,7 @@ describe("startup reconciliation", () => {
       repositoryPath: project.repositoryPath,
       planesRoot: project.planesRoot,
       protectedBranch: project.protectedBranch,
+      now: () => new Date(timestamp),
     });
     await manager.initialize();
 
