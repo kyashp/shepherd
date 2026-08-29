@@ -829,6 +829,16 @@ passed 25 files, 548 tests, with 2 opt-in tests skipped; both production builds
 completed. A test-only teardown follow-up remains in progress and must record its
 own final commit and gate before this evidence is used as a merge decision.
 
+The resulting test-only teardown follow-up is `d8c4dff`. It retains tracked Missions
+until cancellation/joining succeeds, cancels `attention_required` Missions, and
+releases blocked promotion checkpoints in `finally` paths. Its bounded RED was safe
+and its focused promotion/attention teardown slice plus full `service.test.ts`
+passed. However, the final repository gate on `d8c4dff` is not green: the unmodified
+Git-plane merge-conflict integration test timed out at the generic five-second
+budget (24 files passed, 1 failed, 2 skipped; 549 tests passed, 1 failed, 2
+skipped). Do not use #11 as a green merge gate until the separately owned Git-plane
+timeout is fixed or a repeatable clean full gate is observed.
+
 The draft OPS-01 fix in PR [#8](https://github.com/kyashp/shepherd/pull/8) remains a
 separate startup change. It may use this test-stability evidence only after #19 has
 merged and a combined `main` gate is observed; OPS-01 is not marked resolved here.

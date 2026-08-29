@@ -744,3 +744,20 @@ The clean candidate was resolved against current `main` at
 and both production builds completed. A subsequent teardown-only audit identified a
 test-lifecycle follow-up; its final commit and verification are recorded separately
 once that bounded correction is complete.
+
+### Teardown follow-up evidence
+
+Commit `d8c4dff7e6a6c3b1597e56c8b493e436a4f227c2` is test-only. It retains tracked
+Missions until cancellation and background-run joining succeed, treats
+`attention_required` as cancellable, and releases both blocked promotion checkpoints
+in `finally` paths. The promotion verifier release is idempotent. Its causal RED
+timed out safely against the prior blocked verifier (the test's `finally` released
+the fixture); GREEN focused coverage passed the four promotion/attention teardown
+paths, and the full `service.test.ts` file passed 25/25.
+
+The final repository `npm run check` on `d8c4dff` was **not green**: the unmodified
+Git-plane integration test `reports a real textual merge conflict and leaves the
+integration Plane clean` timed out at Vitest's five-second default. The observed
+test phase had 24 files passed, 1 failed, 2 skipped; 549 tests passed, 1 failed, 2
+skipped. This follow-up did not broaden into that separately owned timeout; its
+production builds therefore did not run after the failing test phase.
