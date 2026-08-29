@@ -7,6 +7,27 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — E2E-02 remains blocked by TST-11 drawer evidence
+
+The Auditor independently verified TST-10 on exact corrected chain `79da51a`:
+two focused invocations passed harness unit 14/14 and Chromium 4/4; each corpus had
+26/26 unique hashes; stage 05/06 differed at both viewports; and promotion start
+was visibly intersecting the Contract pane. All 52 captures were inspected. Full
+harness passed unit 7/7 plus Chromium 12/12. Literal `npm run check` passed launcher
+3/3, Server 592/592 plus two explicit opt-in skips, Web 17/17, strict types and
+builds. Dependency audit, diff, ignored-artifact, process/root cleanup, UI and
+security scans were clean. No live/model/network request ran.
+
+Before integration, a second independent exhaustive semantic manifest review found
+`TST-11`: stage 09 selected-candidate evidence and stage 11 rejected-candidate
+evidence show only Plane header/metadata at both 1280x800 and 1440x900. Their DOM
+text exists below the internally scrolling drawer but is not in the capture. The
+other eleven stage markers are visibly supported in both viewports, and all hashes
+are distinct. The minimal correction is test-only scrolling plus drawer/browser
+intersection proof for the exact candidate-evidence region before stages 09/11;
+stage 10 final evidence and TST-10 must remain intact. Candidate `79da51a` was not
+pushed to `mock-main`; E2E-02 and hosted integration remain blocked.
+
 ## 2026-08-30 — TST-10 visible promotion-stage candidate
 
 The Fixer reproduced the preserved E2E-02 visual RED on the exact candidate plus

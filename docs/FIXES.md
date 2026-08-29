@@ -28,6 +28,34 @@ that limitation is explicit.
 
 ## Immediate queue
 
+### `TST-11` — E2E-02 candidate-evidence screenshots show metadata only
+
+- **Evidence class:** independent exhaustive semantic review of all 13 named
+  stages at both required viewports on unintegrated corrected chain `79da51a`.
+- **Failure contract:** `09-selected-candidate-evidence.png` and
+  `11-rejected-plane-evidence.png` at both 1280x800 and 1440x900 show the selected
+  or rejected Plane header and metadata, but not the named Candidate verification
+  tab/evidence. The test asserts text attached below the internally scrolling
+  drawer, then captures without scrolling or intersection proof. Four of four
+  stage/viewport pairs therefore fail their visual claim even though hashes are
+  distinct and functional DOM assertions pass.
+- **Manifest result:** the other eleven named stages expose their principal visible
+  marker in both viewports: Contracts active, Contract verification, collision,
+  candidates active, candidate outcomes, promotion start, completed overview,
+  promotion event final evidence, selected final evidence, Project Group lifecycle,
+  and protected-main promoted state. All 26 files have unique hashes after TST-10.
+- **Minimal correction:** test only. For stages 09 and 11, scroll the exact
+  Candidate verification tab/evidence marker into the drawer and prove positive
+  intersection with both drawer viewport and browser before capture. Preserve the
+  already-visible stage-10 final evidence and TST-10 promotion event behavior. No
+  production UI/CSS/theme, sleep/retry/timing increase, hidden-only assertion,
+  fake state, or `GC-06`/`UI-02` overclaim.
+- **Acceptance/status:** **OPEN / READY for Fixer.** Run two focused invocations at
+  both viewports, inspect the complete 52-observation semantic manifest, require
+  every named marker visibly present and all distinct-stage hashes unique, then
+  full Chromium/harness, strict typecheck, literal `npm run check`, security/UI,
+  cleanup/artifact scans and hosted integrated gate.
+
 ### `TST-10` — E2E-02 promotion stage screenshot does not show promotion
 
 - **Evidence class:** independently reproduced from unintegrated candidate
