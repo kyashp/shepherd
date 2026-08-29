@@ -28,6 +28,28 @@ that limitation is explicit.
 
 ## Immediate queue
 
+### `TST-16` — Executor root/setup/enumeration filesystem failures remain unbounded
+
+- **Evidence class:** independent full-source security review of unintegrated chain
+  `8c7cfc1`; source-confirmed outside the corrected TST-15 named edges.
+- **Failure contract:** raw native errors still escape from private-root mkdir/lstat/
+  realpath and workspace realpath; interrupted-home/workspace readdir/lstat/realpath;
+  preflight mkdtemp/chmod/config write/root realpath; and execution mkdtemp/chmod/
+  realpath/config write. Reconcile/startup can expose them through Error inspection
+  and `cause`; run failures can persist as arbitrary `unknown` messages through
+  Contract/candidate/store/event/Agent/API surfaces.
+- **Minimal correction:** complete the executor-owned filesystem/config boundary
+  with closed fixed stages for root preparation, reconciliation enumeration,
+  preflight setup and execution setup. Preserve existing typed policy errors and
+  primary-over-cleanup precedence. Add causal mkdir/mkdtemp/lstat/readdir/realpath/
+  chmod/config-write fault injection at reconcile/preflight/run and scan Error/cause/
+  log/startup plus all durable/public surfaces. Preserve containment, retained-
+  artifact retry, TST-12–15, OPS-06 and runtime classification. No broad filesystem
+  refactor or raw cause.
+- **Acceptance/status:** **OPEN / READY for Fixer.** Complete operation/stage matrix,
+  double-fault precedence, Contract/candidate durable/API/log proof, focused/adjacent/
+  literal check, scans and independent security re-review.
+
 ### `TST-15` — Sentinel and reconciliation cleanup paths expose raw filesystem errors
 
 - **Evidence class:** independent exhaustive executor cleanup review of unintegrated
@@ -60,9 +82,11 @@ that limitation is explicit.
   succeeds. Executor 33/33, focused/adjacent 120/120, strict types and two literal
   checks pass (launcher 3/3, Server 627 + two explicit skips, Web 17/17, builds).
   External calls: 0.
-- **Acceptance/status:** **FIX CANDIDATE / Auditor integration pending.** Initial
-  security review found the pre-open family; correction and added precedence/startup
-  tests received final PASS with no High/Medium/material gap.
+- **Acceptance/status:** **AUDITOR VERIFIED locally / integration held by TST-16.**
+  The named TST-15 five-edge/double-fault matrix passes. Full-source review found a
+  distinct remaining executor setup/enumeration boundary recorded as TST-16. The
+  restart-only invalid-sentinel behavior is fail-closed and retained as a documented
+  Low operator-cleanup/availability residual rather than another correctness task.
 
 ### `TST-14` — Execution-home cleanup leaks and overrides causal failure identity
 

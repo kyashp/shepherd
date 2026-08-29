@@ -7,6 +7,24 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — TST-15 passes; F-01/02 blocked by complete TST-16 boundary
+
+The Auditor reviewed exact unintegrated chain `8c7cfc1`. Focused runner/executor/
+service passed 93/93 and API/store/container-service/state-machine/recovery/verifier
+adjacency passed 66/66. TST-15's sentinel open/close/unlink and exact interrupted-
+artifact rm fault matrix, bounded double-fault precedence, same-process pending-
+unlink retry, retained cleanup target and containment behavior passed.
+
+The mandated full-source review found remaining Medium raw filesystem/config paths:
+private-root preparation, reconciliation enumeration, preflight setup and execution
+setup still call mkdir/mkdtemp/lstat/readdir/realpath/chmod/config write outside the
+closed boundary. These can expose raw startup inspection or persist as unknown
+Contract/candidate failures. The chain was not pushed to `mock-main`; broad checks
+stopped after the causal boundary was established. TST-16 must complete the fixed
+stage policy and fault matrix. A process restart after both sentinel adoption and
+unlink failure remains fail-closed but may require operator cleanup; this is a
+documented Low availability residual, not a PRD trust-boundary bypass.
+
 ## 2026-08-30 — TST-14 passes; F-01/02 blocked by TST-15 cleanup family
 
 The Auditor reviewed exact unintegrated chain `3afc452`. Focused runner/executor/
