@@ -899,6 +899,35 @@ and Plane integration tests. Every affected test passed isolated, and the comple
 suite passed serialized without weakening assertions. This is recorded as `TST-01`
 in `HANDOVER.md`; no unrelated timeout or test behavior changed in PR #10.
 
+### Current-main integration verification
+
+After OPS-05 merged through PR #32 at
+`8110aa3ed49bd0586cbb275d7c4067552cd9a144`, only `origin/main` was merged into
+the RST-01 branch. Merge commit
+`4673edfff0d6a205b48ca4d90821ce852a9952e4` had conflicts only in this file and
+`docs/HANDOVER.md`; resolution preserved current-main evidence and reapplied only
+RST-01-specific entries. The effective diff against `origin/main` remained limited
+to the three reset implementation/test files and these two evidence files.
+
+Fresh results observed on that integrated commit:
+
+- reset-focused service/API selection: **2 files passed; 8 tests passed, 39
+  skipped**;
+- complete `service.test.ts`: **28/28 passed**;
+- complete `app.test.ts`: **19/19 passed**;
+- `npm run typecheck`: both workspace typechecks passed;
+- `npm run build`: web and server production builds passed;
+- literal `npm run check` with no worker or timeout override: launcher tests
+  **3/3 passed**; server **25 files passed, 2 skipped; 554 tests passed, 2
+  skipped**; both production builds passed;
+- `npm audit --json`: **0 vulnerabilities across 251 dependencies**;
+- `git diff --check origin/main...HEAD`: passed; worktree status was clean.
+
+Browser evidence is not applicable to this service/API-only correction. No UI
+source, layout, interaction, or response consumer changed; the authenticated
+reset route is exercised through the real Fastify injection boundary in
+`app.test.ts`.
+
 ### Independent review and remaining gates
 
 An independent read-only security/correctness review found the reset/start race.
@@ -907,10 +936,11 @@ Important, or Minor finding and marked the implementation ready to merge.
 
 GitHub reported the draft PR open and mergeable at this checkpoint, but with no
 automated status checks. `CI-01` tracks required pull-request automation separately.
-The remaining RST-01 work is lifecycle evidence: required/merge-group checks when
-available, clean and initialized reset verification on updated `main`, issue closure,
-and a merged-SHA ledger update. None requires another scoped product-code change on
-this branch.
+The remaining RST-01 work is lifecycle evidence: an independent review of the
+latest integrated diff, the final literal check/push gate, required/merge-group
+checks when available, clean and initialized reset verification on updated `main`,
+issue closure, and a merged-SHA ledger update. None requires another scoped
+product-code change on this branch.
 
 ## Test-lifecycle stabilization candidate (`#11`)
 

@@ -844,12 +844,32 @@ Observed on 2026-08-29 against
   [draft PR #10](https://github.com/kyashp/shepherd/pull/10) are open, the PR is
   mergeable, and GitHub reports no automated checks (`CI-01`).
 
+Current-main integration was subsequently observed after OPS-05 merged through
+PR #32 at `8110aa3ed49bd0586cbb275d7c4067552cd9a144`. RST-01 merge commit
+`4673edfff0d6a205b48ca4d90821ce852a9952e4` resolved conflicts only in
+`docs/BUILD_LOG.md` and this file by preserving current-main evidence and
+reapplying RST-01-specific entries. Its effective diff against `origin/main`
+contained exactly `apps/server/src/app.test.ts`,
+`apps/server/src/shepherd/service.test.ts`,
+`apps/server/src/shepherd/service.ts`, `docs/BUILD_LOG.md`, and this file.
+
+Fresh integrated verification passed:
+
+- reset-focused service/API tests: 8/8;
+- complete `service.test.ts`: 28/28;
+- complete `app.test.ts`: 19/19;
+- standalone typecheck and production build;
+- literal `npm run check` without overrides: launcher 3/3; server 25 files
+  passed, 2 skipped; 554 tests passed, 2 skipped; both production builds;
+- `npm audit --json`: 0 vulnerabilities across 251 dependencies;
+- `git diff --check origin/main...HEAD` with a clean worktree.
+
 Not run after this checkpoint:
 
-- Playwright/browser journeys or screenshots;
-- rendered browser interaction in this session because no browser connection was
-  available;
-- UI accessibility automation;
+- Playwright/browser journeys, screenshots, or accessibility automation because
+  browser evidence is not applicable to this service/API-only correction: no UI
+  source, layout, interaction, or response consumer changed, and the authenticated
+  route is covered through the real Fastify injection boundary;
 - custom `ui-reviewer` gate;
 - broad custom `security-reviewer` gate for the remaining API/cancellation/public
   DTO and startup-path work; the scoped independent RST-01 review above is complete;
