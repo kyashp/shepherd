@@ -692,6 +692,7 @@ their service/API integration remains Phase 4 work and is not claimed here.
 
 **Date:** 2026-08-29 (Asia/Singapore)
 **Branch:** `fix/6-st-02-notification-truth`
+**Pull request:** [#13](https://github.com/kyashp/shepherd/pull/13)
 
 ### Root cause and bounded correction
 
@@ -753,3 +754,32 @@ server integration timeouts and asynchronous cleanup races. The final remaining
 cancellation test passed in isolation (1 passed, 19 skipped), and a fresh full check
 then passed on the documented Node 24 runtime line with one Vitest worker. No server
 test, timeout, implementation, dependency, or assertion was changed.
+
+### Handover follow-up verification
+
+The PR-linked `HANDOVER.md` status update changed documentation only. Fresh focused
+verification still passed:
+
+```sh
+PATH="<local-node-24-bin>:$PATH" ../../../node_modules/.bin/vitest run \
+  apps/web/src/pages/SettingsPage.test.tsx --environment node
+# 1 file / 1 test passed
+
+PATH="<local-node-24-bin>:$PATH" npm run typecheck -w @launchpad/web
+# passed
+
+PATH="<local-node-24-bin>:$PATH" npm run build -w @launchpad/web
+# passed; Vite transformed 40 modules
+
+git diff --check
+# passed
+```
+
+A fresh unrestricted repository check did not pass: 24 test files passed, two
+opt-in files were skipped, and 542 tests passed with two skipped, but
+`service.test.ts` timed out waiting for the verifier target list in `cancels exact
+verifier targets and never overwrites durable cancellation`. The exact test then
+reproduced in isolation (one failed, 19 skipped), followed by the known read-only
+snapshot cleanup error. This server-test reliability defect is tracked separately
+in [issue #11](https://github.com/kyashp/shepherd/issues/11) and is actively isolated
+on `fix/11-shepherd-test-flake`; no part of that work was copied into this branch.
