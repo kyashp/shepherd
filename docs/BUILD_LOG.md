@@ -1238,13 +1238,20 @@ value rather than dropping it or naming a caller-side mistake.
 
 **Date:** 2026-08-30 (Asia/Singapore)
 **Branch:** `feat/12-mr-01-compose-model-reviewer`
-**Integrated base:** `origin/main` at `d27dea6`
-**Merge commit:** `fbf3038`
-**Verified implementation checkpoint:** `a2afbf3`
+**Final integrated base:** `origin/main` at `fae0852`
+**Integration commits:** `fbf3038` (base `d27dea6`), then `5972aa8` (base `fae0852`)
+**Verified implementation checkpoint before the final base refresh:** `a2afbf3`
 
-Current `origin/main` was merged without rebasing or force-pushing. All code merged
-automatically; the only conflict was this build log, where the complete MR-01 and
-current-main evidence blocks were both preserved.
+The initial `d27dea6` `origin/main` base was merged without rebasing or
+force-pushing. All code merged automatically; the only conflict was this build log,
+where the complete MR-01 and current-main evidence blocks were both preserved.
+
+Immediately before final review, refreshed refs showed that PRs #9 and #37 had
+advanced `origin/main` to `fae0852`. That base was merged at `5972aa8`. Source and
+workflow changes merged automatically; the HANDOVER conflict was resolved by
+preserving both the newly merged Group Chat/required-check evidence and PR #16's
+model-review status. A new exact-head Node 24 gate is required after the final
+evidence commit; the earlier result is not presented as covering the refreshed base.
 
 The first focused baseline exposed an environmental timing failure rather than a
 reviewer defect: `JsonStore.persist()` rejected lifecycle state after Docker Desktop
