@@ -450,6 +450,44 @@ candidate changes only backend failure/cancellation orchestration and determinis
 `T,A,C,S` are fixer-verified; independent Auditor integration gate `I` remains
 pending.
 
+### F-03 independent integration audit
+
+The Auditor reviewed and integrated the corrected candidate as `dc87553` without
+changing UI, dependencies, runtime configuration, public routes, or the existing
+required-check workflow. The state transition uses fixed bounded
+`verification_infrastructure_error` evidence, preserves ordinary mandatory
+acceptance failure, terminalizes all Mission-owned Contract/Plane/Agent/project
+ownership in one durable mutation, and rejects late sibling success before any
+integration, collision, candidate, or promotion path. The container boundary keeps
+cancellation sticky through sequential checks and reserved creation/removal,
+contains repeated cancellation, and releases only the exact target for bounded
+same-ID reuse.
+
+Independent observed results on the candidate and integrated tree:
+
+```sh
+# exact corrected service/verifier selection
+# 2 files passed; 8 passed, 34 skipped
+
+# service/API/recovery/store/state-machine/executor/verifier adjacency
+# 10 files passed; 185/185 tests passed
+
+npm run check
+# launcher 3/3; server 26 files and 563/563 tests passed with one opt-in live
+# file/test skipped; both workspace typechecks and production builds passed
+
+git diff --check
+# passed
+```
+
+The failure regressions reload the durable store after terminalization, release a
+blocked late sibling, and assert the terminal state is unchanged with no green
+verification, integration, collision, candidate, selection, or promotion evidence.
+Canary diagnostics and private paths remain absent from durable state, public DTOs,
+and the store file. No model/network call was made. `F-03` is **AUDITED, scoped
+100%** with `T,A,C,S,I` passed 5/5; hosted Node 22 evidence is recorded after the
+final audit documentation push.
+
 ## TST-02 deterministic recovery fixture clock
 
 **Date:** 2026-08-29 (Asia/Singapore)

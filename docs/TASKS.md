@@ -1,7 +1,7 @@
 # Shepherd Completion Task Ledger
 
 **Canonical implementation snapshot:** `mock-main` at
-`cda2446584d0f5d6c07ec8d2521d08fb6711f971`
+`dc8755308dbbb8d0404a8b9aacb7ff3c393a49c0`
 
 **Audited:** 2026-08-29, Asia/Singapore
 
@@ -100,7 +100,7 @@ without an open issue/PR are not active ownership claims.
 | ID | PRD ref | Status / owner / dependencies | Evidence and required acceptance | Confidence; gates passed; audit |
 |---|---|---|---|---|
 | `F-01/02` | 12: Agent timeout/runtime | `READY` after `TST-02`; Worker | Contract timeout/runtime exceptions can become `unknown`. Add typed stage errors through Contract, Plane, Agent, Mission, event, API and UI; `T,A,C,I`. | **35%**; 0/4; not audited |
-| `F-03` | 12: verifier infrastructure | **IMPLEMENTED + FIXER-VERIFIED on `fix/mock-main`; awaiting Auditor integration** | Preserved REDs cover thrown diagnostics, returned mandatory `infrastructure_error` misclassification, sequential-check cancellation, and reserved create→start/repeated-cancel ID poisoning. The candidate atomically terminalizes the batch for thrown or returned mandatory infrastructure failure, preserves ordinary acceptance failure, releases ownership, blocks late invocation/integration, and makes exact-target cancellation sticky with bounded cleanup/reuse. Focused 8/8, adjacent 185/185, full launcher 3/3 + server 563/563 with one opt-in skip, builds, durable reload, public/store secret assertions, and read-only security review passed; `I` remains. | **96% scoped**; `T,A,C,S` passed (4/5); not audited |
+| `F-03` | 12: verifier infrastructure | **AUDITED** at integrated implementation `dc87553` | Preserved REDs cover thrown diagnostics, returned mandatory `infrastructure_error` misclassification, sequential-check cancellation, and reserved create→start/repeated-cancel ID poisoning. The integrated correction atomically terminalizes the batch for thrown or returned mandatory infrastructure failure, preserves ordinary acceptance failure, releases ownership, blocks late invocation/integration, and makes exact-target cancellation sticky with bounded cleanup/reuse. Auditor independently passed the corrected regressions 8/8, adjacent service/API/recovery/store/state-machine/verifier coverage 185/185, and the literal integrated gate with launcher 3/3 plus server 563/563 and one opt-in live skip; both builds passed. Durable reload/no-promotion, exact target isolation, same-ID cleanup, bounded public/store output, and unchanged UI/workflow/dependency scope were inspected. | **100% scoped**; `T,A,C,S,I` passed (5/5); audited |
 | `F-04` | 12: worktree creation | `READY` after typed failure foundation; Worker | Initial Plane creation can fail before durable stage evidence. Persist owning Contract/Mission failure without inventing a Plane; `T,A,C,S,I`. | **25%**; 0/5; not audited |
 | `F-05` | 8.4, 12: Git conflict | `READY`; Worker | Git detects conflict files but service converts the result to generic failure. Preserve bounded conflict files, integration state, Mission evidence and no promotion; `T,A,C,S,I`. | **45%**; 0/5; not audited |
 | `F-06` | 9.1, 12: persistence error | `READY` after typed foundation; Worker | Atomic rollback exists but no recovery-visible `persistence_failed` path. Add a journal/reconciliation-safe path that does not claim durability through the failed write; `T,A,C,S,I`. | **30%**; 0/5; not audited |
@@ -157,11 +157,11 @@ without an open issue/PR are not active ownership claims.
 
 ## Count and current verdict
 
-- **45 tracked work items:** 3 audited, 4 externally held, and 38 other incomplete
+- **45 tracked work items:** 4 audited, 4 externally held, and 37 other incomplete
   items across P0/P1/P2.
 - **Next ready worker assignment:** `F-01/02` unless the integrator selects another
   non-overlapping ready row.
-- **First fixer assignment:** `F-03`; `TST-02` has restored the baseline.
+- **First fixer assignment:** `UI-03`; its exact browser failure contract is ready.
 - **Current completion verdict:** incomplete. Strong kernel evidence exists, but the
   current deterministic full gate is green and all remaining rows above still
   require their stated integration/audit evidence.

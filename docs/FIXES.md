@@ -1,6 +1,6 @@
 # Shepherd Defect Queue
 
-**Assessed branch/SHA:** `mock-main` / `349897d3d9167fe711bf720f7c3fadd213938d11`
+**Assessed branch/SHA:** `mock-main` / `dc8755308dbbb8d0404a8b9aacb7ff3c393a49c0`
 
 **Audited:** 2026-08-29, Asia/Singapore
 
@@ -83,8 +83,11 @@ that limitation is explicit.
   returns produced no `verification_passed` event. Delayed-create/removal tests
   proved no post-cancel container start and safe exact-ID reuse. Planted private
   diagnostics were absent from durable state, public DTOs, and the store file.
-- **Owner/status:** `IMPLEMENTED + FIXER-VERIFIED` on `fix/mock-main`; **96% scoped**,
-  `T,A,C,S` passed 4/5, Auditor integration gate `I` pending; not audited.
+- **Owner/status:** `RESOLVED + AUDITED` at integrated implementation `dc87553`;
+  **100% scoped**, `T,A,C,S,I` passed 5/5. Auditor independently observed the
+  focused 8/8, adjacent 185/185, and literal integrated repository gate; durable
+  reload/no-promotion, redaction, cancellation isolation, and exact-ID reuse
+  assertions passed.
 
 ### `UI-03` — invisible authority radios create document-wide horizontal overflow
 
