@@ -46,7 +46,8 @@ that limitation is explicit.
   Do not loosen `notBefore`, store validation, or recovery lifecycle rules.
 - **Acceptance:** original isolated test passes; entire `recovery.test.ts` passes;
   literal `npm run check` passes; auditor repeats on integrated `mock-main`.
-- **Owner/status:** first Worker task / `READY`; **0%**, 0/4 gates, not audited.
+- **Owner/status:** `RESOLVED + AUDITED` at integrated implementation `0cb431a`;
+  **100% scoped**, `T,A,C,I` passed 4/4.
 
 ### `F-03` — Contract verifier infrastructure failure strands active-looking state
 
@@ -64,7 +65,7 @@ that limitation is explicit.
 - **Acceptance:** causal service fault test asserts every entity, event, public DTO,
   recovery state and no-promotion invariant; adjacent service/API/recovery tests,
   full gate, security review, integrated auditor gate.
-- **Owner/status:** first Fixer task after `TST-02` / `READY THEN`; **25%**, 0/5
+- **Owner/status:** first Fixer task after `TST-02` / `READY`; **25%**, 0/5
   gates, not audited.
 
 ### `OPS-06` — macOS Docker Desktop live Shepherd preflight fails opaquely

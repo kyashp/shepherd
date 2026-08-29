@@ -51,6 +51,48 @@ npm run check
 No Ark/model request was made. The implementation has `T`, `A`, and `C` evidence;
 independent Auditor integration and the `I` gate remain pending.
 
+### Independent Auditor integration
+
+**Candidate:** `bab6de18e7c28e5f8a132f8d80163f509c890a1e`
+
+**Integrated implementation:** `0cb431a0e581f65373239941654574c9936a461f`
+
+The Auditor fetched the candidate without touching the Worker's worktree, reviewed
+the exact parent-relative diff, and found one production-adjacent test change:
+`recovery.test.ts` injects the fixture's existing `12:00Z` clock into its
+`PlaneManager`. The only other changes were this build-log entry and the task row.
+No production, UI, store, recovery, lifecycle-validation, API, security, dependency,
+or configuration file changed. `git show --check` and the parent-to-candidate diff
+check passed.
+
+The candidate was first verified in a separate detached repository-local audit
+worktree:
+
+```sh
+npm run test -w @launchpad/server -- --run src/shepherd/recovery.test.ts \
+  -t "fails closed, recognizes the exact post-CAS window, cleans private artifacts, and is idempotent"
+# 1 passed, 16 skipped
+
+npm run test -w @launchpad/server -- --run src/shepherd/recovery.test.ts
+# 17/17 passed
+
+npm run check
+# launcher 3/3; server 26 files and 555 tests passed;
+# one opt-in live file/test skipped; both production builds passed
+```
+
+After cherry-picking the candidate onto `mock-main` as `0cb431a`, the Auditor ran
+the same integrated-SHA gates again with the same counts: isolated 1/1, recovery
+17/17, launcher 3/3, server 555/555 with one opt-in skip, and both builds green.
+The audit worktree was clean and removed after verification; the main worktree was
+clean before integration.
+
+**Verdict:** `TST-02` is **AUDITED at scoped 100%** with `T,A,C,I` 4/4. The fixed
+fixture clock removes the time-dependent test failure while strict lifecycle/store
+validation remains unchanged. Browser, live-model, UI-review, and security-review
+gates were not run because this correction changes only deterministic test setup
+and evidence documentation.
+
 ## OPS-05 canonical launcher-entry candidate
 
 **Date:** 2026-08-29 (Asia/Singapore)

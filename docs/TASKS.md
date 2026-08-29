@@ -1,6 +1,7 @@
 # Shepherd Completion Task Ledger
 
-**Canonical snapshot:** `mock-main` at `349897d3d9167fe711bf720f7c3fadd213938d11`
+**Canonical implementation snapshot:** `mock-main` at
+`0cb431a0e581f65373239941654574c9936a461f`
 
 **Audited:** 2026-08-29, Asia/Singapore
 
@@ -51,15 +52,15 @@ scrolling.
 | Environment | Node `24.17.0`; npm `11.17.0`; Git `2.43.0`; Docker client/server `29.7.2` | Recorded |
 | Workspace typecheck | Both server and web passed during `npm run check` | Pass |
 | Launcher tests | 3/3 passed | Pass |
-| Server suite | 25 files passed, 1 failed, 1 opt-in live file skipped; 554 tests passed, 1 failed, 1 skipped | **Fail: `TST-02`** |
-| Targeted `TST-02` reproduction | Failed in isolation with the same store validation error | Reproduced |
+| Server suite | 26 files and 555 tests passed; 1 opt-in live file/test skipped | Pass after audited `TST-02` integration |
+| Targeted `TST-02` gate | Original RED is preserved in `BUILD_LOG.md`; integrated fix passed 1/1 and full recovery passed 17/17 | Pass |
 | Production build | Web: 40 modules; server TypeScript build passed | Pass |
 | Dependency audit | 0 vulnerabilities across 251 dependencies | Pass |
 | Script syntax | `bash -n` launcher and Node launcher syntax passed | Pass |
 | Browser/live/model gates | Not run in this audit | Pending |
 
-No model request was made during this audit. The full gate is not green until
-`TST-02` is corrected and rerun.
+No model request was made during either audit. The literal full gate is green at
+the integrated `TST-02` implementation SHA named above.
 
 ## External ownership holds — do not assign
 
@@ -91,7 +92,7 @@ without an open issue/PR are not active ownership claims.
 
 | ID | PRD ref | Status / owner / dependencies | Evidence and required acceptance | Confidence; gates passed; audit |
 |---|---|---|---|---|
-| `TST-02` | 0.2, 16 Phase 9B, 17 | **IMPLEMENTED — Worker; awaiting Auditor integration**; test fixture only | Reproduced the isolated store rejection, then injected the fixture's existing deterministic `12:00Z` clock into its `PlaneManager`; production recovery and lifecycle validation are unchanged. Original isolated test passed 1/1, full recovery file passed 17/17, and literal `npm run check` passed launcher 3/3 plus server 555/555 with one opt-in live test skipped and both production builds green. | **95%**; `T,A,C` passed (3/4); `I` pending; not audited |
+| `TST-02` | 0.2, 16 Phase 9B, 17 | **AUDITED** at integrated implementation `0cb431a`; test fixture only | Worker and Auditor reproduced the fixed-clock cause. Auditor verified candidate and integrated trees: isolated test 1/1, full recovery 17/17, literal `npm run check` with launcher 3/3, server 555/555 plus one opt-in skip, and both production builds. Exact diff is one test clock injection plus evidence docs; production/UI/security files and lifecycle validation are unchanged. | **100% scoped**; `T,A,C,I` passed (4/4); audited |
 
 ## P0 — failure and recovery correctness
 
@@ -154,9 +155,11 @@ without an open issue/PR are not active ownership claims.
 
 ## Count and current verdict
 
-- **44 tracked work items:** 4 externally held, 18 P0 implementation/correctness,
-  17 P1 E2E/assurance, and 5 P2 deliverables.
-- **First worker assignment:** `TST-02`.
-- **First fixer assignment:** `F-03`, held until `TST-02` restores the baseline.
+- **44 tracked work items:** 1 audited, 4 externally held, and 39 other incomplete
+  items across P0/P1/P2.
+- **Next ready worker assignment:** `F-01/02` unless the integrator selects another
+  non-overlapping ready row.
+- **First fixer assignment:** `F-03`; `TST-02` has restored the baseline.
 - **Current completion verdict:** incomplete. Strong kernel evidence exists, but the
-  current full gate is red and all rows above require integration/audit evidence.
+  current deterministic full gate is green and all remaining rows above still
+  require their stated integration/audit evidence.
