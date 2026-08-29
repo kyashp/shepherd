@@ -51,8 +51,16 @@ that limitation is explicit.
   strict Server and Web test sources pass; Web type/build and literal
   `npm run check` pass; Auditor then performs the full two-viewport Project Group
   interaction/parser round-trip and hosted integration gates before GC-01 closes.
-- **Owner/status:** Fixer / `READY`; blocks GC-01/current-main integration; **0%**,
-  0/3 gates, not audited.
+- **Observed correction:** exact TS6142/TS6059 RED reproduced. The full eight-case
+  formatter/parser/component test moved to Web ownership; Web now has explicit
+  Vitest and strict test-source configs/scripts, and root `test`/`typecheck` execute
+  both workspaces. Focused Web passed 8/8, adjacent Server routing passed 10/10,
+  strict Web/Server tests and Web production type/build passed, and literal
+  `npm run check` passed twice with launcher 3/3, Server 563/563 plus one unchanged
+  opt-in skip, Web 9/9 and both builds. Lock dry-run and audit reported zero
+  vulnerabilities. No product, Server JSX/rootDir or assertion change.
+- **Owner/status:** Fixer / `CANDIDATE`; **96% scoped**, `T,C` 2/3; independent
+  `I` plus GC-01 browser/hosted gates pending, not audited.
 
 ### `TST-05` — E2E-01 visual evidence is non-reproducible and overclaims the down state
 

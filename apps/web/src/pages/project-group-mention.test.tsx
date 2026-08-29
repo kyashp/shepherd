@@ -1,14 +1,14 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { parseProjectGroupMessage } from "./shepherd/group-routing.js";
-import { ProjectGroupMentionButton } from "../../web/src/pages/ProjectGroupPage.js";
+import { parseProjectGroupMessage } from "../../../server/src/shepherd/group-routing.js";
+import { ProjectGroupMentionButton } from "./ProjectGroupPage.js";
 import {
   MAX_PROJECT_GROUP_MESSAGE_LENGTH,
   formatProjectGroupMention,
   prependProjectGroupMention,
   prependProjectGroupMentionWithinLimit,
-} from "../../web/src/pages/project-group-mention.js";
+} from "./project-group-mention.js";
 
 describe("formatProjectGroupMention", () => {
   it("quotes and JSON-escapes Agent names that are not safe mention tokens", () => {

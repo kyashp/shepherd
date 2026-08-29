@@ -7,6 +7,35 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## TST-07 correct Web test ownership candidate
+
+**Date:** 2026-08-30 (Asia/Singapore)
+**Branch/base:** `fix/mock-main` from canonical blocker head `6e4e230`
+
+The Fixer reproduced the required strict RED exactly: Server test typecheck exited
+2 with TS6142 for the imported Web TSX component and TS6059 for the Web formatter
+outside Server `rootDir`. The cause was test packaging, not formatter/parser/UI
+behavior. The complete eight-case GC-01 regression moved from Server to Web. Web
+gained explicit Vitest and strict test-source configuration/scripts, while root
+`test` and `typecheck` now execute both workspaces. The production component,
+formatter, parser, Server JSX/rootDir and every assertion remain unchanged.
+
+Observed candidate evidence:
+
+- relocated Web regression 8/8 and adjacent Server group-routing 10/10 passed;
+- strict Web and Server test-source checks passed; Web production typecheck/build
+  passed;
+- literal `npm run check` passed twice: launcher 3/3, Server 563/563 plus one
+  unchanged opt-in live skip, Web 9/9, strict/production typechecks and both builds;
+- `npm ci --ignore-scripts --dry-run` completed from the lockfile and `npm audit`
+  reported zero vulnerabilities; `git diff --check` passed;
+- diff is limited to test relocation, Web/root test configuration and scripts,
+  lockfile, and TST-07/GC-01 evidence docs. Default tests remain model/network-free
+  with Web Vitest temp output under repo-local `.tmp/web-tests`.
+
+This is a candidate, not an audit/100% claim. GC-01 still requires independent
+two-viewport browser interaction plus integrated/hosted gates; TST-07 `I` is pending.
+
 ## TST-07 blocks current-main / GC-01 integration before push
 
 **Date:** 2026-08-30 (Asia/Singapore)
