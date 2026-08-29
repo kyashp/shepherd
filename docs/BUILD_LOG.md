@@ -570,7 +570,8 @@ yet invoked by `ShepherdService` or exposed by the current HTTP/UI surfaces:
   120 seconds (30-second default). All provider/configuration/timeout/schema/storage
   failures return an explicit typed degraded result; no result grants authority or
   changes deterministic collision/selection. The current service does not yet call
-  this adapter or emit its `model_review_degraded` event.
+  this adapter or emit its `model_review_degraded` event. **Superseded by the
+  Phase 4 composition recorded below (`MR-01`).**
 
 ### Live-gate corrective episodes
 
@@ -770,3 +771,100 @@ The remaining RST-01 work is lifecycle evidence: required/merge-group checks whe
 available, clean and initialized reset verification on updated `main`, issue closure,
 and a merged-SHA ledger update. None requires another scoped product-code change on
 this branch.
+
+## Phase 4 — Mission-composed advisory model review (`MR-01`, `MR-02`)
+
+Assessed on branch `feat/12-mr-01-compose-model-reviewer` at `4a46f72`, stacked on
+`fix/7-rst-01-idempotent-reset`. This entry supersedes the Phase 3 statement that the
+bounded reviewer is not connected to Mission orchestration.
+
+### What is now composed
+
+`ShepherdServiceOptions` gained an optional `reviewer?: ModelReviewer`, injected as an
+interface instance in the same style as `verifier` and `executor` and defaulting to
+`null`. `apps/server/src/index.ts` constructs an `ArkModelReviewer` only when the new
+`isShepherdModelReviewConfigured(config)` predicate holds, which gives
+`config.shepherdModel` — fed by the documented `SHEPHERD_MODEL` — its first and only
+consumer. An unconfigured server composes no reviewer and emits no advisory event,
+rather than degrading every Mission with a false `configuration_error`.
+
+`runAdvisoryModelReview()` runs between `integrateContracts()` and
+`detectAndPersistCollision()`, gated at call time on `settings().modelReviewEnabled`
+so the persisted setting is genuinely causal.
+
+### Why the advisory result cannot reach authority
+
+`runAdvisoryModelReview` returns `Promise<void>`, and `detectAndPersistCollision` has
+**zero diff** in this change: its only nearby hunk appends two new private methods
+after its closing brace. There is therefore no parameter, field, or closure through
+which a finding can reach the deterministic detector, the winner policy, or the
+promotion gate. The independence claim is structural rather than conventional.
+
+### Containment and bounds
+
+A reviewer that throws is converted into a durable `provider_error` degradation rather
+than being swallowed, so a failure can never present as a fake "safe". A service-side
+deadline bounds any injected reviewer that does not bound itself; the composed
+`ArkModelReviewer` bounds itself at 20 seconds. A 250 ms poller aborts an in-flight
+review once durable cancellation is visible, so `cancelMission` cannot block on it.
+The outer catch is total, and cancellation is re-derived from durable state by
+`detectAndPersistCollision`'s own `ensureMissionRunnable` on the very next statement.
+
+`model_review_completed` was added additively to `ShepherdEventType`
+(`shepherd/domain.ts`), the persisted `z.enum` (`database-schema.ts`), and the browser
+mirror (`apps/web/src/types.ts`). No store version bump and no migration were
+required: `databaseV2Schema` remains `version: z.literal(2)` and the change only
+widens what parses. Persisted advisory details are closed enums, counts, and claim
+keys Shepherd itself supplied. Free model prose (`finding.reason`) is deliberately
+never persisted or rendered.
+
+### Observed evidence
+
+```sh
+npx vitest run --config apps/server/vitest.config.ts \
+  apps/server/src/shepherd/service.model-review.test.ts \
+  --testTimeout=90000 --hookTimeout=90000
+# Test Files  1 passed (1)
+#      Tests  9 passed (9)
+#   Duration  116.68s
+
+npm run typecheck
+# PASS: server and web TypeScript checks
+
+git diff --check
+# clean
+```
+
+RED was observed before implementation on the same file: `3 failed | 1 passed`, each
+failure on `expect(reviewer.inputs).toHaveLength(1)`. `MR-T05` — the PRD 8.6 mandate
+that collision detection succeeds with the reviewer disabled — passed both before and
+after, because it is the baseline invariant rather than a new capability. Every
+independence assertion carries the call-count expectation; without it those tests
+would pass vacuously against an uncomposed service.
+
+`MR-T14` injects a finding naming a non-existent claim key and arguing for the losing
+transport, then asserts the persisted collision, the selected candidate, and the
+promoted SHA are unchanged, that `attentionReason` stays null, and that the hostile
+prose appears in neither the collision nor the event trail. `MR-T16` drives a real
+`ArkModelReviewer` through an injected `fetchImpl`, proving both that the
+service-built input satisfies `reviewInputSchema` end to end and that a configured
+secret never reaches the outbound request body.
+
+### Recorded limitations
+
+- `npm run check` was **not** run unmodified on this host. On the unmodified stack
+  parent the server suite reports `24 failed | 518 passed`, every failure at ~5000 ms
+  with no assertion failures, because `apps/server/vitest.config.ts` leaves Vitest's
+  5 s default `testTimeout` against tests that perform real Git work. Raising the flag
+  takes `git-plane-promotion.integration.test.ts` from `13 failed` to `19/19 passed`.
+  Tracked separately; all gates above therefore used an explicit `--testTimeout`.
+- No live `SHEPHERD_MODEL` request has been made. The provider response shape is
+  exercised only through `fetchImpl` fixtures. The opt-in live smoke remains pending.
+- `apps/server/src/index.ts` is a top-level-`await` entrypoint with no export, so its
+  composition is build-verified rather than test-verified.
+- No container runtime was available, so the two container-gated suites skipped as
+  designed. The new tests require none; they drive full Missions through an
+  in-process trusted fixture verifier.
+- No rendered-browser evidence was captured for the two regex changes
+  (`model_review` joining the Verification stream filter, and `degraded` mapping to
+  the existing amber tone). No component, layout, token, or copy changed.
