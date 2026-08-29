@@ -34,14 +34,23 @@
 
 html {
   min-width: 320px;
-  min-height: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 body {
   margin: 0;
   min-width: 320px;
-  min-height: 100vh;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
   background: #f2f1ed;
+}
+
+#root {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 button,
@@ -163,17 +172,19 @@ a {
 }
 
 .app-shell {
-  min-height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   display: grid;
   grid-template-columns: 246px minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .sidebar {
   position: sticky;
   top: 0;
   z-index: 10;
-  min-height: 100vh;
-  height: 100vh;
+  min-height: 0;
+  height: 100%;
   padding: 18px 14px 14px;
   display: flex;
   flex-direction: column;
@@ -244,7 +255,7 @@ a {
 .sidebar-section-label,
 .sidebar-agents-heading {
   color: #85867f;
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 800;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -319,13 +330,13 @@ a {
 
 .nav-copy strong {
   color: #eeece5;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .nav-copy small {
   margin-top: 2px;
   color: #84847e;
-  font-size: 8px;
+  font-size: 9px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -401,13 +412,13 @@ a {
 
 .agent-card-copy strong {
   color: #e9e7e0;
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .agent-card-copy small {
   margin-top: 3px;
   color: #878780;
-  font-size: 8px;
+  font-size: 9px;
 }
 
 .mini-stopped {
@@ -485,13 +496,17 @@ a {
 
 .runtime-card > span:last-child {
   color: #7f8079;
-  font-size: 7px;
+  font-size: 8px;
 }
 
 .main-content {
   min-width: 0;
-  min-height: 100vh;
+  min-height: 0;
+  height: 100%;
   padding: 20px 24px 24px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: #f2f1ed;
 }
 
@@ -534,7 +549,7 @@ a {
 .page-header p {
   margin: 4px 0 0;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.5;
 }
 
@@ -558,7 +573,7 @@ a {
   justify-content: center;
   color: #65665f;
   background: #ecebe6;
-  font-size: 7px;
+  font-size: 8px;
   font-weight: 800;
   line-height: 1.15;
   letter-spacing: 0.04em;
@@ -862,10 +877,10 @@ label small {
 
 /* Shepherd mission control */
 .shepherd-page {
-  height: calc(100vh - 44px);
-  min-height: 700px;
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   gap: 0;
 }
 
@@ -874,6 +889,7 @@ label small {
 }
 
 .shepherd-grid {
+  flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
   display: grid;
@@ -885,7 +901,7 @@ label small {
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: minmax(235px, 0.9fr) minmax(260px, 1.1fr);
+  grid-template-rows: minmax(0, 0.9fr) minmax(0, 1.1fr);
   gap: 11px;
 }
 
@@ -962,7 +978,7 @@ label small {
   border-radius: 6px;
   color: #85867f;
   background: transparent;
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 700;
   white-space: nowrap;
   cursor: pointer;
@@ -976,8 +992,9 @@ label small {
 
 .event-list {
   min-height: 0;
-  padding: 7px 12px 16px;
+  padding: 7px 12px 9px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: #d5d2ca transparent;
 }
@@ -992,7 +1009,7 @@ label small {
 .event-card > time {
   padding-top: 10px;
   color: #a1a29b;
-  font-size: 7px;
+  font-size: 8px;
   text-align: right;
   white-space: nowrap;
 }
@@ -1049,7 +1066,7 @@ label small {
 .event-title > strong {
   min-width: 0;
   color: #3e3f3a;
-  font-size: 9px;
+  font-size: 10px;
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
@@ -1061,7 +1078,7 @@ label small {
 .event-copy > p {
   margin: 3px 0 0;
   color: #878881;
-  font-size: 8px;
+  font-size: 9px;
   line-height: 1.45;
 }
 
@@ -1073,12 +1090,12 @@ label small {
 }
 
 .event-evidence summary {
-  min-height: 27px;
+  min-height: 25px;
   padding: 0 8px;
   display: flex;
   align-items: center;
   color: #6752c6;
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 750;
   cursor: pointer;
 }
@@ -1229,6 +1246,7 @@ label small {
   min-width: 0;
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .timeline-axis,
@@ -1245,7 +1263,7 @@ label small {
   min-height: 25px;
   color: #999a93;
   background: #f8f7f3;
-  font-size: 7px;
+  font-size: 8px;
 }
 
 .timeline-axis > div {
@@ -1275,13 +1293,13 @@ label small {
 }
 
 .timeline-label strong {
-  font-size: 8px;
+  font-size: 9px;
 }
 
 .timeline-label span {
   margin-top: 3px;
   color: #9a9b94;
-  font-size: 7px;
+  font-size: 8px;
 }
 
 .timeline-track {
@@ -1308,7 +1326,7 @@ label small {
   border: 1px solid #d9d3f4;
   color: #5c48b9;
   background: #ddd5fa;
-  font-size: 7px;
+  font-size: 8px;
   font-weight: 700;
   overflow: hidden;
 }
@@ -1382,8 +1400,9 @@ label small {
 
 .plane-tree {
   min-height: 0;
-  padding: 8px 10px 14px;
+  padding: 8px 10px 9px;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .tree-root,
@@ -1623,6 +1642,7 @@ label small {
 }
 
 .kernel-composer {
+  flex: 0 0 auto;
   min-height: 65px;
   margin-top: 10px;
   padding: 7px 10px;
@@ -1653,7 +1673,7 @@ label small {
 .kernel-composer > div > span,
 .chat-composer > div > span {
   color: #999a93;
-  font-size: 7px;
+  font-size: 8px;
   line-height: 1.4;
 }
 
@@ -1776,11 +1796,23 @@ label small {
   max-width: 1120px;
 }
 
+.group-page {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.group-page > .page-header {
+  flex: 0 0 auto;
+}
+
 .group-chat-panel {
-  height: calc(100vh - 113px);
-  min-height: 570px;
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  height: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
@@ -1797,7 +1829,7 @@ label small {
 .group-members > span {
   margin-right: 4px;
   color: #979890;
-  font-size: 8px;
+  font-size: 9px;
   white-space: nowrap;
 }
 
@@ -1808,7 +1840,7 @@ label small {
   border-radius: 999px;
   color: #5e4ab7;
   background: #f0edfa;
-  font-size: 8px;
+  font-size: 9px;
   cursor: pointer;
   white-space: nowrap;
 }
@@ -1820,9 +1852,11 @@ label small {
 }
 
 .group-messages {
+  flex: 1 1 auto;
   min-height: 0;
   padding: 23px max(24px, calc((100% - 760px) / 2));
   overflow-y: auto;
+  overscroll-behavior: contain;
   background: #fdfcf9;
 }
 
@@ -1835,6 +1869,7 @@ label small {
 }
 
 .group-message-human {
+  width: fit-content;
   margin-left: auto;
   grid-template-columns: minmax(0, 1fr);
 }
@@ -1872,20 +1907,20 @@ label small {
 .group-message header strong,
 .message header strong {
   color: #44453f;
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .group-message header time,
 .message header time,
 .message header span {
   color: #9a9b94;
-  font-size: 7px;
+  font-size: 8px;
 }
 
 .group-message p {
   margin: 4px 0 0;
   color: #4e4f49;
-  font-size: 9px;
+  font-size: 10px;
   line-height: 1.55;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -1914,7 +1949,7 @@ label small {
   align-items: center;
   gap: 4px;
   color: #624ec2;
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 700;
 }
 
@@ -1924,6 +1959,7 @@ label small {
 }
 
 .chat-composer {
+  flex: 0 0 auto;
   min-height: 72px;
   padding: 8px 12px 9px;
   border-width: 1px 0 0;
@@ -2847,6 +2883,7 @@ tbody tr:last-child td {
   }
 
   .main-content {
+    height: calc(100dvh - 59px);
     min-height: calc(100vh - 59px);
     padding: 13px 10px 18px;
   }
@@ -2871,7 +2908,13 @@ tbody tr:last-child td {
   }
 
   .shepherd-page {
+    height: auto;
     min-height: calc(100vh - 85px);
+  }
+
+  .group-page {
+    height: auto;
+    min-height: 100%;
   }
 
   .tie-options,

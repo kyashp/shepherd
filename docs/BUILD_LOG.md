@@ -7,6 +7,147 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## OPS-05 canonical launcher-entry candidate
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Branch:** `fix/31-ops-05-canonical-launcher-entry`
+**Issue:** [#31](https://github.com/kyashp/shepherd/issues/31)
+
+On macOS, `os.tmpdir()` returned a lexical `/var/...` path while `realpath()`
+returned its `/private/var/...` filesystem identity. The launcher compared the
+lexical `process.argv[1]` with ESM's canonical module path, misclassified direct
+execution as an import, and exited before starting its child. The preserved initial
+launcher suite RED was 1/2: the direct-shell fixture failed with missing
+`startup-environment`. A new deterministic symlink-entry RED then failed 0/1
+because its child-side-effect marker was absent even though the launcher exited 0.
+
+The launcher now canonicalizes both entry paths with `realpath()` before comparing
+them. An identity-resolution failure is an explicit generic launcher error (exit 1),
+never a safe import classification. The regression invokes a symlink alias and
+asserts that its child writes the marker. The existing direct-shell fixture now uses
+a temporary `HOME` and asserts Darwin's documented user-local state root while
+retaining Linux's repository-local root; exact Docker-default localization, explicit
+custom paths, Node-only dotenv parsing, inherited child environment, and secret
+non-disclosure assertions remain intact.
+
+Observed GREEN verification:
+
+```sh
+node --test scripts/start-local-poc-launcher.test.mjs
+# 3/3 passed, repeated five consecutive times
+
+npm run check
+# exit 0: workspace typechecks passed; launcher 3/3; server 25 files passed,
+# 550 tests passed, 2 opt-in tests skipped; web and server production builds passed
+
+npm audit
+# found 0 vulnerabilities
+```
+
+No Ark or Shepherd model request was made. A real zero-parameter Docker smoke was
+unavailable in this session: the Docker CLI was installed but `docker info` exited
+1, so no live Runtime claim is recorded.
+
+## OPS-04 local loopback candidate
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Branch/commit:** `fix/29-ops-04-local-loopback` / `a0a2d60`
+**Issue:** [#29](https://github.com/kyashp/shepherd/issues/29)
+
+The first exact post-#28 command, `./scripts/start-local-poc.sh`, used the real
+ignored `.env` without printing values. Runtime preflight and both builds passed,
+but server configuration then failed closed because the inherited host was an
+any-address value and the configured application token was a placeholder. A
+classification-only check confirmed those facts without exposing either value.
+
+The candidate changes only the local launcher: an empty host or the exact container
+any-address values `0.0.0.0` and `::` become `127.0.0.1`. Other custom hosts remain
+unchanged, and the server's non-loopback token validation is untouched. The causal
+RED fixture captured `0.0.0.0`; GREEN captured `127.0.0.1` through the real launcher
+boundary.
+
+The exact direct command was then run from the candidate worktree against the real
+ignored `.env` through a temporary ignored symlink; no credential was copied,
+printed, or committed. Observed results:
+
+- listener: `127.0.0.1:3000` only;
+- `GET /api/health`: 200;
+- `GET /`: 200;
+- unauthenticated `GET /api/system`: 401;
+- authenticated `GET /api/system`: 200 with Ark configured, Codex available, and
+  the container/Docker Runtime selected;
+- SIGINT closed port 3000 and left zero Runtime containers owned by the configured
+  instance; the temporary `.env` symlink was removed;
+- no Agent or Shepherd model request was made.
+
+Final local verification before PR creation:
+
+```sh
+node --test scripts/start-local-poc-launcher.test.mjs
+# 2/2 passed
+
+npm run check
+# exit 0: both workspace typechecks passed
+# launcher tests 2/2 passed
+# 26 server test files passed, 1 opt-in live file skipped
+# 551 tests passed, 1 opt-in live test skipped
+# web and server production builds passed
+```
+
+The configured custom security-reviewer role was unavailable. An independent
+read-only fallback review reported no high or medium finding and confirmed that
+non-loopback hosts still reach the unchanged server token-enforcement boundary.
+It reported one Low test gap for empty, IPv6-any, and explicit custom hosts. The
+launcher regression now covers empty and `::` normalization plus preservation of
+the concrete documentation-range host `192.0.2.10`; the focused test remains 2/2.
+
+## OPS-02 direct local startup candidate
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Branch/commit:** `fix/27-ops-02-direct-env-launch` / `e4cb2e5`
+**Draft PR:** [#28](https://github.com/kyashp/shepherd/pull/28)
+
+Direct `./scripts/start-local-poc.sh` previously exited 2 before Runtime detection
+because it did not read the repository `.env`. The preserved RED launcher fixture
+observed the generic missing-Ark-variable error. The candidate performs one guarded
+handoff through Node's dotenv parser and marks the returned shell environment to
+prevent recursion; `.env` is never sourced or printed.
+
+The same fixture established the adjacent host-path defect: `.env.example` Docker
+defaults would otherwise remain `/app/...`. The candidate maps only those exact
+defaults into the existing platform local-state root and leaves explicit custom host
+paths unchanged. The fake engine/npm boundary captures values only in a private
+temporary test file and asserts that planted Ark/model sentinels never reach stdout
+or stderr.
+
+Observed verification:
+
+```sh
+node --test scripts/start-local-poc-launcher.test.mjs
+# 2/2 passed: npm launcher compatibility; direct dotenv/path behavior
+
+bash -n scripts/start-local-poc.sh
+node --check scripts/start-local-poc-launcher.mjs
+git diff --check
+# all passed
+
+npm run check
+# exit 0: both workspace typechecks passed
+# launcher tests 2/2 passed
+# 26 server test files passed, 1 opt-in live file skipped
+# 551 tests passed, 1 opt-in live test skipped
+# web and server production builds passed
+```
+
+No live Ark or Shepherd-model request was made. The configured custom security
+reviewer role was unavailable, so an independent read-only fallback reviewer
+inspected the exact `origin/main...8266c46` delta. It reported no critical, high,
+medium, or low finding: Node parses rather than executes `.env`; the recursion
+marker adds no privilege boundary; paths remain quoted; only exact Docker defaults
+are localized; and container isolation is unchanged. It reran the launcher suite
+2/2. A post-merge real zero-parameter startup smoke remains before `OPS-02` may be
+marked complete on `main`.
+
 ## Phase 0 — Baseline Lock
 
 **Date:** 2026-08-29 (Asia/Singapore)
@@ -688,6 +829,125 @@ demo Mission are proven across two fresh end-to-end Missions. Scheduler, Project
 Group parser, and Ark advisory-reviewer modules exist and are focused-test-backed, but
 their service/API integration remains Phase 4 work and is not claimed here.
 
+## RST-01 — Idempotent and Serialized Demo Reset
+
+**Date:** 2026-08-29 (Asia/Singapore)
+
+**Branch:** `fix/7-rst-01-idempotent-reset`
+
+**Draft PR:** [#10](https://github.com/kyashp/shepherd/pull/10)
+
+**Reviewed implementation commit:** `19a2e45f7a67c575d9acced3dfcfbc6a32f5718e`
+
+### Root cause and correction
+
+`resetDeterministicDemo()` classified a missing durable `auth-demo` project as
+`not_found`, although a missing project is the expected state before the first demo
+Mission. The initial empty-result correction then exposed a check-without-reserve
+race: reset checked `activeProjects` but did not claim `auth-demo` across its later
+asynchronous validation and cleanup work.
+
+The scoped correction:
+
+- returns a deliberate path-free empty success with `restoredHead: null` and zero
+  removal counts when the durable project is absent;
+- creates no Mission, Agent, repository, worktree, or fixture merely to reset;
+- still calls `assertNoManagedProjectState()` so the empty path fails closed on
+  orphaned, symlinked, or unknown managed-root artifacts;
+- synchronously reserves `auth-demo` before the first reset await and releases it in
+  `finally`, serializing both clean and initialized resets against Mission startup;
+- leaves initialized trusted-identity checks, guarded Git/Plane cleanup, unrelated
+  data preservation, cursor high-water preservation, and partial-reset recovery
+  intact.
+
+### TDD and verification evidence
+
+Original clean-start RED:
+
+```sh
+npm test -w @launchpad/server -- src/shepherd/service.test.ts src/app.test.ts \
+  -t "returns the same empty result|returns an authenticated empty demo reset"
+# 2 failed as intended: service rejected "Auth demo was not found";
+# authenticated API returned 404 instead of 200
+```
+
+Concurrency RED and GREEN:
+
+```sh
+npm test -w @launchpad/server -- src/shepherd/service.test.ts \
+  -t "reserves .* demo reset against a concurrent Mission start"
+# RED: 2 failed; clean start reached the executor and initialized reset lost the race
+# GREEN after reservation: 2 passed, 21 skipped
+```
+
+Additional observed results:
+
+- reset-focused service/API selection: **8 passed, 34 skipped**;
+- adjacent persistence/recovery suites: **100 passed**;
+- complete Shepherd service suite: **23 passed**;
+- complete server suite with one worker: **25 files passed, 2 skipped; 547 tests
+  passed, 2 skipped**;
+- `npm run check` under Node 24.17.0/npm 11.17.0 with Vitest externally constrained
+  to one worker: both workspace typechecks, the same complete server suite, and both
+  production builds passed;
+- `npm audit --json`: **0 vulnerabilities across 251 dependencies**;
+- `git diff --check`: passed.
+
+Three unconstrained `npm run check` attempts after the concurrency correction hit
+different existing fixed 1-second/5-second timeouts in Git-heavy service, recovery,
+and Plane integration tests. Every affected test passed isolated, and the complete
+suite passed serialized without weakening assertions. This is recorded as `TST-01`
+in `HANDOVER.md`; no unrelated timeout or test behavior changed in PR #10.
+
+### Current-main integration verification
+
+After OPS-05 merged through PR #32 at
+`8110aa3ed49bd0586cbb275d7c4067552cd9a144`, only `origin/main` was merged into
+the RST-01 branch. Merge commit
+`4673edfff0d6a205b48ca4d90821ce852a9952e4` had conflicts only in this file and
+`docs/HANDOVER.md`; resolution preserved current-main evidence and reapplied only
+RST-01-specific entries. The effective diff against `origin/main` remained limited
+to the three reset implementation/test files and these two evidence files.
+
+Fresh results observed on that integrated commit:
+
+- reset-focused service/API selection: **2 files passed; 8 tests passed, 39
+  skipped**;
+- complete `service.test.ts`: **28/28 passed**;
+- complete `app.test.ts`: **19/19 passed**;
+- `npm run typecheck`: both workspace typechecks passed;
+- `npm run build`: web and server production builds passed;
+- literal `npm run check` with no worker or timeout override: launcher tests
+  **3/3 passed**; server **25 files passed, 2 skipped; 554 tests passed, 2
+  skipped**; both production builds passed;
+- `npm audit --json`: **0 vulnerabilities across 251 dependencies**;
+- `git diff --check origin/main...HEAD`: passed; worktree status was clean.
+
+Browser evidence is not applicable to this service/API-only correction. No UI
+source, layout, interaction, or response consumer changed; the authenticated
+reset route is exercised through the real Fastify injection boundary in
+`app.test.ts`.
+
+### Independent review and remaining gates
+
+An independent read-only security/correctness review found the reset/start race.
+After causal regressions and the reservation fix, its follow-up reported no Critical,
+Important, or Minor finding and marked the implementation ready to merge.
+
+A final independent read-only review of the OPS-05-bearing integrated diff at
+`ecd14228e0b83f8a9087d8bce675a3ae689fd29e` likewise reported no Critical,
+Important, or Minor finding. It confirmed the synchronous reservation and `finally`
+release, fail-closed empty-root validation, initialized path/head guards, causal
+concurrency and authenticated API coverage, exact five-file scope, and browser
+non-applicability, with a **Ready to merge: Yes** verdict.
+
+GitHub reported the draft PR open and mergeable at this checkpoint, but with no
+automated status checks. `CI-01` tracks required pull-request automation separately.
+The remaining RST-01 work is lifecycle evidence: the final literal check/push gate,
+required/merge-group checks when available, clean and initialized reset verification
+on updated `main`, issue closure, and a merged-SHA ledger update. None requires
+another scoped product-code change on this branch.
+
 ## ST-02 — Truthful unavailable notification preferences
 
 **Date:** 2026-08-29 (Asia/Singapore)
@@ -702,84 +962,138 @@ values to enabled toggles with functional descriptions, so the browser presented
 stored-only values as active product controls.
 
 The Notifications tab now identifies the capability as **Reserved for a future
-release** and **Unavailable**. It continues to render each stored value, but through a
-native disabled toggle paired with a `Reserved` label. The existing settings payload,
-public schemas, persisted values, model-review control, and other tabs are unchanged.
-No notification behavior or external integration was added.
+release** and **Unavailable**. It continues to render each stored value through a
+native disabled toggle paired with a `Reserved` label. The settings schema,
+persistence, model-review control, other tabs, and notification delivery remain
+unchanged.
 
-### RED/GREEN evidence
+### Original RED/GREEN and branch evidence
 
 The focused server-rendered React regression was added before the section component.
-Its first valid run failed 1/1 because `NotificationSettingsSection` was undefined.
-After the minimal implementation, the same test passed 1/1 and proved that all three
-rendered checkboxes are disabled while the stored checked values remain visible.
+Its first valid run failed because `NotificationSettingsSection` was undefined; after
+the minimal implementation, the same test passed and proved all three controls were
+disabled while two supplied checked values remained visible.
+
+Before current-main integration, fresh branch-local evidence passed:
 
 ```sh
-../../../node_modules/.bin/vitest run \
-  apps/web/src/pages/SettingsPage.test.tsx --environment node
-# RED: 1 failed — missing NotificationSettingsSection
-# GREEN: 1 passed
-```
+npx vitest run apps/web/src/pages/SettingsPage.test.tsx
+# 1 file / 1 test passed
 
-### Browser and verification evidence
-
-Headless Chromium rendered the real Vite Settings page with deterministic intercepted
-API responses. At both `1280x800` and `1440x900`, the three notification checkboxes
-were disabled and preserved the supplied `[true, false, true]` checked states. A
-disabled control refused programmatic focus, a scripted click did not change its
-state, no settings PATCH was observed, Save remained disabled, and the page had no
-horizontal overflow. Both screenshots were visually inspected against `docs/UI.jpeg`:
-the cream surface, dark sidebar, purple tab accent, locked-control treatment, spacing,
-and typography remained consistent, with no clipping or overlap. Screenshots were
-kept as temporary local evidence and were not added to the branch.
-
-Commands and observed results:
-
-```sh
 npm run typecheck -w @launchpad/web
 # passed
 
 npm run build -w @launchpad/web
 # passed; Vite transformed 40 modules
 
-VITEST_MAX_WORKERS=1 PATH="<local-node-24-bin>:$PATH" npm run check
-# exit 0 on Node 24.19.0
-# 25 test files passed, 2 skipped
-# 540 tests passed, 5 skipped
-# web and server production builds passed
-```
-
-Earlier full-check attempts on Node 26 and under parallel suite load exposed unrelated
-server integration timeouts and asynchronous cleanup races. The final remaining
-cancellation test passed in isolation (1 passed, 19 skipped), and a fresh full check
-then passed on the documented Node 24 runtime line with one Vitest worker. No server
-test, timeout, implementation, dependency, or assertion was changed.
-
-### Handover follow-up verification
-
-The PR-linked `HANDOVER.md` status update changed documentation only. Fresh focused
-verification still passed:
-
-```sh
-PATH="<local-node-24-bin>:$PATH" ../../../node_modules/.bin/vitest run \
-  apps/web/src/pages/SettingsPage.test.tsx --environment node
-# 1 file / 1 test passed
-
-PATH="<local-node-24-bin>:$PATH" npm run typecheck -w @launchpad/web
-# passed
-
-PATH="<local-node-24-bin>:$PATH" npm run build -w @launchpad/web
-# passed; Vite transformed 40 modules
-
 git diff --check
 # passed
 ```
 
-A fresh unrestricted repository check did not pass: 24 test files passed, two
-opt-in files were skipped, and 542 tests passed with two skipped, but
-`service.test.ts` timed out waiting for the verifier target list in `cancels exact
-verifier targets and never overwrites durable cancellation`. The exact test then
-reproduced in isolation (one failed, 19 skipped), followed by the known read-only
-snapshot cleanup error. This server-test reliability defect is tracked separately
-in [issue #11](https://github.com/kyashp/shepherd/issues/11) and is actively isolated
-on `fix/11-shepherd-test-flake`; no part of that work was copied into this branch.
+A disposable terminal Playwright/Chromium proof rendered the real Vite application
+with deterministic API responses at `1280x800` and `1440x900`. At both viewports it
+observed stored states `[true, false, true]`, three natively disabled controls,
+rejected programmatic and sequential focus, unchanged mouse/keyboard activation
+attempts, disabled Save, zero settings `PATCH` requests, zero horizontal overflow,
+zero clipping/overlap, and no console, page, or request errors. Temporary screenshots
+were visually inspected against `docs/UI.jpeg` and were not committed.
+
+### Current-main integration
+
+OPS-05 merged through PR #32 at `8110aa3ed49bd0586cbb275d7c4067552cd9a144`,
+then priority PR #10 merged at `349897d3d9167fe711bf720f7c3fadd213938d11`.
+Only that latest `origin/main` was merged into this branch. Source and regression
+files merged automatically; conflicts were limited to this file and `HANDOVER.md`.
+Resolution restored current-main documentation and reapplied only ST-02-specific
+evidence. Fresh integrated verification and independent-review results are recorded
+in a follow-up entry only after they are observed.
+
+## Test-lifecycle stabilization candidate (`#11`)
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Candidate branch/commits:** `fix/11-shepherd-test-flake-clean` /
+`de986b9a3ecdd1e1360050209742497f8c6b2813`, `f2db22c`
+**Draft PR:** [#19](https://github.com/kyashp/shepherd/pull/19)
+
+The generic five-second Vitest budget was exceeded by three real service journeys
+and measured Git/recovery integration journeys under full-suite contention. A timed
+out background-Mission test could also race fixture cleanup; raw recursive cleanup
+could not remove a deliberately read-only trusted-verification snapshot.
+
+The candidate adds only test lifecycle changes. Service fixtures now require an
+exact sentinel, restore write permission only after validating the allocated path,
+and skip symlinks. Causal RED checks observed `EACCES` on a `0400` file beneath a
+`0500` snapshot and, under a temporary unsafe symlink mutation, an external marker
+became unreadable. Restored GREEN checks prove the fixture is removed while the
+external marker and permissions survive. Background test Missions cancel and join via
+the existing `cancelMission()` behavior before cleanup. Six measured
+integration cases declare 15-second budgets; global defaults stay unchanged.
+
+The contamination route was also causal: `runFixtureGit()` spread `process.env`, so
+an inherited `GIT_DIR` could override `git -C` and route a fixture commit elsewhere.
+The helper now gives Git a fixed environment (path/locale plus non-interactive,
+system/global-config-disabled settings). Its regression creates only disposable
+fixture and decoy repositories, poisons `GIT_DIR` with the decoy, and proves the
+fixture advances while the decoy's HEAD and tracked file remain unchanged. The RED
+against the old inherited environment left the fixture HEAD unchanged; the restored
+implementation is GREEN.
+
+Observed verification:
+
+```sh
+# target-substitution regression: 5 consecutive passes (2.51–3.59 s)
+npm run check
+# pass twice: 25 files passed, 2 opt-in skipped; 547 tests passed, 2 skipped;
+# web and server production builds passed
+git diff --check
+# passed
+```
+
+The initial PR #18 was closed as contaminated: the documented defective pre-push hook
+created commit `9d252957` and tracked `external-move.txt` before the intended fix.
+The clean candidate contains only the causal test files. The demonstrated recovery
+fixture route is fixed; the pre-push hook itself remains separate infrastructure work,
+so manual verification is required before using `ECC_SKIP_PREPUSH=1` for a scoped
+push.
+
+### Resolved-base verification
+
+The clean candidate was resolved against current `main` at
+`2f7a9fd8122cb62f2f2ed4e2b08cc87f311e8887`. On that exact resolved head,
+`npm run check` passed: 25 files passed, 548 tests passed, 2 opt-in tests skipped,
+and both production builds completed. A subsequent teardown-only audit identified a
+test-lifecycle follow-up; its final commit and verification are recorded separately
+once that bounded correction is complete.
+
+### Teardown follow-up evidence
+
+Commit `d8c4dff7e6a6c3b1597e56c8b493e436a4f227c2` is test-only. It retains tracked
+Missions until cancellation and background-run joining succeed, treats
+`attention_required` as cancellable, and releases both blocked promotion checkpoints
+in `finally` paths. The promotion verifier release is idempotent. Its causal RED
+timed out safely against the prior blocked verifier (the test's `finally` released
+the fixture); GREEN focused coverage passed the four promotion/attention teardown
+paths, and the full `service.test.ts` file passed 25/25.
+
+The first repository `npm run check` on `d8c4dff` was **not green**: the unmodified
+Git-plane integration test `reports a real textual merge conflict and leaves the
+integration Plane clean` timed out at Vitest's five-second default. The observed
+test phase had 24 files passed, 1 failed, 2 skipped; 549 tests passed, 1 failed, 2
+skipped. This follow-up did not broaden into that separately owned timeout; its
+production builds therefore did not run after the failing test phase.
+
+That Git-plane test is also an owned #11 real-Git integration case. Commit
+`0e0e743` gives only that test a 15-second Vitest budget. It passed five consecutive
+focused runs (1.23–1.90 s) and the complete Git-plane integration file passed 19/19.
+A subsequent full gate exposed a distinct RED: the background real-Planes service
+journey has a 30-second test budget but its shared completion helper stopped at 15
+seconds. Commit `a14c3f7` makes that helper accept an optional timeout and passes
+25 seconds only to this measured journey; it does not add another Vitest budget.
+The journey passed five consecutive focused runs (4.27–6.33 s) and the complete
+service test file passed 25/25.
+
+On final head `a14c3f71446ff5c46a84db6482fc445e9d1944d9`, `npm run check` passed:
+25 files passed, 550 tests passed, 2 opt-in tests skipped, and both production
+builds completed. Six measured integration cases now have explicit 15-second
+Vitest budgets; the one 25-second internal completion wait remains confined to the
+already-30-second background real-Planes test.

@@ -9,6 +9,17 @@
 **Assessed implementation checkpoint:** `6c1a948c52b8c6b8107ffcc87e63a1352e62481a`
 (`chore(docs): add techjam brief docs`)
 
+**Active stacked UI delta:** [draft PR #17](https://github.com/kyashp/shepherd/pull/17)
+contains the minimal viewport/layout corrections described below at commit
+`1406b7e38cea03390878f5b6b775c41fd27776d1`. This documentation branch is a
+child of PR #17 and must merge after its parent. Neither the UI changes nor this
+evidence update is part of `main` yet.
+
+**Active reviewed reset delta:** `RST-01` is implemented at
+`19a2e45f7a67c575d9acced3dfcfbc6a32f5718e` on
+[`fix/7-rst-01-idempotent-reset` draft PR #10](https://github.com/kyashp/shepherd/pull/10).
+The issue and PR remain open; this fix is not yet part of `main`.
+
 **Repository observation:** the working tree was clean before this documentation
 update, and local `main` matched `origin/main` at the assessed checkpoint. The
 historical `feature/shepherd-phase-*` branches do not by themselves claim current
@@ -64,8 +75,9 @@ The repository now has a strong deterministic Shepherd kernel, a proven live
 Codex-in-container boundary, a strict authenticated API, durable
 cancellation/retry/tie/reset controls, Agent roles and scoped authority, and all
 six requested React surfaces implemented in source. The rendered UI gate is still
-pending. The latest production type checks, production builds, and full server suite
-are green.
+pending. The latest production type checks and builds are green. The full server
+suite is green when run with one worker; unconstrained parallel execution has the
+fixed-timeout stability gap tracked as `TST-01`.
 
 The remaining work is material:
 
@@ -74,10 +86,15 @@ The remaining work is material:
 - No Playwright configuration, eight-journey suite, screenshots, or independent rendered UI review exists yet.
 - Final architecture/test-report/README completion, repeated stability runs, and
   three timed rehearsals are not complete.
-- `npm run poc` currently fails to pass `.env` values into its shell child in this
-  environment; the verified safe workaround is documented below.
-- A clean-start demo reset returns `500 Auth demo was not found`; reset succeeds
-  after the first demo project has been initialized.
+- Merged PRs #8 and #28 provide safe Node-parsed `.env` propagation, direct
+  `./scripts/start-local-poc.sh` invocation, and host-local data paths. The first
+  real post-merge run exposed `OPS-04`: a container-wide `HOST` value in the
+  ignored `.env` is still preserved and the server correctly refuses its
+  placeholder token. Branch `fix/29-ops-04-local-loopback` contains the minimal
+  local-only loopback correction and passed its real startup smoke.
+- `RST-01` clean-start reset is fixed and independently reviewed on
+  [draft PR #10](https://github.com/kyashp/shepherd/pull/10); merge-group,
+  merged-`main`, and ledger verification remain.
 
 Do not treat `main` as complete merely because the current deterministic suite is
 green. Every future change still goes through a protected PR, and every completion
@@ -253,25 +270,33 @@ For **every UI fix**, the following additional rules are mandatory:
 | Final promotion gate: authority recheck, independent re-verification, selected-candidate validation, protected-head consistency, and trusted Git promotion | Promotion-gate negative tests, Git integration tests, service compensation tests | **96%** |
 | Restart recovery at four process-kill checkpoints, with no falsely completed Mission | Recovery unit/process tests and full server suite | **95%** |
 | Cancellation linearization in both promotion race directions and exact executor/verifier cancellation targets | Dedicated service race tests; full server suite | **95%** |
-| Guarded `auth-demo` reset, unrelated-data preservation, cursor preservation, hostile-path protection, and recovery after Git-reset/store-persist failure | Reset/service/database tests; full server suite | **95%** |
+| Guarded `auth-demo` reset, clean-start idempotence, reset/start serialization, unrelated-data and cursor preservation, hostile-path protection, and partial-reset recovery | Causal service/API reset tests; concurrent clean/initialized reset tests; persistence/recovery suites; independent review on [PR #10](https://github.com/kyashp/shepherd/pull/10) | **98%** |
 | Authenticated Shepherd HTTP schemas, stable error statuses, path-free controls, demo-mode guards, and public DTO redaction | API tests; focused 116-test gate; full server suite | **95%** |
 | Project Group **parser only**: bounded normalization, exact/quoted mentions, ambiguity rejection, and inert untrusted content | `group-routing.test.ts`: 10/10 passed | **97%** |
 | Standalone `ArkModelReviewer` adapter only: schema validation, bounded I/O, timeout/cancellation, sensitive-value rejection, and explicit degradation results | `model-reviewer.test.ts` and Phase 3 full suite | **94%** |
-| `ST-02` notification-setting truthfulness | [PR #13](https://github.com/kyashp/shepherd/pull/13): focused server-rendered regression plus browser checks at `1280x800` and `1440x900` prove stored values remain visible through disabled, non-mutating controls labelled **Reserved** and **Unavailable** | **96%**; review and merge still required |
+| Project Group clean-start **layout only** on draft PR #17 | Playwright with mocked authenticated API state at `1280x800` and `1440x900`: composer remained inside the panel/viewport, message history owned the flexible region, and document X/Y overflow was absent; screenshots were visually inspected | **93%** for this empty-state layout only; interaction, populated history, accessibility, and independent UI review remain |
 | Phase 3 live Codex runtime isolation at the Phase 3 checkpoint | Two fresh live Missions, eight isolated sessions, real collision/promotion evidence recorded in `docs/BUILD_LOG.md` | **88%**; not rerun after Phase 4 changes |
 
 The following are **not** included in the fully-tested claim above: rendered UI
-behavior beyond the scoped `ST-02` check, complete Group Chat behavior, general DAG
-scheduling, model-review Mission composition, and every missing/partial row in the
-failure matrix.
+behavior beyond the narrowly scoped Project Group layout row, complete Group Chat
+behavior, general DAG scheduling, model-review Mission composition, and every
+missing/partial row in the failure matrix.
+
+### Fixed on an active PR, pending merge
+
+| ID | Fix and evidence | Active PR | Remaining gate |
+|---|---|---|---|
+| `RST-01` | A clean root now returns a deliberate path-free empty success without creating a Mission or fixture. Clean and initialized resets reserve `auth-demo` across all asynchronous work, so Mission startup cannot race destructive cleanup. Causal service/API and concurrency regressions, adjacent persistence/recovery suites, a full constrained check, and an independent follow-up review are green. | [Draft PR #10](https://github.com/kyashp/shepherd/pull/10), reviewed implementation commit `19a2e45f7a67c575d9acced3dfcfbc6a32f5718e` | Merge/required checks, rerun clean and initialized reset on updated `main`, then update issue and merged-SHA ledgers. |
+| `ST-02` | Stored notification values remain visible, but native disabled controls label the unimplemented capability **Reserved** and **Unavailable**. The focused RED/GREEN regression and terminal Chromium rehearsal at both required viewports passed without mutation, focus, PATCH, overflow, clipping, or runtime errors. | [Draft PR #13](https://github.com/kyashp/shepherd/pull/13), integrated with `origin/main` at `349897d3d9167fe711bf720f7c3fadd213938d11` | Fresh integrated full gate, final browser screenshots, independent review, required checks, merge, and post-merge verification. |
 
 ### Confirmed defects and partial behavior
 
 | ID | Area | Confirmed defect / mismatch | User-visible or safety impact | Required minimal correction |
 |---|---|---|---|---|
-| `OPS-01` | Local startup / `.env` | On Node 24.17/npm 11.17, root `npm run poc` executes `node --env-file-if-exists=.env --run=poc:inner`, but the shell child did not receive `ARK_API_KEY`/`ARK_MODEL`; direct `node --env-file-if-exists=.env -e ...` proved the variables are present. | The documented `.env`-based one-command startup exits with “ARK_API_KEY and ARK_MODEL are required.” | Add the smallest safe Node-to-shell launcher that inherits the already parsed environment, or otherwise fix the root script without sourcing arbitrary shell content; add an env-presence regression that never prints values. |
-| `OPS-02` | Local startup paths | `.env.example` contains container paths such as `/app/data/shepherd`. When `.env` is loaded for host PoC startup, `start-local-poc.sh` does not rebase `SHEPHERD_ROOT`/`SHEPHERD_CODEX_HOME_ROOT` into `LOCAL_POC_DATA_ROOT`. | Host startup can target unintended absolute paths or fail permissions; this also violates repository-local test-state expectations. | In local-PoC mode, derive all Agent and Shepherd data roots from the one documented local root while preserving explicit, validated opt-in overrides. Add path-resolution tests. |
-| `RST-01` | Demo reset | `POST /api/shepherd/demo/reset` on a clean data root returns HTTP 500 with `Auth demo was not found`; after one Mission initializes `auth-demo`, reset succeeds and removes all managed state. | “Reset demo state” fails on first launch and exposes a server error instead of an idempotent clean result. | Make clean-start reset an idempotent success or return a deliberate non-error empty result; add service/API/UI regression tests. |
+| `OPS-01` (resolved) | Local startup / `.env` | Merged PR #8 uses Node's dotenv parser and an explicit launcher that inherits the parsed environment without shell-sourcing or logging it. | `npm run poc` is restored on `main`. | Retain the secret-sentinel launcher regression. |
+| `OPS-02` (resolved) | Direct local startup / paths | Merged PR #28 makes `./scripts/start-local-poc.sh` perform one guarded Node dotenv handoff and maps only the exact Docker-default data paths into the host local state root. Its regression, full gate, and independent fallback security review passed. | Direct zero-parameter shell startup now safely loads `.env`; explicit custom host paths remain unchanged. | Retain the dotenv, secret non-disclosure, default localization, and custom-path regressions. |
+| `OPS-04` | Local startup host binding | The ignored operator `.env` contains container-wide `HOST=0.0.0.0` and a placeholder application token. The real post-merge direct command reaches `node dist/index.js`, then the server correctly exits 1 rather than expose an unsafe public bind. | The promised zero-parameter local command still fails with the configured `.env`. | In the local launcher only, normalize empty and exact any-address hosts (`0.0.0.0`, `::`) to `127.0.0.1`; preserve custom hosts and the server's non-loopback token enforcement. Branch `fix/29-ops-04-local-loopback` has a causal regression across all host branches, real startup/API/shutdown smoke, full green gate, and independent fallback security review with its sole Low coverage finding closed. |
+| `OPS-05` | Local launcher self-entry | On macOS, `/var/...` from `os.tmpdir()` and ESM's `/private/var/...` module identity compared unequal lexically, so a directly invoked copied launcher exited before spawning its child. Issue [#31](https://github.com/kyashp/shepherd/issues/31) owns the correction. | Direct local launch can exit 0 without starting the control-plane child. | Canonicalize both entry paths before comparison; the regression invokes a symlink alias and asserts a child side effect. The fixture supplies an isolated `HOME` and follows the documented Darwin/Linux local-state root. Focused suite passed 3/3 five times; full check and audit passed. |
 | `GC-01` | Group Chat mention buttons | UI inserts `@Frontend Agent`, while names containing spaces require `@"Frontend Agent"`. The UI-generated value reproduces `unknown_agent`. | Mention buttons do not route the demo Agents. | Quote/escape whitespace-containing names using the parser's existing JSON mention syntax; add a browser regression test. |
 | `GC-02` | Unmentioned Group Chat messages | The backend persists a human message with no target, but does not invoke Shepherd, create work, or post a Shepherd response. | UI says “Unmentioned → Shepherd,” but no Shepherd action occurs. | Route through an existing bounded Shepherd action/response contract; do not add free-form shell/model authority. |
 | `GC-03` | `@Agent` assignment | It only links to an already-created Contract in an active Mission; it cannot create a new bounded Contract. | The required targeted Contract journey is incomplete. | Add a constrained, schema-validated Contract-creation path or change the copy/acceptance contract if product direction is explicitly revised. |
@@ -293,17 +318,19 @@ failure matrix.
 | `SCH-02` | Cycle timing | Cycles are rejected during scheduler evaluation, not before graph persistence/creation. | Invalid graphs may persist until execution. | Validate before persistence using the existing DAG validator. |
 | `UI-01` | Failed Mission evidence | Detailed failure UI is focused on `attention_required`; ordinary `failed` Missions can hide the specific failure. | A failed run may look unexplained. | Reuse the current attention/failure components for all non-green terminal Mission failures. |
 | `UI-02` | Timeline estimates | The UI renders an `est.` bar only if `estimatedDurationMs` exists, but no server/domain path produces or persists that field. | PRD Goal 16 / 11.3 estimated durations are absent in real Missions. | Persist a clearly labelled trusted estimate or remove the dead optional UI branch only if the PRD is explicitly revised; add API and browser assertions that distinguish estimates from actual timing. |
+| `TST-01` | Parallel test stability | On the RST-01 branch, three unconstrained `npm run check` attempts hit different existing 1-second/5-second timeouts in Git-heavy service, recovery, and Plane integration tests. Each affected test passed isolated; the complete suite passed with one worker and unchanged assertions. | Required checks can fail nondeterministically under local/CI resource contention even when product behavior is correct. | In a separate test-harness PR, replace timing proxies with condition barriers where applicable, give real-Git integration journeys evidence-based ceilings, or cap Vitest workers. Preserve assertions and first reproduce RED under contention. |
+| `CI-01` | Pull-request checks | GitHub reports no status checks for [draft PR #10](https://github.com/kyashp/shepherd/pull/10). | A locally verified branch can reach review without an independent automated typecheck/test/build result. | Add or repair required pull-request automation for the documented Node runtime; protect `main` with the resulting checks. Keep workflow/configuration changes separate from RST-01. |
 
 ### Implemented but not fully tested
 
 | Feature/path | What exists | Missing evidence before it may be called complete |
 |---|---|---|
-| Six UI surfaces and shared navigation/design system | All requested routes compile and production-build | Real browser interaction, screenshots, responsive review, accessibility, and independent UI review |
-| Shepherd stream, filters, timeline, Plane Tree, detail drawer, cancel/selection controls | React components and API bindings exist | Populated deterministic browser journey, real Git/tree comparison, event visibility timing, failure slices |
-| Project Group message display/polling | Read API, sorting, connection/error/empty states exist | Browser polling/reconnect test plus fixes for `GC-01..06` |
+| Six UI surfaces and shared navigation/design system | All requested routes compile and production-build; draft PR #17 preserves the existing palette/components while moving page overflow into bounded internal regions and replacing the Shepherd glyph with Iconoir solid `cube-scan` geometry | Browser all six routes and all interaction states at both required viewports; accessibility and independent UI review |
+| Shepherd stream, filters, timeline, Plane Tree, detail drawer, cancel/selection controls | React components and API bindings exist; draft PR #17 keeps the composer in the flex-owned viewport, reduces excess stream/tree bottom spacing, shows seconds in short timelines, and labels Resolution rows by target value | Populated deterministic browser journey at both viewports, real Git/tree comparison, event visibility timing, failure slices, and screenshot review; the PR #17 Shepherd changes have source/build evidence only |
+| Project Group message display/polling | Read API, sorting, connection/error/empty states exist; draft PR #17 anchors the composer below a flexible scrollable history using the private-Agent chat layout pattern, with the clean-start empty state browser-checked at both required viewports | Browser polling/reconnect and populated-history tests plus fixes for `GC-01..06`; `GC-05` still disables typing before a project exists |
 | Legacy Playground in the new shell | Existing workflow retained in source | Create → task → follow-up → stop/restart Playwright regression |
 | Create/Edit Agent UI | Role/preset/advanced forms compile | Browser validation, keyboard/accessibility, and persistence round-trip |
-| Settings UI | Timeout/concurrency/auto-resolution values call the real API; `ST-02` notification values are visibly reserved and read-only in [PR #13](https://github.com/kyashp/shepherd/pull/13) | Browser round-trip for writable execution settings; fix the misleading model-review control and startup-env composition; complete the broader Settings accessibility/browser journey |
+| Settings UI | Timeout/concurrency/auto-resolution values call the real API; `ST-02` notification values are visibly reserved and read-only on [PR #13](https://github.com/kyashp/shepherd/pull/13) | Browser round-trip for writable settings; fix the misleading model-review control and startup-env composition; complete the broader Settings accessibility/browser journey |
 | One automatic candidate retry | Fresh Plane and prior-attempt archive are tested | Typed eligibility and failed-second-attempt/no-second-retry test |
 | Manual confirmation and candidate selection | Service/API path promotes an independently passing candidate | A service-generated objective tie, browser choice, and chosen-candidate promotion journey |
 | Missing manifest durable transition | Code persists `manifest_missing` | Service fault injection asserting Contract/Plane/Mission/event/API/UI |
@@ -315,7 +342,7 @@ failure matrix.
 | Repeated cancellation | Single cancellation and both promotion races are tested | Explicit idempotent repeated-cancel API/service test |
 | UI reconnect handling | Poller retains state and retries | Browser interruption, visible reconnect, cursor reconciliation, no-duplicate event test |
 | Live Mission on current `main` | Phase 3 runtime previously passed at its named checkpoint | One sparse post-integration live Mission after P0 fixes; no repeated unnecessary model calls |
-| Host local-PoC startup | Runtime build/preflight and deterministic server were reached through a safe Node env-wrapper with repository-local roots | Fix and regression-test `OPS-01`/`OPS-02`; then verify the documented one-command path without shell-sourcing `.env` |
+| Host local-PoC startup | Merged #8/#28 provide direct dotenv and path behavior. The `OPS-04` candidate additionally normalizes exact any-address hosts to loopback while preserving a concrete custom host in regression coverage. With the actual ignored `.env`, direct startup bound `127.0.0.1:3000`; health/web returned 200, unauthenticated system returned 401, authenticated system returned 200, and SIGINT left no owned Runtime container. Independent fallback security review found no high/medium issue; its sole Low coverage gap was closed. | Merge `OPS-04`, then repeat the same zero-parameter smoke on updated `main` |
 
 ### Unimplemented required behavior
 
@@ -330,7 +357,7 @@ failure matrix.
 | Complete typed implementation for every PRD Section 12 failure row | **Unimplemented/partial**, itemized above and in the failure matrix |
 | Playwright configuration, deterministic browser harness, fake Codex CLI, and all eight journeys | **Unimplemented** |
 | Required screenshot corpus and visual checklist report | **Unimplemented** |
-| Product notification delivery or in-app notification consumption | **Future capability, unimplemented**; [PR #13](https://github.com/kyashp/shepherd/pull/13) deliberately reserves the preserved settings UI. Define the behavior, privacy/threat boundaries, and causal service/UI tests in a separate approved issue and PR; external integrations are not implied. |
+| Product notification delivery or in-app notification consumption | **Future capability, unimplemented**; PR #13 deliberately reserves the preserved settings UI. Define behavior and privacy/threat boundaries in a separate approved issue and PR; external integrations are not implied. |
 | Persisted/served trusted Contract duration estimates for the timeline | **Unimplemented**; UI has an optional dead-data rendering branch only (`UI-02`) |
 | Final generated architecture document, final test report, and final README refresh | **Unimplemented**; this `HANDOVER.md` is the single continuation entry point and must be kept current rather than duplicated as `HANDOFF.md` |
 
@@ -338,7 +365,7 @@ failure matrix.
 
 The next agent must explicitly mark each item pass/fail with the exact command and observed evidence:
 
-1. Fix and test `OPS-01`, `OPS-02`, and `RST-01`: `.env` propagation, repository-local host paths, and idempotent clean-start reset.
+1. Fix and test `OPS-01` and `OPS-02`: `.env` propagation and repository-local host paths. Keep startup secret/path work separate from the reviewed `RST-01` reset PR.
 2. Add service fault-injection tests for `F-01..08`, missing/malformed/omitted manifests, Contract acceptance failure, objective tie, final re-verification, repeated cancellation, and persistence recovery.
 3. Add Group Chat unit/API/browser regressions for `GC-01..06`, including quoted whitespace names, a clean-start state, a message that produces a bounded Shepherd result, a targeted Contract, post-Mission behavior, and manifest-derived Agent summaries.
 4. Add fake-reviewer Mission tests for completed findings, zero findings, disabled review, timeout, cancellation, malformed response, transport/provider/config failure, sensitive-value rejection, and deterministic-collision independence.
@@ -352,12 +379,12 @@ The next agent must explicitly mark each item pass/fail with the exact command a
 12. Run the read-only `ui-reviewer` after screenshots and fix every high/medium finding with the mandatory minimal UI policy above.
 13. Run the read-only `security-reviewer` after Group Chat/model/failure/startup changes and fix material findings.
 14. Add TypeScript checking for test files; current server production typecheck excludes `*.test.ts`.
-15. Run the literal `npm run check` on the final feature commit.
-16. Run the complete suite at least five consecutive times and fix flakiness by root cause.
+15. Resolve `TST-01`, then run the literal unconstrained `npm run check` on the final feature commit. Until then, record both the exact attempt and the constrained-worker result without presenting one as the other.
+16. Run the complete suite at least five consecutive times and fix flakiness by root cause; `TST-01` is the current evidenced starting point.
 17. Run secret scans over source, generated prompts, persisted store, API payloads, and browser DOM after a complete demo.
 18. Perform three clean reset-to-completion rehearsals and record exact timings; use a second machine/state only if genuinely available.
 19. Run one final clean deterministic demo and the separately gated sparse live smoke on the final commit.
-20. After merge, rerun typecheck, full tests, production build, browser smoke, secret scan, and one clean demo on `main`.
+20. After merge, rerun typecheck, full tests, production build, browser smoke, secret scan, and one clean demo on `main`. For PR #10, explicitly rerun both clean and initialized reset, then close issue #7 and update the merged-SHA ledger.
 
 ## PRD traceability matrix
 
@@ -420,18 +447,18 @@ known requirement mismatch exists; **Unimplemented** = no composed product path;
 | `K-10` | 8.10 credential-free bounded verifier | **I+T, 94% — review required** | Container boundary tests pass; final security audit remains. |
 | `K-11` | 8.11 cancel and retry E2E | **I-U/partial, 84%** | `F-07`, `F-08`, repeated-cancel test, `E2E-07`. |
 | `P-01` | 9.1 versioned atomic persistence, migration, restart, secret-free state | **I+T core / Partial failure, 92%** | Migration/restart/redaction tests pass; recovery-visible persistence failure remains `F-06`. |
-| `P-02` | 9.2 authenticated schema-validated API and polling | **I+T core / Partial group path, 91%** | API tests pass; Group behavior, clean reset, and polling browser evidence remain. |
-| `FIX-01` | 10 deterministic network-free auth fixture and safe reset | **I+T hero path / Defective clean reset, 92%** | Current deterministic Mission passed; `RST-01`, reset safety browser/rehearsal evidence remain. |
+| `P-02` | 9.2 authenticated schema-validated API and polling | **I+T core / Partial group path, 93%** | API and authenticated clean/initialized reset tests pass on [PR #10](https://github.com/kyashp/shepherd/pull/10); Group behavior and polling browser evidence remain. |
+| `FIX-01` | 10 deterministic network-free auth fixture and safe reset | **I+T backend, 98% — pending merge** | Clean and initialized reset, hostile-path, unrelated-data, cursor, recovery, and reset/start serialization tests pass on [PR #10](https://github.com/kyashp/shepherd/pull/10). Browser rehearsal and merged-`main` evidence remain. |
 
 ### PRD 11 UI surfaces and user journeys
 
 | ID | Requirement | Status | Blocking work/evidence |
 |---|---|---|---|
-| `UI-S01` | 11.1 sidebar/navigation | **I-U** | Source/build only; visual/responsive/keyboard review pending. |
-| `UI-S02` | 11.2 real event stream, filters, evidence, composer | **I-U** | Backend data exists; browser polling/latency/error evidence pending. |
-| `UI-S03` | 11.3 timeline with actuals and labelled estimates | **Partial** | Actual timestamp UI exists; real estimates absent (`UI-02`). |
+| `UI-S01` | 11.1 sidebar/navigation | **I-U; scoped visual evidence on draft PR #17** | Sidebar and official Shepherd icon were visually inspected with the Project Group empty state at both viewports; complete route, responsive, focus, and keyboard review remains. |
+| `UI-S02` | 11.2 real event stream, filters, evidence, composer | **I-U; layout correction on draft PR #17** | Composer/flexible-panel source and build checks pass; populated Shepherd browser polling/latency/error evidence remains. |
+| `UI-S03` | 11.3 timeline with actuals and labelled estimates | **Partial; legibility correction on draft PR #17** | Actual timestamps now include seconds for short runs and Resolution rows identify the target value; rendered populated-state evidence and real persisted estimates remain (`UI-02`). |
 | `UI-S04` | 11.4 Plane Tree and Git-reality detail | **I-U** | Data/detail UI exists; browser-to-`git worktree` comparison pending. |
-| `UI-S05` | 11.5 Project Group, Agent, Create/Edit | **Defective/I-U** | `GC-01..06`; remaining Agent/browser form/Playground evidence pending. |
+| `UI-S05` | 11.5 Project Group, Agent, Create/Edit | **Defective/I-U; clean-start layout verified on draft PR #17** | Project Group composer placement/no-page-overflow passed at both viewports, but the clean-start textarea was observed disabled (`GC-05`); `GC-01..06` and remaining Agent/form/Playground browser evidence remain. |
 | `E2E-01` | 11.6.1 baseline create/task/follow-up/restart | **Not evaluated on current UI** | Build a deterministic browser harness plus one sparse live Runtime acceptance. |
 | `E2E-02` | 11.6.2 full Mission hero chain | **Backend pass; browser not evaluated** | Eight-stage browser assertions/screenshots and timing. |
 | `E2E-03` | 11.6.3 `@Agent` journey | **Blocked by defects** | `GC-01`, `GC-03`, `GC-04`, `GC-05`. |
@@ -440,7 +467,7 @@ known requirement mismatch exists; **Unimplemented** = no composed product path;
 | `E2E-06` | 11.6.6 objective tie and human selection | **Unit/control exists; service/browser not evaluated** | Real tie state → verified choice → promotion. |
 | `E2E-07` | 11.6.7 cancellation | **Backend pass; browser not evaluated** | Mid-Mission browser cancellation plus repeated-cancel check. |
 | `E2E-08` | 11.6.8 restart interruption | **Backend process pass; browser not evaluated** | Browser reconnect shows durable interrupted state and nothing green. |
-| `UI-GATE` | 11.7 visual checklist and all UI states at 1280x800/1440x900 | **Assurance pending** | No current Shepherd screenshot corpus, accessibility run, or independent `ui-reviewer` result. Preserve the mandatory minimal UI policy above. |
+| `UI-GATE` | 11.7 visual checklist and all UI states at 1280x800/1440x900 | **Assurance pending; one scoped state evidenced** | Draft PR #17 has Playwright/visual evidence for the Project Group clean-start empty-state layout only. A committed screenshot corpus, all other routes/states, accessibility run, and independent `ui-reviewer` result remain. Preserve the mandatory minimal UI policy above. |
 
 ### PRD 12 failure matrix
 
@@ -490,11 +517,12 @@ traceability.
 
 | Workstream | Recommended PR units | Stack/dependency guidance | Reviewer gate |
 |---|---|---|---|
-| Local run/reset | `OPS-01`, `OPS-02`, `RST-01` | `OPS-02` may stack on `OPS-01`; `RST-01` is independent. Keep startup secret/path work separate from reset behavior. | Security review for env/path handling |
+| Local run/reset | `OPS-01`, `OPS-02`; `RST-01` is implemented on [draft PR #10](https://github.com/kyashp/shepherd/pull/10) | `OPS-02` may stack on `OPS-01`. Keep startup secret/path work separate from the reset PR; after PR #10 merges, perform its clean/initialized post-merge reset gate. | Security review for env/path handling; PR #10 independent review is complete |
+| Test/PR assurance | `TST-01`, `CI-01` | Stabilize the Git-heavy test harness without weakening assertions, then add/require the resulting typecheck/test/build checks on pull requests. Keep this independent of product fixes. | Test-infrastructure and repository-administration review |
 | Typed failures | `F-01/F-02` common typed-stage foundation, then `F-03`, `F-04`, `F-05`, `F-06`, `F-07/F-08` | Use short stacks only where a shared typed error contract is required. Each PR includes its entity/event/API tests. | Security review after the workstream |
 | Group Chat | `GC-05` safe project initialization, `GC-02` Shepherd handling, `GC-03/GC-04` targeted Contract lifecycle, `GC-06` Agent summaries, `GC-01` mention UI | One stack steward; keep parser/security foundation below service behavior and UI. Browser tests land with each UI-visible correction. | Security + UI review |
 | Advisory model | `MR-01` service composition/degradation, then `MR-02` truthful setting/UI | Deterministic collision independence is a mandatory lower-layer test. One sparse live smoke only after fake-adapter gates. | Security + UI review |
-| Settings truthfulness | `ST-01` startup setting composition remains; `ST-02` reserved/unavailable notification UI is implemented in [PR #13](https://github.com/kyashp/shepherd/pull/13) | Keep initial-config behavior separate from optional product notification behavior. Any delivery capability requires a new approved issue/PR and must not be folded back into `ST-02`. | UI review; security review if a delivery surface is proposed |
+| Settings truthfulness | `ST-01` startup setting composition remains; `ST-02` reserved/unavailable notification UI is implemented on [PR #13](https://github.com/kyashp/shepherd/pull/13) | Keep initial-config behavior separate from optional product notification behavior. Any delivery capability requires a new approved issue/PR. | UI review; security review if a delivery surface is proposed |
 | Scheduler | `SCH-02` pre-persistence validation, then `SCH-01` real waves/capacity/occupancy | Keep general graph contract below service orchestration. | Security review if mutation/authority paths change |
 | Timeline/UI | `UI-02`, `UI-01`, then per-surface browser gaps | Branch after required API/domain data exists; preserve current design and use 1280x800/1440x900 evidence. | UI review |
 | Browser harness | reusable harness, then `E2E-01..08` grouped only by shared fixture | The harness can be an independent PR. Behavior fixes stay in their owning feature PR, not hidden in E2E-only PRs. | UI review; security review for fault fixtures |
@@ -659,7 +687,7 @@ Implemented UI capabilities:
   Contract links; end-to-end routing remains defective under `GC-01..06`.
 - Agents table, legacy Playground, lifecycle controls, role/current-Contract/Plane information.
 - Create/Edit role selector, authority presets, and advanced authority section.
-- Settings tabs for real timeout/concurrency/automatic-resolution values, a persisted-only model-review value, reserved/read-only notification values, locked mode/retention/authority controls, and safe demo reset. The model-review control still requires `MR-02`; notification truthfulness is implemented by `ST-02` in [PR #13](https://github.com/kyashp/shepherd/pull/13).
+- Settings tabs for real timeout/concurrency/automatic-resolution values, a persisted-only model-review value, reserved/read-only notification values, locked mode/retention/authority controls, and safe demo reset. The model-review control still requires `MR-02`; notification truthfulness is implemented by `ST-02` on PR #13.
 - Loading, empty, error, and reconnect states.
 
 Decorative gradients were removed. The remaining CSS gradient draws timeline grid lines. `prefers-reduced-motion` is present.
@@ -783,22 +811,190 @@ Negative operational evidence from the same run:
   `.env` non-loopback/container path configuration; explicit loopback and
   repository-local Shepherd roots were required (`OPS-02`).
 - Clean-start `POST /api/shepherd/demo/reset` returned 500 `Auth demo was not
-  found`; reset passed only after initialization (`RST-01`).
+  found`; reset passed only after initialization. This historical reproduction
+  became the causal RED baseline for `RST-01` and is fixed on
+  [draft PR #10](https://github.com/kyashp/shepherd/pull/10).
+
+### RST-01 active-branch verification
+
+Observed on 2026-08-29 against
+`19a2e45f7a67c575d9acced3dfcfbc6a32f5718e` on
+`fix/7-rst-01-idempotent-reset`:
+
+- The original clean-start service/API regressions failed before the fix because
+  the service threw `Auth demo was not found` and the authenticated route
+  returned 404; both passed after the empty-success implementation.
+- Two reset/start concurrency regressions failed before reservation because the
+  concurrent Mission entered execution on a clean root and the initialized reset
+  lost the race. Both passed after reset reserved `auth-demo` until `finally`.
+- Reset-focused service/API tests passed 8/8; adjacent persistence/recovery tests
+  passed 100/100; the complete service suite passed 23/23.
+- The complete server suite passed with one worker: 25 files passed, 2 skipped;
+  547 tests passed, 2 skipped. `npm run check` under Node 24.17/npm 11.17 with
+  the same external worker constraint also passed both typechecks and production
+  builds. `npm audit --json` reported 0 vulnerabilities across 251 dependencies,
+  and `git diff --check` passed.
+- Three unconstrained full-check attempts exposed `TST-01`: varying existing
+  fixed-timeout Git-heavy tests failed under parallel contention but passed
+  isolated and serialized. No unrelated timeout or assertion changed in PR #10.
+- An independent read-only security/correctness review first found the missing
+  reset reservation. After the causal TDD fix, its follow-up reported no Critical,
+  Important, or Minor finding and marked the change ready to merge.
+- Live GitHub state at this documentation update: issue
+  [#7](https://github.com/kyashp/shepherd/issues/7) and
+  [draft PR #10](https://github.com/kyashp/shepherd/pull/10) are open, the PR is
+  mergeable, and GitHub reports no automated checks (`CI-01`).
+
+Current-main integration was subsequently observed after OPS-05 merged through
+PR #32 at `8110aa3ed49bd0586cbb275d7c4067552cd9a144`. RST-01 merge commit
+`4673edfff0d6a205b48ca4d90821ce852a9952e4` resolved conflicts only in
+`docs/BUILD_LOG.md` and this file by preserving current-main evidence and
+reapplying RST-01-specific entries. Its effective diff against `origin/main`
+contained exactly `apps/server/src/app.test.ts`,
+`apps/server/src/shepherd/service.test.ts`,
+`apps/server/src/shepherd/service.ts`, `docs/BUILD_LOG.md`, and this file.
+
+Fresh integrated verification passed:
+
+- reset-focused service/API tests: 8/8;
+- complete `service.test.ts`: 28/28;
+- complete `app.test.ts`: 19/19;
+- standalone typecheck and production build;
+- literal `npm run check` without overrides: launcher 3/3; server 25 files
+  passed, 2 skipped; 554 tests passed, 2 skipped; both production builds;
+- `npm audit --json`: 0 vulnerabilities across 251 dependencies;
+- `git diff --check origin/main...HEAD` with a clean worktree.
+
+An independent read-only final review of the integrated five-file diff at
+`ecd14228e0b83f8a9087d8bce675a3ae689fd29e` reported no Critical, Important,
+or Minor finding and returned **Ready to merge: Yes**. It specifically confirmed
+the reset reservation/`finally` release, fail-closed path and identity boundaries,
+causal clean/initialized concurrency and API coverage, exact scope, and browser
+non-applicability.
 
 Not run after this checkpoint:
 
-- Playwright/browser journeys or screenshots;
-- rendered browser interaction in this session because no browser connection was
-  available;
-- UI accessibility automation;
+- Playwright/browser journeys, screenshots, or accessibility automation because
+  browser evidence is not applicable to this service/API-only correction: no UI
+  source, layout, interaction, or response consumer changed, and the authenticated
+  route is covered through the real Fastify injection boundary;
 - custom `ui-reviewer` gate;
-- custom `security-reviewer` gate for the API/reset/cancellation/public DTO and
-  newly found startup-path behavior;
+- broad custom `security-reviewer` gate for the remaining API/cancellation/public
+  DTO and startup-path work; the scoped independent RST-01 review above is complete;
 - live `SHEPHERD_MODEL` call;
 - five consecutive full-suite runs;
 - three timed clean demo rehearsals;
 - a final live Mission on current `main`;
 - a post-merge gate for these documentation changes.
+
+### Pending test-lifecycle merge gate (`#11`)
+
+Draft PR [#19](https://github.com/kyashp/shepherd/pull/19) contains test-only lifecycle
+hardening on commits `de986b9a3ecdd1e1360050209742497f8c6b2813` and
+`f2db22c`; it is not merged into `main`. Its causal regressions prove that a
+sentinel-bound service fixture can remove
+a read-only trusted-verification snapshot, rejects an external root, and neither
+follows nor chmods a symlinked external target. Background-Mission tests now cancel
+and join through the existing `cancelMission()` path before fixture cleanup. Three
+measured service journeys plus the measured Git and recovery journeys have explicit
+15-second budgets; global/unit defaults are unchanged. Five target-substitution runs
+and two complete `npm run check` runs passed (547 passed, 2 opt-in skipped; web and
+server builds passed). The recovery fixture's Git helper now uses a fixed child
+environment rather than inheriting repository-routing variables. A disposable
+fixture/decoy regression poisons `GIT_DIR`, proves the selected fixture advances,
+and proves the decoy's HEAD and tree remain unchanged.
+
+The candidate was resolved against current `main` at
+`2f7a9fd8122cb62f2f2ed4e2b08cc87f311e8887`. `npm run check` on that exact head
+passed 25 files, 548 tests, with 2 opt-in tests skipped; both production builds
+completed. A test-only teardown follow-up remains in progress and must record its
+own final commit and gate before this evidence is used as a merge decision.
+
+The resulting test-only teardown follow-up begins at `d8c4dff`. It retains tracked Missions
+until cancellation/joining succeeds, cancels `attention_required` Missions, and
+releases blocked promotion checkpoints in `finally` paths. Its bounded RED was safe
+and its focused promotion/attention teardown slice plus full `service.test.ts`
+passed. The first repository gate on `d8c4dff` was not green: the unmodified
+Git-plane merge-conflict integration test timed out at the generic five-second
+budget (24 files passed, 1 failed, 2 skipped; 549 tests passed, 1 failed, 2
+skipped). That real-Git case is also owned by #11, so `0e0e743` gives only it an
+explicit 15-second budget; five focused runs and its 19-test integration file pass.
+
+A later full gate exposed the background real-Planes journey's shared 15-second
+completion-helper limit, despite the test already having a 30-second Vitest budget.
+`a14c3f7` permits a 25-second helper limit only at that measured call; it is not a
+seventh explicit Vitest timeout. Five focused background-journey runs and the full
+25-test service file pass. `npm run check` on exact head
+`a14c3f71446ff5c46a84db6482fc445e9d1944d9` passed 25 files and 550 tests, with 2
+opt-in tests skipped; both production builds passed. #11 now has six measured
+integration tests with explicit 15-second budgets, while global/unit defaults remain
+unchanged.
+
+The draft OPS-01 fix in PR [#8](https://github.com/kyashp/shepherd/pull/8) remains a
+separate startup change. It may use this test-stability evidence only after #19 has
+merged and a combined `main` gate is observed; OPS-01 is not marked resolved here.
+
+### Draft PR #17 scoped UI correction and evidence
+
+This is newer, narrowly scoped evidence than the historical checkpoint immediately
+above. It does **not** close the overall `UI-GATE` or replace the pending browser
+journeys.
+
+[Draft PR #17](https://github.com/kyashp/shepherd/pull/17) targets `main` from
+`fix/15-ui-viewport-layout`. Its three implementation commits are
+`3a4e24c`, `abc0c9a`, and `1406b7e`. The owned implementation files are
+`apps/web/src/styles.css`, `apps/web/src/ui.tsx`, and
+`apps/web/src/pages/ShepherdPage.tsx`; it deliberately does not edit
+`ProjectGroupPage.tsx`, which is owned by the active Group Chat branch.
+
+Implemented in the draft parent:
+
+- replaced the Shepherd navigation/avatar glyph with the official Iconoir solid
+  `cube-scan` geometry while retaining the existing icon wrapper and colors;
+- made the application shell own the laptop viewport and moved overflow into the
+  affected internal panels instead of allowing document-level X/Y scrolling;
+- made the Shepherd grid consume its available main-canvas height, retained the
+  composer as a fixed flex child, and reduced excess event-stream/Plane-tree bottom
+  padding;
+- made the Project Group panel use the same fixed-composer/flexible-scroll-history
+  structure as private Agent chat, fixing the optional-reconnect-row layout bug that
+  stretched the composer upward;
+- improved only directly affected compact text and timeline legibility, including
+  seconds for short actual timestamps and target values on Resolution rows.
+
+Observed verification on 2026-08-29:
+
+- `npm run typecheck -w @launchpad/web` passed;
+- `npm run build -w @launchpad/web` passed;
+- `npm run check` passed after the final Project Group CSS correction: 26 server
+  test files passed and one opt-in live file was skipped; 544 tests passed and one
+  was skipped; both application typechecks and production builds passed;
+- `git diff --check` passed;
+- a repository-local Playwright Chromium run used mocked authenticated API data for
+  the clean-start Project Group state at `1280x800` and `1440x900`. At `1280x800`,
+  the panel occupied Y `92..776`, messages `133..682`, and composer `682..775`. At
+  `1440x900`, the corresponding bounds were `92..876`, `133..782`, and `782..875`.
+  Both runs reported no document X/Y overflow and screenshots were visually
+  inspected against the existing Launchpad aesthetic;
+- the browser binary was installed only inside the ignored worktree and removed
+  after verification. The temporary screenshots were not committed, so the final
+  durable screenshot corpus is still pending.
+
+Confirmed limitations and required next checks:
+
+- the same Playwright run observed `textarea.disabled === true` in the clean-start
+  Project Group state. This is existing defect `GC-05`, not fixed by PR #17;
+- the Shepherd page, populated Project Group history, all remaining routes,
+  keyboard/focus behavior, loading/error/reconnect states, and accessibility were
+  not rendered after the final correction and must not be inferred from the scoped
+  empty-state result;
+- no model/API capacity was consumed for this UI verification;
+- the required independent `ui-reviewer` role was unavailable, so PR #17 remains
+  draft pending that review and the remaining rendered gates;
+- preserve the mandatory minimal-fix and existing-UI instructions above when
+  addressing any remaining UI defect. Do not broaden PR #17 into Group Chat product
+  behavior; coordinate `GC-05` with the active Group Chat owner and merge stacks in
+  documented parent order.
 
 ## 8. Failure-matrix audit
 
@@ -854,14 +1050,15 @@ Because this checkpoint materially changed scoped authority, public DTOs, cancel
 
 ### P0 — correctness and truthfulness
 
-1. **Restore the documented local run/reset path (`OPS-01`, `OPS-02`, `RST-01`)**
+1. **Restore the documented local run path (`OPS-01`, `OPS-02`)**
    - Load `.env` into the local-PoC shell child without sourcing it or printing
      values.
    - Resolve all host PoC data roots inside the documented local root unless an
      explicit validated override is supplied.
-   - Make reset idempotent on a clean root.
-   - Add causal script/config/service/API tests and rerun the exact startup +
-     clean-start reset reproduction.
+   - Add causal script/config tests and rerun the exact startup reproduction.
+   - Keep these changes separate from reviewed
+     [RST-01 draft PR #10](https://github.com/kyashp/shepherd/pull/10); after it
+     merges, run the clean and initialized reset post-merge gate.
 
 2. **Typed failure hardening**
    - Introduce typed stage failures for Contract timeout/runtime, verifier infrastructure, Plane creation, integration conflict, and persistence failure.
@@ -884,7 +1081,8 @@ Because this checkpoint materially changed scoped authority, public DTOs, cancel
 
 5. **Fix or disable misleading UI states**
    - Until item 3 is complete, disable or clearly label the model-review setting as unavailable.
-   - `ST-02` labels notification preferences reserved/unavailable in [PR #13](https://github.com/kyashp/shepherd/pull/13); preserve that state until a separately approved notification capability exists.
+   - `ST-02` labels notification preferences reserved/unavailable on PR #13; preserve
+     that state until a separately approved notification capability exists.
    - Show typed failure evidence for ordinary `failed` Missions, not only `attention_required` Missions.
    - Produce and persist real trusted duration estimates for the `est.` timeline
      layer (`UI-02`), clearly distinct from actual timestamps.
@@ -914,7 +1112,14 @@ Repository-local Chromium was reported present at `.tmp/playwright-browsers/`; n
 
 14. Add test-file TypeScript checking; production `apps/server/tsconfig.json` excludes `*.test.ts`.
 15. Run the complete suite at least five consecutive times and fix flakiness by cause.
-16. Run three clean reset-to-completion demo rehearsals and record timings. Use a second machine/state only if genuinely available; otherwise document that limitation.
+    PR #19 removes the demonstrated temporary-repository route by giving its Git
+    fixture helper a fixed child environment. The pre-push hook itself still needs a
+    separate infrastructure audit: use `ECC_SKIP_PREPUSH=1` only after manual gates,
+    and inspect history/artifacts rather than accepting hook-created changes.
+16. After PR #10 merges, run three clean reset-to-completion demo rehearsals and
+    record timings, including both a clean-root no-op reset and an initialized reset.
+    Use a second machine/state only if genuinely available; otherwise document that
+    limitation.
 17. Finish/update:
     - `docs/SHEPHERD.md`
     - `docs/BUILD_LOG.md`
@@ -1006,10 +1211,15 @@ Authoritative requirements/evidence:
   configured model and consumes real capacity.
 - Use repository-local state for QA. Do not point the demo at another repository or
   an existing data directory.
-- `npm run poc` is currently affected by `OPS-01`; use the verified command below
-  until that issue merges.
-- Do not click **Reset demo state** before the first Mission initializes the demo;
-  `RST-01` currently returns a 500 on a completely clean root.
+- Merged PRs #8/#28 make `./scripts/start-local-poc.sh` the `.env`-based entry
+  point, but the current ignored `.env` also carries a container-wide host value.
+  Until `OPS-04` merges, add an explicit `HOST=127.0.0.1` override or run the
+  verified `fix/29-ops-04-local-loopback` candidate; do not weaken the application
+  token validation.
+- On this branch, **Reset demo state** is safe before the first Mission and returns
+  a deliberate empty success. Until
+  [PR #10](https://github.com/kyashp/shepherd/pull/10) merges, unmodified `main`
+  still has the historical `RST-01` clean-start failure.
 - The trusted verifier needs Docker, Colima, or Podman. The command below was
   verified with Docker.
 
@@ -1030,34 +1240,18 @@ files pass with one opt-in live file skipped, 544 tests pass with one skipped, a
 both production builds pass. If counts change, record the new exact result rather
 than copying these numbers.
 
-### 2. Start a clean deterministic QA instance
+### 2. Start the local PoC
 
-Copy this command exactly. If port `3000` is already in use, change the `PORT` line
-and use that same port in every URL below.
-
-If `.tmp/manual-qa` already contains evidence you want to preserve, replace
-`manual-qa` with one new exact suffix in all three path variables; do not delete an
-ambiguous or broad directory merely to obtain a clean run.
+On draft PR #28 and after it merges, configure the required values in the ignored
+repository `.env` and run the direct entry point without additional parameters:
 
 ```sh
-HOST=127.0.0.1 \
-PORT=3000 \
-LOCAL_POC_DATA_ROOT="$PWD/.tmp/manual-qa" \
-SHEPHERD_ROOT="$PWD/.tmp/manual-qa/data/shepherd" \
-SHEPHERD_CODEX_HOME_ROOT="$PWD/.tmp/manual-qa/data/shepherd-codex-homes" \
-SHEPHERD_EXECUTION_MODE=deterministic \
-SHEPHERD_DEMO_MODE=true \
-node --env-file-if-exists=.env --input-type=module -e '
-import { spawn } from "node:child_process";
-const child = spawn("./scripts/start-local-poc.sh", {
-  stdio: "inherit",
-  env: process.env,
-});
-child.on("exit", (code, signal) => {
-  process.exit(code ?? (signal ? 1 : 0));
-});
-'
+./scripts/start-local-poc.sh
 ```
+
+Node parses `.env`; the script never sources it. Exact Docker-default `/app/...`
+data paths are mapped to the platform's local state root, while explicit custom
+host paths remain unchanged. On current `main` before #28 merges, use `npm run poc`.
 
 Wait for `Server listening at http://127.0.0.1:3000`. Keep this terminal open.
 The first run may build `volc-agent-runtime:local`.
@@ -1134,11 +1328,10 @@ updated tests and handover evidence.
    `completed`.
 7. Restore **Automatic resolution** to its original value.
 8. Treat **Bounded model review** as a known misleading/inert control until
-   `MR-01/MR-02` are fixed. Under **Notifications**, verify the [PR #13](https://github.com/kyashp/shepherd/pull/13)
-   `ST-02` state instead: the section says **Unavailable**, each stored preference is
-   labelled **Reserved**, controls are disabled and cannot receive focus or mutate,
-   and interaction sends no settings `PATCH`. Persistence remains future-state data,
-   not notification-delivery evidence.
+   `MR-01/MR-02` are fixed. Under **Notifications**, verify the PR #13 `ST-02` state:
+   the section says **Unavailable**, each stored preference is labelled **Reserved**,
+   controls are disabled and cannot receive focus or mutate, and interaction sends no
+   settings `PATCH`. Persistence remains future-state data, not delivery evidence.
 
 ### 5. Exercise cancellation
 

@@ -86,10 +86,11 @@ Skip this step when already working from the repository root.
 
 ### 3. Start the POC
 
+Configure `ARK_API_KEY` and `ARK_MODEL` in the repository's ignored `.env`, then
+run the single local entry point without additional parameters:
+
 ```bash
-ARK_API_KEY=your-ark-api-key \
-ARK_MODEL=ep-your-endpoint-id \
-npm run poc
+./scripts/start-local-poc.sh
 ```
 
 The first run installs Node.js dependencies and builds the Runtime image. The
@@ -127,17 +128,15 @@ containers but keeps Agent workspaces and conversations.
 - Linux state: `.local/`
 - Custom location: set `LOCAL_POC_DATA_ROOT`
 
-Run the same `npm run poc` command to continue later.
+Run the same `./scripts/start-local-poc.sh` command to continue later.
 
 ### Select a specific container engine
 
-Force Podman when multiple engines are installed:
+Force Podman when multiple engines are installed by setting
+`CONTAINER_ENGINE=podman` in `.env`, then run:
 
 ```bash
-CONTAINER_ENGINE=podman \
-ARK_API_KEY=your-ark-api-key \
-ARK_MODEL=ep-your-endpoint-id \
-npm run poc
+./scripts/start-local-poc.sh
 ```
 
 Colima uses `CONTAINER_ENGINE=docker` because it exposes the Docker CLI.

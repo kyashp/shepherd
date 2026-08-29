@@ -1,3 +1,6 @@
+import { access, mkdir, mkdtemp, rm } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import {
   createApp,
@@ -7,6 +10,7 @@ import {
 import { loadConfig } from "./config.js";
 import type { AgentService } from "./agent-service.js";
 import { emptyShepherdDatabase } from "./database.js";
+import { JsonStore } from "./store.js";
 import type {
   ExecutionContract,
   ProjectGroupMessage,
@@ -21,8 +25,17 @@ import type {
   ShepherdCollisionDetail,
   ShepherdPlaneDetail,
 } from "./shepherd/service.js";
-import { ShepherdControlError } from "./shepherd/service.js";
+import { ShepherdControlError, ShepherdService } from "./shepherd/service.js";
 import type { Agent, AgentRun, Message } from "./types.js";
+
+const appTestRoot = fileURLToPath(
+  new URL("../../../.tmp/shepherd-app-tests/", import.meta.url),
+);
+
+async function makeAppCaseRoot(): Promise<string> {
+  await mkdir(appTestRoot, { recursive: true });
+  return await mkdtemp(path.join(appTestRoot, "reset-"));
+}
 
 const service = {
   listAgents: () => [],
@@ -1207,18 +1220,83 @@ describe("HTTP boundary", () => {
     await enabledApp.close();
   });
 
-  it("guards demo reset and never exposes removed worktree paths", async () => {
+  it("returns an authenticated empty demo reset without creating the fixture", async () => {
+    const caseRoot = await makeAppCaseRoot();
+    const managedRoot = path.join(caseRoot, "managed");
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const shepherd = new ShepherdService({
+      store,
+      managedRoot,
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: {
+        verify: async () => {
+          throw new Error("Verifier must not run during demo reset");
+        },
+      },
+    });
+    await shepherd.initialize();
+    const app = await createApp(
+      loadConfig({
+        NODE_ENV: "test",
+        LOG_LEVEL: "silent",
+        APP_AUTH_TOKEN: "a-strong-reset-test-token",
+        SHEPHERD_DEMO_MODE: "true",
+      }),
+      service,
+      shepherd,
+    );
+    try {
+      const reset = await app.inject({
+        method: "POST",
+        url: "/api/shepherd/demo/reset",
+        headers: { authorization: "Bearer a-strong-reset-test-token" },
+        payload: {},
+      });
+
+      expect(reset.statusCode).toBe(200);
+      expect(reset.json()).toEqual({
+        reset: true,
+        projectId: "auth-demo",
+        restoredHead: null,
+        removedPlaneCount: 0,
+        removed: {
+          missions: 0,
+          contracts: 0,
+          planes: 0,
+          claims: 0,
+          collisions: 0,
+          candidates: 0,
+          events: 0,
+          messages: 0,
+        },
+      });
+      await expect(
+        access(path.join(managedRoot, "repositories", "auth-demo")),
+      ).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await app.close();
+      await rm(caseRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("authenticates and guards initialized demo reset without exposing paths", async () => {
     const resetDeterministicDemo = vi.fn(
       createShepherdService().resetDeterministicDemo,
     );
     const disabledApp = await createApp(
-      loadConfig({ NODE_ENV: "test", SHEPHERD_DEMO_MODE: "false" }),
+      loadConfig({
+        NODE_ENV: "test",
+        APP_AUTH_TOKEN: "a-strong-reset-test-token",
+        SHEPHERD_DEMO_MODE: "false",
+      }),
       service,
       createShepherdService({ resetDeterministicDemo }),
     );
     const disabled = await disabledApp.inject({
       method: "POST",
       url: "/api/shepherd/demo/reset",
+      headers: { authorization: "Bearer a-strong-reset-test-token" },
       payload: {},
     });
     expect(disabled.statusCode).toBe(403);
@@ -1226,13 +1304,18 @@ describe("HTTP boundary", () => {
     await disabledApp.close();
 
     const enabledApp = await createApp(
-      loadConfig({ NODE_ENV: "test", SHEPHERD_DEMO_MODE: "true" }),
+      loadConfig({
+        NODE_ENV: "test",
+        APP_AUTH_TOKEN: "a-strong-reset-test-token",
+        SHEPHERD_DEMO_MODE: "true",
+      }),
       service,
       createShepherdService({ resetDeterministicDemo }),
     );
     const reset = await enabledApp.inject({
       method: "POST",
       url: "/api/shepherd/demo/reset",
+      headers: { authorization: "Bearer a-strong-reset-test-token" },
       payload: {},
     });
     expect(reset.statusCode).toBe(200);
