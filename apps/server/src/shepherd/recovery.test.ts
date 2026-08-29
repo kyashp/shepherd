@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import {
   mkdir,
   mkdtemp,
+  readFile,
   readdir,
   rm,
   symlink,
@@ -51,7 +52,17 @@ async function runFixtureGit(repositoryPath: string, args: string[]): Promise<vo
     execFile(
       "git",
       ["-C", repositoryPath, ...args],
-      { env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" } },
+      {
+        env: {
+          PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin",
+          HOME: "/nonexistent",
+          LANG: "C",
+          LC_ALL: "C",
+          GIT_CONFIG_NOSYSTEM: "1",
+          GIT_CONFIG_GLOBAL: "/dev/null",
+          GIT_TERMINAL_PROMPT: "0",
+        },
+      },
       (error) => (error ? reject(error) : resolve()),
     );
   });
@@ -220,6 +231,67 @@ function evidence(candidateId: string): VerificationEvidence {
 }
 
 describe("startup reconciliation", () => {
+  it("keeps fixture Git commits in the selected repository when GIT_DIR is poisoned", async () => {
+    const temporaryRoot = await mkdtemp(
+      path.join(process.env.TMPDIR ?? ".tmp/shepherd-tests", "recovery-git-env-"),
+    );
+    roots.push(temporaryRoot);
+    const fixtureRepository = path.join(temporaryRoot, "fixture");
+    const decoyRepository = path.join(temporaryRoot, "decoy");
+    await mkdir(fixtureRepository);
+    await mkdir(decoyRepository);
+
+    for (const repository of [fixtureRepository, decoyRepository]) {
+      await runFixtureGit(repository, ["init", "--initial-branch=main"]);
+      await writeFile(path.join(repository, "tracked.txt"), `${path.basename(repository)}\n`);
+      await runFixtureGit(repository, ["add", "--", "tracked.txt"]);
+      await runFixtureGit(repository, [
+        "-c",
+        "user.name=Fixture",
+        "-c",
+        "user.email=fixture@local.invalid",
+        "commit",
+        "-m",
+        "initial fixture",
+      ]);
+    }
+    const fixtureHeadBefore = await readFile(
+      path.join(fixtureRepository, ".git", "refs", "heads", "main"),
+      "utf8",
+    );
+    const decoyHeadBefore = await readFile(
+      path.join(decoyRepository, ".git", "refs", "heads", "main"),
+      "utf8",
+    );
+    await writeFile(path.join(fixtureRepository, "tracked.txt"), "fixture changed\n");
+
+    vi.stubEnv("GIT_DIR", path.join(decoyRepository, ".git"));
+    try {
+      await runFixtureGit(fixtureRepository, ["add", "--", "tracked.txt"]);
+      await runFixtureGit(fixtureRepository, [
+        "-c",
+        "user.name=Fixture",
+        "-c",
+        "user.email=fixture@local.invalid",
+        "commit",
+        "-m",
+        "fixture change",
+      ]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    expect(
+      await readFile(path.join(fixtureRepository, ".git", "refs", "heads", "main"), "utf8"),
+    ).not.toBe(fixtureHeadBefore);
+    await expect(
+      readFile(path.join(decoyRepository, ".git", "refs", "heads", "main"), "utf8"),
+    ).resolves.toBe(decoyHeadBefore);
+    await expect(readFile(path.join(decoyRepository, "tracked.txt"), "utf8")).resolves.toBe(
+      "decoy\n",
+    );
+  });
+
   it("fails closed, recognizes the exact post-CAS window, cleans private artifacts, and is idempotent", async () => {
     const temporaryRoot = await mkdtemp(
       path.join(process.env.TMPDIR ?? ".tmp/shepherd-tests", "recovery-"),
