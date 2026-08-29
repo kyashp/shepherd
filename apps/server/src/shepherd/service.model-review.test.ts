@@ -1,0 +1,623 @@
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { toPublicMissionDetail } from "../app.js";
+import { loadConfig } from "../config.js";
+import { JsonStore } from "../store.js";
+import { BEARER_TRANSPORT, COOKIE_TRANSPORT } from "./auth-fixture.js";
+import type {
+  ModelReviewFinding,
+  ModelReviewInput,
+  ModelReviewResult,
+  ModelReviewer,
+} from "./model-reviewer.js";
+import {
+  ArkModelReviewer,
+  MODEL_REVIEW_MAX_INPUT_BYTES,
+  type ModelReviewerFetch,
+} from "./model-reviewer.js";
+import { ShepherdService } from "./service.js";
+import { HostTrustedFixtureVerifier } from "./test-fixtures/host-trusted-verifier.js";
+
+/**
+ * Each test drives a full deterministic Mission with real Git worktrees and real
+ * trusted fixture checks, which exceeds Vitest's 5s default on ordinary hardware.
+ * Declared locally so this file passes under the repository default config rather
+ * than depending on a --testTimeout flag.
+ */
+const ONE_MISSION_BUDGET_MS = 180_000;
+const TWO_MISSION_BUDGET_MS = 360_000;
+
+const repositoryTestRoot = fileURLToPath(
+  new URL("../../../../.tmp/shepherd-tests/", import.meta.url),
+);
+const cleanupRoots: string[] = [];
+
+/**
+ * Docker Desktop can step its wall clock backwards while these Git-heavy
+ * Missions run. Use the service's existing clock seam so test persistence
+ * remains deterministic and lifecycle timestamps never regress.
+ */
+function monotonicTestClock(): () => Date {
+  let nextTimestamp = Date.now();
+  return () => new Date(nextTimestamp++);
+}
+
+/** Distinct prefix from service.test.ts: both files run in parallel under one root. */
+async function makeCaseRoot(): Promise<string> {
+  await mkdir(repositoryTestRoot, { recursive: true });
+  const root = await mkdtemp(path.join(repositoryTestRoot, "model-review-"));
+  cleanupRoots.push(root);
+  return root;
+}
+
+afterEach(async () => {
+  while (cleanupRoots.length > 0) {
+    const root = cleanupRoots.pop();
+    if (root) await rm(root, { recursive: true, force: true });
+  }
+});
+
+async function gitOutput(cwd: string, args: string[]): Promise<string> {
+  return await new Promise<string>((resolve, reject) => {
+    execFile(
+      "git",
+      args,
+      {
+        cwd,
+        env: {
+          PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin",
+          HOME: "/nonexistent",
+          GIT_CONFIG_NOSYSTEM: "1",
+          GIT_CONFIG_GLOBAL: "/dev/null",
+          GIT_TERMINAL_PROMPT: "0",
+          LANG: "C",
+          LC_ALL: "C",
+        },
+        encoding: "utf8",
+        timeout: 15_000,
+        maxBuffer: 262_144,
+        windowsHide: true,
+      },
+      (error, stdout) => {
+        if (error) reject(error);
+        else resolve(stdout.trim());
+      },
+    );
+  });
+}
+
+/** Records every call so independence assertions can never pass vacuously. */
+class ScriptedReviewer implements ModelReviewer {
+  readonly inputs: unknown[] = [];
+  readonly signals: Array<AbortSignal | undefined> = [];
+
+  constructor(
+    private readonly script: (
+      call: number,
+      input: unknown,
+    ) => Promise<ModelReviewResult>,
+  ) {}
+
+  async review(input: unknown, signal?: AbortSignal): Promise<ModelReviewResult> {
+    this.inputs.push(structuredClone(input));
+    this.signals.push(signal);
+    return await this.script(this.inputs.length, input);
+  }
+}
+
+const completed =
+  (findings: ModelReviewFinding[]) =>
+  async (): Promise<ModelReviewResult> => ({ status: "completed", findings });
+
+/**
+ * Deliberately ignores its caller signal and never settles. Cancellation must be
+ * bounded by ShepherdService itself rather than relying on a cooperative adapter.
+ */
+class AbortIgnoringReviewer implements ModelReviewer {
+  readonly inputs: unknown[] = [];
+  readonly signals: Array<AbortSignal | undefined> = [];
+
+  async review(input: unknown, signal?: AbortSignal): Promise<ModelReviewResult> {
+    this.inputs.push(structuredClone(input));
+    this.signals.push(signal);
+    return await new Promise<ModelReviewResult>(() => {});
+  }
+}
+
+async function makeService(options: {
+  reviewer?: ModelReviewer;
+  sensitiveValues?: string[];
+  makeReviewer?: (caseRoot: string) => ModelReviewer;
+  modelReviewBounds?: { deadlineMs?: number; cancellationPollMs?: number };
+}): Promise<{ service: ShepherdService; caseRoot: string; storePath: string }> {
+  const caseRoot = await makeCaseRoot();
+  const storePath = path.join(caseRoot, "state.json");
+  const sensitiveValues = options.sensitiveValues ?? [];
+  const store = new JsonStore(storePath, { sensitiveValues });
+  await store.initialize();
+  const reviewer = options.makeReviewer?.(caseRoot) ?? options.reviewer;
+  const service = new ShepherdService({
+    store,
+    managedRoot: path.join(caseRoot, "managed"),
+    agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+    verifier: new HostTrustedFixtureVerifier(),
+    sensitiveValues,
+    now: monotonicTestClock(),
+    ...(reviewer ? { reviewer } : {}),
+    ...(options.modelReviewBounds ? { modelReviewBounds: options.modelReviewBounds } : {}),
+  });
+  await service.initialize();
+  return { service, caseRoot, storePath };
+}
+
+function providerEnvelope(review: unknown = { findings: [] }) {
+  return {
+    id: "resp-provider-id-must-not-escape",
+    object: "response",
+    status: "completed",
+    store: false,
+    output: [
+      { type: "reasoning", id: "reasoning-provider-id", summary: [] },
+      {
+        type: "message",
+        id: "message-provider-id",
+        role: "assistant",
+        status: "completed",
+        content: [
+          { type: "output_text", text: JSON.stringify(review), annotations: [] },
+        ],
+      },
+    ],
+  };
+}
+
+function completedResponse(review: unknown = { findings: [] }): Response {
+  return new Response(JSON.stringify(providerEnvelope(review)), {
+    status: 200,
+    headers: { "content-type": "application/json; charset=utf-8" },
+  });
+}
+
+function advisoryEvents(service: ShepherdService, missionId: string) {
+  const events = service.missionDetail(missionId)?.events ?? [];
+  return {
+    all: events,
+    completed: events.filter((event) => event.type === "model_review_completed"),
+    degraded: events.filter((event) => event.type === "model_review_degraded"),
+  };
+}
+
+/** The deterministic outcome every advisory case must leave byte-identical. */
+function expectDeterministicResolution(
+  service: ShepherdService,
+  missionId: string,
+): void {
+  const detail = service.missionDetail(missionId);
+  expect(detail).not.toBeNull();
+  if (!detail) throw new Error("Mission detail was not persisted");
+  expect(detail.mission.state).toBe("completed");
+  expect(detail.mission.failure).toBeNull();
+  expect(detail.collisions).toHaveLength(1);
+  const collision = detail.collisions[0];
+  if (!collision) throw new Error("Collision was not persisted");
+  expect(collision.key).toBe("auth.transport");
+  expect(collision.detectionMechanism).toBe("deterministic");
+  expect(
+    [collision.leftClaim.value, collision.rightClaim.value].sort(),
+  ).toEqual([BEARER_TRANSPORT, COOKIE_TRANSPORT].sort());
+  expect(detail.candidates).toHaveLength(2);
+  const selected = detail.candidates.find((item) => item.selectionState === "selected");
+  const rejected = detail.candidates.find((item) => item.selectionState === "rejected");
+  if (!selected || !rejected) throw new Error("Candidate selection was not persisted");
+  expect(selected.targetValue).toBe(COOKIE_TRANSPORT);
+  expect(selected.executionState).toBe("passed");
+  expect(selected.promotionState).toBe("promoted");
+  expect(rejected.targetValue).toBe(BEARER_TRANSPORT);
+  expect(rejected.promotionState).toBe("not_started");
+}
+
+describe("Shepherd advisory model review composition", () => {
+  it("MR-T05 completes the deterministic Mission with no reviewer composed", async () => {
+    const { service } = await makeService({});
+
+    const result = await service.runDeterministicDemo();
+
+    expectDeterministicResolution(service, result.mission.id);
+    const events = advisoryEvents(service, result.mission.id);
+    expect(events.completed).toHaveLength(0);
+    expect(events.degraded).toHaveLength(0);
+  }, ONE_MISSION_BUDGET_MS);
+
+  it("MR-T06 calls the reviewer exactly once with bounded trusted evidence", async () => {
+    const reviewer = new ScriptedReviewer(completed([]));
+    const { service, caseRoot } = await makeService({ reviewer });
+
+    const result = await service.runDeterministicDemo();
+
+    expect(reviewer.inputs).toHaveLength(1);
+    const input = reviewer.inputs[0] as ModelReviewInput;
+    expect(input.contracts).toHaveLength(2);
+    const detail = service.missionDetail(result.mission.id);
+    if (!detail) throw new Error("Mission detail was not persisted");
+    for (const contract of input.contracts) {
+      const persisted = detail.contracts.find((item) => item.id === contract.contractId);
+      expect(persisted?.state).toBe("verified");
+      expect(contract.objective.length).toBeGreaterThan(0);
+      expect(contract.manifestSummary.length).toBeGreaterThan(0);
+      expect(contract.claims.length).toBeGreaterThan(0);
+      for (const claim of contract.claims) {
+        expect(claim.mode).toBe("exclusive");
+      }
+      expect(contract.changedFiles.length).toBeGreaterThan(0);
+      for (const file of contract.changedFiles) {
+        expect(path.isAbsolute(file)).toBe(false);
+      }
+    }
+    const serialized = JSON.stringify(input);
+    expect(serialized).not.toContain(caseRoot);
+    expect(serialized).not.toContain(".shepherd/result.json");
+    expect(Buffer.byteLength(serialized, "utf8")).toBeLessThanOrEqual(
+      MODEL_REVIEW_MAX_INPUT_BYTES,
+    );
+  }, ONE_MISSION_BUDGET_MS);
+
+  it("MR-T03 makes modelReviewEnabled causally gate the reviewer call", async () => {
+    const reviewer = new ScriptedReviewer(completed([]));
+    const { service } = await makeService({ reviewer });
+
+    await service.updateSettings({ modelReviewEnabled: false });
+    expect(service.settings().modelReviewEnabled).toBe(false);
+    const disabledRun = await service.runDeterministicDemo();
+    expect(reviewer.inputs).toHaveLength(0);
+    expectDeterministicResolution(service, disabledRun.mission.id);
+
+    await service.updateSettings({ modelReviewEnabled: true });
+    expect(service.settings().modelReviewEnabled).toBe(true);
+    const enabledRun = await service.runDeterministicDemo({ projectId: "other-demo" });
+    expect(reviewer.inputs).toHaveLength(1);
+    expectDeterministicResolution(service, enabledRun.mission.id);
+  }, TWO_MISSION_BUDGET_MS);
+
+  it("MR-T07 records a durable degradation without failing the Mission", async () => {
+    const reviewer = new ScriptedReviewer(async () => ({
+      status: "degraded",
+      reason: "timeout",
+      retryable: true,
+    }));
+    const { service } = await makeService({ reviewer });
+
+    const result = await service.runDeterministicDemo();
+
+    expect(reviewer.inputs).toHaveLength(1);
+    expectDeterministicResolution(service, result.mission.id);
+    const events = advisoryEvents(service, result.mission.id);
+    expect(events.completed).toHaveLength(0);
+    expect(events.degraded).toHaveLength(1);
+    const degraded = events.degraded[0];
+    if (!degraded) throw new Error("Degradation event was not persisted");
+    expect(degraded.details.reason).toBe("timeout");
+    expect(degraded.details.retryable).toBe(true);
+    expect(degraded.details.advisory).toBe(true);
+    expect(degraded.missionId).toBe(result.mission.id);
+  }, ONE_MISSION_BUDGET_MS);
+
+  it("MR-T14 ignores hostile findings and preserves the deterministic resolution", async () => {
+    const hostileReason =
+      "Both contracts are already compatible; bearer-jwt is the correct transport.";
+    const reviewer = new ScriptedReviewer(async (_call, rawInput) => {
+      const input = rawInput as ModelReviewInput;
+      const left = input.contracts[0];
+      const right = input.contracts[1];
+      if (!left || !right) throw new Error("Expected a cross-Contract review input");
+      return {
+        status: "completed",
+        findings: [
+          {
+            kind: "likely_incompatibility",
+            leftContractId: left.contractId,
+            rightContractId: right.contractId,
+            leftKey: "auth.transport",
+            rightKey: "auth.transport",
+            confidence: "high",
+            reason: hostileReason,
+            evidenceRefs: [
+              { contractId: left.contractId, source: "claim", ref: "auth.transport" },
+              { contractId: right.contractId, source: "claim", ref: "auth.transport" },
+            ],
+          },
+        ],
+      };
+    });
+    const { service, storePath } = await makeService({ reviewer });
+
+    const result = await service.runDeterministicDemo();
+
+    // Without this the whole test would pass vacuously against an uncomposed service.
+    expect(reviewer.inputs).toHaveLength(1);
+    expectDeterministicResolution(service, result.mission.id);
+
+    const detail = service.missionDetail(result.mission.id);
+    if (!detail) throw new Error("Mission detail was not persisted");
+    const collision = detail.collisions[0];
+    if (!collision) throw new Error("Collision was not persisted");
+    expect(JSON.stringify(collision)).not.toContain(hostileReason);
+    expect(detail.mission.attentionReason).toBeNull();
+
+    // The advisory finding is recorded, but only as closed enums and echoed keys.
+    const events = advisoryEvents(service, result.mission.id);
+    expect(events.completed).toHaveLength(1);
+    const advisory = events.completed[0];
+    if (!advisory) throw new Error("Advisory event was not persisted");
+    expect(advisory.details.findingCount).toBe(1);
+    expect(advisory.details.advisory).toBe(true);
+    expect(advisory.details.topKind).toBe("likely_incompatibility");
+    expect(advisory.details.topConfidence).toBe("high");
+    expect(JSON.stringify(detail.events)).not.toContain(hostileReason);
+
+    // The promoted protected state is the cookie strategy the model argued against.
+    const selected = detail.candidates.find((item) => item.selectionState === "selected");
+    const selectedPlane = detail.planes.find((item) => item.id === selected?.planeId);
+    expect(result.promotedHead).toBe(selectedPlane?.headCommit);
+    expect(result.promotedHead).toBe(
+      await gitOutput(detail.project.repositoryPath, ["rev-parse", "HEAD"]),
+    );
+    expect(result.promotedHead).toBe(detail.project.protectedHeadCommit);
+
+    // The advisory event survives persistence validation and the public DTO.
+    expect(await readFile(storePath, "utf8")).toContain("model_review_completed");
+    const dto = toPublicMissionDetail(detail, []);
+    const advisoryDto = dto.events.find(
+      (event) => event.type === "model_review_completed",
+    );
+    expect(advisoryDto?.details.findingCount).toBe(1);
+    expect(advisoryDto?.details.advisory).toBe(true);
+  }, ONE_MISSION_BUDGET_MS);
+
+  it("MR-T10 converts a thrown reviewer into a durable degradation without leaking", async () => {
+    const canary = "MODEL-REVIEW-CANARY-thrown-4471";
+    const reviewer = new ScriptedReviewer(async () => {
+      throw new Error(`hostile reviewer leaked ${canary}`);
+    });
+    const { service, storePath } = await makeService({
+      reviewer,
+      sensitiveValues: [canary],
+    });
+
+    const result = await service.runDeterministicDemo();
+
+    expect(reviewer.inputs).toHaveLength(1);
+    expectDeterministicResolution(service, result.mission.id);
+    const events = advisoryEvents(service, result.mission.id);
+    expect(events.degraded).toHaveLength(1);
+    expect(events.degraded[0]?.details.reason).toBe("provider_error");
+    expect(events.degraded[0]?.details.retryable).toBe(false);
+    expect((await readFile(storePath, "utf8")).includes(canary)).toBe(false);
+    expect(JSON.stringify(service.state()).includes(canary)).toBe(false);
+  }, ONE_MISSION_BUDGET_MS);
+
+  it("MR-T10b converts malformed injected results into explicit degradations", async () => {
+    const malformedResults: unknown[] = [
+      null,
+      { status: "completed" },
+      { status: "completed", findings: {} },
+    ];
+    const reviewer = new ScriptedReviewer(
+      async (call) => malformedResults[call - 1] as ModelReviewResult,
+    );
+    const { service } = await makeService({ reviewer });
+
+    for (const [index] of malformedResults.entries()) {
+      const result = await service.runDeterministicDemo({
+        projectId: `malformed-review-${index + 1}`,
+      });
+
+      expectDeterministicResolution(service, result.mission.id);
+      const events = advisoryEvents(service, result.mission.id);
+      expect(events.completed).toHaveLength(0);
+      expect(events.degraded).toHaveLength(1);
+      expect(events.degraded[0]?.details.reason).toBe("invalid_response");
+      expect(events.degraded[0]?.details.retryable).toBe(false);
+    }
+    expect(reviewer.inputs).toHaveLength(malformedResults.length);
+  }, TWO_MISSION_BUDGET_MS);
+
+  it("MR-T04 records nothing when the reviewer reports itself disabled", async () => {
+    const reviewer = new ScriptedReviewer(async () => ({ status: "disabled" }));
+    const { service } = await makeService({ reviewer });
+
+    const result = await service.runDeterministicDemo();
+
+    expect(reviewer.inputs).toHaveLength(1);
+    expectDeterministicResolution(service, result.mission.id);
+    const events = advisoryEvents(service, result.mission.id);
+    expect(events.completed).toHaveLength(0);
+    expect(events.degraded).toHaveLength(0);
+  }, ONE_MISSION_BUDGET_MS);
+
+  it("MR-T12 records nothing when the reviewer reports cancellation", async () => {
+    const reviewer = new ScriptedReviewer(async () => ({ status: "cancelled" }));
+    const { service } = await makeService({ reviewer });
+
+    const result = await service.runDeterministicDemo();
+
+    expect(reviewer.inputs).toHaveLength(1);
+    expectDeterministicResolution(service, result.mission.id);
+    const events = advisoryEvents(service, result.mission.id);
+    expect(events.completed).toHaveLength(0);
+    expect(events.degraded).toHaveLength(0);
+  }, ONE_MISSION_BUDGET_MS);
+
+  it("MR-T16 never lets a configured secret cross the provider boundary", async () => {
+    const apiKey = "ark-secret-value-must-not-escape-123456";
+    const fetchImpl = vi.fn<ModelReviewerFetch>(async () => completedResponse());
+    const { service, storePath } = await makeService({
+      sensitiveValues: [apiKey],
+      makeReviewer: () =>
+        new ArkModelReviewer({
+          enabled: true,
+          baseUrl: "https://ark.example.test/api/v3/",
+          apiKey,
+          model: "shepherd-review-model",
+          timeoutMs: 5_000,
+          sensitiveValues: [apiKey],
+          fetchImpl,
+        }),
+    });
+
+    const result = await service.runDeterministicDemo();
+
+    // The real adapter accepted the service-built input rather than rejecting it
+    // as invalid_input, which is the only proof the mapping satisfies its schema.
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const body = String(fetchImpl.mock.calls[0]?.[1]?.body ?? "");
+    expect(body.length).toBeGreaterThan(0);
+    expect(body.includes(apiKey)).toBe(false);
+    expect(body.includes("SHEPHERD_EXECUTION_ENVELOPE_V1")).toBe(false);
+
+    expectDeterministicResolution(service, result.mission.id);
+    const events = advisoryEvents(service, result.mission.id);
+    expect(events.completed).toHaveLength(1);
+    expect(events.degraded).toHaveLength(0);
+    expect((await readFile(storePath, "utf8")).includes(apiKey)).toBe(false);
+  }, ONE_MISSION_BUDGET_MS);
+
+  it("MR-T11 bounds a reviewer that never returns and still completes the Mission", async () => {
+    let released: (() => void) | null = null;
+    const entered = new Promise<void>((resolve) => {
+      released = resolve;
+    });
+    const reviewer = new ScriptedReviewer(async () => {
+      released?.();
+      // A fake reviewer has no internal deadline. Only the service bound can stop it.
+      return await new Promise<ModelReviewResult>(() => {});
+    });
+    const { service } = await makeService({
+      reviewer,
+      modelReviewBounds: { deadlineMs: 750, cancellationPollMs: 25 },
+    });
+
+    const result = await service.runDeterministicDemo();
+    await entered;
+
+    expect(reviewer.inputs).toHaveLength(1);
+    expectDeterministicResolution(service, result.mission.id);
+    const events = advisoryEvents(service, result.mission.id);
+    expect(events.degraded).toHaveLength(1);
+    expect(events.degraded[0]?.details.reason).toBe("timeout");
+    expect(events.degraded[0]?.details.retryable).toBe(true);
+    // The service bound must abort the losing request rather than leak it.
+    expect(reviewer.signals[0]?.aborted).toBe(true);
+  }, ONE_MISSION_BUDGET_MS);
+
+  it("MR-T06b skips the review when fewer than two Contracts are verified", async () => {
+    const reviewer = new ScriptedReviewer(completed([]));
+    const { service } = await makeService({ reviewer });
+
+    // buildModelReviewInput requires a cross-Contract pair; one Contract is not
+    // reviewable, so the reviewer must never be called and nothing is recorded.
+    const input = (
+      service as unknown as {
+        buildModelReviewInput: (missionId: string) => unknown;
+      }
+    ).buildModelReviewInput("mission-that-does-not-exist");
+    expect(input).toBeNull();
+    expect(reviewer.inputs).toHaveLength(0);
+  }, ONE_MISSION_BUDGET_MS);
+
+  it("MR-T17 composes sensitiveValues so an empty auth token cannot disable the reviewer", async () => {
+    // APP_AUTH_TOKEN is legitimately empty on the documented loopback default, and
+    // ArkModelReviewer rejects its entire configuration when any supplied sensitive
+    // value is shorter than 8 characters. Composing the raw pair would make the
+    // reviewer permanently inert behind a misleading configuration_error, without
+    // ever attempting a request. This pins the exact composition index.ts performs.
+    const config = loadConfig({
+      ARK_API_KEY: "ark-key-value-123456",
+      ARK_MODEL: "ep-agent-model",
+    });
+    expect(config.authToken).toBe("");
+
+    const fetchImpl = vi.fn<ModelReviewerFetch>(async () => completedResponse());
+    const reviewer = new ArkModelReviewer({
+      enabled: true,
+      baseUrl: config.arkBaseUrl,
+      apiKey: config.arkApiKey,
+      model: config.shepherdModel,
+      timeoutMs: 5_000,
+      sensitiveValues: [config.arkApiKey, config.authToken].filter(
+        (value) => value.length >= 8,
+      ),
+      fetchImpl,
+    });
+
+    const result = await reviewer.review({
+      contracts: [
+        { contractId: "contract-left", objective: "left", manifestSummary: "left summary",
+          claims: [{ key: "auth.transport", value: "bearer-jwt", scope: "authentication", mode: "exclusive" }],
+          changedFiles: ["src/frontend/auth.json"], diffSummary: "1 file changed" },
+        { contractId: "contract-right", objective: "right", manifestSummary: "right summary",
+          claims: [{ key: "auth.transport", value: "http-only-session-cookie", scope: "authentication", mode: "exclusive" }],
+          changedFiles: ["src/backend/auth.json"], diffSummary: "1 file changed" },
+      ],
+    });
+
+    expect(result.status).toBe("completed");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(String(fetchImpl.mock.calls[0]?.[1]?.body ?? "").includes(config.arkApiKey)).toBe(
+      false,
+    );
+  });
+
+  it("MR-T13 lets durable cancellation win while a review is in flight", async () => {
+    const reviewer = new AbortIgnoringReviewer();
+    const { service } = await makeService({
+      reviewer,
+      // A short deadline keeps the RED failure bounded. Correct cancellation must
+      // settle much sooner even though this reviewer ignores AbortSignal forever.
+      modelReviewBounds: { cancellationPollMs: 25, deadlineMs: 1_500 },
+    });
+
+    const { missionId } = await service.startDeterministicDemo();
+    // The review runs after both Contracts verify and integrate, so wait for the
+    // reviewer to actually be in flight rather than racing the Mission start.
+    await vi.waitFor(() => expect(reviewer.inputs).toHaveLength(1), {
+      timeout: 60_000,
+      interval: 25,
+    });
+
+    const detailBefore = service.missionDetail(missionId);
+    const headBefore = detailBefore?.project.protectedHeadCommit;
+    expect(headBefore).toBeTruthy();
+
+    const cancelStartedAt = performance.now();
+    await service.cancelMission(missionId);
+    const cancelElapsedMs = performance.now() - cancelStartedAt;
+
+    // The poller must both abort and independently settle the service-level race;
+    // otherwise cancelMission blocks until the 1.5s review deadline.
+    expect(reviewer.signals[0]?.aborted).toBe(true);
+    expect(cancelElapsedMs).toBeLessThan(750);
+
+    await vi.waitFor(
+      () => expect(service.missionDetail(missionId)?.mission.state).toBe("cancelled"),
+      { timeout: 60_000, interval: 25 },
+    );
+
+    const detail = service.missionDetail(missionId);
+    if (!detail) throw new Error("Mission detail was not persisted");
+    // A cancelled Mission records no advisory outcome: cancellation is not a
+    // degradation, and nothing may look like advisory evidence after the stop.
+    const events = advisoryEvents(service, missionId);
+    expect(events.completed).toHaveLength(0);
+    expect(events.degraded).toHaveLength(0);
+    // Durable cancellation wins over everything downstream of the review.
+    expect(detail.collisions).toHaveLength(0);
+    expect(detail.candidates).toHaveLength(0);
+    expect(detail.project.protectedHeadCommit).toBe(headBefore);
+    expect(
+      await gitOutput(detail.project.repositoryPath, ["rev-parse", "HEAD"]),
+    ).toBe(headBefore);
+  }, ONE_MISSION_BUDGET_MS);
+});
