@@ -220,6 +220,12 @@ export interface ShepherdServiceOptions {
    * collision detection, winner selection, or promotion.
    */
   reviewer?: ModelReviewer;
+  /**
+   * Internal test-only seam. Bounds an injected reviewer that does not bound
+   * itself, and sets how often an in-flight review re-checks durable
+   * cancellation. Production composition leaves both at their defaults.
+   */
+  modelReviewBounds?: { deadlineMs?: number; cancellationPollMs?: number };
 }
 
 export interface DeterministicDemoOptions {
@@ -525,6 +531,8 @@ export class ShepherdService {
   private readonly contractTimeoutMs: number;
   private readonly candidateTimeoutMs: number;
   private readonly reviewer: ModelReviewer | null;
+  private readonly modelReviewDeadlineMs: number;
+  private readonly modelReviewPollMs: number;
   private initialization: Promise<void> | null = null;
   private readonly activeProjects = new Set<string>();
   private readonly backgroundRuns = new Map<
@@ -559,6 +567,15 @@ export class ShepherdService {
       "Candidate",
     );
     this.reviewer = options.reviewer ?? null;
+    this.modelReviewDeadlineMs = Math.max(
+      1,
+      options.modelReviewBounds?.deadlineMs ?? MODEL_REVIEW_SERVICE_DEADLINE_MS,
+    );
+    this.modelReviewPollMs = Math.max(
+      1,
+      options.modelReviewBounds?.cancellationPollMs ??
+        MODEL_REVIEW_CANCELLATION_POLL_MS,
+    );
   }
 
   async initialize(): Promise<void> {
@@ -3407,16 +3424,18 @@ export class ShepherdService {
       const controller = new AbortController();
       const poll = setInterval(() => {
         if (this.missionIsCancelled(missionId)) controller.abort();
-      }, MODEL_REVIEW_CANCELLATION_POLL_MS);
+      }, this.modelReviewPollMs);
       poll.unref?.();
       let deadline: ReturnType<typeof setTimeout> | undefined;
       let result: ModelReviewResult;
       try {
         const bound = new Promise<ModelReviewResult>((resolve) => {
-          deadline = setTimeout(
-            () => resolve({ status: "degraded", reason: "timeout", retryable: true }),
-            MODEL_REVIEW_SERVICE_DEADLINE_MS,
-          );
+          deadline = setTimeout(() => {
+            // Stop the losing request rather than leaving it in flight. Promise.race
+            // already subscribes to both inputs, so a late rejection stays handled.
+            controller.abort();
+            resolve({ status: "degraded", reason: "timeout", retryable: true });
+          }, this.modelReviewDeadlineMs);
           deadline.unref?.();
         });
         result = await Promise.race([reviewer.review(input, controller.signal), bound]);

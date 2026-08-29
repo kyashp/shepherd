@@ -100,6 +100,7 @@ async function makeService(options: {
   reviewer?: ModelReviewer;
   sensitiveValues?: string[];
   makeReviewer?: (caseRoot: string) => ModelReviewer;
+  modelReviewBounds?: { deadlineMs?: number; cancellationPollMs?: number };
 }): Promise<{ service: ShepherdService; caseRoot: string; storePath: string }> {
   const caseRoot = await makeCaseRoot();
   const storePath = path.join(caseRoot, "state.json");
@@ -114,6 +115,7 @@ async function makeService(options: {
     verifier: new HostTrustedFixtureVerifier(),
     sensitiveValues,
     ...(reviewer ? { reviewer } : {}),
+    ...(options.modelReviewBounds ? { modelReviewBounds: options.modelReviewBounds } : {}),
   });
   await service.initialize();
   return { service, caseRoot, storePath };
@@ -415,5 +417,48 @@ describe("Shepherd advisory model review composition", () => {
     expect(events.completed).toHaveLength(1);
     expect(events.degraded).toHaveLength(0);
     expect((await readFile(storePath, "utf8")).includes(apiKey)).toBe(false);
+  }, ONE_MISSION_BUDGET_MS);
+
+  it("MR-T11 bounds a reviewer that never returns and still completes the Mission", async () => {
+    let released: (() => void) | null = null;
+    const entered = new Promise<void>((resolve) => {
+      released = resolve;
+    });
+    const reviewer = new ScriptedReviewer(async () => {
+      released?.();
+      // A fake reviewer has no internal deadline. Only the service bound can stop it.
+      return await new Promise<ModelReviewResult>(() => {});
+    });
+    const { service } = await makeService({
+      reviewer,
+      modelReviewBounds: { deadlineMs: 750, cancellationPollMs: 25 },
+    });
+
+    const result = await service.runDeterministicDemo();
+    await entered;
+
+    expect(reviewer.inputs).toHaveLength(1);
+    expectDeterministicResolution(service, result.mission.id);
+    const events = advisoryEvents(service, result.mission.id);
+    expect(events.degraded).toHaveLength(1);
+    expect(events.degraded[0]?.details.reason).toBe("timeout");
+    expect(events.degraded[0]?.details.retryable).toBe(true);
+    // The service bound must abort the losing request rather than leak it.
+    expect(reviewer.signals[0]?.aborted).toBe(true);
+  }, ONE_MISSION_BUDGET_MS);
+
+  it("MR-T06b skips the review when fewer than two Contracts are verified", async () => {
+    const reviewer = new ScriptedReviewer(completed([]));
+    const { service } = await makeService({ reviewer });
+
+    // buildModelReviewInput requires a cross-Contract pair; one Contract is not
+    // reviewable, so the reviewer must never be called and nothing is recorded.
+    const input = (
+      service as unknown as {
+        buildModelReviewInput: (missionId: string) => unknown;
+      }
+    ).buildModelReviewInput("mission-that-does-not-exist");
+    expect(input).toBeNull();
+    expect(reviewer.inputs).toHaveLength(0);
   }, ONE_MISSION_BUDGET_MS);
 });

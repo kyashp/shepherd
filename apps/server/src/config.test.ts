@@ -12,6 +12,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  isShepherdModelReviewConfigured,
   loadConfig,
   resolveVerifierOwnerId,
   VERIFIER_INSTALLATION_MARKER_FILE,
@@ -300,5 +301,41 @@ describe("Shepherd configuration", () => {
         "utf8",
       ),
     ).toBe("v1\n");
+  });
+});
+
+describe("Shepherd advisory model review configuration", () => {
+  const configured = {
+    ARK_API_KEY: "ark-key-value-123456",
+    ARK_MODEL: "ep-agent-model",
+  };
+
+  it("is configured when SHEPHERD_MODEL falls back to a usable ARK_MODEL", () => {
+    expect(isShepherdModelReviewConfigured(loadConfig(configured))).toBe(true);
+  });
+
+  it("is configured from a SHEPHERD_MODEL distinct from ARK_MODEL", () => {
+    const config = loadConfig({ ...configured, SHEPHERD_MODEL: "ep-review-model" });
+    expect(config.shepherdModel).not.toBe(config.arkModel);
+    expect(isShepherdModelReviewConfigured(config)).toBe(true);
+  });
+
+  it("is unconfigured without a usable Ark credential", () => {
+    expect(isShepherdModelReviewConfigured(loadConfig({ ARK_MODEL: "ep-agent-model" }))).toBe(
+      false,
+    );
+    expect(
+      isShepherdModelReviewConfigured(
+        loadConfig({ ...configured, ARK_API_KEY: "replace-with-your-api-key" }),
+      ),
+    ).toBe(false);
+  });
+
+  it("is unconfigured when the review model is still a placeholder", () => {
+    expect(
+      isShepherdModelReviewConfigured(
+        loadConfig({ ...configured, SHEPHERD_MODEL: "replace-with-your-agent-model" }),
+      ),
+    ).toBe(false);
   });
 });
