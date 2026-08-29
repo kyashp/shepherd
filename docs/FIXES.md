@@ -210,9 +210,19 @@ that limitation is explicit.
   TST-04 two-arrival, early rejection observer and exact snapshot removal join.
   Never swallow ENOENT, change the cleanup walker or product, add sleeps/retries/
   timeouts, or weaken state/no-promotion/security assertions.
-- **Acceptance/status:** Fixer **READY**. Exact row at least 20/20, full service
-  and strict test typecheck, literal check under contention, integrated/hosted gate;
-  MR-03 and its one live call remain blocked. Live call count is zero.
+- **Observed correction:** test fixture only. The returned-evidence verifier now
+  uses the existing two-arrival barrier, captures the exact sibling
+  `VerificationRequest.planePath`, and exposes bounded release/return joins. The
+  row observes rejection immediately, proves the Mission rejects while that exact
+  contained `verify-*` root still exists, arms the exact-basename removal watcher
+  before release, then joins Mission, sibling and removal in `finally` before
+  teardown. Product, cleanup walker and MR-03 code are unchanged.
+- **Acceptance/status:** Fixer **CANDIDATE**, **90% scoped**, `T,C,S` 3/4.
+  Exact row passed 20/20, both infrastructure rows 40/40, MR-03 matrix 164/164,
+  adjacent service/container/API/store/recovery 82/82, strict test typecheck and
+  two literal checks (Server 591/591 plus two opt-in skips; Web 13/13). Auditor
+  integration/hosted `I`, MR-03 and its one live call remain pending. Live call
+  count is zero.
 
 ### `TST-04` — F-03 fail-fast verification can race service fixture teardown
 
@@ -474,7 +484,7 @@ that limitation is explicit.
 | `GC-05` | Current UI source disables textarea when no project exists; earlier browser observation confirmed it. | Safe read-model initialization or explicit in-panel Mission-start action; preserve composer design. | Worker / ready with GC-02 |
 | `GC-06` | Current lifecycle summaries use Shepherd sender; verified manifest-derived Agent summaries are absent. | Server-authored bounded summary only after verification, attributed to the real Agent ID. | Worker / blocked by targeted lifecycle |
 | `MR-01` | Integrated at `577255e`; provider-free reviewer composition, degradation, deterministic independence and truthful capability UI passed independent audit and hosted run `33268567614`. | Advisory-only composition after trusted evidence remains locked; validate MR-03 partial findings, then one bounded live reviewer call. | Integrated/provider-free audited; below 100 pending MR-03 and `L` |
-| `MR-03` | PR #25 merged to `main` as `5b8f835`; local merge `3c878b3` passes focused matrices but cannot integrate while TST-08 keeps the literal gate red. | Retain independently valid bounded findings; reject only invalid ones; rerun deterministic/security/live only after TST-08. | Local integration blocked by `TST-08`; no live call |
+| `MR-03` | PR #25 merged to `main` as `5b8f835`; local merge `3c878b3` plus the TST-08 test-fixture candidate passes focused matrices and two literal gates. | Retain independently valid bounded findings; reject only invalid ones; Auditor must integrate before the bounded live gate. | Local audit candidate; TST-08 integration and live call pending |
 | `MR-02` | No-Ark browser/API RED showed an enabled “Run” toggle although the process composed no reviewer. The integrated fix publishes one fail-closed capability boolean and renders the preserved preference disabled with explicit **Unavailable** copy; configured PATCH remains functional. | Preserve preference and existing theme; expose no credential/model/endpoint/failure reason. | **RESOLVED + AUDITED** at `577255e`; `T,A,C,B,S,U,I` 7/7 |
 | `ST-01` | Current config parses startup auto-resolution/max Planes, but `index.ts` does not pass them into `ShepherdService`. | Explicit initial-settings composition without overwriting later persisted settings. | Worker / ready |
 | `ST-02` | Notification toggles persisted although no notification behavior consumed them. | Resolved by preserving stored values behind visibly Reserved/Unavailable native disabled controls; no delivery expansion. | **RESOLVED + AUDITED** at merge `d5df930`; `T,C,B,U,I` 5/5 |

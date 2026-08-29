@@ -7,6 +7,29 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — TST-08 returned-evidence teardown quiescence candidate
+
+The Fixer preserved the literal-gate RED and isolated 20/20 scheduling evidence,
+then changed only the returned-infrastructure test fixture. It now coordinates both
+Contract arrivals, attaches the Mission rejection observer immediately, captures
+and validates the exact contained sibling `VerificationRequest.planePath`, proves
+rejection precedes removal, arms an exact-basename watcher before release, and
+joins the sibling, Mission and removal in `finally`. This closes the fixture's
+background-work gap without changing production, MR-03, the cleanup walker,
+timeouts, retry behavior or assertions. No live/model request ran.
+
+Observed local gates:
+
+- exact returned-infrastructure row 20/20 and paired thrown/returned rows 40/40;
+- MR-03 reviewer/service/config matrix 164/164;
+- service/container/API/store/recovery adjacency 82/82;
+- strict Server test-source typecheck;
+- two literal `npm run check` passes: launcher 3/3, Server 591/591 with two
+  opt-in live skips, Web 13/13, strict test-source projects and both builds;
+- diff, credential and stale trusted-snapshot cleanup scans passed. Auditor
+  integration/hosted evidence and MR-03's single bounded live gate remain pending,
+  so this entry makes no audited or 100% claim.
+
 ## 2026-08-30 — MR-03 integration blocked by TST-08
 
 MR-03 merged conflict-free locally as `3c878b3` but was not pushed to `mock-main`.

@@ -561,23 +561,56 @@ function returnedContractInfrastructureEvidence(
 }
 
 class ContractInfrastructureEvidenceVerifier extends HostTrustedFixtureVerifier {
+  readonly siblingSnapshotCaptured: Promise<string>;
+  private markSiblingSnapshotCaptured!: (snapshotPath: string) => void;
+  readonly siblingReturned: Promise<void>;
+  private markSiblingReturned!: () => void;
+  private readonly siblingReleased: Promise<void>;
+  private releaseSiblingVerification!: () => void;
+  private readonly contractPair = new TwoArrivalBarrier();
+
   constructor(
     private readonly canary: string,
     private readonly privatePath: string,
   ) {
     super();
+    this.siblingSnapshotCaptured = new Promise<string>((resolve) => {
+      this.markSiblingSnapshotCaptured = resolve;
+    });
+    this.siblingReturned = new Promise<void>((resolve) => {
+      this.markSiblingReturned = resolve;
+    });
+    this.siblingReleased = new Promise<void>((resolve) => {
+      this.releaseSiblingVerification = resolve;
+    });
   }
 
   override async verify(
     request: VerificationRequest,
   ): Promise<VerificationEvidence> {
-    const evidence = await super.verify(request);
-    if (request.targetType !== "contract") return evidence;
-    return returnedContractInfrastructureEvidence(
-      evidence,
-      this.canary,
-      this.privatePath,
-    );
+    if (request.targetType !== "contract") return await super.verify(request);
+    if (!request.targetId.includes("front")) {
+      this.markSiblingSnapshotCaptured(request.planePath);
+    }
+    await this.contractPair.arrive();
+    if (request.targetId.includes("front")) {
+      return returnedContractInfrastructureEvidence(
+        await super.verify(request),
+        this.canary,
+        this.privatePath,
+      );
+    }
+    await this.siblingReleased;
+    try {
+      return await super.verify(request);
+    } finally {
+      this.markSiblingReturned();
+    }
+  }
+
+  releaseSibling(): void {
+    this.contractPair.release();
+    this.releaseSiblingVerification();
   }
 }
 
@@ -1765,20 +1798,54 @@ describe("Shepherd deterministic walking skeleton", () => {
     const storePath = path.join(caseRoot, "state.json");
     const store = new JsonStore(storePath, { sensitiveValues: [canary] });
     await store.initialize();
+    const verifier = new ContractInfrastructureEvidenceVerifier(canary, privatePath);
     const service = new ShepherdService({
       store,
       managedRoot: path.join(caseRoot, "managed"),
       agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
-      verifier: new ContractInfrastructureEvidenceVerifier(canary, privatePath),
+      verifier,
       sensitiveValues: [canary],
     });
 
+    const run = service.runDeterministicDemo();
+    const runOutcome = run.then(
+      (value) => ({ status: "fulfilled" as const, value }),
+      (reason: unknown) => ({ status: "rejected" as const, reason }),
+    );
+    let siblingSnapshotRoot = "";
+    let snapshotRemoved: Promise<void> | undefined;
     let thrownMessage = "";
     try {
-      await service.runDeterministicDemo();
-    } catch (error) {
-      thrownMessage = error instanceof Error ? error.message : String(error);
+      siblingSnapshotRoot = path.resolve(await verifier.siblingSnapshotCaptured);
+      expect(path.basename(siblingSnapshotRoot)).toMatch(/^verify-/u);
+      expect(path.basename(path.dirname(siblingSnapshotRoot))).toBe(
+        ".trusted-verification",
+      );
+      expect(siblingSnapshotRoot.startsWith(path.resolve(caseRoot) + path.sep)).toBe(
+        true,
+      );
+      const outcome = await runOutcome;
+      expect(outcome.status).toBe("rejected");
+      if (outcome.status !== "rejected") {
+        throw new Error("Returned infrastructure Mission unexpectedly fulfilled");
+      }
+      expect(outcome.reason).toBeInstanceOf(Error);
+      thrownMessage = (outcome.reason as Error).message;
+      await expect(access(siblingSnapshotRoot)).resolves.toBeUndefined();
+
+      snapshotRemoved = settleWithin(waitForOwnedPathRemoval(siblingSnapshotRoot));
+      verifier.releaseSibling();
+      await verifier.siblingReturned;
+      await snapshotRemoved;
+    } finally {
+      verifier.releaseSibling();
+      await Promise.allSettled([
+        run,
+        verifier.siblingReturned,
+        ...(snapshotRemoved ? [snapshotRemoved] : []),
+      ]);
     }
+    await expect(access(siblingSnapshotRoot)).rejects.toMatchObject({ code: "ENOENT" });
 
     const missionId = service.state().missions.at(-1)?.id;
     const detail = service.missionDetail(missionId ?? "missing");
