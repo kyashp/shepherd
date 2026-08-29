@@ -687,3 +687,69 @@ unrelated UI or Phase 4 behavior.
 demo Mission are proven across two fresh end-to-end Missions. Scheduler, Project
 Group parser, and Ark advisory-reviewer modules exist and are focused-test-backed, but
 their service/API integration remains Phase 4 work and is not claimed here.
+
+## ST-02 — Truthful unavailable notification preferences
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Branch:** `fix/6-st-02-notification-truth`
+
+### Root cause and bounded correction
+
+The notification booleans were persisted and round-tripped by the settings API, but
+no delivery or in-app behavior read them. `SettingsPage` nevertheless bound all three
+values to enabled toggles with functional descriptions, so the browser presented
+stored-only values as active product controls.
+
+The Notifications tab now identifies the capability as **Reserved for a future
+release** and **Unavailable**. It continues to render each stored value, but through a
+native disabled toggle paired with a `Reserved` label. The existing settings payload,
+public schemas, persisted values, model-review control, and other tabs are unchanged.
+No notification behavior or external integration was added.
+
+### RED/GREEN evidence
+
+The focused server-rendered React regression was added before the section component.
+Its first valid run failed 1/1 because `NotificationSettingsSection` was undefined.
+After the minimal implementation, the same test passed 1/1 and proved that all three
+rendered checkboxes are disabled while the stored checked values remain visible.
+
+```sh
+../../../node_modules/.bin/vitest run \
+  apps/web/src/pages/SettingsPage.test.tsx --environment node
+# RED: 1 failed — missing NotificationSettingsSection
+# GREEN: 1 passed
+```
+
+### Browser and verification evidence
+
+Headless Chromium rendered the real Vite Settings page with deterministic intercepted
+API responses. At both `1280x800` and `1440x900`, the three notification checkboxes
+were disabled and preserved the supplied `[true, false, true]` checked states. A
+disabled control refused programmatic focus, a scripted click did not change its
+state, no settings PATCH was observed, Save remained disabled, and the page had no
+horizontal overflow. Both screenshots were visually inspected against `docs/UI.jpeg`:
+the cream surface, dark sidebar, purple tab accent, locked-control treatment, spacing,
+and typography remained consistent, with no clipping or overlap. Screenshots were
+kept as temporary local evidence and were not added to the branch.
+
+Commands and observed results:
+
+```sh
+npm run typecheck -w @launchpad/web
+# passed
+
+npm run build -w @launchpad/web
+# passed; Vite transformed 40 modules
+
+VITEST_MAX_WORKERS=1 PATH="<local-node-24-bin>:$PATH" npm run check
+# exit 0 on Node 24.19.0
+# 25 test files passed, 2 skipped
+# 540 tests passed, 5 skipped
+# web and server production builds passed
+```
+
+Earlier full-check attempts on Node 26 and under parallel suite load exposed unrelated
+server integration timeouts and asynchronous cleanup races. The final remaining
+cancellation test passed in isolation (1 passed, 19 skipped), and a fresh full check
+then passed on the documented Node 24 runtime line with one Vitest worker. No server
+test, timeout, implementation, dependency, or assertion was changed.

@@ -39,6 +39,41 @@ function Toggle({ checked, onChange, label, disabled = false }: { checked: boole
   );
 }
 
+export function NotificationSettingsSection({
+  notifications,
+}: {
+  notifications: ShepherdSettings["notifications"];
+}) {
+  return (
+    <>
+      <SettingRow
+        label="Notification preferences"
+        description="Reserved for a future release. Shepherd does not deliver or show notifications yet."
+      >
+        <span className="locked-value"><Icon name="stop" />Unavailable</span>
+      </SettingRow>
+      <SettingRow label="Mission completed" description="Stored preference for future trusted-promotion notifications.">
+        <div className="locked-toggle">
+          <Toggle checked={notifications.missionCompleted} onChange={() => undefined} label="Mission completed notifications" disabled />
+          <span>Reserved</span>
+        </div>
+      </SettingRow>
+      <SettingRow label="Attention required" description="Stored preference for future human-review notifications.">
+        <div className="locked-toggle">
+          <Toggle checked={notifications.attentionRequired} onChange={() => undefined} label="Attention required notifications" disabled />
+          <span>Reserved</span>
+        </div>
+      </SettingRow>
+      <SettingRow label="Collision detected" description="Stored preference for future semantic-collision notifications.">
+        <div className="locked-toggle">
+          <Toggle checked={notifications.collisionDetected} onChange={() => undefined} label="Collision detected notifications" disabled />
+          <span>Reserved</span>
+        </div>
+      </SettingRow>
+    </>
+  );
+}
+
 export function SettingsPage({ system }: { system: SystemInfo | null }) {
   const [settings, setSettings] = useState<ShepherdSettings | null>(null);
   const [draft, setDraft] = useState<ShepherdSettings | null>(null);
@@ -168,17 +203,7 @@ export function SettingsPage({ system }: { system: SystemInfo | null }) {
           ) : null}
 
           {tab === "notifications" ? (
-            <>
-              <SettingRow label="Mission completed" description="Show completion summaries when trusted promotion finishes.">
-                <Toggle checked={draft.notifications.missionCompleted} onChange={(missionCompleted) => setDraft({ ...draft, notifications: { ...draft.notifications, missionCompleted } })} label="Mission completed notifications" />
-              </SettingRow>
-              <SettingRow label="Attention required" description="Surface safe stops that need human review.">
-                <Toggle checked={draft.notifications.attentionRequired} onChange={(attentionRequired) => setDraft({ ...draft, notifications: { ...draft.notifications, attentionRequired } })} label="Attention required notifications" />
-              </SettingRow>
-              <SettingRow label="Collision detected" description="Surface verified semantic incompatibilities as they are persisted.">
-                <Toggle checked={draft.notifications.collisionDetected} onChange={(collisionDetected) => setDraft({ ...draft, notifications: { ...draft.notifications, collisionDetected } })} label="Collision detected notifications" />
-              </SettingRow>
-            </>
+            <NotificationSettingsSection notifications={draft.notifications} />
           ) : null}
         </div>
         <footer className="settings-footer">
