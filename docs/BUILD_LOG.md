@@ -1008,6 +1008,45 @@ Resolution restored current-main documentation and reapplied only ST-02-specific
 evidence. Fresh integrated verification and independent-review results are recorded
 in a follow-up entry only after they are observed.
 
+### Integrated current-main verification
+
+On merge commit `066009b6eda658eee9a66135224d69b3a4dae515`, the effective
+diff against `origin/main` contained exactly the notification page section, its
+focused regression, and these two ST-02 evidence files. Observed results:
+
+```sh
+npx vitest run apps/web/src/pages/SettingsPage.test.tsx
+# 1 file / 1 test passed
+
+npm run typecheck -w @launchpad/web
+# passed
+
+npm run build -w @launchpad/web
+# passed; Vite transformed 40 modules
+
+npm run check
+# launcher 3/3 passed
+# server: 25 files passed, 2 skipped; 554 tests passed, 2 skipped
+# web and server production builds passed
+
+npm audit --json
+# 0 vulnerabilities across 251 dependencies
+
+git diff --check origin/main...HEAD
+# passed
+```
+
+Terminal Playwright/Chromium then repeated the real Vite-page proof at `1280x800`
+and `1440x900`. Both viewports preserved `[true, false, true]`, exposed all three
+checkboxes as natively disabled, rejected direct and sequential focus, and remained
+unchanged after forced label clicks and keyboard activation attempts. Save stayed
+disabled, no settings `PATCH` occurred, and automated geometry checks found no
+horizontal overflow, clipping, or overlap. Console, page, and request error lists
+were empty. The final temporary screenshots were visually inspected against
+`docs/UI.jpeg`; current-main's cream canvas, dark sidebar, updated Shepherd icon,
+purple accent, restrained borders, typography, spacing, and locked-control language
+were preserved. No screenshot binary was added to the effective branch diff.
+
 ## Test-lifecycle stabilization candidate (`#11`)
 
 **Date:** 2026-08-29 (Asia/Singapore)
