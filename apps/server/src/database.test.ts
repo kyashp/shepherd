@@ -640,6 +640,7 @@ describe("Database V2", () => {
     ["invalid Mission state", (database: Database) => ((database.shepherd.missions[0] as { state: string }).state = "done")],
     ["invalid contract state", (database: Database) => ((database.shepherd.contracts[0] as { state: string }).state = "approved")],
     ["invalid Plane state", (database: Database) => ((database.shepherd.planes[0] as { state: string }).state = "mounted")],
+    ["malformed runtime session fingerprint", (database: Database) => (database.shepherd.planes[0]!.runtimeSessionFingerprint = "raw-thread-id")],
     ["malformed authority", (database: Database) => ((database.shepherd.contracts[0]!.authority as unknown as { writable: unknown }).writable = "src/**")],
     ["absolute authority pattern", (database: Database) => (database.shepherd.contracts[0]!.authority.readable = ["/etc/passwd"])],
     ["traversing expected artifact", (database: Database) => (database.shepherd.contracts[0]!.expectedArtifacts[0]!.path = "../escape")],
@@ -696,6 +697,15 @@ describe("Database V2", () => {
   it.each([
     ["duplicate entity ID", (database: Database) => {
       database.shepherd.events[1]!.id = database.shepherd.events[0]!.id;
+    }],
+    ["duplicate Plane execution identity", (database: Database) => {
+      database.shepherd.planes[1]!.executionIdentity =
+        database.shepherd.planes[0]!.executionIdentity;
+    }],
+    ["duplicate runtime session fingerprint", (database: Database) => {
+      const fingerprint = "a".repeat(64);
+      database.shepherd.planes[0]!.runtimeSessionFingerprint = fingerprint;
+      database.shepherd.planes[1]!.runtimeSessionFingerprint = fingerprint;
     }],
     ["duplicate event sequence", (database: Database) => {
       database.shepherd.events[1]!.sequence = database.shepherd.events[0]!.sequence;

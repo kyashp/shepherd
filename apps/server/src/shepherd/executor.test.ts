@@ -12,8 +12,12 @@ describe("DeterministicFixtureExecutor", () => {
       executionId: "contract-1",
       workspacePath: root,
       operation: { kind: "frontend_contract", contractId: "contract-1" },
+      timeoutMs: 1_000,
     });
 
+    expect(executor.kind).toBe("deterministic_fixture");
+    expect(result.runtimeSessionId).toBeNull();
+    expect(result.usage).toBeNull();
     expect(result.changedFiles).toContain("src/frontend/auth.json");
     const manifest = JSON.parse(
       await readFile(path.join(root, ".shepherd/result.json"), "utf8"),
@@ -34,6 +38,7 @@ describe("DeterministicFixtureExecutor", () => {
         candidateId: "candidate-1",
         targetTransport: "http-only-session-cookie",
       },
+      timeoutMs: 1_000,
     });
 
     const frontend = await readFile(

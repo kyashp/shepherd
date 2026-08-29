@@ -234,6 +234,7 @@ export class AgentService {
       codexAvailable: await this.runner.isAvailable(),
       codexSandboxMode: this.config.codexSandboxMode,
       runtimeProvider: this.config.runtimeProvider,
+      shepherdExecutionMode: this.config.shepherdExecutionMode,
       containerEngine:
         this.config.runtimeProvider === "container"
           ? this.config.containerEngine

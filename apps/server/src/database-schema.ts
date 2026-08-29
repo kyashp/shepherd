@@ -383,6 +383,11 @@ const planeSchema = z
     headCommit: gitObjectIdSchema.nullable(),
     purpose: nonEmptyShortTextSchema,
     executionIdentity: idSchema,
+    runtimeSessionFingerprint: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/u)
+      .nullable()
+      .optional(),
     authority: authoritySchema,
     state: z.enum([
       "creating",
@@ -1083,6 +1088,12 @@ function hasValidReferences(database: DatabaseV2): boolean {
   const claims = new Map(shepherd.claims.map((item) => [item.id, item]));
   const collisions = new Map(shepherd.collisions.map((item) => [item.id, item]));
   const candidates = new Map(shepherd.candidates.map((item) => [item.id, item]));
+
+  if (!unique(shepherd.planes.map((plane) => plane.executionIdentity))) return false;
+  const runtimeSessionFingerprints = shepherd.planes.flatMap((plane) =>
+    plane.runtimeSessionFingerprint ? [plane.runtimeSessionFingerprint] : [],
+  );
+  if (!unique(runtimeSessionFingerprints)) return false;
 
   const rootEntities = [
     ...database.agents,

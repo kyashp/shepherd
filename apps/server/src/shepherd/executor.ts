@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import type { RunUsage } from "../types.js";
 import type { ContractResultManifest } from "./domain.js";
 import {
   AUTH_CLAIM_KEY,
@@ -22,17 +23,30 @@ export interface ShepherdExecutionRequest {
   executionId: string;
   workspacePath: string;
   operation: DeterministicOperation;
+  /** Fully constructed, bounded control-plane prompt; required by live execution. */
+  prompt?: string;
+  timeoutMs: number;
 }
 
 export interface ShepherdExecutionResult {
   summary: string;
   changedFiles: string[];
   completedAt: string;
+  /** Transient Runtime identifier. Callers must persist only a one-way fingerprint. */
+  runtimeSessionId: string | null;
+  usage: RunUsage | null;
 }
 
+export type ShepherdExecutorKind = "deterministic_fixture" | "codex_ephemeral";
+
 export interface ShepherdExecutor {
+  readonly kind: ShepherdExecutorKind;
   run(request: ShepherdExecutionRequest): Promise<ShepherdExecutionResult>;
   cancel(executionId: string): Promise<boolean>;
+  reconcileInterrupted?(): Promise<number>;
+  /** Bounded, no-model-spend startup validation for live execution. */
+  preflight?(): Promise<void>;
+  isAvailable?(): Promise<boolean>;
 }
 
 function resolveInside(root: string, relativePath: string): string {
@@ -62,6 +76,7 @@ function authValue(transport: AuthTransport) {
 }
 
 export class DeterministicFixtureExecutor implements ShepherdExecutor {
+  readonly kind = "deterministic_fixture" as const;
   private readonly active = new Map<string, AbortController>();
 
   async run(request: ShepherdExecutionRequest): Promise<ShepherdExecutionResult> {
@@ -101,6 +116,8 @@ export class DeterministicFixtureExecutor implements ShepherdExecutor {
               request.operation.targetTransport,
             changedFiles: ["src/frontend/auth.json", "src/backend/auth.json"],
             completedAt: new Date().toISOString(),
+            runtimeSessionId: null,
+            usage: null,
           };
         }
       }
@@ -163,6 +180,8 @@ export class DeterministicFixtureExecutor implements ShepherdExecutor {
       summary,
       changedFiles: [artifactPath, ".shepherd/result.json"],
       completedAt: new Date().toISOString(),
+      runtimeSessionId: null,
+      usage: null,
     };
   }
 }

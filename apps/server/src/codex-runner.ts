@@ -9,6 +9,7 @@ import type {
   RunnerRequest,
   RunnerResult,
 } from "./types.js";
+import { isFreshEphemeralRunnerRequest } from "./types.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -17,6 +18,7 @@ export interface ParsedEvents {
   threadId: string | null;
   usage: RunUsage | null;
   errors: string[];
+  threadIds?: string[];
 }
 
 export function buildCodexArgs(
@@ -26,6 +28,7 @@ export function buildCodexArgs(
 ): string[] {
   const args = [
     "exec",
+    ...(isFreshEphemeralRunnerRequest(request) ? ["--ephemeral"] : []),
     "--json",
     "--sandbox",
     sandboxMode,
@@ -33,6 +36,13 @@ export function buildCodexArgs(
     "-C",
     workspacePath,
   ];
+  if (isFreshEphemeralRunnerRequest(request)) {
+    if (request.threadId !== null) {
+      throw new Error("Fresh ephemeral Codex requests cannot resume a thread");
+    }
+    args.push("-");
+    return args;
+  }
   if (request.threadId) {
     args.push("resume", request.threadId, request.prompt);
   } else {
@@ -51,6 +61,7 @@ export function parseCodexEventLine(line: string, parsed: ParsedEvents): void {
 
   if (event.type === "thread.started" && typeof event.thread_id === "string") {
     parsed.threadId = event.thread_id;
+    parsed.threadIds?.push(event.thread_id);
   }
 
   if (event.type === "item.completed" && event.item && typeof event.item === "object") {
@@ -63,13 +74,13 @@ export function parseCodexEventLine(line: string, parsed: ParsedEvents): void {
   if (event.type === "turn.completed" && event.usage && typeof event.usage === "object") {
     const usage = event.usage as Record<string, unknown>;
     parsed.usage = {
-      ...(typeof usage.input_tokens === "number"
+      ...(isBoundedTokenCount(usage.input_tokens)
         ? { inputTokens: usage.input_tokens }
         : {}),
-      ...(typeof usage.cached_input_tokens === "number"
+      ...(isBoundedTokenCount(usage.cached_input_tokens)
         ? { cachedInputTokens: usage.cached_input_tokens }
         : {}),
-      ...(typeof usage.output_tokens === "number"
+      ...(isBoundedTokenCount(usage.output_tokens)
         ? { outputTokens: usage.output_tokens }
         : {}),
     };
@@ -86,7 +97,45 @@ export function parseCodexEventLine(line: string, parsed: ParsedEvents): void {
   }
 }
 
+function isBoundedTokenCount(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
+export function resolveRunnerTimeoutMs(
+  request: RunnerRequest,
+  fallback: number,
+): number {
+  const timeout = isFreshEphemeralRunnerRequest(request)
+    ? request.timeoutMs
+    : fallback;
+  if (!Number.isSafeInteger(timeout) || timeout < 1_000) {
+    throw new Error("Codex timeout must be a safe integer of at least 1000 ms");
+  }
+  return timeout;
+}
+
+export function requireEphemeralThreadId(parsed: ParsedEvents): string {
+  const threadIds = parsed.threadIds ?? [];
+  if (threadIds.length === 0) {
+    throw new Error("Codex ephemeral run did not emit thread.started");
+  }
+  if (threadIds.length !== 1) {
+    throw new Error("Codex ephemeral run emitted duplicate thread.started events");
+  }
+  const [threadId] = threadIds;
+  if (
+    !threadId ||
+    threadId !== threadId.trim() ||
+    Buffer.byteLength(threadId, "utf8") > 512 ||
+    /[\u0000-\u001f\u007f]/u.test(threadId)
+  ) {
+    throw new Error("Codex ephemeral run emitted an invalid thread ID");
+  }
+  return threadId;
+}
+
 export class CodexRunner implements AgentRunner {
+  readonly runtimeKind = "local-process" as const;
   private readonly active = new Map<
     string,
     {
@@ -105,7 +154,7 @@ export class CodexRunner implements AgentRunner {
     try {
       await execFileAsync(this.config.codexBin, ["--version"], {
         timeout: 5_000,
-        env: this.childEnvironment(),
+        env: this.childEnvironment(undefined, false),
       });
       return true;
     } catch {
@@ -129,12 +178,21 @@ export class CodexRunner implements AgentRunner {
       throw new Error("Agent already has an active Codex process");
     }
 
+    const ephemeral = isFreshEphemeralRunnerRequest(request);
+    const timeoutMs = resolveRunnerTimeoutMs(request, this.config.codexTimeoutMs);
     const args = buildCodexArgs(request, this.config.codexSandboxMode);
     const child = spawn(this.config.codexBin, args, {
       cwd: request.workspacePath,
-      env: this.childEnvironment(),
-      stdio: ["ignore", "pipe", "pipe"],
+      env: this.childEnvironment(
+        ephemeral ? request.codexHome : undefined,
+        true,
+      ),
+      stdio: [ephemeral ? "pipe" : "ignore", "pipe", "pipe"],
     });
+    if (!child.stdout || !child.stderr || (ephemeral && !child.stdin)) {
+      child.kill("SIGKILL");
+      throw new Error("Codex process streams were not configured safely");
+    }
     const settled = new Promise<void>((resolve) => {
       child.once("close", () => resolve());
       child.once("error", () => resolve());
@@ -154,6 +212,7 @@ export class CodexRunner implements AgentRunner {
       threadId: request.threadId,
       usage: null,
       errors: [],
+      threadIds: [],
     };
     let stdout = "";
     let stderr = "";
@@ -183,11 +242,15 @@ export class CodexRunner implements AgentRunner {
 
     child.stdout.on("data", (chunk: Buffer) => consume(chunk, "stdout"));
     child.stderr.on("data", (chunk: Buffer) => consume(chunk, "stderr"));
+    if (ephemeral) {
+      child.stdin!.on("error", () => undefined);
+      child.stdin!.end(request.prompt, "utf8");
+    }
 
     const timeout = setTimeout(() => {
       active.timedOut = true;
       this.terminate(active);
-    }, this.config.codexTimeoutMs);
+    }, timeoutMs);
     timeout.unref();
 
     try {
@@ -202,7 +265,7 @@ export class CodexRunner implements AgentRunner {
         throw new RunCancelledError();
       }
       if (active.timedOut) {
-        throw new Error("Codex timed out after " + this.config.codexTimeoutMs + " ms");
+        throw new Error("Codex timed out after " + timeoutMs + " ms");
       }
       if (active.outputExceeded) {
         throw new Error("Codex output exceeded CODEX_MAX_OUTPUT_BYTES");
@@ -211,13 +274,16 @@ export class CodexRunner implements AgentRunner {
         const detail = parsed.errors.at(-1) ?? stderr.trim() ?? "No error detail";
         throw new Error("Codex exited with code " + exitCode + ": " + detail);
       }
+      const threadId = ephemeral
+        ? requireEphemeralThreadId(parsed)
+        : parsed.threadId;
       const output = parsed.messages.at(-1)?.trim();
       if (!output) {
         throw new Error("Codex completed without an agent message");
       }
       return {
         output,
-        threadId: parsed.threadId,
+        threadId,
         usage: parsed.usage,
       };
     } finally {
@@ -239,7 +305,10 @@ export class CodexRunner implements AgentRunner {
     }
   }
 
-  private childEnvironment(): NodeJS.ProcessEnv {
+  private childEnvironment(
+    codexHome = this.config.codexHome,
+    includeArkKey = true,
+  ): NodeJS.ProcessEnv {
     const inheritedNames = [
       "PATH",
       "HOME",
@@ -255,10 +324,10 @@ export class CodexRunner implements AgentRunner {
       "TERM",
     ] as const;
     const environment: NodeJS.ProcessEnv = {
-      CODEX_HOME: this.config.codexHome,
-      ARK_API_KEY: this.config.arkApiKey,
+      CODEX_HOME: codexHome,
       NO_COLOR: "1",
     };
+    if (includeArkKey) environment.ARK_API_KEY = this.config.arkApiKey;
     for (const name of inheritedNames) {
       if (process.env[name] !== undefined) environment[name] = process.env[name];
     }

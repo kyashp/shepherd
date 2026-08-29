@@ -7,6 +7,8 @@ import {
   writeCodexConfig,
 } from "./config.js";
 import { createRunner } from "./runner-factory.js";
+import { CodexShepherdExecutor } from "./shepherd/codex-executor.js";
+import { DeterministicFixtureExecutor } from "./shepherd/executor.js";
 import {
   AUTH_BACKEND_PROFILE_ID,
   AUTH_FRONTEND_PROFILE_ID,
@@ -71,12 +73,19 @@ const shepherdVerifier = new ContainerVerifier(shepherdChecks, {
   maxOutputBytes: Math.min(config.codexMaxOutputBytes, 4_194_304),
   sensitiveValues,
 });
+const shepherdExecutor =
+  config.shepherdExecutionMode === "live"
+    ? new CodexShepherdExecutor(config, verifierOwnerId)
+    : new DeterministicFixtureExecutor();
 const shepherdService = new ShepherdService({
   store,
   managedRoot: config.shepherdRoot,
   agentWorkspaceRoot: config.workspaceRoot,
   verifier: shepherdVerifier,
+  executor: shepherdExecutor,
   sensitiveValues,
+  contractTimeoutMs: config.shepherdContractTimeoutMs,
+  candidateTimeoutMs: config.shepherdCandidateTimeoutMs,
 });
 await shepherdService.initialize();
 

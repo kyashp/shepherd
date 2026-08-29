@@ -467,3 +467,218 @@ API, and production composition.
 sentinel-bound identity, five process-kill boundaries, idempotent reconciliation,
 pre/post-CAS distinction, live-process protected-head fencing, secret scanning, and
 the complete deterministic gate are verified for Phase 2.
+
+## Phase 3 — Live Plane Runtime and Bounded Advisory Modules
+
+**Date:** 2026-08-29 (Asia/Singapore)
+
+**Branch:** `feature/shepherd-phase-3-live-runtime`
+
+### Versioned execution envelopes and semantic authority
+
+Contract and resolution work now receive bounded, JSON-escaped
+`SHEPHERD_EXECUTION_ENVELOPE_V1` prompts assembled by trusted code. Prompts contain
+logical IDs, the intersected authority, expected artifacts, dependency outputs, and
+the exact strategy or objective; configured secret values are rejected before a
+prompt can be returned. Contract Agents must write the one schema-validated
+`.shepherd/result.json` ingestion artifact. Resolution Agents are explicitly forbidden
+from writing any `.shepherd/**` path and are evaluated from the imported Git diff and
+independent evidence instead.
+
+Contract envelopes now include both the declared canonical claim keys and the
+Contract's declared canonical semantic scopes. Manifest ingestion rejects an
+undeclared scope, just as it already rejected an undeclared or omitted key. This
+prevents independently correct Contracts from avoiding collision only because their
+model-selected scope labels differ.
+
+Resolution envelopes state the candidate's exact canonical key/value strategy and
+forbid substituting a different value based on project policy. Prompt compliance is
+not trusted: after the fixed candidate acceptance suite runs, server code derives the
+verified `auth.transport` fact from its outputs and requires it to equal the
+candidate's persisted target. A candidate whose checks pass for a substituted target
+fails with `invalid_semantic_evidence` at
+`candidate_target_corroboration`; it cannot tie, win, or promote.
+
+### Isolated live Codex execution
+
+`SHEPHERD_EXECUTION_MODE` now accepts `auto`, `live`, or `deterministic`. `auto`
+selects live execution only when a usable Ark Agent-model configuration and the
+container Runtime are both present. Explicit `live` fails closed if either condition
+is absent, and live execution additionally requires `CODEX_SANDBOX_MODE=workspace-write`.
+The resolved mode is exposed by system/demo metadata so a deterministic run cannot be
+presented as live-model evidence.
+
+Each Contract or candidate execution uses a fresh Git-free export, a unique opaque
+execution identity, a new private `0700` `CODEX_HOME`, and one disposable container.
+The exact in-container Codex shape is:
+
+```text
+codex exec --ephemeral --json --sandbox workspace-write \
+  --skip-git-repo-check -C /workspace -
+```
+
+The complete prompt is sent only on standard input. No thread is resumed. The Runtime
+container is created first and then started/attached by the validated immutable
+container ID, avoiding name-retargeting between creation and attachment. The
+container runs non-root with a read-only root filesystem, a dedicated `/tmp` tmpfs,
+all capabilities dropped, `no-new-privileges`, and configured CPU, memory, and PID
+limits. Only the Git-free workspace and that execution's private home are mounted.
+
+The outer container uses bridge networking because the Codex control process must
+reach Ark. The generated Codex config gives model-authored shell processes a fixed,
+key-free environment. Startup preflight, without an Ark credential, requires the
+exact pinned `codex-cli 0.111.0`, proves a sandboxed write succeeds in `/workspace`,
+proves a write to `/codex-home` is denied, and proves sandboxed TCP listen and connect
+attempts are denied. This is distinct from the independent acceptance verifier, which
+continues to run with no network and no model credential at all.
+
+Private-home roots use an exact sentinel and refuse non-empty unsentinelled adoption.
+Runtime containers carry the restart-stable installation owner labels introduced in
+Phase 2. Startup reconciliation removes only exact-owner interrupted containers,
+private homes, and preflight workspaces; normal completion and timeout/cancellation
+paths also verify cleanup.
+
+Codex thread IDs exist only long enough to validate that exactly one fresh session was
+created. Shepherd persists only a SHA-256 fingerprint and rejects fingerprint reuse
+across Plane executions. Public state and Mission DTOs omit that fingerprint and
+expose only `runtimeSessionEstablished: boolean`. Raw session IDs, raw prompts, and
+prompt-envelope text are not persisted or returned.
+
+### Implemented modules not yet connected to Mission orchestration
+
+Three Phase 3 modules are implemented with focused deterministic tests, but are not
+yet invoked by `ShepherdService` or exposed by the current HTTP/UI surfaces:
+
+- The DAG scheduler validates the duplicate/unknown/self/cyclic dependency cases and
+  selects a stable maximal batch subject to verified dependencies, failed-dependency
+  blocking, one active assignment per Agent, the mutation lock, and configured Plane
+  capacity.
+- Project Group routing normalizes and bounds input, routes unmentioned text to
+  Shepherd, resolves one leading Agent name/ID mention, supports JSON-quoted names,
+  and rejects malformed, ambiguous, unknown, or multiple mentions. It interprets no
+  paths or commands.
+- `ArkModelReviewer` is an advisory-only Responses client. It canonicalizes and caps
+  input at 48 KiB, performs at most one HTTPS request with redirects rejected,
+  `store:false`, no tools, no prior-response chain, and a strict structured-output
+  schema. It caps streamed response bytes at 128 KiB, output tokens at 1,536,
+  findings at eight, evidence references at six per finding, and its deadline at
+  120 seconds (30-second default). All provider/configuration/timeout/schema/storage
+  failures return an explicit typed degraded result; no result grants authority or
+  changes deterministic collision/selection. The current service does not yet call
+  this adapter or emit its `model_review_degraded` event.
+
+### Live-gate corrective episodes
+
+The opt-in gate uses the configured Agent model only for this explicit evidence path:
+
+```sh
+npm run test:shepherd:live
+```
+
+It is single-worker, has no test retries, and creates fresh Mission state inside the
+sentinel-guarded repository-local live-gate root. Four failed gate episodes were
+preserved as causal evidence before the final pass:
+
+1. **Two sessions, no semantic collision.** Both contract executions and their
+   independent checks passed, but one model used a file-oriented scope while the
+   other used a conceptual scope, so the exact-scope collision predicate found zero
+   collisions. Root cause: semantic scopes existed on the Contract but were absent
+   from the prompt and were not checked during manifest ingestion. Supplying the
+   canonical declared scope and rejecting undeclared scopes fixed the contract.
+2. **Four sessions, objective tie.** The collision then appeared and both candidates
+   ran, but the bearer-target candidate substituted the policy-preferred cookie
+   implementation. Its independent checks passed the cookie implementation, as did
+   the actual cookie candidate, so the deterministic selector correctly stopped in
+   `attention_required` with `objective_tie`. Root cause: the prompt did not make
+   speculative target fidelity sufficiently explicit and trusted selection checked
+   acceptance success without corroborating the implemented value against the
+   candidate target. The exact-target rules and trusted target corroboration above
+   close both gaps.
+3. **Completed Mission, outdated all-pass assertion.** After those product fixes, the
+   Mission completed with the secure cookie candidate selected and the bearer
+   alternative objectively rejected by the project-security check. The gate itself
+   still expected every candidate's verification to pass. The assertion was corrected
+   to require the evidence-derived bearer failure and cookie promotion; no production
+   behavior changed for this harness-only failure.
+4. **Completed Mission, missing test import.** The next product Mission again
+   completed, after which the test referenced a fixture transport constant it had not
+   imported. The missing test-only import was added; no production behavior changed.
+
+The final gate then passed in **121.49 seconds**. It completed two fresh Missions with
+eight total live Codex sessions: two Contract and two resolution sessions per Mission.
+Both Missions persisted two verified Contracts, one resolved semantic collision, the
+bearer candidate rejected by independent acceptance, the cookie candidate selected
+and promoted, and 33 bounded events. All eight persisted session fingerprints were
+present, valid, and unique; no raw session ID was stored or exposed. Both resolution
+Planes shared their Mission's exact immutable integration base.
+
+The gate also proved the protected repository HEAD equals the promoted result,
+`.shepherd/**` is absent from the promoted tree, and no prompt-envelope marker or
+configured secret appears in persisted state, reachable Git blobs, or managed
+worktree files. Exact-owner queries found no remaining live-Runtime or verifier
+containers, and every per-execution private home and Git-free execution export was
+gone after cleanup.
+
+### Security review and verification evidence
+
+The independent Phase 3 live-Runtime review identified four Medium findings during
+implementation: unsafe private-root adoption, an incomplete sandbox preflight, raw
+Runtime error/secret propagation, and a cleanup rejection race. Sentinel-only
+adoption, the positive/negative filesystem plus socket probes, bounded redacted
+Runtime errors, and immediately handled/awaited cleanup failures closed them. The
+reviewer's final 58-test focused slice reported no remaining critical, high, or
+medium finding at the live-Runtime boundary.
+
+The independent model-reviewer review later found two Medium stream-handling issues:
+
+- **M1:** a hostile asynchronous `reader.cancel()` rejection could surface as an
+  unhandled rejection. Every fire-and-forget cancellation now attaches a rejection
+  handler, with an exact regression.
+- **M2:** an endless stream of zero-byte chunks could make no byte progress and starve
+  the intended deadline path. Zero-byte chunks are now rejected immediately as an
+  invalid response, with an exact regression.
+
+The same reviewer re-inspected both fixes and reported both Mediums closed, no new
+critical/high/medium findings, and a **PASS** merge gate. Its fake-only focused suite
+passed **121/121**; the review made no network call and did not read `.env`.
+
+A final independent security delta review then covered the canonical-scope and
+candidate-target changes together with the live-gate scanner and Ark adapter. Its
+focused suite passed **174 tests with the opt-in live test skipped**, its diff check
+passed, and it reported **no critical, high, or medium finding**. It made no network
+call and did not read `.env` or credentials. Residual lows are recorded explicitly:
+the generic manifest-ingestion API treats an omitted declared-scope list as
+unrestricted, although every production service call supplies a non-empty list; the
+live gate scans current/reachable Git blobs and managed worktrees rather than dangling
+Git objects; and the Ark reviewer requires a trusted HTTPS endpoint configuration but
+does not pin a hostname.
+
+The first final repository check exposed one test-harness concurrency flake: an
+executor test used a 15 ms sleep as a proxy for proving two Contract executions had
+overlapped. Under full-suite scheduling, the first execution could finish before the
+second arrived even though production still dispatched them concurrently. The test
+now uses a deterministic two-arrival barrier and still records the maximum active
+executions. Its focused service suite passed **12/12** after the correction.
+
+Final commands and observed results:
+
+```sh
+npm_config_cache="$PWD/.tmp/npm-cache" \
+  TMPDIR="$PWD/.tmp/test-temp" npm run check
+# exit 0: both workspace type checks passed
+# 26 test files passed, 1 opt-in live file skipped
+# 520 tests passed, 1 opt-in live test skipped
+# web and server production builds passed
+
+npm run build -w @launchpad/server
+# passed on a separate rerun
+```
+
+The final exact-owner container query returned no container. The two-Mission live
+gate above is separate opt-in evidence; its PASS is not presented as proof of
+unrelated UI or Phase 4 behavior.
+
+**Phase 3 scope verdict:** isolated live Contract/candidate execution and the fixed
+demo Mission are proven across two fresh end-to-end Missions. Scheduler, Project
+Group parser, and Ark advisory-reviewer modules exist and are focused-test-backed, but
+their service/API integration remains Phase 4 work and is not claimed here.

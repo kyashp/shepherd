@@ -96,15 +96,47 @@ export interface RunnerResult {
   usage: RunUsage | null;
 }
 
-export interface RunnerRequest {
+export interface ResumableRunnerRequest {
+  mode?: "resumable";
   agentId: string;
   workspacePath: string;
   prompt: string;
   threadId: string | null;
 }
 
+/**
+ * A one-turn Runtime request that cannot resume or reuse the legacy Agent
+ * session store. The caller owns creation and cleanup of the private home.
+ */
+export interface FreshEphemeralRunnerRequest {
+  mode: "fresh-ephemeral";
+  agentId: string;
+  workspacePath: string;
+  prompt: string;
+  threadId: null;
+  codexHome: string;
+  timeoutMs: number;
+}
+
+export type RunnerRequest =
+  | ResumableRunnerRequest
+  | FreshEphemeralRunnerRequest;
+
+export function isFreshEphemeralRunnerRequest(
+  request: RunnerRequest,
+): request is FreshEphemeralRunnerRequest {
+  return request.mode === "fresh-ephemeral";
+}
+
 export interface AgentRunner {
+  readonly runtimeKind?: "local-process" | "container";
   run(request: RunnerRequest): Promise<RunnerResult>;
   cancel(agentId: string): Promise<boolean>;
   isAvailable(): Promise<boolean>;
+}
+
+export interface EphemeralContainerRunner extends AgentRunner {
+  readonly runtimeKind: "container";
+  reconcileInterrupted?(): Promise<number>;
+  isEphemeralAvailable?(workspacePath: string, codexHome: string): Promise<boolean>;
 }

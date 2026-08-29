@@ -251,6 +251,12 @@ export interface Plane {
   headCommit: string | null;
   purpose: string;
   executionIdentity: string;
+  /**
+   * SHA-256 fingerprint of a live ephemeral runtime session. The raw session
+   * identifier is deliberately never persisted or returned to the browser.
+   * Older deterministic V2 records may omit this additive field.
+   */
+  runtimeSessionFingerprint?: string | null;
   authority: ScopedAuthority;
   state: PlaneState;
   changedFiles: string[];

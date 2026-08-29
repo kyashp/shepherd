@@ -90,6 +90,58 @@ describe("claim canonicalization", () => {
 });
 
 describe("strict result-manifest ingestion", () => {
+  it("rejects a manifest that omits a required expected artifact", () => {
+    const result = ingestContractResultManifest(
+      manifest({ artifacts: [] }),
+      context({
+        expectedArtifacts: [
+          { path: "src/auth.ts", description: "Authentication client", required: true },
+        ],
+      }),
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      failureCode: "malformed_manifest",
+      issues: [
+        expect.objectContaining({
+          code: "missing_required_artifact",
+          path: "$.artifacts",
+        }),
+      ],
+    });
+  });
+
+  it("rejects a declared required artifact that is absent from trusted Plane paths", () => {
+    const result = ingestContractResultManifest(
+      manifest(),
+      context({
+        existingPaths: ["README.md"],
+        expectedArtifacts: [
+          { path: "src/auth.ts", description: "Authentication client", required: true },
+        ],
+      }),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.failureCode).toBe("malformed_manifest");
+    expect(result.issues.map((issue) => issue.code)).toEqual(
+      expect.arrayContaining(["missing_artifact", "missing_required_artifact"]),
+    );
+    expect(result.issues.every((issue) => issue.message.length <= 1_000)).toBe(true);
+  });
+
+  it("does not require optional expected artifacts", () => {
+    const result = ingestContractResultManifest(
+      manifest(),
+      context({
+        expectedArtifacts: [
+          { path: "optional.txt", description: "Optional", required: false },
+        ],
+      }),
+    );
+    expect(result.ok).toBe(true);
+  });
+
   it("normalizes a valid manifest and produces trusted claim records", () => {
     const result = ingestContractResultManifest(
       JSON.stringify(manifest()),
@@ -366,6 +418,27 @@ describe("strict result-manifest ingestion", () => {
       claims: [
         expect.objectContaining({ key: "auth.transport", valid: true }),
         expect.objectContaining({ key: "deployment.target", valid: false }),
+      ],
+    });
+  });
+
+  it("rejects a claim scope that was not predeclared by the Contract", () => {
+    const result = ingestContractResultManifest(
+      manifest(),
+      context({ declaredSemanticScopes: ["authentication"] }),
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      failureCode: "invalid_semantic_evidence",
+      issues: expect.arrayContaining([
+        expect.objectContaining({ code: "undeclared_claim_scope" }),
+      ]),
+      claims: [
+        expect.objectContaining({
+          scope: "web.client",
+          valid: false,
+          rejectionReason: expect.stringContaining("undeclared_claim_scope"),
+        }),
       ],
     });
   });

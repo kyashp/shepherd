@@ -31,10 +31,41 @@ This is the as-built operating document for Shepherd. It will be updated at ever
 - A durable pre-CAS promotion proof containing the exact final frontend/backend/project-security verification suite. Only an exact `promoting` record with Git/worktree/ancestry corroboration can ratify a post-CAS crash; `reverifying` is never sufficient.
 - Fail-closed protected branch/index/worktree reconciliation, including detached or alternate checkout, dirty state, unregistered/substituted resolution worktrees, external movement, and the update-ref/read-tree gap.
 - Restart-stable installation-scoped verifier ownership, exact-label orphan cleanup, strict Agent workspace rebinding, and refusal to adopt old managed repositories after database loss.
+- Versioned, bounded, secret-scanned Contract and resolution-candidate prompt envelopes assembled only by trusted code. Contracts receive exact declared canonical claim keys and semantic scopes; resolution candidates receive an exact target strategy and are forbidden from writing `.shepherd/**`.
+- Canonical semantic-scope enforcement during Contract manifest ingestion. Undeclared scopes fail with invalid semantic evidence instead of bypassing collision detection.
+- Trusted resolution target corroboration: independently observed acceptance facts must equal a candidate's persisted canonical target as well as pass the mandatory suite. A substituted target cannot tie, win, or promote.
+- Configurable deterministic/live execution selection. `auto` resolves to live only with a usable Ark Agent configuration and the container Runtime; explicit `live` fails closed without those prerequisites or the required `workspace-write` sandbox.
+- Fresh per-Plane Codex turns using Git-free exports, unique execution identities, private per-run `CODEX_HOME` directories, stdin-only prompts, no resumed thread, create-before-attach container identity, and exact-owner cleanup.
+- Hardened live Runtime containers: non-root, read-only root, dedicated tmpfs, dropped capabilities, no-new-privileges, bounded CPU/memory/PIDs/time/output, and only the execution export plus its private home mounted.
+- Startup live-Runtime preflight for the pinned Codex CLI, positive workspace-write proof, negative private-home-write proof, and sandboxed TCP listen/connect denial. The generated model-shell environment does not inherit the Ark credential.
+- Raw Codex thread IDs remain transient. Only unique SHA-256 session fingerprints are persisted; public DTOs expose a boolean session-established fact and never the fingerprint, raw ID, or prompt.
+- Two fresh live-model Missions completed end to end with eight unique isolated sessions, the expected semantic collision and evidence-derived winner, promoted Git state, no persisted secret/prompt/raw-session material, and no remaining Runtime or verifier container.
+
+### Implemented modules awaiting orchestration
+
+The following modules are implemented and focused-test-backed, but current
+`ShepherdService`, HTTP routes, and UI do not yet invoke or expose them:
+
+- The deterministic DAG validator/scheduler detects malformed graphs and selects a
+  stable safe batch subject to dependency state, per-Agent exclusion, the mutation
+  lock, and global Plane capacity.
+- The bounded Project Group parser routes plain messages to Shepherd and one leading
+  name/ID mention to an Agent while rejecting malformed, unknown, ambiguous, or
+  multiple targets. It interprets no commands or paths.
+- The bounded Ark Responses reviewer canonicalizes structured Contract facts, makes
+  at most one non-persistent strict-schema request, validates/cross-references every
+  returned finding, and degrades explicitly on any unsafe or unavailable result. Its
+  output is advisory only and cannot alter deterministic collision, verification,
+  selection, or promotion.
 
 ### Not yet implemented
 
-The deterministic walking skeleton and persistence/restart hardening are complete. Remaining phases add the general DAG scheduler and complete failure matrix, live per-Plane Codex execution, structured planning, bounded model-assisted review, cancellation/retry/tie APIs, Project Group routing, demo reset, all six UI surfaces, and full browser/rehearsal evidence. These are not described as implemented until their phase gates pass.
+Remaining work includes generic structured/free-form Mission planning, wiring the DAG
+scheduler into orchestration, connecting the advisory reviewer and its degraded event,
+Project Group persistence/API dispatch, Mission cancellation, bounded candidate retry,
+human tie resolution, demo reset, the remaining named failure-matrix journeys, all six
+UI surfaces, and full browser/rehearsal evidence. Standalone modules above are not
+described as product-functional until those integration gates pass.
 
 ## Accepted design contract
 
@@ -61,16 +92,20 @@ managed protected branch
 ### Model responsibilities
 
 - `ARK_MODEL` runs logical coding Agents in their isolated contract/candidate Plane.
-- `SHEPHERD_MODEL` performs bounded structured planning and best-effort semantic review.
+- `SHEPHERD_MODEL` is reserved for bounded structured planning and best-effort semantic review. The bounded review adapter exists, but Mission orchestration does not call it yet.
 - Model output is always untrusted. It cannot certify verification, choose a winner by opinion, submit shell commands, mutate the protected branch, or bypass authority.
 - Deterministic collision detection carries the demo-critical guarantee. Model-assisted review may raise advisory findings and emits an explicit degraded event on failure.
 
-At the Phase 1 boundary, the Shepherd product path deliberately uses `DeterministicFixtureExecutor`; neither configured model is called by a Mission. This proves the kernel independently of model variance. Live Agents and the advisory reviewer are connected only in later phases, without transferring any trusted decision to a model.
+The deterministic executor remains available as an explicit, labelled mode and proves
+the kernel independently of model variance. In live mode, each Contract and resolution
+candidate uses a fresh `ARK_MODEL` Codex turn. Two live Missions, each containing two
+Contract and two candidate turns, have passed the opt-in gate. The `SHEPHERD_MODEL`
+reviewer remains standalone at this boundary, so no Mission currently calls it and no
+live reviewer call is claimed.
 
-Phase 2 does not change that model boundary. All restart classification, evidence
-validation, interruption mapping, cleanup, and trust adoption are deterministic. No
-LLM is called during startup recovery, and no model opinion can turn interrupted work
-green.
+Recovery remains deterministic across the Phase 2 and Phase 3 boundaries. No LLM is
+called during startup classification, evidence validation, interruption mapping,
+cleanup, or trust adoption, and no model opinion can turn interrupted work green.
 
 ### Deterministic responsibilities
 
@@ -78,7 +113,12 @@ Trusted server code owns schemas, state transitions, scope intersection, actual 
 
 ### Security boundary
 
-- Agents receive only generated execution identities and managed Plane workspaces.
+- Agents receive only generated execution identities and authority-filtered, Git-free
+  exports; they never receive a trusted linked Plane worktree or protected Git
+  metadata.
+- A live Codex control process necessarily receives the scoped Ark credential and
+  bridge access to call the configured provider. Its generated shell policy inherits
+  no credential, and startup proves sandboxed spawned code cannot listen or connect.
 - The verifier receives no model/API key, application token, Codex session, Docker socket, unrelated host environment, or network.
 - Browser and model inputs select trusted identifiers; neither can provide host paths or executable commands.
 - `.shepherd/result.json` is the sole Agent-written control artifact exception and is never promoted.
@@ -96,6 +136,45 @@ Trusted server code owns schemas, state transitions, scope intersection, actual 
 8. The loser remains inspectable, every transition is persisted as a bounded event, and any unsafe/ambiguous result stops without promotion.
 
 The public API returns logical IDs, short Git evidence, and domain state, but strips host repository/worktree/workspace paths. The approved `.shepherd/result.json` relative control path may appear as declared evidence; it is not a host path and is absent from every promoted commit.
+
+## Live Plane execution (Phase 3)
+
+At startup, `auto` resolves to live only when the container Runtime and usable Ark
+Agent configuration are both present. `live` is an explicit fail-closed request;
+`deterministic` remains the stable no-model kernel/demo mode. The resolved mode is
+reported by the application.
+
+Before accepting live work, Shepherd reconciles only exact installation-owned
+Runtime containers and private artifacts, then runs a credential-free preflight. The
+preflight requires `codex-cli 0.111.0`, a non-root read-only-root container, and the
+inner `workspace-write` sandbox. Inside that sandbox it proves `/workspace` is
+writable, `/codex-home` is not, and TCP listen/connect operations are denied. A failed
+or partially cleaned preflight prevents startup.
+
+For each Contract or resolution candidate:
+
+1. Trusted code creates a new authority-filtered, Git-free execution export and a
+   versioned bounded prompt envelope.
+2. Shepherd creates a unique private `CODEX_HOME` below its sentinel-guarded root and
+   writes a minimal secret-free Codex config with a key-free shell environment.
+3. A disposable container is created with only that export and private home mounted.
+   The prompt is absent from argv and is sent on standard input to
+   `codex exec --ephemeral --json --sandbox workspace-write
+   --skip-git-repo-check -C /workspace -` after attaching by immutable container ID.
+4. Exactly one fresh thread-start event is required. No prior session is resumed or
+   shared. The raw thread ID is hashed, checked for reuse, discarded, and only the
+   SHA-256 fingerprint is persisted privately.
+5. The ordinary trusted import, actual-diff authority, independent verification,
+   collision, candidate, re-verification, and protected-head CAS gates remain
+   authoritative. Candidate verification must also corroborate the implemented
+   semantic target against its persisted strategy.
+6. The private home, execution export, and exact-owner container are removed on
+   success, failure, timeout, cancellation, and restart reconciliation.
+
+The Codex control process needs bridge networking to reach Ark. Model-authored shell
+processes remain inside the preflight-proven inner sandbox. The acceptance verifier is
+a different credential-free, session-free, no-network container and never relies on
+the Agent's own report.
 
 ## Durable recovery model (Phase 2)
 
@@ -133,19 +212,22 @@ Real secrets belong only in ignored `.env`.
 | --- | --- |
 | `ARK_API_KEY` | Credential for the configured OpenAI-compatible Responses API. |
 | `ARK_MODEL` | Coding Agent model. |
-| `SHEPHERD_MODEL` | Planning/review model; will default to `ARK_MODEL` when empty. |
+| `SHEPHERD_MODEL` | Reserved planning/advisory-review model; defaults to `ARK_MODEL` when empty. The bounded adapter exists but is not yet connected to Mission orchestration. |
 | `ARK_BASE_URL` | Responses-compatible API root. |
 | `APP_AUTH_TOKEN` | Shared local-demo bearer boundary; mandatory and non-placeholder whenever the server binds beyond loopback. |
 | `RUNTIME_PROVIDER` | Starter Agent runtime (`local-process` or `container`); Shepherd verification always uses its independent container boundary. |
 | `SHEPHERD_ROOT` | Sentinel-guarded managed fixture repositories and Plane worktrees; defaults below `APP_DATA_DIR`. |
-| `SHEPHERD_DEMO_MODE` | Enables only the fixed, path-free demo Mission/reset HTTP controls. |
-| `SHEPHERD_AUTO_RESOLUTION` | Enables deterministic automatic selection when evidence yields one justified winner. |
-| `SHEPHERD_DELETE_COMPLETED_PLANES` | Optional post-completion cleanup; disabled by default so evidence remains inspectable. |
-| `SHEPHERD_MAX_PARALLEL_PLANES` | Bounded scheduler concurrency (1–16). |
+| `SHEPHERD_CODEX_HOME_ROOT` | Sentinel-guarded parent for one private, ephemeral live-Plane `CODEX_HOME` per execution; must be inside `APP_DATA_DIR` and separate from shared Agent and managed Shepherd roots. |
+| `SHEPHERD_EXECUTION_MODE` | `auto`, `live`, or `deterministic`. `auto` selects live only with usable Ark configuration plus the container Runtime; explicit live fails closed otherwise. |
+| `SHEPHERD_DEMO_MODE` | Enables the fixed, path-free demo Mission start control. Demo reset is not yet implemented. |
+| `SHEPHERD_AUTO_RESOLUTION` | Parsed future control setting. The fixed demo currently performs evidence-derived automatic selection; HTTP control wiring is pending. |
+| `SHEPHERD_DELETE_COMPLETED_PLANES` | Parsed future retention setting; service cleanup wiring is pending and completed Planes remain inspectable. |
+| `SHEPHERD_MAX_PARALLEL_PLANES` | Parsed 1–16 Plane-capacity setting used by the standalone scheduler module; Mission-service wiring is pending. |
 | `SHEPHERD_CONTRACT_TIMEOUT_MS` | Maximum contract execution duration. |
 | `SHEPHERD_CANDIDATE_TIMEOUT_MS` | Maximum candidate execution duration. |
 | `SHEPHERD_VERIFICATION_TIMEOUT_MS` | Maximum duration accepted by the independent verifier. |
 | `SHEPHERD_VERIFIER_IMAGE` | Pre-built no-network verification image; defaults to `CONTAINER_RUNTIME_IMAGE`. |
+| `CODEX_SANDBOX_MODE` | Must resolve to `workspace-write` for live Shepherd execution; startup preflight proves its filesystem and socket restrictions. |
 
 No configured secret value is documented, persisted into Shepherd state, sent to the verifier, or rendered in the browser.
 

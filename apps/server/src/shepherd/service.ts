@@ -58,6 +58,11 @@ import {
   PlaneManager,
   type ExecutionWorkspace,
 } from "./plane-manager.js";
+import {
+  buildContractExecutionPrompt,
+  buildResolutionCandidatePrompt,
+  type DependencyOutput,
+} from "./prompt.js";
 import { PromotionGate } from "./promotion-gate.js";
 import { redactText, redactValue } from "./redaction.js";
 import { reconcileShepherdStartup } from "./recovery.js";
@@ -179,6 +184,8 @@ export interface ShepherdServiceOptions {
   gitPromotionFaults?: GitClientOptions["promotionFaults"];
   now?: () => Date;
   idFactory?: (prefix: string) => string;
+  contractTimeoutMs?: number;
+  candidateTimeoutMs?: number;
 }
 
 export interface DeterministicDemoOptions {
@@ -361,6 +368,8 @@ export class ShepherdService {
   private readonly gitPromotionFaults: GitClientOptions["promotionFaults"];
   private readonly now: () => Date;
   private readonly idFactory: (prefix: string) => string;
+  private readonly contractTimeoutMs: number;
+  private readonly candidateTimeoutMs: number;
   private initialization: Promise<void> | null = null;
   private readonly activeProjects = new Set<string>();
   private readonly backgroundRuns = new Map<
@@ -386,6 +395,14 @@ export class ShepherdService {
     this.idFactory =
       options.idFactory ??
       ((prefix) => `${prefix}-${randomUUID().replaceAll("-", "").slice(0, 12)}`);
+    this.contractTimeoutMs = this.executionTimeout(
+      options.contractTimeoutMs ?? 600_000,
+      "Contract",
+    );
+    this.candidateTimeoutMs = this.executionTimeout(
+      options.candidateTimeoutMs ?? 600_000,
+      "Candidate",
+    );
   }
 
   async initialize(): Promise<void> {
@@ -417,6 +434,12 @@ export class ShepherdService {
       await initializeShepherdManagedRoot(this.managedRoot);
     }
     await this.initializeWorkspaceRoot();
+    let runtimeRecoveryError: unknown = null;
+    try {
+      await this.executor.reconcileInterrupted?.();
+    } catch (error) {
+      runtimeRecoveryError = error;
+    }
     let verifierRecoveryError: unknown = null;
     try {
       await this.verifier.reconcileInterrupted?.();
@@ -437,11 +460,17 @@ export class ShepherdService {
     if (inspectionFailure) {
       throw new Error("Shepherd startup artifact reconciliation failed");
     }
+    if (runtimeRecoveryError) {
+      throw new Error("Agent Runtime startup reconciliation failed", {
+        cause: runtimeRecoveryError,
+      });
+    }
     if (verifierRecoveryError) {
       throw new Error("Independent verifier startup reconciliation failed", {
         cause: verifierRecoveryError,
       });
     }
+    await this.executor.preflight?.();
   }
 
   private async checkpoint(
@@ -552,6 +581,69 @@ export class ShepherdService {
 
   private timestamp(): string {
     return this.now().toISOString();
+  }
+
+  private executionTimeout(value: number, label: string): number {
+    if (!Number.isSafeInteger(value) || value < 1_000 || value > 3_600_000) {
+      throw new Error(`${label} execution timeout must be between 1000 and 3600000 ms`);
+    }
+    return value;
+  }
+
+  private dependencyOutputs(contract: ExecutionContract): DependencyOutput[] {
+    const snapshot = this.store.snapshot();
+    return contract.dependencyIds.map((contractId) => {
+      const dependency = snapshot.shepherd.contracts.find(
+        (item) => item.id === contractId,
+      );
+      if (!dependency?.manifest || dependency.state !== "verified") {
+        throw new Error("Contract dependency output is not independently verified");
+      }
+      return {
+        contractId,
+        summary: dependency.manifest.summary,
+        artifacts: dependency.manifest.artifacts.map((artifact) => artifact.path),
+      };
+    });
+  }
+
+  private async persistRuntimeSessionFingerprint(
+    planeId: string,
+    runtimeSessionId: string | null,
+  ): Promise<string | null> {
+    if (runtimeSessionId === null) return null;
+    if (
+      runtimeSessionId.length < 1 ||
+      runtimeSessionId.length > 512 ||
+      runtimeSessionId.includes("\0")
+    ) {
+      throw new Error("Runtime returned an invalid session identifier");
+    }
+    const fingerprint = createHash("sha256")
+      .update(runtimeSessionId, "utf8")
+      .digest("hex");
+    await this.store.mutate((database) => {
+      const plane = database.shepherd.planes.find((item) => item.id === planeId);
+      if (!plane) throw new Error("Runtime Plane disappeared before session binding");
+      if (
+        database.shepherd.planes.some(
+          (item) =>
+            item.id !== planeId && item.runtimeSessionFingerprint === fingerprint,
+        )
+      ) {
+        throw new Error("Runtime session was reused across execution identities");
+      }
+      if (
+        plane.runtimeSessionFingerprint !== undefined &&
+        plane.runtimeSessionFingerprint !== null &&
+        plane.runtimeSessionFingerprint !== fingerprint
+      ) {
+        throw new Error("Runtime Plane is already bound to another session");
+      }
+      plane.runtimeSessionFingerprint = fingerprint;
+      plane.updatedAt = this.timestamp();
+    });
+    return fingerprint;
   }
 
   private safeText(input: string, maxStringLength = 1_000): string {
@@ -779,7 +871,8 @@ export class ShepherdService {
           missionId,
           agentId: frontendAgentId,
           title: "Implement frontend authentication transport",
-          objective: "Configure the frontend to use bearer JWT authentication.",
+          objective:
+            'Create src/frontend/auth.json with exactly transport "bearer-jwt" and clientReadableCredential true.',
           artifactPath: "src/frontend/auth.json",
           authority: frontendContractAuthority,
           acceptanceChecks: [frontendCheck()],
@@ -791,7 +884,7 @@ export class ShepherdService {
           agentId: backendAgentId,
           title: "Implement backend authentication transport",
           objective:
-            "Configure the backend to use an HttpOnly session cookie.",
+            'Create src/backend/auth.json with exactly transport "http-only-session-cookie" and clientReadableCredential false.',
           artifactPath: "src/backend/auth.json",
           authority: backendContractAuthority,
           acceptanceChecks: [backendCheck()],
@@ -801,7 +894,7 @@ export class ShepherdService {
       database.shepherd.contracts.push(...contracts);
       this.recordEvent(database, {
         type: "mission_created",
-        summary: "Created deterministic authentication collision Mission",
+        summary: "Created authentication collision Mission",
         missionId,
         timestamp: createdAt,
         details: { projectId: project.projectId },
@@ -903,7 +996,7 @@ export class ShepherdService {
     return {
       id,
       name,
-      description: "Trusted deterministic Shepherd fixture Agent",
+      description: "Shepherd-managed authentication implementation Agent",
       instructions: "Operate only within the assigned Execution Contract.",
       status: "ready",
       workspacePath: this.workspaceManager.workspacePath(id),
@@ -1331,11 +1424,38 @@ export class ShepherdService {
         missionId: prepared.missionId,
         contractId: input.contractId,
       });
-      await this.executor.run({
+      const executionSnapshot = this.store.snapshot();
+      const contract = executionSnapshot.shepherd.contracts.find(
+        (item) => item.id === input.contractId,
+      );
+      const agent = executionSnapshot.agents.find(
+        (item) => item.id === contract?.agentId,
+      );
+      if (!contract || !agent) {
+        throw new Error("Contract prompt identity disappeared before execution");
+      }
+      const prompt = buildContractExecutionPrompt({
+        agent: {
+          id: agent.id,
+          name: agent.name,
+          role: agent.role ?? "Generalist",
+        },
+        contract,
+        dependencyOutputs: this.dependencyOutputs(contract),
+        sensitiveValues: this.sensitiveValues,
+      });
+      const executionResult = await this.executor.run({
         executionId: initialPlane.executionIdentity,
         workspacePath: executionWorkspace.path,
         operation: input.operation,
+        prompt,
+        timeoutMs: this.contractTimeoutMs,
       });
+      const runtimeSessionFingerprint = await this.persistRuntimeSessionFingerprint(
+        initialPlane.id,
+        executionResult.runtimeSessionId,
+      );
+      initialPlane.runtimeSessionFingerprint = runtimeSessionFingerprint;
     } catch (error) {
       const failedAt = this.timestamp();
       const failure = this.makeFailure(error, "contract_execution", failedAt);
@@ -1379,6 +1499,9 @@ export class ShepherdService {
     }
     const agentCompletedAt = this.timestamp();
     await this.store.mutate((database) => {
+      const runtimeSessionFingerprint = database.shepherd.planes.find(
+        (item) => item.id === initialPlane.id,
+      )?.runtimeSessionFingerprint;
       transitionContractAndRecord(database, input.contractId, "agent_completed", {
         actor: "agent_runtime",
         eventActor: {
@@ -1388,6 +1511,9 @@ export class ShepherdService {
           displayName: "Contract Agent",
         },
         timestamp: agentCompletedAt,
+        details: {
+          runtimeSessionEstablished: Boolean(runtimeSessionFingerprint),
+        },
       });
     });
 
@@ -1491,6 +1617,8 @@ export class ShepherdService {
       expectedContractId: input.contractId,
       missionId: prepared.missionId,
       declaredClaimKeys: contract.declaredClaimKeys,
+      declaredSemanticScopes: contract.semanticScopes,
+      expectedArtifacts: contract.expectedArtifacts,
       existingPaths,
       changedPaths,
       createdAt: this.timestamp(),
@@ -1920,11 +2048,101 @@ export class ShepherdService {
     const executionWorkspace =
       await prepared.planeManager.createExecutionWorkspace(work.plane);
     try {
-      await this.executor.run({
+      const executionSnapshot = this.store.snapshot();
+      const candidate = executionSnapshot.shepherd.candidates.find(
+        (item) => item.id === work.candidateId,
+      );
+      const collision = executionSnapshot.shepherd.collisions.find(
+        (item) => item.id === candidate?.collisionId,
+      );
+      if (!candidate || !collision) {
+        throw new Error("Candidate prompt context disappeared before execution");
+      }
+      const sourceContracts = [collision.leftContractId, collision.rightContractId].map(
+        (contractId) =>
+          executionSnapshot.shepherd.contracts.find(
+            (contract) => contract.id === contractId,
+          ),
+      );
+      if (
+        sourceContracts.some(
+          (contract) => !contract?.manifest || contract.state !== "verified",
+        )
+      ) {
+        throw new Error("Candidate prompt requires two verified source Contracts");
+      }
+      const verifiedSourceContracts = sourceContracts.filter(
+        (contract): contract is ExecutionContract => contract !== undefined,
+      );
+      const dependencyOutputs: DependencyOutput[] = verifiedSourceContracts.map(
+        (contract) => ({
+          contractId: contract.id,
+          summary: contract.manifest?.summary ?? "",
+          artifacts: contract.manifest?.artifacts.map((artifact) => artifact.path) ?? [],
+        }),
+      );
+      const expectedArtifacts = [
+        ...new Map(
+          verifiedSourceContracts
+            .flatMap((contract) => contract.expectedArtifacts)
+            .map((artifact) => [artifact.path, artifact] as const),
+        ).values(),
+      ];
+      const prompt = buildResolutionCandidatePrompt({
+        agent: {
+          id: work.plane.executionIdentity,
+          name: "Resolution Agent",
+          role: "Generalist",
+        },
+        missionId: prepared.missionId,
+        collisionId: collision.id,
+        candidate,
+        context: [
+          {
+            name: "collision.reason",
+            value: collision.reason,
+            sourceContractId: null,
+          },
+          {
+            name: "left.exclusiveClaim",
+            value: `${collision.leftClaim.key}=${collision.leftClaim.value}`,
+            sourceContractId: collision.leftContractId,
+          },
+          {
+            name: "right.exclusiveClaim",
+            value: `${collision.rightClaim.key}=${collision.rightClaim.value}`,
+            sourceContractId: collision.rightContractId,
+          },
+          {
+            name: "auth.transportSemantics",
+            value:
+              '"bearer-jwt" requires clientReadableCredential=true; "http-only-session-cookie" requires clientReadableCredential=false.',
+            sourceContractId: null,
+          },
+          {
+            name: "project.allowClientReadableCredential",
+            value: String(prepared.project.allowClientReadableCredential),
+            sourceContractId: null,
+          },
+        ],
+        dependencyOutputs,
+        authority: work.plane.authority,
+        expectedArtifacts,
+        declaredClaimKeys: [collision.key],
+        sensitiveValues: this.sensitiveValues,
+      });
+      const executionResult = await this.executor.run({
         executionId: work.plane.executionIdentity,
         workspacePath: executionWorkspace.path,
         operation: work.operation,
+        prompt,
+        timeoutMs: this.candidateTimeoutMs,
       });
+      const runtimeSessionFingerprint = await this.persistRuntimeSessionFingerprint(
+        work.plane.id,
+        executionResult.runtimeSessionId,
+      );
+      work.plane.runtimeSessionFingerprint = runtimeSessionFingerprint;
       try {
         await prepared.planeManager.importExecutionWorkspace(
           work.plane,
@@ -1978,6 +2196,7 @@ export class ShepherdService {
       ),
     );
     const completedAt = this.timestamp();
+    const verifiedTarget = verifiedAuthTransportFact(evidence);
     await this.store.mutate((database) => {
       const candidate = database.shepherd.candidates.find(
         (item) => item.id === work.candidateId,
@@ -1986,31 +2205,53 @@ export class ShepherdService {
         (item) => item.id === plane.id,
       );
       if (!candidate || !persistedPlane) throw new Error("Candidate records disappeared");
-      candidate.executionState = evidence.passed ? "passed" : "failed";
-      candidate.verificationEvidence = evidence;
-      candidate.failure = evidence.passed
+      const targetCorroborated =
+        candidate.targetKey === AUTH_CLAIM_KEY &&
+        candidate.targetValue === work.operation.targetTransport &&
+        verifiedTarget === work.operation.targetTransport;
+      const candidatePassed = evidence.passed && targetCorroborated;
+      const failure: FailureInfo | null = candidatePassed
         ? null
-        : {
-            code: "failed_independent_acceptance",
-            message: evidence.summary,
-            stage: "candidate_verification",
-            at: completedAt,
-            retryable: false,
-          };
+        : evidence.passed
+          ? {
+              code: "invalid_semantic_evidence",
+              message:
+                "Independent verification did not corroborate the candidate target",
+              stage: "candidate_target_corroboration",
+              at: completedAt,
+              retryable: false,
+            }
+          : {
+              code: "failed_independent_acceptance",
+              message: evidence.summary,
+              stage: "candidate_verification",
+              at: completedAt,
+              retryable: false,
+            };
+      candidate.executionState = candidatePassed ? "passed" : "failed";
+      candidate.verificationEvidence = evidence;
+      candidate.failure = failure;
       candidate.updatedAt = completedAt;
-      persistedPlane.state = evidence.passed ? "verified" : "failed";
+      persistedPlane.state = candidatePassed ? "verified" : "failed";
       persistedPlane.verificationEvidenceIds.push(evidence.id);
       persistedPlane.updatedAt = completedAt;
       this.recordEvent(database, {
-        type: evidence.passed ? "candidate_passed" : "candidate_failed",
-        summary: evidence.summary,
+        type: candidatePassed ? "candidate_passed" : "candidate_failed",
+        summary: failure?.message ?? evidence.summary,
         missionId: prepared.missionId,
         planeId: plane.id,
         collisionId: candidate.collisionId,
         candidateId: candidate.id,
         actor: VERIFIER_ACTOR,
         timestamp: completedAt,
-        details: { passed: evidence.passed },
+        details: {
+          passed: candidatePassed,
+          independentChecksPassed: evidence.passed,
+          targetCorroborated,
+          runtimeSessionEstablished: Boolean(
+            persistedPlane.runtimeSessionFingerprint,
+          ),
+        },
       });
     });
   }
