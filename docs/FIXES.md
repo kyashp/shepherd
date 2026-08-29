@@ -49,13 +49,11 @@ that limitation is explicit.
   `Error.cause`. The causal test injects planted secret, private-path and OS text
   and proves it is absent from message, string, stack, inspection, JSON and cause
   surfaces while cleanup remains fail-closed and a bounded retry remains possible.
-- **Acceptance/status:** **FIXER VERIFIED / AUDITOR PENDING.** Cleanup and primary
-  diagnostic rows passed 3/3; adjacent executor/runner/config/service/live-runtime
-  passed 95 plus one explicit opt-in skip; strict test typecheck and two literal
-  `npm run check` gates passed. No sandbox gate, runner enum, fallback, UI,
-  dependency, live or model behavior changed. Independent security fallback passed
-  executor/runner 34/34 with no finding. Affected-macOS validation and hosted
-  Auditor integration remain required.
+- **Acceptance/status:** **CLOSED / AUDITED** at integrated `68dbd59`. Focused and
+  adjacent regressions passed 95 plus one explicit live skip; literal check passed
+  Server 602 plus two explicit skips, Web 17/17 and launcher 3/3. Independent
+  security review returned no finding and hosted run `33274769957` passed. The
+  separate affected-macOS OPS-06 validation remains pending.
 
 ### `TST-11` — E2E-02 candidate-evidence screenshots show metadata only
 

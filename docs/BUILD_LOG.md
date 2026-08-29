@@ -7,6 +7,23 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — OPS-06 diagnostics integrated; TST-12 audited
+
+The Auditor integrated exact corrected chain `68dbd59` into `mock-main`. Focused
+runner/executor/config/service/live-runtime tests passed 95 with one explicit live
+skip. Literal `npm run check` passed launcher 3/3, Server 602/602 plus two explicit
+opt-in skips, Web 17/17, strict test/source types and both builds. Hosted Node 22
+required-check run `33274769957` passed.
+
+Independent security fallback returned READY with no finding. The planted cleanup
+fault is absent from message, String, stack, deep inspection, JSON and cause
+surfaces; private-home cleanup continues, the preflight cache resets and a clean
+retry succeeds. Typed diagnostics, non-root/private-home/network/version gates,
+output bound, secret exclusion and owner-scoped cleanup remain fail-closed. No
+live/model call ran. TST-12 is closed at scoped 100%; OPS-06 has `T,A,C,S,I`
+evidence, but affected collaborator/macOS `L` remains explicitly unverified and no
+macOS compatibility claim is made.
+
 ## 2026-08-30 — TST-12 executor preflight redaction candidate
 
 The Fixer reproduced the source-confirmed Medium leak on exact Auditor evidence
