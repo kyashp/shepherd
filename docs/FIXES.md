@@ -28,6 +28,13 @@ that limitation is explicit.
 
 ## Immediate queue
 
+`TST-13`–`TST-16` are **CLOSED / AUDITED** at `83cc1d0`. The complete
+runner→executor→durable/public boundary and all 47 inventoried executor filesystem/
+configuration expressions passed the 31-row injected matrix, focused and full
+repository gates, and independent security review. No High/Medium finding remains.
+The restart-only invalid retained-sentinel case remains a Low, fail-closed manual
+operator-cleanup availability residual; cross-process automatic retry is not claimed.
+
 ### `TST-16` — Executor root/setup/enumeration filesystem failures remain unbounded
 
 - **Evidence class:** independent full-source security review of unintegrated chain

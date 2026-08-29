@@ -7,6 +7,20 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — F-01/02 and TST-13–16 independently audited and integrated
+
+Exact implementation `83cc1d0` was pushed to `mock-main`. Auditor verification
+passed executor 67/67, combined runner/executor/service 127/127, adjacent API/store/
+container/state/recovery/verifier 66/66, and literal `npm run check` (launcher 3/3,
+Server 661 passed plus two explicit opt-in skips, Web 17/17, both builds). Manual
+inspection matched all 47 executor-owned filesystem/config expressions to a closed
+boundary and all 31 injected call-site/double-fault rows. Independent security
+fallback returned READY with no High/Medium issue. Secret/artifact/diff scans were
+clean apart from documented placeholders and test canaries. Hosted Node 22 run
+`33278994572` is the implementation integration gate. No external/model/UI call ran.
+The Low restart-invalid-sentinel residual remains fail-closed and may require manual
+operator cleanup; cross-process retry is not claimed.
+
 ## 2026-08-30 — TST-16 complete filesystem boundary candidate
 
 The Fixer candidate `fix/f-01-02-filesystem-boundary` closes the remaining raw
