@@ -1887,15 +1887,26 @@ passed the merged workflow's `Required checks` run
 merging as `403fc095b07d60e17de1cb3f82b4e16b6a778919`. This is post-workflow proof
 that a real product PR can satisfy the context.
 
+Active draft [PR #25](https://github.com/kyashp/shepherd/pull/25) was briefly
+closed and reopened solely to emit the supported `pull_request.reopened` event.
+Its draft state, branch, and head `570982dc2766e57f38bb0327f3b906c53b2ed5f2`
+were unchanged. The resulting `Required checks` run
+[33267807007](https://github.com/kyashp/shepherd/actions/runs/33267807007)
+passed in 1m43s, so activating the stable context will not strand that owner.
+
 ### Deliberately pending repository administration
 
-The repository ruleset query still returns `[]`. Active draft PR #25 was retargeted
-to `main` after the workflow merged and currently has no `Required checks` result;
-activating the rule now could strand that owner. CI-01 therefore remains open for:
+The repository ruleset query still returns `[]`. After PR #25 passed, an activation
+attempt using the narrow default-branch payload reproduced HTTP 404. Read-back of
+the effective repository permission identified the cause: authenticated identity
+`sanjey99` has `WRITE` but not `ADMIN`, while GitHub requires repository
+Administration (write) for ruleset creation. CI-01 therefore remains open for:
 
-1. PR #25's owner to trigger and pass the stable context;
-2. integrator-approved ruleset activation and read-back;
-3. merge-group execution proof if a merge queue is enabled; and
-4. a post-activation PR proof that a red required context cannot merge.
+1. a repository admin to activate the default-branch rule requiring exact context
+   `Required checks` from GitHub Actions integration `15368`, with no bypass actors
+   and loose freshness;
+2. ruleset read-back and a post-activation PR proof that a red required context
+   cannot merge; and
+3. merge-group execution proof only if a merge queue is enabled.
 
 No repository rule was created or changed by the workflow or this evidence update.

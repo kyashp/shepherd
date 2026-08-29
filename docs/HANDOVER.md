@@ -318,14 +318,19 @@ GitHub-hosted evidence proves both directions under the same stable context:
   1m34s after the repository check passed and a temporary command returned 1;
 - restored final PR #37 run `33262875107` passed in 1m29s;
 - the first subsequently merged product branch, PR #16, passed run
-  `33266134939` before merging as `403fc095b07d60e17de1cb3f82b4e16b6a778919`.
+  `33266134939` before merging as `403fc095b07d60e17de1cb3f82b4e16b6a778919`;
+- active draft PR #25 passed run `33267807007` in 1m43s on unchanged head
+  `570982d` after a close/reopen emitted the supported `pull_request.reopened`
+  event.
 
 The controlled failure was removed and the final workflow is byte-for-byte equal
-to the independently reviewed representative configuration. The repository
-ruleset query still returns an empty list. Do **not** activate the required rule
-while active PR #25 lacks a `Required checks` result; its owner must first trigger
-and pass the context. Merge-group execution/read-back, ruleset activation, and a
-post-activation PR gate remain CI-01's explicit integration work.
+to the independently reviewed representative configuration. PR #25 is no longer
+at risk of being stranded by a missing context. The repository ruleset query still
+returns an empty list: activation from `sanjey99` reproduced HTTP 404 because that
+identity has `WRITE` but not the required repository `ADMIN` permission. An admin
+must activate and read back the exact GitHub Actions context. Merge-group execution
+proof is required only if a queue is enabled; a post-activation red/blocked PR gate
+remains CI-01's explicit integration work.
 
 ### Confirmed defects and partial behavior
 
@@ -358,7 +363,7 @@ post-activation PR gate remain CI-01's explicit integration work.
 | `UI-01` | Failed Mission evidence | Detailed failure UI is focused on `attention_required`; ordinary `failed` Missions can hide the specific failure. | A failed run may look unexplained. | Reuse the current attention/failure components for all non-green terminal Mission failures. |
 | `UI-02` | Timeline estimates | The UI renders an `est.` bar only if `estimatedDurationMs` exists, but no server/domain path produces or persists that field. | PRD Goal 16 / 11.3 estimated durations are absent in real Missions. | Persist a clearly labelled trusted estimate or remove the dead optional UI branch only if the PRD is explicitly revised; add API and browser assertions that distinguish estimates from actual timing. |
 | `TST-01` | Parallel test stability | On the RST-01 branch, three unconstrained `npm run check` attempts hit different existing 1-second/5-second timeouts in Git-heavy service, recovery, and Plane integration tests. Each affected test passed isolated; the complete suite passed with one worker and unchanged assertions. | Required checks can fail nondeterministically under local/CI resource contention even when product behavior is correct. | In a separate test-harness PR, replace timing proxies with condition barriers where applicable, give real-Git integration journeys evidence-based ceilings, or cap Vitest workers. Preserve assertions and first reproduce RED under contention. |
-| `CI-01` | Pull-request checks | **Workflow implemented and hosted pass/fail behavior proven on merged PR #37.** PR #16 then passed the same `Required checks` context before merge. The repository ruleset remains absent and active PR #25 has no check result after retargeting to `main`. | Pull requests now receive independent Node 22 typecheck/test/build evidence after an eligible trigger, but `main` does not yet require it and enabling the rule immediately could strand PR #25. | Have PR #25's owner trigger and pass `Required checks`; then the integrator may activate/read back the exact context, verify merge-group behavior if a queue is enabled, and prove a post-activation PR cannot merge while red. |
+| `CI-01` | Pull-request checks | **Workflow implemented and hosted pass/fail behavior proven on merged PR #37.** PR #16 and active draft PR #25 both passed the same `Required checks` context. The repository ruleset remains absent because the current integration identity has `WRITE`, not `ADMIN`. | Pull requests now receive independent Node 22 typecheck/test/build evidence after an eligible trigger, but `main` does not yet require it. | A repository admin must activate/read back the exact GitHub Actions context, then prove a post-activation PR cannot merge while red; verify `merge_group` only if a queue is enabled. |
 
 ### Implemented but not fully tested
 
@@ -557,7 +562,7 @@ traceability.
 | Workstream | Recommended PR units | Stack/dependency guidance | Reviewer gate |
 |---|---|---|---|
 | Local run/reset | `OPS-01`, `OPS-02`; `RST-01` is implemented on [draft PR #10](https://github.com/kyashp/shepherd/pull/10) | `OPS-02` may stack on `OPS-01`. Keep startup secret/path work separate from the reset PR; after PR #10 merges, perform its clean/initialized post-merge reset gate. | Security review for env/path handling; PR #10 independent review is complete |
-| Test/PR assurance | `TST-01`, `CI-01` | CI-01's workflow and stable `Required checks` context are merged and proven in both directions. Trigger it on retargeted PR #25 before the integrator activates the repository rule; keep TST-01 assertion-preserving stabilization separate. | Test-infrastructure and repository-administration review |
+| Test/PR assurance | `TST-01`, `CI-01` | CI-01's workflow and stable `Required checks` context are merged and proven in both directions; active draft PR #25 also passes it on its unchanged head. Repository-admin access is now the activation blocker. Keep TST-01 assertion-preserving stabilization separate. | Test-infrastructure and repository-administration review |
 | Typed failures | `F-01/F-02` common typed-stage foundation, then `F-03`, `F-04`, `F-05`, `F-06`, `F-07/F-08` | Use short stacks only where a shared typed error contract is required. Each PR includes its entity/event/API tests. | Security review after the workstream |
 | Group Chat | `GC-05` safe project initialization, `GC-02` Shepherd handling, `GC-03/GC-04` targeted Contract lifecycle, `GC-06` Agent summaries, `GC-07` canonical Agent-name validation; `GC-01` mention UI is merged and post-merge verified on PR #9 | One stack steward; keep parser/security foundation below service behavior and UI. Browser tests land with each UI-visible correction. | Security + UI review |
 | Advisory model | `MR-01` service composition/degradation, then `MR-02` truthful setting/UI | Deterministic collision independence is a mandatory lower-layer test. One sparse live smoke only after fake-adapter gates. | Security + UI review |
