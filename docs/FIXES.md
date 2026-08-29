@@ -44,11 +44,11 @@ that limitation is explicit.
   all managed branches/refs/worktrees, protected HEAD/canary and durable/downstream
   state remain byte/identity unchanged; ordinary TST-18 conflict/cleanup/reset,
   adjacent/full/security and hosted gates pass.
-- **Status:** **FIXER CANDIDATE / Auditor pending.** The Git boundary now proves
-  absent `MERGE_HEAD`, clean porcelain, exact persisted symbolic branch and exact
-  persisted head before `git merge`. Five real-Git identity rows preserve target
-  HEAD/status/all head refs and source HEAD byte-for-byte while returning the fixed
-  cause-free cleanup/attention boundary.
+- **Status:** **CLOSED / AUDITED** at `f8d7f71`. Five identity mismatch rows and
+  four conflict/cleanup rows passed the real-Git matrix five consecutive times;
+  adjacent/full/security and hosted run `33281977834` passed. The remaining
+  multi-command same-host TOCTOU window is Low under the single-process managed-root
+  threat model and is not claimed eliminated.
 
 ### `TST-18` — Merge-abort cleanup failure masks a detected Git conflict
 
@@ -880,7 +880,7 @@ operator-cleanup availability residual; cross-process automatic retry is not cla
 | `F-01` | Source-evidenced: Contract timeout may surface as failure code `unknown` instead of `agent_timeout`. | Typed timeout propagated through Contract/Plane/Agent/Mission/event/API/UI; no message-regex classification. | **WORKER VERIFIED** candidate on `work/mock-main`; 95% pending Auditor |
 | `F-02` | Source-evidenced: Contract runtime errors can become generic `unknown`. | Shared typed stage error only; preserve candidate-specific handling. | **WORKER VERIFIED** candidate on `work/mock-main`; 95% pending Auditor |
 | `F-04` | Source-evidenced: initial Plane creation can fail before durable stage evidence; later mapper is too late. | Evidence on owning Contract/Mission without inventing a successful Plane. | **AUDITED** at `2cef988`; TST-17 closed |
-| `F-05` | Preserved RED proved a real textual conflict became `unknown/background_demo`. | Typed bounded Mission/integration Plane/event mapping; retain clean conflict Plane for inspection and remove it on reset. | **BLOCKED by TST-19** pre-merge identity |
+| `F-05` | Preserved RED proved a real textual conflict became `unknown/background_demo`. | Typed bounded Mission/integration Plane/event mapping; retain clean conflict Plane for inspection and remove it on reset. | **AUDITED** at `f8d7f71`; TST-18/19 closed |
 | `F-06` | Store rollback is tested; recovery-visible `persistence_failed` evidence is absent. | Journal/reconciliation-safe evidence; never claim a failed write persisted itself. | Worker / depends typed foundation |
 | `F-07` | Source-evidenced: candidate timeout state mapping is inconsistent and partly regex-based. | One typed timeout class and canonical state mapping. | Worker / ready |
 | `F-08` | Source-evidenced: most non-authority candidate exceptions are retryable; second-failure coverage absent. | Retry only typed transient failures, once, from the immutable base. | Worker / ready |

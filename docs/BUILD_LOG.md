@@ -7,6 +7,20 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — F-05 / TST-18–19 audited and integrated
+
+Exact `f8d7f71` passed the 28-case real-Git suite five consecutive times (140/140),
+combined Git/service 72/72, adjacent API/store/state/recovery/executor/verifier
+133/133, and literal `npm run check` (launcher 3/3, Server 676 passed plus two opt-in
+skips, Web 17/17, both builds). The nine-case identity/cleanup matrix proves clean
+ordinary conflict restoration and zero-mutation rejection for detached, sibling-
+branch, moved-head, dirty and preexisting-MERGE_HEAD states; target/source refs,
+status, MERGE metadata, protected HEAD/canary and downstream state remain unchanged.
+Cleanup uncertainty persists bounded attention evidence and cancel→reset exact
+resource removal. Independent security review found no High/Medium issue. Hosted
+Node 22 run `33281977834` passed. The Low same-host multi-command TOCTOU residual is
+documented; no live/model/UI call ran.
+
 ## 2026-08-30 — TST-19 Fixer candidate
 
 The source-confirmed RED allowed a clean integration checkout on the wrong persisted
