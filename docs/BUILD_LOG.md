@@ -1105,6 +1105,39 @@ gaps. It reported no Critical, Important, or Minor finding and returned **Ready 
 merge: Yes**. This review-status entry is documentation-only; the same auditor must
 confirm the final follow-up diff before push.
 
+### Final dependency-gated current-main refresh
+
+TST-02 merged through PR #34 at
+`8149a7cf3b52c4f0c7d20b31f14c4d2ddbc52b12`. The latest `origin/main` was
+then merged conflict-free into ST-02 at
+`f1ad0b9811e9b77dddc933c11df6a6e3fd17cf61`; no source, test, or
+documentation conflict required manual resolution. The effective diff against
+that updated base remained exactly `SettingsPage.tsx`, its focused regression,
+and the two ST-02 evidence files.
+
+Fresh evidence on the integrated merge passed the focused ST-02 test (1/1), the
+formerly blocked recovery target with its canonical temporary path (1/1, 16
+skipped), web typecheck, and the web production build (40 transformed modules).
+The required literal `npm run check` then passed without an environment override:
+launcher 3/3, server 25 files passed with 2 skipped and 554 tests passed with 2
+skipped, plus web and server production builds. `npm audit --json` reported zero
+vulnerabilities across 251 dependencies, and `git diff --check
+origin/main...HEAD` passed.
+
+Terminal Playwright/Chromium repeated the proof against the integrated Vite page.
+At both `1280x800` and `1440x900`, stored values remained
+`[true, false, true]`; all controls were natively disabled, rejected direct and
+sequential focus, and ignored mouse/keyboard activation. Save remained disabled,
+zero settings `PATCH` requests occurred, geometry checks reported no horizontal
+overflow, clipping, or overlap, and console/page/request error lists were empty.
+The visually inspected temporary screenshots remained faithful to `docs/UI.jpeg`
+and were not added to the branch diff:
+
+- `st-02-1280x800.png` — SHA-256
+  `8dc439b849eac9aeb84f3353145ff106ff4518f0b007a8fd7c61f5038a2ab22c`
+- `st-02-1440x900.png` — SHA-256
+  `c6d5c9e0831f9c7cc187827e574f1ca1c98b2fbd322738b96b19e6b45a33d95b`
+
 ## Test-lifecycle stabilization candidate (`#11`)
 
 **Date:** 2026-08-29 (Asia/Singapore)
