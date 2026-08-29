@@ -2,6 +2,16 @@
 set -euo pipefail
 
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if [[ -f "$repo_dir/.env" && "${LOCAL_POC_DOTENV_LOADED:-}" != "1" ]]; then
+  command -v node >/dev/null 2>&1 || {
+    printf '[local-poc] Node.js 22+ is required to read .env and run the local control plane.\n' >&2
+    exit 2
+  }
+  export LOCAL_POC_DOTENV_LOADED=1
+  exec node --env-file="$repo_dir/.env" "$repo_dir/scripts/start-local-poc-launcher.mjs"
+fi
+
 cd "$repo_dir"
 
 runtime_image="${CONTAINER_RUNTIME_IMAGE:-volc-agent-runtime:local}"
@@ -104,6 +114,20 @@ else
   export APP_DATA_DIR="${APP_DATA_DIR:-$local_state_root/data}"
   export AGENT_WORKSPACE_ROOT="${AGENT_WORKSPACE_ROOT:-$local_state_root/workspaces}"
   export CODEX_HOME="${CODEX_HOME:-$local_state_root/codex-home}"
+fi
+
+# `.env.example` uses container paths. A host PoC maps only those exact defaults
+# into its local state root; explicit custom host paths remain unchanged.
+[[ "$APP_DATA_DIR" == "/app/data" ]] && export APP_DATA_DIR="$local_state_root/data"
+[[ "$AGENT_WORKSPACE_ROOT" == "/app/workspaces" ]] \
+  && export AGENT_WORKSPACE_ROOT="$local_state_root/workspaces"
+[[ "$CODEX_HOME" == "/app/codex-home" ]] && export CODEX_HOME="$local_state_root/codex-home"
+if [[ -z "${SHEPHERD_ROOT:-}" || "$SHEPHERD_ROOT" == "/app/data/shepherd" ]]; then
+  export SHEPHERD_ROOT="$APP_DATA_DIR/shepherd"
+fi
+if [[ -z "${SHEPHERD_CODEX_HOME_ROOT:-}" \
+  || "$SHEPHERD_CODEX_HOME_ROOT" == "/app/data/shepherd-codex-homes" ]]; then
+  export SHEPHERD_CODEX_HOME_ROOT="$APP_DATA_DIR/shepherd-codex-homes"
 fi
 export RUNTIME_INSTANCE_ID="${RUNTIME_INSTANCE_ID:-local-$(id -u)-$(printf '%s' "$repo_dir" | cksum | awk '{print $1}')}"
 

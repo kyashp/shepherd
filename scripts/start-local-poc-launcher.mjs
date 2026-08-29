@@ -9,7 +9,7 @@ const startScript = path.join(scriptDirectory, "start-local-poc.sh");
 export function launchLocalPoc(command = startScript, args = []) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
-      env: process.env,
+      env: { ...process.env, LOCAL_POC_DOTENV_LOADED: "1" },
       stdio: "inherit",
     });
     child.on("error", reject);

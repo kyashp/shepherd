@@ -79,3 +79,122 @@ test("forwards Node-parsed dotenv values to the local PoC child without logging 
   assert.doesNotMatch(result.stdout, new RegExp(arkModelSentinel, "u"));
   assert.doesNotMatch(result.stderr, new RegExp(arkModelSentinel, "u"));
 });
+
+test("direct shell launch reads dotenv and localizes Docker-default data paths", async () => {
+  const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "ops-02-"));
+  temporaryDirectories.push(temporaryDirectory);
+  const scriptsDirectory = path.join(temporaryDirectory, "scripts");
+  const binDirectory = path.join(temporaryDirectory, "bin");
+  const capturePath = path.join(temporaryDirectory, "startup-environment");
+  const arkKeySentinel = "ops-02-ark-key-sentinel";
+  const arkModelSentinel = "ops-02-ark-model-sentinel";
+  await Promise.all([mkdir(scriptsDirectory), mkdir(binDirectory)]);
+  await Promise.all([
+    readFile(path.join(repositoryRoot, "scripts", "start-local-poc.sh"), "utf8").then(
+      (contents) => writeFile(path.join(scriptsDirectory, "start-local-poc.sh"), contents),
+    ),
+    readFile(path.join(repositoryRoot, "scripts", "start-local-poc-launcher.mjs"), "utf8").then(
+      (contents) => writeFile(path.join(scriptsDirectory, "start-local-poc-launcher.mjs"), contents),
+    ),
+  ]);
+  await writeFile(
+    path.join(temporaryDirectory, ".env"),
+    [
+      `ARK_API_KEY=${arkKeySentinel}`,
+      `ARK_MODEL=${arkModelSentinel}`,
+      "APP_DATA_DIR=/app/data",
+      "AGENT_WORKSPACE_ROOT=/app/workspaces",
+      "CODEX_HOME=/app/codex-home",
+      "SHEPHERD_ROOT=/app/data/shepherd",
+      "SHEPHERD_CODEX_HOME_ROOT=/app/data/shepherd-codex-homes",
+      "CONTAINER_ENGINE=docker",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  const fakeDockerPath = path.join(binDirectory, "docker");
+  await writeFile(fakeDockerPath, "#!/usr/bin/env bash\nexit 0\n", "utf8");
+  const fakeNpmPath = path.join(binDirectory, "npm");
+  await writeFile(
+    fakeNpmPath,
+    [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      'if [[ "${1:-}" == "start" ]]; then',
+      "  {",
+      '    printf "%s\\n" "${ARK_API_KEY:-}"',
+      '    printf "%s\\n" "${ARK_MODEL:-}"',
+      '    printf "%s\\n" "${APP_DATA_DIR:-}"',
+      '    printf "%s\\n" "${AGENT_WORKSPACE_ROOT:-}"',
+      '    printf "%s\\n" "${CODEX_HOME:-}"',
+      '    printf "%s\\n" "${SHEPHERD_ROOT:-}"',
+      '    printf "%s\\n" "${SHEPHERD_CODEX_HOME_ROOT:-}"',
+      '  } > "$OPS_02_CAPTURE"',
+      "fi",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await Promise.all([
+    chmod(path.join(scriptsDirectory, "start-local-poc.sh"), 0o755),
+    chmod(fakeDockerPath, 0o755),
+    chmod(fakeNpmPath, 0o755),
+  ]);
+
+  const result = await run(path.join(scriptsDirectory, "start-local-poc.sh"), [], {
+    cwd: temporaryDirectory,
+    env: {
+      PATH: `${binDirectory}${path.delimiter}${process.env.PATH ?? ""}`,
+      OPS_02_CAPTURE: capturePath,
+    },
+  });
+
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.signal, null);
+  assert.doesNotMatch(result.stdout, new RegExp(arkKeySentinel, "u"));
+  assert.doesNotMatch(result.stderr, new RegExp(arkKeySentinel, "u"));
+  assert.doesNotMatch(result.stdout, new RegExp(arkModelSentinel, "u"));
+  assert.doesNotMatch(result.stderr, new RegExp(arkModelSentinel, "u"));
+  assert.deepEqual((await readFile(capturePath, "utf8")).trim().split("\n"), [
+    arkKeySentinel,
+    arkModelSentinel,
+    path.join(temporaryDirectory, ".local", "data"),
+    path.join(temporaryDirectory, ".local", "workspaces"),
+    path.join(temporaryDirectory, ".local", "codex-home"),
+    path.join(temporaryDirectory, ".local", "data", "shepherd"),
+    path.join(temporaryDirectory, ".local", "data", "shepherd-codex-homes"),
+  ]);
+
+  const customPaths = [
+    path.join(temporaryDirectory, "custom", "data"),
+    path.join(temporaryDirectory, "custom", "workspaces"),
+    path.join(temporaryDirectory, "custom", "codex-home"),
+    path.join(temporaryDirectory, "custom", "shepherd"),
+    path.join(temporaryDirectory, "custom", "shepherd-codex-homes"),
+  ];
+  await writeFile(
+    path.join(temporaryDirectory, ".env"),
+    [
+      `ARK_API_KEY=${arkKeySentinel}`,
+      `ARK_MODEL=${arkModelSentinel}`,
+      `APP_DATA_DIR=${customPaths[0]}`,
+      `AGENT_WORKSPACE_ROOT=${customPaths[1]}`,
+      `CODEX_HOME=${customPaths[2]}`,
+      `SHEPHERD_ROOT=${customPaths[3]}`,
+      `SHEPHERD_CODEX_HOME_ROOT=${customPaths[4]}`,
+      "CONTAINER_ENGINE=docker",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  const customResult = await run(path.join(scriptsDirectory, "start-local-poc.sh"), [], {
+    cwd: temporaryDirectory,
+    env: {
+      PATH: `${binDirectory}${path.delimiter}${process.env.PATH ?? ""}`,
+      OPS_02_CAPTURE: capturePath,
+    },
+  });
+
+  assert.equal(customResult.code, 0, customResult.stderr);
+  assert.deepEqual((await readFile(capturePath, "utf8")).trim().split("\n").slice(2), customPaths);
+});
