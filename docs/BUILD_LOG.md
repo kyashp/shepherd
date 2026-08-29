@@ -7,6 +7,85 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## E2E-HARNESS deterministic browser foundation
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Branch/base:** `work/mock-main` / `42d3b517c05a20f6a9e526390e9e82d95306e859`
+
+The repository had the Playwright package but no checked-in configuration, browser
+test, deterministic real-server composition, or fake Codex executable. This
+candidate adds only test infrastructure, two baseline screenshots, root test
+scripts, and evidence documentation. Production server, React, CSS, API, and
+runtime behavior are unchanged.
+
+`tests/e2e/support/test-app.mjs` starts the built Fastify application directly on
+an ephemeral loopback port. Every data, workspace, home, temporary, Codex, and
+Shepherd path is under one exact `.tmp/playwright-harness/run-*` directory. The
+child environment is constructed from an allowlist instead of spreading
+`process.env`: Ark/model values are empty, the execution mode is deterministic,
+and no `.env` loader or live model path runs. Startup uses a bounded fake Codex
+protocol executable and a startup-only fake container engine that permits only the
+two ownership-filtered empty `ps` reconciliation calls. There is no production
+debug/fault route. Readiness polls the real health endpoint; teardown sends
+`SIGTERM`, bounds the wait, retains a `SIGKILL` fallback, removes only the exact
+allocated run root, and is tested to close the port.
+
+Observed focused verification with Playwright `1.62.1` and repo-local Chrome for
+Testing/Chromium `151.0.7922.34`:
+
+```sh
+npm run test:e2e:install
+# Chromium, headless shell, and FFmpeg installed below ignored .tmp/
+
+npm run test:e2e:harness
+# build passed
+# Node harness tests: 2/2 passed
+# Playwright Chromium: 2/2 passed using one worker
+```
+
+The Node tests verify the fake Codex version/run/resume protocol, output/prompt
+bounds, real HTTP health, required bearer authentication, unauthenticated 401,
+authenticated system state, `codexAvailable=true`, deterministic/local runtime,
+real production HTML, ambient-Ark exclusion, and state/process/port cleanup. A
+planted ambient Ark canary and the test bearer token were absent from persisted
+state, the system API payload, and bounded server logs.
+
+The Playwright test unlocks the real app through the access-token form, waits for
+the Shepherd heading and `Kernel online`, verifies the exact browser dimensions,
+asserts document and body scroll sizes do not exceed their client dimensions on
+either axis, and verifies the token is absent from rendered text. Captures were
+written to:
+
+- `docs/ui-review/e2e-harness/1280x800.png`
+- `docs/ui-review/e2e-harness/1440x900.png`
+
+Both captures were visually inspected against PRD 11.7. They preserve the accepted
+cream surface, charcoal sidebar, violet accent, restrained borders/shadows,
+typography and spacing, with no overlap, raw state, or document-level overflow.
+The expected deterministic clean-start runtime warning and empty Mission panels
+are visible. This is harness/baseline evidence only; it does not satisfy the eight
+full PRD journeys, populated/intermediate states, accessibility review, or the
+independent `UI-GATE`.
+
+Repository regression evidence:
+
+```sh
+npm run check
+# both workspace typechecks passed
+# launcher tests: 3/3 passed
+# server: 26 files passed, 1 opt-in file skipped;
+# 555 tests passed, 1 opt-in test skipped
+# web and server production builds passed
+
+git diff --check
+# passed
+```
+
+No external/model API request was made. Secret isolation was exercised through
+store/API/log/DOM checks; no production trust boundary changed, so an independent
+security-reviewer is not required for this test-only candidate. `T`, `C`, `B`, and
+`S` are evidenced. Auditor integration and the `I` gate remain pending.
+
 ## TST-02 deterministic recovery fixture clock
 
 **Date:** 2026-08-29 (Asia/Singapore)
