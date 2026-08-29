@@ -28,6 +28,28 @@ that limitation is explicit.
 
 ## Immediate queue
 
+### `TST-17` — Second initial Plane creation failure leaves the first Plane live
+
+- **Evidence class:** independently reproduced RED and read-only security review of
+  F-04 candidate `5cc24f5`.
+- **Failure contract:** the two initial Contract Planes are created sequentially. If
+  Plane 1 succeeds and Plane 2 fails, only Contract 2 receives the bounded creation
+  failure. Plane 1 remains durably `ready`, Contract 1 retains its `planeId`, and its
+  managed worktree and `shepherd/contract/*` branch remain attached after the Mission
+  is terminally failed. Executor/verifier/integration/candidates/promotion do not run
+  and protected HEAD is unchanged, but the no-Plane/resource-cleanup contract fails.
+- **Minimal correction:** unwind every previously created Plane in this initial
+  creation batch, deleting only exact batch-owned durable associations, worktrees and
+  branches. Preserve the original second-Contract bounded failure and causal
+  precedence; do not broaden reset/cleanup or alter later lifecycle behavior.
+- **Acceptance:** causal second-call RED becomes green; first-call destination and
+  real partial-Git rollback remain green; zero durable/physical batch Planes after
+  failure; Contract/Mission/event/API/reload evidence stays bounded; Agent/project
+  release, protected HEAD/canary, no downstream invocation, artifact cleanliness,
+  adjacent/full/security and hosted gates pass.
+- **Status:** **OPEN / Medium blocker.** Exact RED observed 1/1 with one surviving
+  durable ready Plane. Candidate is not integrated to `mock-main`.
+
 `TST-13`–`TST-16` are **CLOSED / AUDITED** at `83cc1d0`. The complete
 runner→executor→durable/public boundary and all 47 inventoried executor filesystem/
 configuration expressions passed the 31-row injected matrix, focused and full
@@ -785,7 +807,7 @@ operator-cleanup availability residual; cross-process automatic retry is not cla
 |---|---|---|---|
 | `F-01` | Source-evidenced: Contract timeout may surface as failure code `unknown` instead of `agent_timeout`. | Typed timeout propagated through Contract/Plane/Agent/Mission/event/API/UI; no message-regex classification. | **WORKER VERIFIED** candidate on `work/mock-main`; 95% pending Auditor |
 | `F-02` | Source-evidenced: Contract runtime errors can become generic `unknown`. | Shared typed stage error only; preserve candidate-specific handling. | **WORKER VERIFIED** candidate on `work/mock-main`; 95% pending Auditor |
-| `F-04` | Source-evidenced: initial Plane creation can fail before durable stage evidence; later mapper is too late. | Evidence on owning Contract/Mission without inventing a successful Plane. | **WORKER VERIFIED** candidate on `work/mock-main`; 95% pending Auditor |
+| `F-04` | Source-evidenced: initial Plane creation can fail before durable stage evidence; later mapper is too late. | Evidence on owning Contract/Mission without inventing a successful Plane. | **BLOCKED by TST-17**; first-call path passes, second-call batch unwind fails |
 | `F-05` | Existing Git test proves conflict detection, while service path converts it to a generic throw. | Persist bounded conflict files, integration state/event and no promotion. | Worker / ready |
 | `F-06` | Store rollback is tested; recovery-visible `persistence_failed` evidence is absent. | Journal/reconciliation-safe evidence; never claim a failed write persisted itself. | Worker / depends typed foundation |
 | `F-07` | Source-evidenced: candidate timeout state mapping is inconsistent and partly regex-based. | One typed timeout class and canonical state mapping. | Worker / ready |

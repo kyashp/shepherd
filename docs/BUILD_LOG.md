@@ -7,6 +7,23 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — F-04 integration blocked by TST-17 batch unwind
+
+The Auditor rebased candidate `d988292` onto canonical docs as `5cc24f5` and
+independently passed the focused Contract failure 1/1, real partial-Git rollback 1/1,
+both changed suites 59/59, and adjacent executor/container/recovery/store/API/state
+125/125. The real-Git case removes the partial worktree and Shepherd branch while
+preserving protected HEAD/canary; bounded public failure and candidate-owned temp
+cleanup passed. No other-agent artifact was removed.
+
+A causal second-of-two creation injection failed 1/1: after Plane 1 succeeded and
+Plane 2 failed, Mission state was failed but one durable `ready` Plane, its Contract
+association, worktree and branch remained. Source tracing confirmed no batch unwind
+in `executePreparedMission` or `recordMissionFailure`. Independent security fallback
+classified this Medium. The temporary audit test was removed after preserving the
+RED; product candidate was not pushed to `mock-main`. TST-17 requires exact
+batch-owned durable and physical cleanup without weakening the first-call behavior.
+
 ## 2026-08-30 — F-01/02 and TST-13–16 independently audited and integrated
 
 Exact implementation `83cc1d0` was pushed to `mock-main`. Auditor verification
