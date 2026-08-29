@@ -7,6 +7,42 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## TST-07 blocks current-main / GC-01 integration before push
+
+**Date:** 2026-08-30 (Asia/Singapore)
+**Ownership branch:** `test/tst-07-gc-01-strict-typecheck`
+**Local merge:** `c834c3907abe84fb0bd79250ac93c2bbf78c87c0`
+**Source main:** `662a7e7d2f54cd7eb6e6f33aa761a1d06901f609`
+
+The Auditor real-merged current `origin/main` into audited `mock-main` head
+`5469c1f` only on the dedicated ownership branch. All prior audited mock commits
+remain ancestors and the effective main delta is GC-01, its evidence docs and the
+second CI workflow. Nothing was pushed to `mock-main`.
+
+The first required gate produced a deterministic RED:
+
+```text
+npm run typecheck:tests -w @launchpad/server
+src/project-group-mention.test.ts(5,43): TS6142: Web ProjectGroupPage.tsx was
+resolved, but --jsx is not set
+src/project-group-mention.test.ts(11,8): TS6059: Web project-group-mention.ts is
+outside apps/server/src rootDir
+exit 2
+```
+
+The new Server test imports both Web TSX and a Web helper. That packaging made the
+test discoverable by the default Server Vitest suite on main, but violates the
+strict test-source ownership gate already audited on `mock-main`. Literal
+`npm run check` is therefore known red and was not misreported or rerun broadly.
+No browser/full/hosted GC-01 acceptance claim is made from this branch.
+
+`TST-07` owns the minimal test-only correction: place formatter/component and
+production parser round-trip coverage under correctly discovered, strictly typed
+workspace ownership without broadening Server JSX/rootDir, suppressing/excluding
+tests, weakening the multiline/disabled/exact-boundary/ID assertions, or changing
+product code. GC-01 remains integration-blocked until Fixer correction and the full
+Auditor gates pass.
+
 ## TST-05/TST-06 and E2E-01 independent integration closeout
 
 **Date:** 2026-08-30 (Asia/Singapore)

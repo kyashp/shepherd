@@ -28,6 +28,32 @@ that limitation is explicit.
 
 ## Immediate queue
 
+### `TST-07` — GC-01 test violates strict cross-workspace ownership
+
+- **Evidence class:** deterministically reproduced on local integration merge
+  `c834c3907abe84fb0bd79250ac93c2bbf78c87c0`, before any `mock-main` push.
+- **Failure contract:** `npm run typecheck:tests -w @launchpad/server` exits 2.
+  `apps/server/src/project-group-mention.test.ts` imports the Web TSX component and
+  Web helper. TypeScript reports TS6142 because the Server test config has no JSX
+  setting and TS6059 because `apps/web/src/pages/project-group-mention.ts` lies
+  outside Server `rootDir`. Literal `npm run check` therefore cannot pass.
+- **Supported cause:** GC-01 moved Web formatter/component coverage under the Server
+  suite so the default test runner would discover it, but the repository's later
+  strict test-source gate correctly enforces workspace ownership. This is a test
+  packaging defect, not evidence of a product parser/UI failure.
+- **Minimal correction:** relocate or split the regression into the correct Web and
+  Server test ownership so both pieces are discovered and strictly typechecked.
+  Preserve formatter cases, production parser round-trips including exact Agent-ID
+  fallback, multiline draft preservation, native in-flight disablement, and exact
+  2,000/2,001 boundaries. Do not enable JSX or broaden `rootDir` in the Server test
+  config, add exclusions/suppressions, remove assertions, or change product code.
+- **Acceptance:** preserve this RED; focused GC-01 and group-routing tests pass;
+  strict Server and Web test sources pass; Web type/build and literal
+  `npm run check` pass; Auditor then performs the full two-viewport Project Group
+  interaction/parser round-trip and hosted integration gates before GC-01 closes.
+- **Owner/status:** Fixer / `READY`; blocks GC-01/current-main integration; **0%**,
+  0/3 gates, not audited.
+
 ### `TST-05` — E2E-01 visual evidence is non-reproducible and overclaims the down state
 
 - **Evidence class:** independently reproduced while auditing unintegrated candidate
@@ -386,6 +412,7 @@ that limitation is explicit.
 | `CI-01` | Repository contains no `.github/workflows` required check. | Network/model-free Node install/typecheck/test/build workflow; preserve protected-main policy. | Integrator / ready |
 | `TST-05` | Candidate `592699d` routine harness run passed but modified 16/18 E2E PNGs plus an unrelated UI-03 image; the two stable down captures were unasserted blank canvases. | Resolved with ignored routine output, explicit review-update path, truthful port-down evidence, reachable Create action and real keyboard/focus coverage; no production UI/design change. | **RESOLVED + AUDITED** at `f6df2d9`, evidence `284994d` |
 | `TST-06` | Candidate `592699d` passed secrets to matcher output, could not later clean a retained run root, did not canonically reject symlinked managed ancestors, and could retain live prompt/output in failure artifacts. | Resolved with secret-safe assertions, idempotent later cleanup, canonical ancestor confinement, disabled live artifacts and causal fault tests; no authority broadening. | **RESOLVED + AUDITED** at `f6df2d9` |
+| `TST-07` | Local GC-01/current-main merge fails strict Server test typecheck with TS6142/TS6059 because a Server test imports Web TS/TSX outside its JSX/rootDir contract. | Split/relocate into correctly owned, discovered and strictly typed Web/Server tests; preserve every assertion; no config weakening or product edit. | Fixer / ready; blocks GC-01 integration |
 
 ## Assurance gaps that are not yet defects
 

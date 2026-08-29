@@ -67,7 +67,7 @@ deterministic clean-shell browser harness are green at the snapshot named above.
 
 | ID | PRD | Status / owner | Current external work | Integration requirement |
 |---|---|---|---|---|
-| `GC-01` | 4.1.12, 11.5–11.6.3 | `HELD_EXTERNAL` | Issue #5 / draft PR #9 / `fix/5-gc-01-quoted-mentions` | Review the latest external SHA, integrate into `mock-main`, run focused mention tests, Project Group browser journey, and full gate. |
+| `GC-01` | 4.1.12, 11.5–11.6.3 | `INTEGRATION BLOCKED` by `TST-07`; PR #9 is merged to `main` | Current `main` was merged only on ownership branch `test/tst-07-gc-01-strict-typecheck` as `c834c39`; it is deliberately unpushed to `mock-main`. Correct the cross-workspace test ownership, then rerun strict/focused/browser/full/hosted gates before integration. |
 | `MR-01` | 4.1.13, 8.6, 12 | `HELD_EXTERNAL` | Issue #12 / PR #16 / `feat/12-mr-01-compose-model-reviewer` | Preserve advisory-only authority; integrate and run fake-reviewer Mission matrix before one sparse live review. |
 | `MR-03` | 8.6, 12 | `HELD_EXTERNAL`, stacked on `MR-01` | Issue #21 / draft PR #25 / `fix/21-mr-03-partial-review-findings` | Integrate after MR-01; validate partial valid findings survive one rejected evidence reference. |
 
@@ -95,6 +95,7 @@ without an open issue/PR are not active ownership claims.
 | `TST-02` | 0.2, 16 Phase 9B, 17 | **AUDITED** at integrated implementation `0cb431a`; test fixture only | Worker and Auditor reproduced the fixed-clock cause. Auditor verified candidate and integrated trees: isolated test 1/1, full recovery 17/17, literal `npm run check` with launcher 3/3, server 555/555 plus one opt-in skip, and both production builds. Exact diff is one test clock injection plus evidence docs; production/UI/security files and lifecycle validation are unchanged. | **100% scoped**; `T,A,C,I` passed (4/4); audited |
 | `TST-03` | 0.2, 12, 16 Phase 9B, 17 | **AUDITED** at integrated implementation `0b1c401`; test fixture only | Hosted RED run `33261198788` and a controlled pre-verifier hold proved the scheduling race. The two-arrival barrier, early rejection observer, and unconditional release/join preserve the typed failure and durable reload/late-return/no-promotion assertions. Auditor independently passed both rows 40/40, the service/container-verifier slice 43/43, strict test typecheck, the literal local gate (launcher 3/3, server 563/563 plus one opt-in skip, both builds), and integrated focused 2/2. Hosted Node 22 run `33262227553` passed the final implementation gate. No timeout, sleep/retry, assertion weakening, rejection suppression, or product/UI change. | **100% scoped**; `T,C,I` passed (3/3); audited |
 | `TST-04` | 0.2, 12, 16 Phase 9B, 17 | **AUDITED** at integrated implementation `00c81ae`; test fixture only | Preserved full-suite RED: `afterEach -> makeDeletable -> readdir` received `ENOENT` beneath a sibling `.trusted-verification/verify-*/src`. The correction records the exact blocked backend snapshot, proves Mission rejection precedes its removal, arms an exact-basename watcher before release, requires `lstat -> ENOENT`, and unconditionally joins Mission/sibling/removal before teardown. Auditor independently passed the exact row 20/20, service/container-verifier slice 43/43, strict test typecheck, literal `npm run check` twice (563/563 plus one opt-in skip and both builds), and integrated focused 1/1. Hosted Node 22 run `33263688794` passed. No cleanup suppression, sleep/retry/timeout increase, assertion/sentinel/path/symlink weakening, or product/UI change. | **100% scoped**; `T,A,C,I` passed (4/4); audited |
+| `TST-07` | 0.2, 16 Phase 9B, 17 | `READY`; Fixer; blocks GC-01/main integration | Local current-main merge `c834c39` adds `apps/server/src/project-group-mention.test.ts`, which imports Web TS/TSX. Strict server test typecheck fails TS6142 because JSX is unset and TS6059 because the Web helper is outside Server `rootDir`. Relocate/split the tests into correct ownership while preserving all formatter, parser round-trip, component disabled, multiline and 2000/2001 assertions; ensure they are both executed and strictly typechecked. Do not broaden Server `rootDir`/JSX, exclude tests, weaken assertions or change product code. `T,C,I`. | **0%**; 0/3; not audited |
 
 ## P0 — failure and recovery correctness
 
@@ -161,12 +162,12 @@ without an open issue/PR are not active ownership claims.
 
 ## Count and current verdict
 
-- **49 tracked work items:** 12 audited, 3 externally held, and 34 other incomplete
+- **50 tracked work items:** 12 audited, 2 externally held, and 36 other incomplete
   items across P0/P1/P2.
 - **Next ready worker assignment:** `F-01/02` unless the integrator selects another
   non-overlapping ready row.
-- **First fixer assignment:** none unconditional; `OPS-06` still requires
-  collaborator/macOS evidence.
+- **First fixer assignment:** `TST-07`; it blocks current-main/GC-01 integration.
+  `OPS-06` still requires collaborator/macOS evidence.
 - **Current completion verdict:** incomplete. Strong kernel evidence exists, but the
   current deterministic full gate is green and all remaining rows above still
   require their stated integration/audit evidence.
