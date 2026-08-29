@@ -37,6 +37,8 @@ At handover:
 - No deployment, cloud change, external write, or merge was performed.
 - `.env` was not read or printed during this closeout. Continue treating it as secret.
 
+Boundary transparency from the earlier work session: one delegated read-only probe mistakenly ran `find .. -name AGENTS.md -print`, which printed sibling `AGENTS.md` pathnames only; it did not read their contents. A separate malformed npm availability probe caused npm to use its normal cache outside the repository transiently. Neither incident read or changed user files outside this codebase, but both were outside the requested operational boundary and should not be repeated.
+
 Useful first commands:
 
 ```sh
