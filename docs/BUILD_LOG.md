@@ -7,6 +7,22 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — MR-03 deterministic audit green; live gate blocked before egress
+
+The Auditor independently passed the TST-08 returned row 20/20, paired
+infrastructure rows 40/40, MR-03 reviewer/service/config 164/164, adjacent 100/100,
+harness unit 6/6 and Chromium 8/8, and literal `npm run check` (launcher 3/3,
+Server 591/591 with two opt-in skips, Web 13/13, strict types and builds). Diff,
+dependency, credential and exact snapshot-removal checks passed; MR-03 remains
+schema/ref bounded and advisory-only.
+
+After every deterministic gate was green, the explicit live-review command was
+invoked exactly once with retry disabled. It failed during `loadConfig`, before
+reviewer construction or network egress, because the local non-loopback runtime's
+`APP_AUTH_TOKEN` was a placeholder/too short. External reviewer call count was
+therefore **0**. No retry was made, no live root remained, and no secret or raw
+configuration value was printed. MR-01/MR-03 `L` and integration remain open.
+
 ## 2026-08-30 — TST-08 returned-evidence teardown quiescence candidate
 
 The Fixer preserved the literal-gate RED and isolated 20/20 scheduling evidence,
