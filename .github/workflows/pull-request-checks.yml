@@ -36,3 +36,6 @@ jobs:
 
       - name: Run repository checks
         run: npm run check
+
+      - name: Prove required check failure
+        run: exit 1
