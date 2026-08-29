@@ -1,6 +1,6 @@
 # Shepherd Defect Queue
 
-**Assessed branch/SHA:** `mock-main` / `949cec147cc4963866858f705bb466088e24e711`
+**Assessed branch/SHA:** `mock-main` / `f6df2d9503a3a482da2cb2882eb913ca2285501c`
 
 **Audited:** 2026-08-29, Asia/Singapore
 
@@ -66,8 +66,10 @@ that limitation is explicit.
   visible focus and Enter activation. Harness unit passed 6/6, Chromium passed 6/6,
   all 16 journey stages were inspected, tracked screenshot hashes were byte-identical
   before/after the ordinary run, and literal check passed twice. No UI/CSS change.
-- **Owner/status:** Fixer / `CANDIDATE`; **96% scoped**, `T,C,B` 3/5; independent
-  `U,I` pending and not audited.
+- **Owner/status:** `RESOLVED + AUDITED` at `f6df2d9`, evidence `284994d`;
+  **100% scoped**, `T,C,B,U,I` 5/5. Auditor passed three ordinary full harness runs,
+  explicit evidence 2/2, byte-clean tracked-image checks, exact 16-image scope,
+  rendered review and hosted run `33265640400`.
 
 ### `TST-06` — E2E harness failure paths can retain or disclose sensitive evidence
 
@@ -105,8 +107,11 @@ that limitation is explicit.
   leaves no allocated root. Harness unit passed 6/6, strict test
   typecheck and literal check twice passed, and no run root remained. No live call
   was made; the prior separately bounded live evidence remains exactly 2/2 turns.
-- **Owner/status:** Fixer / `CANDIDATE`; **94% scoped**, `T,C,S` 3/5; independent
-  `U,I` pending and not audited.
+- **Owner/status:** `RESOLVED + AUDITED` at `f6df2d9`; **100% scoped**,
+  `T,C,S,U,I` 5/5. Auditor passed the causal 6/6 unit set three times, browser/full/
+  strict/hosted gates and artifact/root scans. No High/Medium finding remains. Low
+  same-user TOCTOU and exceptional spawn/concurrent-mkdir residuals are documented
+  and do not broaden the local harness threat model.
 
 ### `TST-04` — F-03 fail-fast verification can race service fixture teardown
 
@@ -379,8 +384,8 @@ that limitation is explicit.
 | `UI-03` | E2E-01 reproduced document widths of 2299/2579 on Create Agent because four transparent absolute preset radios retained global viewport-wide input sizing. | Resolved by bounding only the visually hidden preset-radio dimensions while preserving native semantics, labels, keyboard behavior, and accepted form visuals. | Integrated/browser-audited at `83954f7`; hosted `C` waits on TST-03 |
 | `TEST-TS` | Current server tsconfig explicitly excludes `src/**/*.test.ts`. | Add a separate no-emit test typecheck without changing production emit. | Worker / ready |
 | `CI-01` | Repository contains no `.github/workflows` required check. | Network/model-free Node install/typecheck/test/build workflow; preserve protected-main policy. | Integrator / ready |
-| `TST-05` | Candidate `592699d` routine harness run passed but modified 16/18 E2E PNGs plus an unrelated UI-03 image; the two stable down captures are unasserted blank canvases. | Ignored routine output plus explicit review-update path, truthful port-down evidence, reachable Create action and real keyboard/focus coverage; no production UI/design change. | Fixer / ready; blocks E2E-01 |
-| `TST-06` | Candidate `592699d` passes secrets to matcher output, cannot later clean a retained run root, does not canonically reject symlinked managed ancestors, and may retain live prompt/output in failure artifacts. | Secret-safe assertions, idempotent later cleanup, canonical ancestor confinement, safe live artifacts and causal fault tests; no authority broadening. | Fixer / ready; blocks E2E-01 |
+| `TST-05` | Candidate `592699d` routine harness run passed but modified 16/18 E2E PNGs plus an unrelated UI-03 image; the two stable down captures were unasserted blank canvases. | Resolved with ignored routine output, explicit review-update path, truthful port-down evidence, reachable Create action and real keyboard/focus coverage; no production UI/design change. | **RESOLVED + AUDITED** at `f6df2d9`, evidence `284994d` |
+| `TST-06` | Candidate `592699d` passed secrets to matcher output, could not later clean a retained run root, did not canonically reject symlinked managed ancestors, and could retain live prompt/output in failure artifacts. | Resolved with secret-safe assertions, idempotent later cleanup, canonical ancestor confinement, disabled live artifacts and causal fault tests; no authority broadening. | **RESOLVED + AUDITED** at `f6df2d9` |
 
 ## Assurance gaps that are not yet defects
 

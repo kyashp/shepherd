@@ -7,6 +7,70 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## TST-05/TST-06 and E2E-01 independent integration closeout
+
+**Date:** 2026-08-30 (Asia/Singapore)
+**Candidate:** `e1d9c349226913a1192702fab3fa21c36514055e`
+**Integrated implementation:** `f6df2d9503a3a482da2cb2882eb913ca2285501c`
+**Committed review evidence:** `284994d`
+
+The candidate was exactly one commit above canonical docs head `3b9137b`. Its diff
+contains only harness fixtures/support, Playwright configuration/scripts/tests and
+canonical evidence docs: no production React, CSS, server, service, schema,
+dependency or debug-route change. The prior E2E candidate and stale screenshot set
+were not integrated.
+
+Independent gates passed:
+
+- harness unit 6/6 and Chromium 6/6 at exact `1280x800` and `1440x900`, repeated
+  three times (unit 18/18 and browser 18/18 total); every run left no `run-*` root;
+- all 16 E2E stages and four adjacent harness/UI-03 ephemeral images were visually
+  inspected. Create is reachable at 1280 through the existing inner scroll and has
+  the established purple focus outline; empty, active, completed, stopped and
+  restarted states preserve the accepted Launchpad theme without document X/Y
+  overflow, clipping or overlap;
+- actual Tab traversal, focus-visible treatment and Enter activation passed for
+  Create, Stop and Start. The journey also proved 401/auth, disabled active composer,
+  exact two-turn fake thread continuity, exact hello files and independent Node
+  artifact tests 2/2, outside canary and symlink confinement, port closure, same-root
+  restart, durable Agent/messages/runs/files, and bounded public/store/DOM/log scans;
+- strict server test-source typecheck and literal `npm run check` passed with
+  launcher 3/3, server 563/563 plus one unchanged opt-in live skip, all typechecks
+  and both builds;
+- default screenshots went only to ignored `.tmp`. Hash sets for all tracked review
+  images were identical before and after each ordinary run. The explicit evidence
+  command passed 2/2 and wrote exactly 16 intended `docs/ui-review/e2e-01` PNGs,
+  with no blank down-state or unrelated evidence; a subsequent ordinary full
+  harness again left those files byte-identical;
+- secret values reach only boolean comparisons, not matcher formatting; live trace,
+  screenshots and video are disabled; retries remain zero; live entry requires the
+  exact opt-in and preserves the two-turn cap, loopback binding, bearer auth, child
+  environment allowlist and empty live `SHEPHERD_MODEL`. Repository, `.tmp`, harness
+  and run-root identities are lstat/realpath checked before allocation/removal.
+  Causal tests cover ancestor symlink rejection, retained-root cleanup after restart
+  failure, fresh setup-failure cleanup and reusable-root rejection. No credential,
+  private path, live artifact or retained root was found.
+
+Configured `ui-reviewer` and `security-reviewer` roles were unavailable. An
+independent rendered fallback re-reviewed the exact 20 ephemeral PNGs and returned
+READY with no severity finding; the Auditor's independent security review found no
+High/Medium issue. Low residuals remain for hostile same-user mutation between
+identity check and recursive removal and exceptional spawn/concurrent-mkdir timing;
+these are bounded local-test-harness conditions and not production authority.
+
+The previously authorized live legacy evidence was accepted without another call:
+exactly two successful ARK turns, no retry, one real Codex thread, generated artifact
+test 2/2, restart persistence, bounded/redacted evidence and cleanup, with no
+Shepherd Mission/model-review invocation. This closes only the PRD 11.6.1 baseline;
+`LIVE-01` remains open for its separately scoped Shepherd/model-review smoke.
+
+Hosted Required checks run
+[`33265640400`](https://github.com/kyashp/shepherd/actions/runs/33265640400)
+passed Node 22, Docker, locked install and literal repository gate in 1m42s.
+
+**Verdict:** `TST-05` and `TST-06` are **AUDITED at scoped 100%** with 5/5 gates;
+`E2E-01` is **AUDITED at scoped 100%** with `C,B,L,S,U,I` 6/6.
+
 ## TST-05/TST-06 deterministic E2E harness correction candidate
 
 **Date:** 2026-08-30 (Asia/Singapore)
