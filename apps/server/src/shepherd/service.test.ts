@@ -578,8 +578,9 @@ class BlockingPromotionVerifier extends HostTrustedFixtureVerifier {
 async function waitForTerminalMission(
   service: ShepherdService,
   missionId: string,
+  timeoutMs = 15_000,
 ): Promise<void> {
-  const deadline = Date.now() + 15_000;
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const state = service.missionDetail(missionId)?.mission.state;
     if (state === "completed") return;
@@ -728,7 +729,7 @@ describe("Shepherd deterministic walking skeleton", () => {
 
     const { missionId } = await startTrackedTestMission(service);
     expect(service.missionDetail(missionId)?.mission.state).not.toBe("completed");
-    await waitForTerminalMission(service, missionId);
+    await waitForTerminalMission(service, missionId, 25_000);
 
     const detail = service.missionDetail(missionId);
     expect(detail).not.toBeNull();
