@@ -1,7 +1,9 @@
 # Shepherd Defect Queue
 
-**Assessed branch/SHA:** `mock-main` / `349897d3d9167fe711bf720f7c3fadd213938d11`  
-**Audited:** 2026-08-29, Asia/Singapore  
+**Assessed branch/SHA:** `mock-main` / `349897d3d9167fe711bf720f7c3fadd213938d11`
+
+**Audited:** 2026-08-29, Asia/Singapore
+
 **Task ordering and dependencies:** [`TASKS.md`](TASKS.md)
 
 This file contains only reproduced defects or defects strongly evidenced by the
@@ -121,4 +123,3 @@ Missing Playwright journeys, screenshots, performance measurements, repeated-run
 evidence, final security/UI reviews, sparse live smokes, rehearsals, and Phase 9
 documents remain tasks in `TASKS.md`. They become defects here only when an executed
 gate produces a reproducible failure.
-

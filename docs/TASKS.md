@@ -1,9 +1,13 @@
 # Shepherd Completion Task Ledger
 
-**Canonical snapshot:** `mock-main` at `349897d3d9167fe711bf720f7c3fadd213938d11`  
-**Audited:** 2026-08-29, Asia/Singapore  
-**Requirement authority:** [`PRD.md`](PRD.md)  
-**Background and runbook:** [`HANDOVER.md`](HANDOVER.md)  
+**Canonical snapshot:** `mock-main` at `349897d3d9167fe711bf720f7c3fadd213938d11`
+
+**Audited:** 2026-08-29, Asia/Singapore
+
+**Requirement authority:** [`PRD.md`](PRD.md)
+
+**Background and runbook:** [`HANDOVER.md`](HANDOVER.md)
+
 **Reproduced defects:** [`FIXES.md`](FIXES.md)
 
 This is the canonical work queue for the `mock-main` completion campaign. It
