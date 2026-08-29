@@ -706,7 +706,7 @@ and skip symlinks. Causal RED checks observed `EACCES` on a `0400` file beneath 
 `0500` snapshot and, under a temporary unsafe symlink mutation, an external marker
 became unreadable. Restored GREEN checks prove the fixture is removed while the
 external marker and permissions survive. Background test Missions cancel and join via
-the existing `cancelMission()` behavior before cleanup. Only the five measured
+the existing `cancelMission()` behavior before cleanup. Six measured
 integration cases declare 15-second budgets; global defaults stay unchanged.
 
 The contamination route was also causal: `runFixtureGit()` spread `process.env`, so
@@ -755,9 +755,25 @@ timed out safely against the prior blocked verifier (the test's `finally` releas
 the fixture); GREEN focused coverage passed the four promotion/attention teardown
 paths, and the full `service.test.ts` file passed 25/25.
 
-The final repository `npm run check` on `d8c4dff` was **not green**: the unmodified
+The first repository `npm run check` on `d8c4dff` was **not green**: the unmodified
 Git-plane integration test `reports a real textual merge conflict and leaves the
 integration Plane clean` timed out at Vitest's five-second default. The observed
 test phase had 24 files passed, 1 failed, 2 skipped; 549 tests passed, 1 failed, 2
 skipped. This follow-up did not broaden into that separately owned timeout; its
 production builds therefore did not run after the failing test phase.
+
+That Git-plane test is also an owned #11 real-Git integration case. Commit
+`0e0e743` gives only that test a 15-second Vitest budget. It passed five consecutive
+focused runs (1.23–1.90 s) and the complete Git-plane integration file passed 19/19.
+A subsequent full gate exposed a distinct RED: the background real-Planes service
+journey has a 30-second test budget but its shared completion helper stopped at 15
+seconds. Commit `a14c3f7` makes that helper accept an optional timeout and passes
+25 seconds only to this measured journey; it does not add another Vitest budget.
+The journey passed five consecutive focused runs (4.27–6.33 s) and the complete
+service test file passed 25/25.
+
+On final head `a14c3f71446ff5c46a84db6482fc445e9d1944d9`, `npm run check` passed:
+25 files passed, 550 tests passed, 2 opt-in tests skipped, and both production
+builds completed. Six measured integration cases now have explicit 15-second
+Vitest budgets; the one 25-second internal completion wait remains confined to the
+already-30-second background real-Planes test.
