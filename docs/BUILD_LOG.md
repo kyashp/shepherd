@@ -7,6 +7,31 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — TST-17 transactional initial Plane unwind candidate
+
+The Fixer preserved the second-of-two RED from `5cc24f5`: one durable ready Plane,
+Contract association, worktree and branch survived after the sibling creation failed.
+Candidate `fix/f04-plane-unwind` now tracks only Planes successfully created by that
+initial batch and destroys them through `PlaneManager` in reverse order before
+removing their exact durable records and Contract associations. The original failed
+Contract and Mission remain `worktree_creation_failure` / `plane_creation`; Agents
+and the terminal Mission's project are released. No downstream executor, verifier,
+integration, collision, candidate or promotion path runs, and protected HEAD plus an
+outside canary remain unchanged across reload.
+
+A cleanup double-fault retains the exact failed Plane and interrupted Contract,
+releases all Agents, and transitions the Mission to existing nonterminal
+`attention_required` / `plane_unwind_failed` while retaining the project as required
+by the active-Mission invariant. Fixed cleanup evidence is
+`worktree_creation_failure` / `plane_unwind`; it does not claim F-06's reserved
+`persistence_error`. Raw cleanup secret/path/OS diagnostics do not reach durable,
+reload or public DTO surfaces. Causal rows passed 2/2, service plus real-Git 61/61,
+security/F-01/recovery/API adjacency 186/186, strict test types and two literal
+checks passed (each: launcher 3/3, Server 665 plus two opt-in skips, Web 17/17 and
+both builds). Independent security review found no High/Medium issue; explicit
+reload-state and non-busy Agent assertions address its actionable Low notes. No
+UI/live/model call ran. Auditor integration remains pending.
+
 ## 2026-08-30 — F-04 integration blocked by TST-17 batch unwind
 
 The Auditor rebased candidate `d988292` onto canonical docs as `5cc24f5` and

@@ -43,6 +43,7 @@ import {
   ShepherdService,
   type ShepherdIndependentVerifier,
 } from "./service.js";
+import { PlaneManager } from "./plane-manager.js";
 import type { VerificationRequest } from "./verifier.js";
 
 const repositoryTestRoot = fileURLToPath(
@@ -2200,6 +2201,234 @@ describe("Shepherd deterministic walking skeleton", () => {
     expect(persisted.shepherd.missions.find((mission) => mission.id === missionId)?.failure).toMatchObject({ code: "worktree_creation_failure", stage: "plane_creation" });
     expect(persisted.shepherd.contracts.filter((contract) => contract.missionId === missionId && contract.failure?.code === "worktree_creation_failure")).toHaveLength(1);
   });
+
+  it("unwinds the first initial Contract Plane when the second Plane creation fails", async () => {
+    const caseRoot = await makeCaseRoot();
+    const managedRoot = path.join(caseRoot, "managed");
+    const storePath = path.join(caseRoot, "state.json");
+    const outsideCanary = path.join(caseRoot, "outside-canary.txt");
+    await writeFile(outsideCanary, "outside unchanged\n", "utf8");
+    const store = new JsonStore(storePath);
+    await store.initialize();
+    const executor = new MustNotRunExecutor();
+    const verifier = new HostTrustedFixtureVerifier();
+    const verify = vi.spyOn(verifier, "verify");
+    let service!: ShepherdService;
+    let creationCalls = 0;
+    let survivingPath = "";
+    let survivingBranch = "";
+    let failedPlanePath = "";
+    service = new ShepherdService({
+      store,
+      managedRoot,
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier,
+      executor,
+      faultCheckpoint: async (checkpoint, context) => {
+        if (checkpoint !== "contract_plane_creation_start") return;
+        creationCalls += 1;
+        if (creationCalls !== 2) return;
+        const partial = service
+          .state()
+          .planes.find((plane) => plane.missionId === context.missionId);
+        if (!partial) throw new Error("First Plane was not durable before second creation");
+        survivingPath = partial.worktreePath;
+        survivingBranch = partial.branch;
+        failedPlanePath = path.join(
+          managedRoot,
+          "planes",
+          "auth-demo",
+          `contract-${context.planeId}`,
+        );
+        await mkdir(failedPlanePath);
+        await writeFile(path.join(failedPlanePath, "partial-canary"), "partial\n", "utf8");
+      },
+    });
+
+    const { missionId } = await startTrackedTestMission(service);
+    await vi.waitFor(
+      () => expect(service.missionDetail(missionId)?.mission.state).toBe("failed"),
+      { timeout: 10_000 },
+    );
+    const detail = service.missionDetail(missionId);
+    if (!detail) throw new Error("Plane batch failure detail disappeared");
+    expect(creationCalls).toBe(2);
+    expect(detail.mission.failure).toMatchObject({
+      code: "worktree_creation_failure",
+      stage: "plane_creation",
+    });
+    expect(detail.project.activeMissionId).toBeNull();
+    expect(detail.planes).toEqual([]);
+    expect(detail.contracts.every((contract) => contract.planeId === null)).toBe(true);
+    expect(detail.contracts.map((contract) => contract.state).sort()).toEqual([
+      "execution_failed",
+      "queued",
+    ]);
+    expect(
+      detail.contracts.filter(
+        (contract) => contract.failure?.code === "worktree_creation_failure",
+      ),
+    ).toHaveLength(1);
+    expect(detail.agents.every((agent) => agent.currentContractId === null)).toBe(true);
+    expect(detail.agents.every((agent) => agent.status !== "busy")).toBe(true);
+    expect(detail.collisions).toEqual([]);
+    expect(detail.candidates).toEqual([]);
+    expect(detail.project.protectedHeadCommit).toBe(detail.mission.baseCommit);
+    expect(executor.calls).toBe(0);
+    expect(verify).not.toHaveBeenCalled();
+    expect(JSON.stringify(toPublicMissionDetail(detail, []))).not.toContain(caseRoot);
+    await expect(access(survivingPath)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(failedPlanePath)).rejects.toMatchObject({ code: "ENOENT" });
+    const repositoryPath = detail.project.repositoryPath;
+    await expect(access(repositoryPath)).resolves.toBeUndefined();
+    const branchResult = await new Promise<string>((resolve, reject) => {
+      execFile(
+        "git",
+        ["-C", repositoryPath, "branch", "--list", survivingBranch],
+        { env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" } },
+        (error, stdout) => {
+          if (error) reject(new Error("Git branch inspection failed"));
+          else resolve(stdout.trim());
+        },
+      );
+    });
+    expect(branchResult).toBe("");
+    expect(await readFile(outsideCanary, "utf8")).toBe("outside unchanged\n");
+
+    const reloaded = new JsonStore(storePath);
+    await reloaded.initialize();
+    const persisted = reloaded.snapshot();
+    expect(persisted.shepherd.planes.filter((plane) => plane.missionId === missionId)).toEqual([]);
+    expect(
+      persisted.shepherd.contracts
+        .filter((contract) => contract.missionId === missionId)
+        .every((contract) => contract.planeId === null),
+    ).toBe(true);
+  }, 30_000);
+
+  it("fails closed with bounded attention evidence when initial Plane unwind fails", async () => {
+    const caseRoot = await makeCaseRoot();
+    const managedRoot = path.join(caseRoot, "managed");
+    const storePath = path.join(caseRoot, "state.json");
+    const store = new JsonStore(storePath);
+    await store.initialize();
+    const executor = new MustNotRunExecutor();
+    const verifier = new HostTrustedFixtureVerifier();
+    const verify = vi.spyOn(verifier, "verify");
+    const cleanupCanary =
+      "TST17_CLEANUP_SECRET EPERM Darwin /Users/private/plane-worktree";
+    vi.spyOn(PlaneManager.prototype, "destroyPlane").mockRejectedValue(
+      new Error(cleanupCanary),
+    );
+    let service!: ShepherdService;
+    let creationCalls = 0;
+    let survivingPath = "";
+    let failedPlanePath = "";
+    service = new ShepherdService({
+      store,
+      managedRoot,
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier,
+      executor,
+      sensitiveValues: ["TST17_CLEANUP_SECRET"],
+      faultCheckpoint: async (checkpoint, context) => {
+        if (checkpoint !== "contract_plane_creation_start") return;
+        creationCalls += 1;
+        if (creationCalls !== 2) return;
+        const partial = service
+          .state()
+          .planes.find((plane) => plane.missionId === context.missionId);
+        if (!partial) throw new Error("First Plane was not durable before second creation");
+        survivingPath = partial.worktreePath;
+        failedPlanePath = path.join(
+          managedRoot,
+          "planes",
+          "auth-demo",
+          `contract-${context.planeId}`,
+        );
+        await mkdir(failedPlanePath);
+      },
+    });
+
+    const { missionId } = await startTrackedTestMission(service);
+    await vi.waitFor(
+      () =>
+        expect(service.missionDetail(missionId)?.mission.state).toBe(
+          "attention_required",
+        ),
+      { timeout: 10_000 },
+    );
+    const detail = service.missionDetail(missionId);
+    if (!detail) throw new Error("Plane unwind attention detail disappeared");
+    expect(detail.mission).toMatchObject({
+      state: "attention_required",
+      attentionReason: "plane_unwind_failed",
+      failure: { code: "worktree_creation_failure", stage: "plane_creation" },
+    });
+    expect(detail.project.activeMissionId).toBe(missionId);
+    expect(detail.planes).toHaveLength(1);
+    expect(detail.planes[0]).toMatchObject({
+      state: "failed",
+      error: {
+        code: "worktree_creation_failure",
+        message: "Initial Contract Plane cleanup requires operator attention",
+        stage: "plane_unwind",
+      },
+    });
+    expect(
+      detail.contracts.map((contract) => contract.state).sort(),
+    ).toEqual(["execution_failed", "interrupted"]);
+    expect(detail.agents.every((agent) => agent.currentContractId === null)).toBe(true);
+    expect(detail.agents.every((agent) => agent.status !== "busy")).toBe(true);
+    expect(
+      detail.events.some((event) => event.details.failureCode === "persistence_error"),
+    ).toBe(false);
+    expect(detail.collisions).toEqual([]);
+    expect(detail.candidates).toEqual([]);
+    expect(detail.project.protectedHeadCommit).toBe(detail.mission.baseCommit);
+    expect(executor.calls).toBe(0);
+    expect(verify).not.toHaveBeenCalled();
+    await expect(access(survivingPath)).resolves.toBeUndefined();
+    await expect(access(failedPlanePath)).rejects.toMatchObject({ code: "ENOENT" });
+
+    const reloaded = new JsonStore(storePath, {
+      sensitiveValues: ["TST17_CLEANUP_SECRET"],
+    });
+    await reloaded.initialize();
+    const reloadedState = reloaded.snapshot();
+    expect(
+      reloadedState.shepherd.missions.find((mission) => mission.id === missionId),
+    ).toMatchObject({
+      state: "attention_required",
+      attentionReason: "plane_unwind_failed",
+      failure: { code: "worktree_creation_failure", stage: "plane_creation" },
+    });
+    expect(
+      reloadedState.shepherd.planes.filter((plane) => plane.missionId === missionId),
+    ).toEqual([
+      expect.objectContaining({
+        state: "failed",
+        error: expect.objectContaining({
+          code: "worktree_creation_failure",
+          stage: "plane_unwind",
+        }),
+      }),
+    ]);
+    const surfaces = [
+      JSON.stringify(detail),
+      JSON.stringify(toPublicMissionDetail(detail, [])),
+      JSON.stringify(reloadedState),
+      await readFile(storePath, "utf8"),
+    ].join("\n");
+    for (const canary of [
+      cleanupCanary,
+      "TST17_CLEANUP_SECRET",
+      "/Users/private/plane-worktree",
+      "EPERM Darwin",
+    ]) {
+      expect(surfaces).not.toContain(canary);
+    }
+  }, 30_000);
 
   it("does not invoke a sibling verifier after infrastructure terminalization", async () => {
     const caseRoot = await makeCaseRoot();

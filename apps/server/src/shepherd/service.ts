@@ -2709,8 +2709,13 @@ export class ShepherdService {
       return input;
     });
     const contractPlanes: Plane[] = [];
-    for (const input of scheduledInputs) {
-      contractPlanes.push(await this.createContractPlane(prepared, input.contractId));
+    try {
+      for (const input of scheduledInputs) {
+        contractPlanes.push(await this.createContractPlane(prepared, input.contractId));
+      }
+    } catch (error) {
+      await this.unwindInitialContractPlanes(prepared, contractPlanes, error);
+      throw error;
     }
     let rejectInfrastructureFailure!: (reason: unknown) => void;
     const infrastructureFailure = new Promise<PromiseSettledResult<void>[]>(
@@ -2981,6 +2986,98 @@ export class ShepherdService {
       throw error;
     }
     return plane;
+  }
+
+  private async unwindInitialContractPlanes(
+    prepared: PreparedMission,
+    planes: readonly Plane[],
+    creationError: unknown,
+  ): Promise<void> {
+    if (planes.length === 0) return;
+    const destroyedIds = new Set<string>();
+    const cleanupFailedIds = new Set<string>();
+    for (const plane of [...planes].reverse()) {
+      try {
+        await prepared.planeManager.destroyPlane(plane);
+        destroyedIds.add(plane.id);
+      } catch {
+        cleanupFailedIds.add(plane.id);
+      }
+    }
+    const updatedAt = this.timestamp();
+    const cleanupFailure: FailureInfo = {
+      code: "worktree_creation_failure",
+      message: "Initial Contract Plane cleanup requires operator attention",
+      stage: "plane_unwind",
+      at: updatedAt,
+      retryable: false,
+    };
+    const creationFailure = this.makeFailure(
+      creationError,
+      "plane_creation",
+      updatedAt,
+    );
+    await this.store.mutate((database) => {
+      const missionContracts = database.shepherd.contracts.filter(
+        (contract) => contract.missionId === prepared.missionId,
+      );
+      database.shepherd.planes = database.shepherd.planes.filter((plane) => {
+        if (destroyedIds.has(plane.id)) return false;
+        if (cleanupFailedIds.has(plane.id)) {
+          plane.state = "failed";
+          plane.error = cleanupFailure;
+          plane.updatedAt = updatedAt;
+        }
+        return true;
+      });
+      for (const contract of missionContracts) {
+        if (contract.planeId && destroyedIds.has(contract.planeId)) {
+          contract.planeId = null;
+          contract.updatedAt = updatedAt;
+        } else if (
+          contract.planeId &&
+          cleanupFailedIds.has(contract.planeId) &&
+          canTransitionContract(contract.state, "interrupted", "control_plane")
+        ) {
+          transitionContractAndRecord(database, contract.id, "interrupted", {
+            actor: "control_plane",
+            eventActor: SHEPHERD_ACTOR,
+            timestamp: updatedAt,
+            failure: cleanupFailure,
+            summary: "Initial Contract Plane cleanup requires operator attention",
+            details: { failureCode: cleanupFailure.code, stage: cleanupFailure.stage },
+          });
+        }
+        const agent = database.agents.find((item) => item.id === contract.agentId);
+        if (agent?.currentContractId === contract.id) {
+          agent.currentContractId = null;
+          agent.status = cleanupFailedIds.has(contract.planeId ?? "")
+            ? "error"
+            : "ready";
+          agent.lastError = cleanupFailedIds.has(contract.planeId ?? "")
+            ? cleanupFailure.message
+            : null;
+          agent.updatedAt = updatedAt;
+        }
+      }
+      if (cleanupFailedIds.size > 0) {
+        const mission = database.shepherd.missions.find(
+          (item) => item.id === prepared.missionId,
+        );
+        if (
+          mission &&
+          canTransitionMission(mission.state, "attention_required", "control_plane")
+        ) {
+          transitionMissionAndRecord(database, mission.id, "attention_required", {
+            actor: "control_plane",
+            eventActor: SHEPHERD_ACTOR,
+            timestamp: updatedAt,
+            attentionReason: "plane_unwind_failed",
+            failure: creationFailure,
+          });
+        }
+      }
+    });
   }
 
   private async persistContractAuthorityDenial(

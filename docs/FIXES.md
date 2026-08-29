@@ -47,8 +47,27 @@ that limitation is explicit.
   failure; Contract/Mission/event/API/reload evidence stays bounded; Agent/project
   release, protected HEAD/canary, no downstream invocation, artifact cleanliness,
   adjacent/full/security and hosted gates pass.
-- **Status:** **OPEN / Medium blocker.** Exact RED observed 1/1 with one surviving
-  durable ready Plane. Candidate is not integrated to `mock-main`.
+- **Observed correction:** candidate `fix/f04-plane-unwind` tracks only Planes
+  created by the current initial scheduling batch. A later creation failure destroys
+  those exact worktrees/branches in reverse order, removes only their durable Plane
+  rows, clears only their Contract `planeId` associations, and releases their Agents;
+  the original failed Contract and Mission retain fixed `worktree_creation_failure`
+  / `plane_creation` evidence. The second-of-two regression proves zero batch Plane,
+  worktree and branch survivors, unchanged protected HEAD/outside canary, reload
+  consistency and no executor/verifier/collision/candidate/promotion activity. If an
+  exact Plane cleanup fails, its record remains discoverable as failed, its Contract
+  is interrupted, all Agents are released, and the Mission enters existing
+  `attention_required` with `plane_unwind_failed`; the project remains active as
+  required by the nonterminal attention invariant. Cleanup evidence uses bounded
+  `worktree_creation_failure` at `plane_unwind`; F-06 `persistence_error` remains
+  unclaimed. Planted raw path/OS/secret cleanup diagnostics are absent from durable,
+  reload and public DTO surfaces.
+- **Status:** **FIXER + independent security review VERIFIED candidate / Auditor
+  pending.** Causal rows 2/2, service/real-Git 61/61,
+  security/F-01/recovery/API adjacency 186/186, strict test types and two literal
+  full checks pass (each: launcher 3/3, Server 665 plus two opt-in skips, Web 17/17,
+  both builds). Security re-review found no High/Medium issue; explicit reload and
+  non-busy Agent assertions close its actionable Low notes. No UI/live/model call ran.
 
 `TST-13`–`TST-16` are **CLOSED / AUDITED** at `83cc1d0`. The complete
 runner→executor→durable/public boundary and all 47 inventoried executor filesystem/
