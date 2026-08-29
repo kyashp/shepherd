@@ -1,6 +1,6 @@
 # Shepherd Defect Queue
 
-**Assessed branch/SHA:** `mock-main` / `dc8755308dbbb8d0404a8b9aacb7ff3c393a49c0`
+**Assessed branch/SHA:** `mock-main` / `83954f7fbb34cacf23ac406765e626f3dd910a57`
 
 **Audited:** 2026-08-29, Asia/Singapore
 
@@ -139,8 +139,11 @@ that limitation is explicit.
   server 563/563 with one opt-in live skip, both typechecks, and both builds.
   Screenshots `docs/ui-review/ui-03-create-agent/{1280x800,1440x900}.png` preserve
   the accepted theme. No live/model call occurred.
-- **Owner/status:** Fixer / `RESOLVED — PENDING INTEGRATED AUDIT`; **100% scoped
-  candidate**, `T,C,B,U` passed 4/5 and `I` remains pending.
+- **Owner/status:** `RESOLVED + AUDITED` at integrated implementation `83954f7`;
+  **100% scoped**, `T,C,B,U,I` passed 5/5. Auditor independently repeated the
+  focused 2/2 and full 4/4 browser gates plus harness unit 2/2, inspected both
+  screenshots, matched their regenerated hashes, and passed the integrated strict
+  type/full repository gate. `E2E-01` is unblocked.
 
 ### `OPS-06` — macOS Docker Desktop live Shepherd preflight fails opaquely
 
@@ -189,7 +192,7 @@ that limitation is explicit.
 | `SCH-02` | Cycles are rejected during scheduling rather than before graph persistence. | Call existing DAG validator before durable Contract creation. | Worker / ready |
 | `UI-01` | Current detailed failure panel is attention-focused; ordinary failed Missions may hide typed detail. | Reuse existing failure/attention primitives; no visual redesign. | Worker / blocked by typed failures |
 | `UI-02` | Current web type has optional `estimatedDurationMs`, but no server/domain producer exists. | Persist and serve trusted estimates, clearly distinct from actuals; preserve timeline design. | Worker / ready |
-| `UI-03` | E2E-01 reproduced document widths of 2299/2579 on Create Agent because four transparent absolute preset radios retain global viewport-wide input sizing. | Bound only the visually hidden preset-radio dimensions; preserve native semantics, labels, keyboard behavior, and accepted form visuals. | Fixer / ready; blocks E2E-01 |
+| `UI-03` | E2E-01 reproduced document widths of 2299/2579 on Create Agent because four transparent absolute preset radios retained global viewport-wide input sizing. | Resolved by bounding only the visually hidden preset-radio dimensions while preserving native semantics, labels, keyboard behavior, and accepted form visuals. | Resolved + audited at `83954f7`; E2E-01 unblocked |
 | `TEST-TS` | Current server tsconfig explicitly excludes `src/**/*.test.ts`. | Add a separate no-emit test typecheck without changing production emit. | Worker / ready |
 | `CI-01` | Repository contains no `.github/workflows` required check. | Network/model-free Node install/typecheck/test/build workflow; preserve protected-main policy. | Integrator / ready |
 

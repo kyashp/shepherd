@@ -140,6 +140,50 @@ No live/model request was made. `UI-03` is a **100% scoped candidate** with
 `T,C,B,U` passed; integrated Auditor gate `I`, `E2E-01`, and `UI-GATE` remain
 pending and are not claimed here.
 
+### UI-03 independent integration audit
+
+The Auditor integrated the candidate as `83954f7` while preserving the newer
+TEST-TS gate and its evidence. The only product change remains eleven lines in the
+existing preset-radio CSS: a locally bounded transparent native input and the
+existing purple two-pixel focus treatment painted on its wrapping card. No React,
+API, navigation, ancestor overflow, dependency, runtime, or unrelated design change
+was introduced.
+
+Independent integrated evidence:
+
+```sh
+node --test tests/e2e/harness.test.mjs
+# 2/2 passed
+
+PLAYWRIGHT_BROWSERS_PATH=.tmp/playwright-browsers \
+  npx playwright test --config=playwright.config.ts -g "Create Agent presets"
+# 2/2 passed at 1280x800 and 1440x900
+
+PLAYWRIGHT_BROWSERS_PATH=.tmp/playwright-browsers \
+  npx playwright test --config=playwright.config.ts
+# 4/4 passed across both required viewports
+
+npm run check
+# strict server test-source plus both production typechecks passed; launcher 3/3;
+# server 26 files and 563/563 tests passed with one unchanged opt-in live skip;
+# web 40-module and server production builds passed
+
+git diff --check
+# passed
+```
+
+The browser gate observed document/body scroll width and height within client
+geometry, four `1x1` radios with zero inherited minimum height/padding/border/margin,
+an accessible `Authority preset` group and radio names, Generalist initially checked,
+one native Tab stop, ArrowLeft focus/selection, a visible theme-matched 2px outline,
+all four label clicks, and exactly one checked radio. Regenerated screenshots exactly
+matched the committed hashes and were visually inspected for adjacent layout,
+spacing, hierarchy, clipping, and theme consistency. The authenticated token was not
+rendered, temporary browser/run artifacts remained ignored, and no model/network call
+occurred. `UI-03` is **AUDITED, scoped 100%**, with `T,C,B,U,I` passed 5/5;
+`E2E-01` is now ready to resume. Hosted Node 22 evidence is recorded after the final
+audit-documentation push.
+
 ## CI-01 required-check workflow candidate
 
 **Date:** 2026-08-29 (Asia/Singapore)

@@ -1,7 +1,7 @@
 # Shepherd Completion Task Ledger
 
 **Canonical implementation snapshot:** `mock-main` at
-`8995605bd122ba8c476a3f15caee36fb76dc0b0a`
+`83954f7fbb34cacf23ac406765e626f3dd910a57`
 
 **Audited:** 2026-08-29, Asia/Singapore
 
@@ -126,9 +126,9 @@ without an open issue/PR are not active ownership claims.
 
 | ID | PRD ref | Status / dependencies | Required acceptance | Confidence; gates passed; audit |
 |---|---|---|---|---|
-| `UI-03` | 0.4, 11.1–11.2, 11.7 | **FIXED — pending integrated Auditor rerun; unblocks `E2E-01` after integration** | Create Agent's transparent preset radios inherited global viewport-wide input sizing, expanding document width to 2299/1280 and 2579/1440. The Fixer bounded only the hidden radio box and added a theme-matched visible card focus outline. Causal Playwright now proves four native labelled radios, Generalist checked, one-stop Tab order, arrow focus/selection, all wrapping-label clicks, visible focus, exact 1x1 neutralized boxes, and no document/body X/Y overflow at both required viewports. Screenshots are under `docs/ui-review/ui-03-create-agent/`; no layout/theme redesign. `T,C,B,U,I`. | **100% scoped candidate**; `T,C,B,U` passed (4/5), `I` pending; not audited |
+| `UI-03` | 0.4, 11.1–11.2, 11.7 | **AUDITED** at integrated implementation `83954f7`; `E2E-01` unblocked | Create Agent's transparent preset radios inherited global viewport-wide input sizing, expanding document width to 2299/1280 and 2579/1440. The integrated correction bounds only the hidden radio box and adds a theme-matched visible card focus outline. Auditor independently passed focused Chromium 2/2, full browser 4/4 and harness unit 2/2 at both required viewports; document/body X/Y, exact neutralized 1x1 boxes, accessible group/names, Generalist default, one Tab stop, arrow focus/selection, visible 2px outline, all label clicks and exactly one checked radio passed. Regenerated screenshot hashes matched the committed images; visual review preserved layout/theme. Integrated literal check passed strict test-source and production typechecks, launcher 3/3, server 563/563 with one unchanged opt-in live skip, and both builds. `T,C,B,U,I`. | **100% scoped**; `T,C,B,U,I` passed (5/5); audited |
 | `E2E-HARNESS` | 0.4, 16 Phase 6 | **AUDITED** at integrated implementation `5b152a0` | Auditor independently verified the candidate and integrated SHA: allowlisted child environment with no `.env` or ambient Ark/model ingress; required bearer auth; bounded fake Codex/container fixtures, readiness, logs, termination, port and run-root cleanup; ignored artifacts; no production debug route or UI/runtime change. Node harness passed 2/2 and Chromium passed 2/2 at exact `1280x800` and `1440x900`; regenerated screenshot hashes matched, document/body X/Y overflow was absent, and both images preserved the accepted clean-shell UI. Literal `npm run check` passed launcher 3/3, server 555/555 with one opt-in live skip, typechecks and both builds. This foundation does not satisfy `E2E-01`–`08`, populated/composer states, accessibility, or `UI-GATE`. `T,C,B,S,I`. | **100% scoped**; `T,C,B,S,I` passed (5/5); audited |
-| `E2E-01` | 11.6.1, 17 baseline | **BLOCKED by reproduced `UI-03`**; Worker stopped without a production patch | The real authenticated journey reached Create Agent at both viewports, then failed the first required no-overflow gate: document width was 2299/1280 and 2579/1440 because transparent preset radios retain global input sizing. Fixer must land the minimal `UI-03` correction before the Worker resumes create → fake Playground artifact/test → follow-up/session → server restart continuity. No live call is permitted while deterministic acceptance is red. `C,B,L,S,U,I`. | **35%**; 0/6; not audited |
+| `E2E-01` | 11.6.1, 17 baseline | **READY — Worker; UI-03 gate cleared** | Resume the authenticated create → fake Playground artifact/test → follow-up/session → server restart continuity journey at both required viewports. The Create Agent no-overflow and radio accessibility prerequisite is now independently audited; retain it as the first regression gate. No live call is permitted until deterministic acceptance is green. `C,B,L,S,U,I`. | **35%**; 0/6 journey gates; not audited |
 | `E2E-02` | 11.6.2, 15 | `BLOCKED` by harness/P0 | Full hero chain with every intermediate Contract/Plane/collision/candidate/promotion state and real backend data; `C,B,S,U,I`. | **50%**; 0/5; not audited |
 | `E2E-03` | 11.6.3 | `BLOCKED` by Group Chat work | Targeted Project Group Contract from click/type through Agent summary; `C,B,S,U,I`. | **10%**; 0/5; not audited |
 | `E2E-04` | 11.6.4, 12 | `BLOCKED` by failure UI | Unauthorized diff visibly denied with evidence and no promotion; `C,B,S,U,I`. | **45%**; 0/5; not audited |
@@ -157,11 +157,11 @@ without an open issue/PR are not active ownership claims.
 
 ## Count and current verdict
 
-- **45 tracked work items:** 5 audited, 4 externally held, and 36 other incomplete
+- **45 tracked work items:** 6 audited, 4 externally held, and 35 other incomplete
   items across P0/P1/P2.
 - **Next ready worker assignment:** `F-01/02` unless the integrator selects another
   non-overlapping ready row.
-- **First fixer assignment:** `UI-03`; its exact browser failure contract is ready.
+- **First fixer assignment:** none unconditional; `OPS-06` awaits bounded macOS evidence.
 - **Current completion verdict:** incomplete. Strong kernel evidence exists, but the
   current deterministic full gate is green and all remaining rows above still
   require their stated integration/audit evidence.
