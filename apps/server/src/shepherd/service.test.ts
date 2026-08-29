@@ -1388,6 +1388,47 @@ describe("Shepherd deterministic walking skeleton", () => {
     });
   }, 30_000);
 
+  it("returns the same empty result when a clean demo is reset repeatedly", async () => {
+    const caseRoot = await makeCaseRoot();
+    const managedRoot = path.join(caseRoot, "managed");
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const service = new ShepherdService({
+      store,
+      managedRoot,
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+    });
+    await service.initialize();
+    const before = store.snapshot();
+    const expected = {
+      projectId: "auth-demo",
+      restoredHead: null,
+      removedPlanePaths: [],
+      removed: {
+        missions: 0,
+        contracts: 0,
+        planes: 0,
+        claims: 0,
+        collisions: 0,
+        candidates: 0,
+        events: 0,
+        messages: 0,
+      },
+    };
+
+    await expect(service.resetDeterministicDemo()).resolves.toEqual(expected);
+    await expect(service.resetDeterministicDemo()).resolves.toEqual(expected);
+
+    expect(store.snapshot()).toEqual(before);
+    await expect(
+      access(path.join(managedRoot, "repositories", "auth-demo")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      access(path.join(managedRoot, "projects", "auth-demo.json")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("resumes a reset after Git reached the initial commit and preserves unrelated cursors", async () => {
     const caseRoot = await makeCaseRoot();
     const managedRoot = path.join(caseRoot, "managed");
@@ -1432,6 +1473,8 @@ describe("Shepherd deterministic walking skeleton", () => {
 
     const reset = await service.resetDeterministicDemo();
     expect(reset.restoredHead).toBe(initialCommit);
+    expect(reset.removed.missions).toBe(1);
+    expect(reset.removed.events).toBeGreaterThan(0);
     expect(service.missionDetail(target.mission.id)).toBeNull();
     expect(
       store.snapshot().shepherd.events.filter(

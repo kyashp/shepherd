@@ -288,7 +288,7 @@ export class ShepherdControlError extends Error {
 
 export interface DeterministicDemoResetResult {
   projectId: "auth-demo";
-  restoredHead: string;
+  restoredHead: string | null;
   removedPlanePaths: string[];
   removed: {
     missions: number;
@@ -1526,7 +1526,24 @@ export class ShepherdService {
     }
     const snapshot = this.store.snapshot();
     const project = snapshot.shepherd.projects.find((item) => item.id === projectId);
-    if (!project) throw new ShepherdControlError("not_found", "Auth demo was not found");
+    if (!project) {
+      await assertNoManagedProjectState(this.managedRoot);
+      return {
+        projectId,
+        restoredHead: null,
+        removedPlanePaths: [],
+        removed: {
+          missions: 0,
+          contracts: 0,
+          planes: 0,
+          claims: 0,
+          collisions: 0,
+          candidates: 0,
+          events: 0,
+          messages: 0,
+        },
+      };
+    }
     if (
       snapshot.shepherd.missions.some(
         (mission) => mission.projectId === projectId && !terminalMission(mission.state),
