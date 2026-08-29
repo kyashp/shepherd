@@ -45,8 +45,11 @@ const ownerPattern =
 type FilesystemStage =
   | "sentinel_validation"
   | "sentinel_adoption"
+  | "private_root_preparation"
   | "private_home_reconciliation"
-  | "preflight_workspace_reconciliation";
+  | "preflight_workspace_reconciliation"
+  | "preflight_setup"
+  | "execution_setup";
 type FilesystemReason =
   | "operation_failed"
   | "cleanup_failed"
@@ -368,7 +371,10 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
     try {
       // Keep the exclusive sentinel empty (and therefore invalid) until the
       // directory still contains only the entry created by this adoption.
-      const entriesAfterCreate = await readdir(root);
+      const entriesAfterCreate = await boundedFilesystemOperation(
+        "sentinel_adoption",
+        async () => await readdir(root),
+      );
       if (
         entriesAfterCreate.length !== 1 ||
         entriesAfterCreate[0] !== PRIVATE_ROOT_SENTINEL
@@ -382,7 +388,10 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
         encoding: "utf8",
       });
       await handle.sync();
-      const entriesAfterWrite = await readdir(root);
+      const entriesAfterWrite = await boundedFilesystemOperation(
+        "sentinel_adoption",
+        async () => await readdir(root),
+      );
       if (
         entriesAfterWrite.length !== 1 ||
         entriesAfterWrite[0] !== PRIVATE_ROOT_SENTINEL
@@ -433,11 +442,16 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
         "the execution workspace",
       );
     }
-    await mkdir(this.config.shepherdCodexHomeRoot, {
-      recursive: true,
-      mode: 0o700,
-    });
-    const rootMetadata = await lstat(this.config.shepherdCodexHomeRoot);
+    await boundedFilesystemOperation("private_root_preparation", async () =>
+      await mkdir(this.config.shepherdCodexHomeRoot, {
+        recursive: true,
+        mode: 0o700,
+      }),
+    );
+    const rootMetadata = await boundedFilesystemOperation(
+      "private_root_preparation",
+      async () => await lstat(this.config.shepherdCodexHomeRoot),
+    );
     if (!rootMetadata.isDirectory() || rootMetadata.isSymbolicLink()) {
       throw new Error("Shepherd private CODEX_HOME root is not a real directory");
     }
@@ -449,12 +463,14 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
       canonicalSharedHome,
       canonicalShepherdRoot,
     ] =
-      await Promise.all([
-        realpath(this.config.dataDirectory),
-        realpath(this.config.shepherdCodexHomeRoot),
-        realpath(this.config.codexHome),
-        realpath(this.config.shepherdRoot),
-      ]);
+      await boundedFilesystemOperation("private_root_preparation", async () =>
+        await Promise.all([
+          realpath(this.config.dataDirectory),
+          realpath(this.config.shepherdCodexHomeRoot),
+          realpath(this.config.codexHome),
+          realpath(this.config.shepherdRoot),
+        ]),
+      );
     if (!isStrictChild(canonicalDataRoot, canonicalPrivateRoot)) {
       throw new Error(
         "Canonical Shepherd private CODEX_HOME root escaped APP_DATA_DIR",
@@ -471,7 +487,10 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
       "the canonical managed Shepherd root",
     );
     if (workspacePath) {
-      const canonicalWorkspace = await realpath(workspacePath);
+      const canonicalWorkspace = await boundedFilesystemOperation(
+        "private_root_preparation",
+        async () => await realpath(workspacePath),
+      );
       assertDedicatedRoot(
         canonicalPrivateRoot,
         canonicalWorkspace,
@@ -483,7 +502,11 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
 
   private async removeInterruptedPrivateHomes(root: string): Promise<number> {
     let removed = 0;
-    for (const entry of await readdir(root, { withFileTypes: true })) {
+    const entries = await boundedFilesystemOperation(
+      "private_home_reconciliation",
+      async () => await readdir(root, { withFileTypes: true }),
+    );
+    for (const entry of entries) {
       if (entry.name === PRIVATE_ROOT_SENTINEL) continue;
       if (!PRIVATE_HOME_PATTERN.test(entry.name)) {
         throw new Error("Unexpected entry in Shepherd private CODEX_HOME root");
@@ -492,8 +515,10 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
         throw new Error("Interrupted Shepherd CODEX_HOME is not a real directory");
       }
       const candidate = path.join(root, entry.name);
-      const metadata = await lstat(candidate);
-      const canonicalCandidate = await realpath(candidate);
+      const [metadata, canonicalCandidate] = await boundedFilesystemOperation(
+        "private_home_reconciliation",
+        async () => await Promise.all([lstat(candidate), realpath(candidate)]),
+      );
       if (
         !metadata.isDirectory() ||
         metadata.isSymbolicLink() ||
@@ -516,16 +541,25 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
   }
 
   private async removeInterruptedPreflightWorkspaces(): Promise<number> {
-    const root = await realpath(this.config.shepherdRoot);
+    const root = await boundedFilesystemOperation(
+      "preflight_workspace_reconciliation",
+      async () => await realpath(this.config.shepherdRoot),
+    );
     let removed = 0;
-    for (const entry of await readdir(root, { withFileTypes: true })) {
+    const entries = await boundedFilesystemOperation(
+      "preflight_workspace_reconciliation",
+      async () => await readdir(root, { withFileTypes: true }),
+    );
+    for (const entry of entries) {
       if (!PREFLIGHT_WORKSPACE_PATTERN.test(entry.name)) continue;
       if (!entry.isDirectory() || entry.isSymbolicLink()) {
         throw new Error("Interrupted Shepherd preflight is not a real directory");
       }
       const candidate = path.join(root, entry.name);
-      const metadata = await lstat(candidate);
-      const canonicalCandidate = await realpath(candidate);
+      const [metadata, canonicalCandidate] = await boundedFilesystemOperation(
+        "preflight_workspace_reconciliation",
+        async () => await Promise.all([lstat(candidate), realpath(candidate)]),
+      );
       if (
         !metadata.isDirectory() ||
         metadata.isSymbolicLink() ||
@@ -580,15 +614,31 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
     let cleanupError: unknown = null;
     try {
       const privateRoot = await this.preparePrivateHomeRoot();
-      privateHome = await mkdtemp(path.join(privateRoot, PRIVATE_HOME_PREFIX));
-      await chmod(privateHome, 0o700);
-      await writeShepherdCodexConfig(this.config, privateHome);
-
-      const canonicalShepherdRoot = await realpath(this.config.shepherdRoot);
-      workspace = await mkdtemp(
-        path.join(canonicalShepherdRoot, PREFLIGHT_WORKSPACE_PREFIX),
+      privateHome = await boundedFilesystemOperation(
+        "preflight_setup",
+        async () => await mkdtemp(path.join(privateRoot, PRIVATE_HOME_PREFIX)),
       );
-      await chmod(workspace, 0o700);
+      await boundedFilesystemOperation("preflight_setup", async () =>
+        await chmod(privateHome!, 0o700),
+      );
+      await boundedFilesystemOperation("preflight_setup", async () =>
+        await writeShepherdCodexConfig(this.config, privateHome!),
+      );
+
+      const canonicalShepherdRoot = await boundedFilesystemOperation(
+        "preflight_setup",
+        async () => await realpath(this.config.shepherdRoot),
+      );
+      workspace = await boundedFilesystemOperation(
+        "preflight_setup",
+        async () =>
+          await mkdtemp(
+            path.join(canonicalShepherdRoot, PREFLIGHT_WORKSPACE_PREFIX),
+          ),
+      );
+      await boundedFilesystemOperation("preflight_setup", async () =>
+        await chmod(workspace!, 0o700),
+      );
       let preflightResult: Awaited<ReturnType<NonNullable<typeof this.runner.isEphemeralAvailable>>>;
       try {
         preflightResult = await this.runner.isEphemeralAvailable(
@@ -661,18 +711,27 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
       const privateHomeRoot = await this.preparePrivateHomeRoot(
         request.workspacePath,
       );
-      privateHome = await mkdtemp(
-        path.join(privateHomeRoot, PRIVATE_HOME_PREFIX),
+      privateHome = await boundedFilesystemOperation(
+        "execution_setup",
+        async () =>
+          await mkdtemp(path.join(privateHomeRoot, PRIVATE_HOME_PREFIX)),
       );
-      await chmod(privateHome, 0o700);
-      privateHome = await realpath(privateHome);
+      await boundedFilesystemOperation("execution_setup", async () =>
+        await chmod(privateHome!, 0o700),
+      );
+      privateHome = await boundedFilesystemOperation(
+        "execution_setup",
+        async () => await realpath(privateHome!),
+      );
       if (path.dirname(privateHome) !== privateHomeRoot) {
         throw new Error("Ephemeral CODEX_HOME escaped its dedicated root");
       }
       if (this.cancellationRequests.has(request.executionId)) {
         throw new RunCancelledError();
       }
-      await writeShepherdCodexConfig(this.config, privateHome);
+      await boundedFilesystemOperation("execution_setup", async () =>
+        await writeShepherdCodexConfig(this.config, privateHome!),
+      );
       if (this.cancellationRequests.has(request.executionId)) {
         throw new RunCancelledError();
       }

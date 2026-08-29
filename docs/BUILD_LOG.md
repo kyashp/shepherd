@@ -7,6 +7,34 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — TST-16 complete filesystem boundary candidate
+
+The Fixer candidate `fix/f-01-02-filesystem-boundary` closes the remaining raw
+executor-owned filesystem/config paths with fixed stages for private-root
+preparation, private-home and preflight-workspace reconciliation, preflight setup
+and execution setup. It preserves existing fixed policy/invariant errors,
+containment/symlink checks, typed runtime/cancellation behavior and exact cleanup
+precedence; raw native errors are not attached as causes or durable fields.
+
+The causal matrix injects 31 filesystem/config call-site failures across all stages
+failures and proves bounded stage/reason output, exact retained-target cleanup and
+retry, including distinct canonical roots/workspace and sentinel handle/post-create
+edges. TST-15 retains complementary open/handle/unlink/rm coverage. A frozen source
+inventory tracks 47 executor filesystem/config expressions. Contract and candidate tests scan
+Error/cause/stack/inspect, console, store/reload, Mission/Contract/Plane/Agent/event,
+public DTO and real HTTP response surfaces with opaque, secret, path, errno and OS
+canaries; no candidate promotes or moves protected head. Executor 55/55, adjacent
+runtime/service/config/verifier 141/141, strict test typecheck and the first literal
+`npm run check` passed (launcher 3/3, Server 649 plus two explicit opt-in skips, Web
+17/17 and both builds). After the first security review identified missing distinct
+call-site evidence, the matrix expanded to 31 rows and the inventory to all 47 calls;
+focused 67/67, adjacent 154/154 and two corrected literal checks passed (each:
+launcher 3/3, Server 661 plus two skips, Web 17/17 and both builds). Independent
+security re-review found no remaining material
+issue. No model/live/UI call ran. Independent Auditor integration remains pending.
+The existing Low restart-only invalid-sentinel manual-cleanup
+residual remains fail-closed and is not claimed as cross-process automatic recovery.
+
 ## 2026-08-30 — TST-15 passes; F-01/02 blocked by complete TST-16 boundary
 
 The Auditor reviewed exact unintegrated chain `8c7cfc1`. Focused runner/executor/

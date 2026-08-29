@@ -46,9 +46,24 @@ that limitation is explicit.
   log/startup plus all durable/public surfaces. Preserve containment, retained-
   artifact retry, TST-12–15, OPS-06 and runtime classification. No broad filesystem
   refactor or raw cause.
-- **Acceptance/status:** **OPEN / READY for Fixer.** Complete operation/stage matrix,
-  double-fault precedence, Contract/candidate durable/API/log proof, focused/adjacent/
-  literal check, scans and independent security re-review.
+- **Observed correction:** candidate `fix/f-01-02-filesystem-boundary` routes the
+  remaining root preparation, reconciliation enumeration, preflight setup and run
+  setup calls through fixed `BoundedFilesystemError` stages. The 31-row injected
+  operation matrix covers mkdir/mkdtemp/lstat/readdir/realpath/chmod/config write,
+  exact retained-target cleanup and bounded retry; TST-15 continues to cover open,
+  handle stat/read/write/sync/truncate/close, unlink and rm. A frozen 47-expression source
+  inventory detects newly added unreviewed executor filesystem/config call sites.
+  Planted opaque/secret/path/OS/config canaries are absent from Error/cause/stack/
+  inspect, startup/log, Contract/candidate/store/reload/event/Agent/public DTO and
+  real HTTP response surfaces. Contract and candidate failures do not promote;
+  containment and symlink policy are unchanged. Focused executor 67/67 (including
+  independent security re-review), adjacent runtime/service/config/verifier 154/154,
+  strict test types and two literal checks pass locally; external model/live calls: 0.
+- **Acceptance/status:** **FIXER + independent security review VERIFIED candidate /
+  Auditor integration pending.** The initial review's two Medium evidence gaps were
+  closed by the expanded call-site matrix and 47-expression inventory; re-review
+  found no remaining material issue. The existing Low restart-only invalid
+  sentinel operator-cleanup residual is unchanged; no cross-process retry is claimed.
 
 ### `TST-15` — Sentinel and reconciliation cleanup paths expose raw filesystem errors
 
