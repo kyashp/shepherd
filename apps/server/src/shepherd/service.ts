@@ -73,6 +73,7 @@ import {
 import { parseProjectGroupMessage } from "./group-routing.js";
 import { GitClient, type GitClientOptions } from "./git-client.js";
 import {
+  GitMergeConflictError,
   PlaneAuthorityViolationError,
   PlaneCreationError,
   PlaneManager,
@@ -369,6 +370,14 @@ function boundedContractAuthority(
   return intersection.authority;
 }
 
+function boundedConflictPreview(conflictFiles: readonly string[]): string {
+  return JSON.stringify(
+    conflictFiles.slice(0, 8).map((file) =>
+      file.length <= 48 ? file : `${file.slice(0, 45)}...`,
+    ),
+  );
+}
+
 export interface ShepherdIndependentVerifier {
   verify(request: VerificationRequest): Promise<VerificationEvidence>;
   cancel?(targetId: string): Promise<boolean>;
@@ -379,6 +388,7 @@ export type ShepherdFaultCheckpoint =
   | "contract_plane_creation_start"
   | "contract_execution_workspace_ready"
   | "contract_verification_snapshot_ready"
+  | "integration_merge_start"
   | "promotion_ready_for_cas"
   | "promotion_cas_completed";
 
@@ -2109,6 +2119,15 @@ export class ShepherdService {
         code: "worktree_creation_failure",
         message: "Contract Plane worktree could not be created",
         stage: "plane_creation",
+        at,
+        retryable: false,
+      };
+    }
+    if (error instanceof GitMergeConflictError) {
+      return {
+        code: "git_conflict",
+        message: "Verified Contract changes conflict during integration",
+        stage: "integration_merge",
         at,
         retryable: false,
       };
@@ -3863,6 +3882,10 @@ export class ShepherdService {
       await prepared.planeManager.destroyPlane(integration).catch(() => undefined);
       throw error;
     }
+    await this.checkpoint("integration_merge_start", {
+      missionId: prepared.missionId,
+      planeId: integration.id,
+    });
     const contractPlanes = this.store
       .snapshot()
       .shepherd.planes.filter(
@@ -3880,7 +3903,36 @@ export class ShepherdService {
       );
       this.ensureMissionRunnable(prepared.missionId);
       if (!merged.merged || merged.conflictFiles.length > 0) {
-        throw new Error("Verified Contracts produced a textual Git conflict");
+        const error = new GitMergeConflictError(merged.conflictFiles);
+        const failedAt = this.timestamp();
+        const failure = this.makeFailure(error, "integration_merge", failedAt);
+        await this.store.mutate((database) => {
+          const persistedIntegration = database.shepherd.planes.find(
+            (plane) => plane.id === integration.id,
+          );
+          if (!persistedIntegration) {
+            throw new Error("Integration Plane disappeared before conflict persistence");
+          }
+          persistedIntegration.state = "failed";
+          persistedIntegration.error = failure;
+          persistedIntegration.updatedAt = failedAt;
+          this.recordEvent(database, {
+            type: "mission_state_changed",
+            summary: failure.message,
+            missionId: prepared.missionId,
+            contractId: contractPlane.contractId,
+            planeId: integration.id,
+            actor: SHEPHERD_ACTOR,
+            timestamp: failedAt,
+            details: {
+              failureCode: failure.code,
+              stage: failure.stage,
+              conflictFileCount: merged.conflictFiles.length,
+              conflictFiles: boundedConflictPreview(merged.conflictFiles),
+            },
+          });
+        });
+        throw error;
       }
       integration = merged.plane;
       await this.store.mutate((database) => {

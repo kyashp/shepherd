@@ -44,6 +44,7 @@ import {
   type ShepherdIndependentVerifier,
 } from "./service.js";
 import { PlaneManager } from "./plane-manager.js";
+import { assertSafeProjectPath } from "./git-client.js";
 import type { VerificationRequest } from "./verifier.js";
 
 const repositoryTestRoot = fileURLToPath(
@@ -2429,6 +2430,133 @@ describe("Shepherd deterministic walking skeleton", () => {
       expect(surfaces).not.toContain(canary);
     }
   }, 30_000);
+
+  it("persists an actual textual integration conflict without moving protected HEAD", async () => {
+    const caseRoot = await makeCaseRoot();
+    const outsideCanary = path.join(caseRoot, "outside-conflict-canary.txt");
+    await writeFile(outsideCanary, "outside unchanged\n", "utf8");
+    const storePath = path.join(caseRoot, "state.json");
+    const store = new JsonStore(storePath);
+    await store.initialize();
+    let injected = false;
+    const conflictFiles = [
+      ...Array.from({ length: 9 }, (_, index) => `conflicts/shared-${index}.txt`),
+      `conflicts/${"long-name-".repeat(7)}tail.txt`,
+    ];
+    let service!: ShepherdService;
+    service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      faultCheckpoint: async (checkpoint, context) => {
+        if (checkpoint !== "integration_merge_start" || injected) return;
+        injected = true;
+        const contractPlanes = service
+          .state()
+          .planes.filter((plane) => plane.missionId === context.missionId && plane.kind === "contract")
+          .sort((left, right) => left.id.localeCompare(right.id));
+        expect(contractPlanes).toHaveLength(2);
+        for (const [index, plane] of contractPlanes.entries()) {
+          await mkdir(path.join(plane.worktreePath, "conflicts"), { recursive: true });
+          for (const conflictFile of conflictFiles) {
+            await writeFile(path.join(plane.worktreePath, conflictFile), `side-${index}\n`, "utf8");
+          }
+          await gitOutput(plane.worktreePath, ["add", "--", "conflicts"]);
+          await gitOutput(plane.worktreePath, [
+            "-c", "user.name=Fixture", "-c", "user.email=fixture@local.invalid",
+            "commit", "-m", `test conflict side ${index}`,
+          ]);
+          const headCommit = await gitOutput(plane.worktreePath, ["rev-parse", "HEAD"]);
+          const changedFiles = (await gitOutput(plane.worktreePath, [
+            "diff", "--name-only", `${plane.baseCommit}..${headCommit}`, "--",
+          ])).split("\n").filter(Boolean).sort();
+          await store.mutate((database) => {
+            const persisted = database.shepherd.planes.find((item) => item.id === plane.id);
+            if (!persisted) throw new Error("Contract Plane disappeared during conflict injection");
+            persisted.headCommit = headCommit;
+            persisted.changedFiles = changedFiles;
+            persisted.authority = {
+              readable: ["**"], writable: ["**"], forbidden: [".git/**", ".shepherd/**"],
+            };
+            const contract = database.shepherd.contracts.find((item) => item.id === plane.contractId);
+            if (!contract) throw new Error("Contract disappeared during conflict injection");
+            contract.verificationEvidence = contract.verificationEvidence.map((evidence) => ({
+              ...evidence, changedFiles,
+            }));
+          });
+        }
+      },
+    });
+
+    const { missionId } = await startTrackedTestMission(service);
+    await vi.waitFor(
+      () => expect(service.missionDetail(missionId)?.mission.state).toBe("failed"),
+      { timeout: 10_000 },
+    );
+    const detail = service.missionDetail(missionId);
+    if (!detail) throw new Error("Git conflict Mission detail disappeared");
+    expect(detail.mission.failure).toMatchObject({
+      code: "git_conflict",
+      message: "Verified Contract changes conflict during integration",
+      stage: "integration_merge",
+    });
+    expect(detail.contracts.every((contract) => contract.state === "verified")).toBe(true);
+    expect(detail.agents.every((agent) => agent.currentContractId === null)).toBe(true);
+    expect(detail.agents.every((agent) => agent.status !== "busy")).toBe(true);
+    expect(detail.planes.filter((plane) => plane.kind === "integration")).toHaveLength(1);
+    const integrationPlane = detail.planes.find((plane) => plane.kind === "integration");
+    expect(integrationPlane).toMatchObject({
+      state: "failed", error: { code: "git_conflict", stage: "integration_merge" },
+    });
+    expect(detail.candidates).toEqual([]);
+    expect(detail.collisions).toEqual([]);
+    expect(detail.project.protectedHeadCommit).toBe(detail.mission.baseCommit);
+    const repositoryPath = detail.project.repositoryPath;
+    const retainedPlanes = detail.planes.map((plane) => ({
+      worktreePath: plane.worktreePath,
+      branch: plane.branch,
+    }));
+    expect(detail.events.some((event) =>
+      event.details.failureCode === "git_conflict" &&
+      event.details.conflictFileCount === conflictFiles.length,
+    )).toBe(true);
+    const conflictEvent = detail.events.find((event) => event.details.failureCode === "git_conflict");
+    const preview = JSON.parse(String(conflictEvent?.details.conflictFiles)) as string[];
+    expect(preview).toHaveLength(8);
+    expect(preview.every((file) => file.length <= 48)).toBe(true);
+    expect(preview.every((file) => !path.isAbsolute(file))).toBe(true);
+    expect(preview.every((file) => !file.split("/").includes(".."))).toBe(true);
+    const publicDetail = JSON.stringify(toPublicMissionDetail(detail, []));
+    expect(publicDetail).toContain("conflicts/shared-0.txt");
+    expect(publicDetail).not.toContain(caseRoot);
+    if (!integrationPlane) throw new Error("Failed integration Plane disappeared");
+    await expect(access(integrationPlane.worktreePath)).resolves.toBeUndefined();
+    expect(await gitOutput(integrationPlane.worktreePath, ["status", "--porcelain=v1"])).toBe("");
+
+    const reloaded = new JsonStore(storePath);
+    await reloaded.initialize();
+    expect(reloaded.snapshot().shepherd.missions.find((mission) => mission.id === missionId)?.failure)
+      .toMatchObject({ code: "git_conflict", stage: "integration_merge" });
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    backgroundTestMissions.pop();
+    const reset = await service.resetDeterministicDemo();
+    expect(reset.restoredHead).toBe(detail.mission.baseCommit);
+    for (const plane of retainedPlanes) {
+      await expect(access(plane.worktreePath)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await gitOutput(repositoryPath, ["branch", "--list", plane.branch])).toBe("");
+    }
+    expect(await gitOutput(repositoryPath, ["rev-parse", "HEAD"])).toBe(detail.mission.baseCommit);
+    expect(await readFile(outsideCanary, "utf8")).toBe("outside unchanged\n");
+  }, 30_000);
+
+  it("rejects unsafe conflict paths at the Git boundary", () => {
+    for (const unsafe of ["../escape", "/absolute", "control\u0000name"]) {
+      expect(() => assertSafeProjectPath(unsafe)).toThrow();
+    }
+    expect(assertSafeProjectPath("back\\slash")).toBe("back/slash");
+  });
 
   it("does not invoke a sibling verifier after infrastructure terminalization", async () => {
     const caseRoot = await makeCaseRoot();

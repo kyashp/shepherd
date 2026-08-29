@@ -3955,6 +3955,30 @@ F-01/02 remains at 95% pending independent Auditor and hosted integration eviden
   Medium or material gap; containment and symlink protections remain unchanged.
   Auditor U/I remain pending.
 
+## 2026-08-30 — F-05 Worker candidate
+
+- **RED/correction:** a real add/add Git conflict was detected and aborted by the
+  Git boundary, but the service persisted generic `unknown/background_demo` and
+  left the integration Plane inspecting. The narrow correction maps the existing
+  typed conflict to fixed `git_conflict/integration_merge`, marks only the
+  integration Plane failed, and records bounded event evidence.
+- **Boundaries:** ten validated repo-relative conflicts prove an exact total count,
+  an eight-path preview capped at 48 characters, and rejection of absolute,
+  traversal and control paths (backslashes normalize to `/`). No raw Git output,
+  host path or cause is persisted or exposed through the public Mission DTO.
+- **State/cleanup:** source Contracts remain verified and inspectable; Agents are
+  released; candidates/collisions remain empty; protected HEAD does not move. Git
+  merge abort leaves the retained integration worktree clean. Deterministic reset
+  removes all retained Plane worktrees and branches while preserving repository
+  HEAD and an outside canary.
+- **Observed checks so far:** causal 2/2; adjacent service, Git promotion, recovery,
+  store and API 110/110; strict production/test types; first literal `npm run check`
+  passed launcher 3/3, Server 666 passed + two opt-in skips, Web 17/17 and both
+  builds. After adding explicit reset and unsafe-path boundary proof, the second
+  literal gate passed launcher 3/3, Server 667 passed + two opt-in skips, Web 17/17
+  and both builds. Independent Auditor `I` remains pending; no live, model, network
+  or UI-design call ran.
+
 ## 2026-08-30 — F-04 Worker candidate
 
 The causal RED used the existing internal fault checkpoint to place a partial
