@@ -994,6 +994,150 @@ required/merge-group checks when available, clean and initialized reset verifica
 on updated `main`, issue closure, and a merged-SHA ledger update. None requires
 another scoped product-code change on this branch.
 
+## ST-02 — Truthful unavailable notification preferences
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Branch:** `fix/6-st-02-notification-truth`
+**Pull request:** [#13](https://github.com/kyashp/shepherd/pull/13)
+
+### Root cause and bounded correction
+
+The notification booleans were persisted and round-tripped by the settings API, but
+no delivery or in-app behavior read them. `SettingsPage` nevertheless bound all three
+values to enabled toggles with functional descriptions, so the browser presented
+stored-only values as active product controls.
+
+The Notifications tab now identifies the capability as **Reserved for a future
+release** and **Unavailable**. It continues to render each stored value through a
+native disabled toggle paired with a `Reserved` label. The settings schema,
+persistence, model-review control, other tabs, and notification delivery remain
+unchanged.
+
+### Original RED/GREEN and branch evidence
+
+The focused server-rendered React regression was added before the section component.
+Its first valid run failed because `NotificationSettingsSection` was undefined; after
+the minimal implementation, the same test passed and proved all three controls were
+disabled while two supplied checked values remained visible.
+
+Before current-main integration, fresh branch-local evidence passed:
+
+```sh
+npx vitest run apps/web/src/pages/SettingsPage.test.tsx
+# 1 file / 1 test passed
+
+npm run typecheck -w @launchpad/web
+# passed
+
+npm run build -w @launchpad/web
+# passed; Vite transformed 40 modules
+
+git diff --check
+# passed
+```
+
+A disposable terminal Playwright/Chromium proof rendered the real Vite application
+with deterministic API responses at `1280x800` and `1440x900`. At both viewports it
+observed stored states `[true, false, true]`, three natively disabled controls,
+rejected programmatic and sequential focus, unchanged mouse/keyboard activation
+attempts, disabled Save, zero settings `PATCH` requests, zero horizontal overflow,
+zero clipping/overlap, and no console, page, or request errors. Temporary screenshots
+were visually inspected against `docs/UI.jpeg` and were not committed.
+
+### Current-main integration
+
+OPS-05 merged through PR #32 at `8110aa3ed49bd0586cbb275d7c4067552cd9a144`,
+then priority PR #10 merged at `349897d3d9167fe711bf720f7c3fadd213938d11`.
+Only that latest `origin/main` was merged into this branch. Source and regression
+files merged automatically; conflicts were limited to this file and `HANDOVER.md`.
+Resolution restored current-main documentation and reapplied only ST-02-specific
+evidence. Fresh integrated verification and independent-review results are recorded
+in a follow-up entry only after they are observed.
+
+### Integrated current-main verification
+
+On merge commit `066009b6eda658eee9a66135224d69b3a4dae515`, the effective
+diff against `origin/main` contained exactly the notification page section, its
+focused regression, and these two ST-02 evidence files. Observed results:
+
+```sh
+npx vitest run apps/web/src/pages/SettingsPage.test.tsx
+# 1 file / 1 test passed
+
+npm run typecheck -w @launchpad/web
+# passed
+
+npm run build -w @launchpad/web
+# passed; Vite transformed 40 modules
+
+npm run check
+# launcher 3/3 passed
+# server: 25 files passed, 2 skipped; 554 tests passed, 2 skipped
+# web and server production builds passed
+
+npm audit --json
+# 0 vulnerabilities across 251 dependencies
+
+git diff --check origin/main...HEAD
+# passed
+```
+
+Terminal Playwright/Chromium then repeated the real Vite-page proof at `1280x800`
+and `1440x900`. Both viewports preserved `[true, false, true]`, exposed all three
+checkboxes as natively disabled, rejected direct and sequential focus, and remained
+unchanged after forced label clicks and keyboard activation attempts. Save stayed
+disabled, no settings `PATCH` occurred, and automated geometry checks found no
+horizontal overflow, clipping, or overlap. Console, page, and request error lists
+were empty. The final temporary screenshots were visually inspected against
+`docs/UI.jpeg`; current-main's cream canvas, dark sidebar, updated Shepherd icon,
+purple accent, restrained borders, typography, spacing, and locked-control language
+were preserved. No screenshot binary was added to the effective branch diff.
+
+### Independent final review
+
+An independent read-only quality audit reviewed the exact
+`349897d3d9167fe711bf720f7c3fadd213938d11..87b4b12e894233e2a2d852db90bfde2fe1714386`
+diff plus both final screenshots. It confirmed the exact four-file scope, native
+disabled semantics, stored-value preservation, absence of a notification interaction
+path to the unchanged `PATCH` submit handler, regression coverage, current-main UI
+preservation, and honest documentation of unimplemented delivery and broader UI
+gaps. It reported no Critical, Important, or Minor finding and returned **Ready to
+merge: Yes**. This review-status entry is documentation-only; the same auditor must
+confirm the final follow-up diff before push.
+
+### Final dependency-gated current-main refresh
+
+TST-02 merged through PR #34 at
+`8149a7cf3b52c4f0c7d20b31f14c4d2ddbc52b12`. The latest `origin/main` was
+then merged conflict-free into ST-02 at
+`f1ad0b9811e9b77dddc933c11df6a6e3fd17cf61`; no source, test, or
+documentation conflict required manual resolution. The effective diff against
+that updated base remained exactly `SettingsPage.tsx`, its focused regression,
+and the two ST-02 evidence files.
+
+Fresh evidence on the integrated merge passed the focused ST-02 test (1/1), the
+formerly blocked recovery target with its canonical temporary path (1/1, 16
+skipped), web typecheck, and the web production build (40 transformed modules).
+The required literal `npm run check` then passed without an environment override:
+launcher 3/3, server 25 files passed with 2 skipped and 554 tests passed with 2
+skipped, plus web and server production builds. `npm audit --json` reported zero
+vulnerabilities across 251 dependencies, and `git diff --check
+origin/main...HEAD` passed.
+
+Terminal Playwright/Chromium repeated the proof against the integrated Vite page.
+At both `1280x800` and `1440x900`, stored values remained
+`[true, false, true]`; all controls were natively disabled, rejected direct and
+sequential focus, and ignored mouse/keyboard activation. Save remained disabled,
+zero settings `PATCH` requests occurred, geometry checks reported no horizontal
+overflow, clipping, or overlap, and console/page/request error lists were empty.
+The visually inspected temporary screenshots remained faithful to `docs/UI.jpeg`
+and were not added to the branch diff:
+
+- `st-02-1280x800.png` — SHA-256
+  `8dc439b849eac9aeb84f3353145ff106ff4518f0b007a8fd7c61f5038a2ab22c`
+- `st-02-1440x900.png` — SHA-256
+  `c6d5c9e0831f9c7cc187827e574f1ca1c98b2fbd322738b96b19e6b45a33d95b`
+
 ## Test-lifecycle stabilization candidate (`#11`)
 
 **Date:** 2026-08-29 (Asia/Singapore)

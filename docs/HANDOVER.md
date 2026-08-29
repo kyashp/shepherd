@@ -287,6 +287,7 @@ missing/partial row in the failure matrix.
 | ID | Fix and evidence | Active PR | Remaining gate |
 |---|---|---|---|
 | `RST-01` | A clean root now returns a deliberate path-free empty success without creating a Mission or fixture. Clean and initialized resets reserve `auth-demo` across all asynchronous work, so Mission startup cannot race destructive cleanup. Causal service/API and concurrency regressions, adjacent persistence/recovery suites, a full constrained check, and an independent follow-up review are green. | [Draft PR #10](https://github.com/kyashp/shepherd/pull/10), reviewed implementation commit `19a2e45f7a67c575d9acced3dfcfbc6a32f5718e` | Merge/required checks, rerun clean and initialized reset on updated `main`, then update issue and merged-SHA ledgers. |
+| `ST-02` | Stored notification values remain visible, but native disabled controls label the unimplemented capability **Reserved** and **Unavailable**. After TST-02/PR #34, the `8149a7c` current-main base was merged conflict-free at `f1ad0b9`; the exact four-file diff retained a focused 1/1 regression, literal full check (554 passed, 2 skipped), zero-vulnerability audit, and terminal Chromium proof at both required viewports without mutation, focus, PATCH, overflow, clipping, or runtime errors. The earlier independent audit reported no finding and **Ready to merge: Yes**; its final integrated-diff confirmation remains the pre-push review gate. | [Draft PR #13](https://github.com/kyashp/shepherd/pull/13), integrated merge commit `f1ad0b9811e9b77dddc933c11df6a6e3fd17cf61` | Final independent follow-up, exact-head literal check, push/required checks, merge, and post-merge verification. |
 
 ### Confirmed defects and partial behavior
 
@@ -305,7 +306,6 @@ missing/partial row in the failure matrix.
 | `MR-01` | Shepherd advisory model | `ArkModelReviewer` is not injected into `ShepherdService` or composed in `index.ts`. | `SHEPHERD_MODEL` is unused by Missions. | Add advisory-only composition after trusted Contract evidence exists; deterministic collision/winner/promotion must remain authoritative. |
 | `MR-02` | Model-review setting | `modelReviewEnabled` persists and the UI presents it as functional, but it changes no execution behavior. | Misleading control. | Wire `MR-01`, or disable and label the control unavailable until wired. |
 | `ST-01` | Startup settings | `SHEPHERD_AUTO_RESOLUTION` and `SHEPHERD_MAX_PARALLEL_PLANES` are parsed by config but not passed to `ShepherdService` as initial settings. | Environment configuration can be silently ignored. | Add explicit initial-setting composition and tests without overriding later persisted operator settings unexpectedly. |
-| `ST-02` | Notifications | Notification toggles persist but no notification delivery or in-app notification behavior consumes them. | Functional-looking settings have no effect. | Implement a bounded in-app behavior or label the preferences as reserved/unavailable; no external integration without approval. |
 | `F-01` | Contract timeout | Contract timeouts can flow through `makeFailure()` as `unknown` instead of `agent_timeout`. | Failure evidence is generic. | Preserve a typed timeout error through Contract, Plane, Agent, Mission, event, API, and UI state. |
 | `F-02` | Contract runtime error | Candidate runtime errors are typed, but Contract runtime errors can become `unknown`. | Failure matrix is incomplete. | Introduce typed stage errors and one causal regression test. |
 | `F-03` | Contract verifier exception | A thrown verifier infrastructure error can leave Contract=`verifying`, Plane=`inspecting`, Agent=`busy` while the Mission fails generically. | Stranded active-looking UI and incorrect durable state. | Atomically land all affected entities in an evidenced non-green terminal/attention state. |
@@ -330,7 +330,7 @@ missing/partial row in the failure matrix.
 | Project Group message display/polling | Read API, sorting, connection/error/empty states exist; draft PR #17 anchors the composer below a flexible scrollable history using the private-Agent chat layout pattern, with the clean-start empty state browser-checked at both required viewports | Browser polling/reconnect and populated-history tests plus fixes for `GC-01..06`; `GC-05` still disables typing before a project exists |
 | Legacy Playground in the new shell | Existing workflow retained in source | Create → task → follow-up → stop/restart Playwright regression |
 | Create/Edit Agent UI | Role/preset/advanced forms compile | Browser validation, keyboard/accessibility, and persistence round-trip |
-| Settings UI | Timeout/concurrency/auto-resolution values call real API | Browser round-trip; fix misleading model/notification controls and startup-env composition |
+| Settings UI | Timeout/concurrency/auto-resolution values call the real API; `ST-02` notification values are visibly reserved and read-only on [PR #13](https://github.com/kyashp/shepherd/pull/13) | Browser round-trip for writable settings; fix the misleading model-review control and startup-env composition; complete the broader Settings accessibility/browser journey |
 | One automatic candidate retry | Fresh Plane and prior-attempt archive are tested | Typed eligibility and failed-second-attempt/no-second-retry test |
 | Manual confirmation and candidate selection | Service/API path promotes an independently passing candidate | A service-generated objective tie, browser choice, and chosen-candidate promotion journey |
 | Missing manifest durable transition | Code persists `manifest_missing` | Service fault injection asserting Contract/Plane/Mission/event/API/UI |
@@ -357,7 +357,7 @@ missing/partial row in the failure matrix.
 | Complete typed implementation for every PRD Section 12 failure row | **Unimplemented/partial**, itemized above and in the failure matrix |
 | Playwright configuration, deterministic browser harness, fake Codex CLI, and all eight journeys | **Unimplemented** |
 | Required screenshot corpus and visual checklist report | **Unimplemented** |
-| Notification delivery/consumption for the added notification settings | **Unimplemented** |
+| Product notification delivery or in-app notification consumption | **Future capability, unimplemented**; PR #13 deliberately reserves the preserved settings UI. Define behavior and privacy/threat boundaries in a separate approved issue and PR; external integrations are not implied. |
 | Persisted/served trusted Contract duration estimates for the timeline | **Unimplemented**; UI has an optional dead-data rendering branch only (`UI-02`) |
 | Final generated architecture document, final test report, and final README refresh | **Unimplemented**; this `HANDOVER.md` is the single continuation entry point and must be kept current rather than duplicated as `HANDOFF.md` |
 
@@ -522,7 +522,7 @@ traceability.
 | Typed failures | `F-01/F-02` common typed-stage foundation, then `F-03`, `F-04`, `F-05`, `F-06`, `F-07/F-08` | Use short stacks only where a shared typed error contract is required. Each PR includes its entity/event/API tests. | Security review after the workstream |
 | Group Chat | `GC-05` safe project initialization, `GC-02` Shepherd handling, `GC-03/GC-04` targeted Contract lifecycle, `GC-06` Agent summaries, `GC-01` mention UI | One stack steward; keep parser/security foundation below service behavior and UI. Browser tests land with each UI-visible correction. | Security + UI review |
 | Advisory model | `MR-01` service composition/degradation, then `MR-02` truthful setting/UI | Deterministic collision independence is a mandatory lower-layer test. One sparse live smoke only after fake-adapter gates. | Security + UI review |
-| Settings truthfulness | `ST-01` startup setting composition; `ST-02` implement bounded in-app notifications or label them unavailable | Keep initial-config behavior separate from optional product notification behavior. | UI review; security review if delivery surface expands |
+| Settings truthfulness | `ST-01` startup setting composition remains; `ST-02` reserved/unavailable notification UI is implemented on [PR #13](https://github.com/kyashp/shepherd/pull/13) | Keep initial-config behavior separate from optional product notification behavior. Any delivery capability requires a new approved issue/PR. | UI review; security review if a delivery surface is proposed |
 | Scheduler | `SCH-02` pre-persistence validation, then `SCH-01` real waves/capacity/occupancy | Keep general graph contract below service orchestration. | Security review if mutation/authority paths change |
 | Timeline/UI | `UI-02`, `UI-01`, then per-surface browser gaps | Branch after required API/domain data exists; preserve current design and use 1280x800/1440x900 evidence. | UI review |
 | Browser harness | reusable harness, then `E2E-01..08` grouped only by shared fixture | The harness can be an independent PR. Behavior fixes stay in their owning feature PR, not hidden in E2E-only PRs. | UI review; security review for fault fixtures |
@@ -687,7 +687,7 @@ Implemented UI capabilities:
   Contract links; end-to-end routing remains defective under `GC-01..06`.
 - Agents table, legacy Playground, lifecycle controls, role/current-Contract/Plane information.
 - Create/Edit role selector, authority presets, and advanced authority section.
-- Settings tabs for real timeout/concurrency/automatic-resolution values, persisted-only model-review/notification values, locked mode/retention/authority controls, and safe demo reset. The model-review and notification controls must be fixed or labeled unavailable; see `MR-02` and `ST-02`.
+- Settings tabs for real timeout/concurrency/automatic-resolution values, a persisted-only model-review value, reserved/read-only notification values, locked mode/retention/authority controls, and safe demo reset. The model-review control still requires `MR-02`; notification truthfulness is implemented by `ST-02` on PR #13.
 - Loading, empty, error, and reconnect states.
 
 Decorative gradients were removed. The remaining CSS gradient draws timeline grid lines. `prefers-reduced-motion` is present.
@@ -757,7 +757,8 @@ Writable settings:
 - `maxConcurrentPlanes` — `2..16`
 - `autoResolution`
 - `modelReviewEnabled` (persisted/UI only until P0 composition is fixed)
-- notification preferences
+- notification preferences (public schema and stored values preserved; the browser
+  displays them read-only as reserved/unavailable under `ST-02`)
 
 Locked/derived settings:
 
@@ -1115,7 +1116,8 @@ Because this checkpoint materially changed scoped authority, public DTOs, cancel
 
 5. **Fix or disable misleading UI states**
    - Until item 3 is complete, disable or clearly label the model-review setting as unavailable.
-   - Until notification behavior exists, label notification preferences as reserved/unavailable.
+   - `ST-02` labels notification preferences reserved/unavailable on PR #13; preserve
+     that state until a separately approved notification capability exists.
    - Show typed failure evidence for ordinary `failed` Missions, not only `attention_required` Missions.
    - Produce and persist real trusted duration estimates for the `est.` timeline
      layer (`UI-02`), clearly distinct from actual timestamps.
@@ -1360,9 +1362,11 @@ updated tests and handover evidence.
    Select it, confirm the dialog, and verify the same trusted promotion path reaches
    `completed`.
 7. Restore **Automatic resolution** to its original value.
-8. Treat **Bounded model review** and **Notifications** as known misleading/inert
-   controls until `MR-01/MR-02` and `ST-02` are fixed. Their persistence alone is
-   not functional evidence.
+8. Treat **Bounded model review** as a known misleading/inert control until
+   `MR-01/MR-02` are fixed. Under **Notifications**, verify the PR #13 `ST-02` state:
+   the section says **Unavailable**, each stored preference is labelled **Reserved**,
+   controls are disabled and cannot receive focus or mutate, and interaction sends no
+   settings `PATCH`. Persistence remains future-state data, not delivery evidence.
 
 ### 5. Exercise cancellation
 
