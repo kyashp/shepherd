@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { constants } from "node:fs";
-import { access, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, lstat, mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 const supportDirectory = path.dirname(fileURLToPath(import.meta.url));
 export const repositoryRoot = path.resolve(supportDirectory, "../../..");
 export const AUTH_TOKEN = "e2e-harness-token-2026-safe";
+export const LEGACY_ARK_KEY = "e2e-fixture-ark-key-never-send";
 const OUTPUT_LIMIT = 16_384;
 
 function appendBounded(current, chunk) {
@@ -77,10 +78,78 @@ export async function isPortOpen(port) {
   });
 }
 
-export async function startTestApp() {
-  const harnessRoot = path.join(repositoryRoot, ".tmp", "playwright-harness");
-  await mkdir(harnessRoot, { recursive: true, mode: 0o700 });
-  const runRoot = await mkdtemp(path.join(harnessRoot, "run-"));
+async function canonicalDirectory(directory, expectedParent, { create = false } = {}) {
+  if (create) {
+    try {
+      await mkdir(directory, { mode: 0o700 });
+    } catch (error) {
+      if (error?.code !== "EEXIST") throw error;
+    }
+  }
+  const entry = await lstat(directory);
+  if (entry.isSymbolicLink() || !entry.isDirectory()) {
+    throw new Error("Harness ancestor has an unsafe filesystem identity");
+  }
+  const canonical = await realpath(directory);
+  if (canonical !== path.resolve(directory) || (expectedParent && path.dirname(canonical) !== expectedParent)) {
+    throw new Error("Harness ancestor has an unsafe filesystem identity");
+  }
+  return canonical;
+}
+
+export async function prepareHarnessRoot(managedRepositoryRoot = repositoryRoot) {
+  const canonicalRepository = await canonicalDirectory(managedRepositoryRoot);
+  const tempRoot = await canonicalDirectory(path.join(canonicalRepository, ".tmp"), canonicalRepository, {
+    create: true,
+  });
+  return await canonicalDirectory(path.join(tempRoot, "playwright-harness"), tempRoot, { create: true });
+}
+
+async function resolveRunRoot(harnessRoot, requestedRoot) {
+  if (!requestedRoot) {
+    const allocated = await mkdtemp(path.join(harnessRoot, "run-"));
+    return { runRoot: await canonicalDirectory(allocated, harnessRoot), allocated: true };
+  }
+  const candidate = path.resolve(requestedRoot);
+  if (
+    path.dirname(candidate) !== harnessRoot ||
+    !path.basename(candidate).startsWith("run-")
+  ) {
+    throw new Error("Existing harness state must be an allocated run root");
+  }
+  const entry = await lstat(candidate);
+  if (entry.isSymbolicLink() || !entry.isDirectory() || (await realpath(candidate)) !== candidate) {
+    throw new Error("Existing harness state has an unsafe filesystem identity");
+  }
+  return { runRoot: candidate, allocated: false };
+}
+
+async function removeManagedRunRoot(harnessRoot, runRoot) {
+  const currentHarnessRoot = await prepareHarnessRoot(repositoryRoot);
+  if (currentHarnessRoot !== harnessRoot) throw new Error("Harness root identity changed during cleanup");
+  const candidate = path.resolve(runRoot);
+  if (path.dirname(candidate) !== harnessRoot || !path.basename(candidate).startsWith("run-")) {
+    throw new Error("Refusing to remove an unsafe harness path");
+  }
+  try {
+    const entry = await lstat(candidate);
+    if (entry.isSymbolicLink() || !entry.isDirectory() || (await realpath(candidate)) !== candidate) {
+      throw new Error("Refusing to remove an unsafe harness path");
+    }
+  } catch (error) {
+    if (error?.code === "ENOENT") return;
+    throw error;
+  }
+  await rm(candidate, { recursive: true, force: true });
+}
+
+export async function startTestApp({
+  legacyRuntime = false,
+  liveLegacyConfig,
+  runRoot: requestedRoot,
+} = {}) {
+  const harnessRoot = await prepareHarnessRoot();
+  const { runRoot, allocated } = await resolveRunRoot(harnessRoot, requestedRoot);
   const dataDirectory = path.join(runRoot, "data");
   const workspaceRoot = path.join(runRoot, "workspaces");
   const codexHome = path.join(runRoot, "codex-home");
@@ -88,26 +157,31 @@ export async function startTestApp() {
   const shepherdCodexHomeRoot = path.join(runRoot, "shepherd-codex-homes");
   const homeDirectory = path.join(runRoot, "home");
   const tempDirectory = path.join(runRoot, "tmp");
-  await Promise.all([
-    mkdir(dataDirectory, { recursive: true, mode: 0o700 }),
-    mkdir(workspaceRoot, { recursive: true, mode: 0o700 }),
-    mkdir(homeDirectory, { recursive: true, mode: 0o700 }),
-    mkdir(tempDirectory, { recursive: true, mode: 0o700 }),
-  ]);
-
-  const port = await reserveLoopbackPort();
-  const baseURL = `http://127.0.0.1:${port}`;
+  let port;
   const fakeCodex = path.join(repositoryRoot, "tests/e2e/fixtures/fake-codex.mjs");
   const fakeContainerEngine = path.join(
     repositoryRoot,
     "tests/e2e/fixtures/fake-container-engine.mjs",
   );
-  await Promise.all([
-    access(fakeCodex, constants.X_OK),
-    access(fakeContainerEngine, constants.X_OK),
-    access(path.join(repositoryRoot, "apps/server/dist/index.js"), constants.R_OK),
-    access(path.join(repositoryRoot, "apps/web/dist/index.html"), constants.R_OK),
-  ]);
+  try {
+    await Promise.all([
+      mkdir(dataDirectory, { recursive: true, mode: 0o700 }),
+      mkdir(workspaceRoot, { recursive: true, mode: 0o700 }),
+      mkdir(homeDirectory, { recursive: true, mode: 0o700 }),
+      mkdir(tempDirectory, { recursive: true, mode: 0o700 }),
+    ]);
+    port = await reserveLoopbackPort();
+    await Promise.all([
+      access(liveLegacyConfig?.codexBin ?? fakeCodex, constants.X_OK),
+      access(fakeContainerEngine, constants.X_OK),
+      access(path.join(repositoryRoot, "apps/server/dist/index.js"), constants.R_OK),
+      access(path.join(repositoryRoot, "apps/web/dist/index.html"), constants.R_OK),
+    ]);
+  } catch (error) {
+    if (allocated) await removeManagedRunRoot(harnessRoot, runRoot);
+    throw error;
+  }
+  const baseURL = `http://127.0.0.1:${port}`;
 
   // This allowlist intentionally does not spread process.env: developer .env
   // values, Ark credentials, proxies, and ambient model configuration cannot
@@ -124,19 +198,19 @@ export async function startTestApp() {
     APP_DATA_DIR: dataDirectory,
     AGENT_WORKSPACE_ROOT: workspaceRoot,
     CODEX_HOME: codexHome,
-    CODEX_BIN: fakeCodex,
+    CODEX_BIN: liveLegacyConfig?.codexBin ?? fakeCodex,
     CODEX_SANDBOX_MODE: "workspace-write",
-    CODEX_TIMEOUT_MS: "5000",
+    CODEX_TIMEOUT_MS: liveLegacyConfig ? "180000" : "5000",
     CODEX_MAX_OUTPUT_BYTES: "65536",
     RUNTIME_PROVIDER: "local-process",
     CONTAINER_ENGINE: fakeContainerEngine,
     CONTAINER_RUNTIME_IMAGE: "fixture.invalid/shepherd:deterministic",
     RUNTIME_INSTANCE_ID: "playwright-harness",
     APP_AUTH_TOKEN: AUTH_TOKEN,
-    ARK_API_KEY: "",
-    ARK_MODEL: "",
-    SHEPHERD_MODEL: "",
-    ARK_BASE_URL: "https://example.invalid/api/v3",
+    ARK_API_KEY: liveLegacyConfig?.arkApiKey ?? (legacyRuntime ? LEGACY_ARK_KEY : ""),
+    ARK_MODEL: liveLegacyConfig?.arkModel ?? (legacyRuntime ? "fixture-legacy-model" : ""),
+    SHEPHERD_MODEL: legacyRuntime && !liveLegacyConfig ? "fixture-shepherd-model" : "",
+    ARK_BASE_URL: liveLegacyConfig?.arkBaseUrl ?? "https://example.invalid/api/v3",
     SHEPHERD_ROOT: shepherdRoot,
     SHEPHERD_CODEX_HOME_ROOT: shepherdCodexHomeRoot,
     SHEPHERD_EXECUTION_MODE: "deterministic",
@@ -165,7 +239,7 @@ export async function startTestApp() {
   } catch (error) {
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
     await waitForExit(child, 2_000);
-    await rm(runRoot, { recursive: true, force: true });
+    if (allocated) await removeManagedRunRoot(harnessRoot, runRoot);
     throw error;
   }
 
@@ -180,17 +254,18 @@ export async function startTestApp() {
     async persistedState() {
       return await readFile(path.join(dataDirectory, "launchpad.json"), "utf8");
     },
-    async stop() {
-      if (stopped) return;
-      stopped = true;
-      if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
-      if (!(await waitForExit(child, 5_000))) {
-        child.kill("SIGKILL");
-        if (!(await waitForExit(child, 2_000))) {
-          throw new Error("Test server did not terminate after SIGKILL");
+    async stop({ removeRunRoot = true } = {}) {
+      if (!stopped) {
+        stopped = true;
+        if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
+        if (!(await waitForExit(child, 5_000))) {
+          child.kill("SIGKILL");
+          if (!(await waitForExit(child, 2_000))) {
+            throw new Error("Test server did not terminate after SIGKILL");
+          }
         }
       }
-      await rm(runRoot, { recursive: true, force: true });
+      if (removeRunRoot) await removeManagedRunRoot(harnessRoot, runRoot);
     },
   };
 }

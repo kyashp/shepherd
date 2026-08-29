@@ -5,6 +5,13 @@ import { AUTH_TOKEN, repositoryRoot, startTestApp } from "./support/test-app.mjs
 
 let app;
 
+function evidenceDirectory(defaultRelative, ephemeralRelative) {
+  return path.join(
+    repositoryRoot,
+    process.env.E2E_UPDATE_EVIDENCE === "true" ? defaultRelative : ephemeralRelative,
+  );
+}
+
 test.beforeAll(async () => {
   app = await startTestApp();
 });
@@ -42,9 +49,12 @@ test("authenticated Shepherd shell has no document overflow", async ({ page }, t
   expect(overflow.document.scrollHeight).toBeLessThanOrEqual(overflow.document.clientHeight);
   expect(overflow.body.scrollWidth).toBeLessThanOrEqual(overflow.body.clientWidth);
   expect(overflow.body.scrollHeight).toBeLessThanOrEqual(overflow.body.clientHeight);
-  expect(await page.locator("body").innerText()).not.toContain(AUTH_TOKEN);
+  expect((await page.locator("body").innerText()).includes(AUTH_TOKEN)).toBe(false);
 
-  const screenshotDirectory = path.join(repositoryRoot, "docs/ui-review/e2e-harness");
+  const screenshotDirectory = evidenceDirectory(
+    "docs/ui-review/e2e-harness",
+    ".tmp/playwright-evidence/e2e-harness",
+  );
   await mkdir(screenshotDirectory, { recursive: true });
   await page.screenshot({
     path: path.join(screenshotDirectory, `${viewport.width}x${viewport.height}.png`),
@@ -133,7 +143,10 @@ test("Create Agent presets preserve native radio behavior without page overflow"
     expect(box.margin).toBe("0px");
   }
 
-  const screenshotDirectory = path.join(repositoryRoot, "docs/ui-review/ui-03-create-agent");
+  const screenshotDirectory = evidenceDirectory(
+    "docs/ui-review/ui-03-create-agent",
+    ".tmp/playwright-evidence/ui-03-create-agent",
+  );
   await mkdir(screenshotDirectory, { recursive: true });
   await page.locator(".main-content").evaluate((element) => { element.scrollTop = 0; });
   await page.screenshot({

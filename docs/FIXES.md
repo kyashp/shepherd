@@ -58,8 +58,16 @@ that limitation is explicit.
   completion and keyboard/focus behavior pass at `1280x800` and `1440x900`; full
   harness, literal `npm run check`, independent rendered review, and integrated/
   hosted gates pass.
-- **Owner/status:** Fixer / `READY`; blocks E2E-01 integration; **0%**, 0/5 gates,
-  not audited.
+- **Observed correction:** candidate routes default captures to ignored
+  `.tmp/playwright-evidence` and exposes `test:e2e:starter-kit:evidence` as the
+  explicit non-default docs update path. It removes the blank down-state canvas,
+  retaining only the proved closed-port assertion. Create is scrolled within the
+  existing form at 1280 and 1440, and Create/Stop/Start each passed actual Tab,
+  visible focus and Enter activation. Harness unit passed 6/6, Chromium passed 6/6,
+  all 16 journey stages were inspected, tracked screenshot hashes were byte-identical
+  before/after the ordinary run, and literal check passed twice. No UI/CSS change.
+- **Owner/status:** Fixer / `CANDIDATE`; **96% scoped**, `T,C,B` 3/5; independent
+  `U,I` pending and not audited.
 
 ### `TST-06` — E2E harness failure paths can retain or disclose sensitive evidence
 
@@ -87,8 +95,18 @@ that limitation is explicit.
   prompt/output/secret in bounded live failure artifacts. Existing run-root/
   workspace/symlink/outside-canary tests, harness unit/browser suites, literal
   `npm run check`, independent security review, and integrated/hosted gates pass.
-- **Owner/status:** Fixer / `READY`; blocks E2E-01 integration; **0%**, 0/5 gates,
-  not audited.
+- **Observed correction:** candidate uses boolean-only sensitive-value assertions,
+  disables live trace/screenshot/video, and preserves exact live opt-in, no retry,
+  two-turn cap, loopback binding, bearer auth, environment allowlist and empty live
+  `SHEPHERD_MODEL`. Repository, `.tmp`, harness and run-root identities are checked
+  with lstat/realpath before allocation/removal. New fault tests reject a
+  repo-contained ancestor symlink without following it and prove a retained stopped
+  root can be removed after restart failure; fresh pre-spawn setup failure also
+  leaves no allocated root. Harness unit passed 6/6, strict test
+  typecheck and literal check twice passed, and no run root remained. No live call
+  was made; the prior separately bounded live evidence remains exactly 2/2 turns.
+- **Owner/status:** Fixer / `CANDIDATE`; **94% scoped**, `T,C,S` 3/5; independent
+  `U,I` pending and not audited.
 
 ### `TST-04` — F-03 fail-fast verification can race service fixture teardown
 

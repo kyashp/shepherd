@@ -7,6 +7,61 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## TST-05/TST-06 deterministic E2E harness correction candidate
+
+**Date:** 2026-08-30 (Asia/Singapore)
+**Branch:** `fix/mock-main` (pending commit/Auditor integration)
+
+The Fixer imported the unintegrated E2E-01 harness candidate without its stale
+ledger or screenshots, then changed only test/harness/configuration files. Ordinary
+screenshots now go to ignored `.tmp/playwright-evidence`; only the explicit
+`npm run test:e2e:starter-kit:evidence` mode writes review images. The empty
+server-down canvas was removed: the test records only the observed closed port and
+reserves reconnect UI for E2E-08. At both viewports the existing Create form is
+scrolled until its primary action is visible, and Create, Stop and Start are reached
+with actual Tab focus, checked for the existing focus-visible outline, and activated
+with Enter. No production or UI/theme file changed.
+
+Harness assertions no longer pass credentials or sensitive bodies to matcher
+formatting. Live Playwright trace, screenshot and video are off. Exact live opt-in,
+two-turn/no-retry limit, loopback binding, bearer auth, child environment allowlist
+and empty live `SHEPHERD_MODEL` remain. The repository, `.tmp`, harness and selected
+run-root identities are lstat/realpath checked before allocation/removal. Added fault
+tests reject a repo-contained symlinked harness ancestor without following it and
+prove a previously retained stopped root can be removed after a restart failure.
+
+Observed evidence, with no live/model call:
+
+- harness unit: 6/6 passed, including ancestor-symlink, retained-root restart and
+  fresh-allocation setup-failure cleanup tests;
+- deterministic Chromium: 6/6 passed in 17.5 seconds at exact `1280x800` and
+  `1440x900`; all 16 E2E-01 stage captures were visually inspected under ignored
+  output and the four adjacent harness/UI-03 captures were produced there too;
+- tracked `docs/ui-review` SHA-256 sets were identical before/after the ordinary
+  run; `git diff -- docs/ui-review` was empty and no server-down image was produced;
+- strict server test-source typecheck passed; literal `npm run check` passed twice,
+  each with launcher 3/3, server 563/563 plus one unchanged opt-in live skip, all
+  typechecks and both builds;
+- `git diff --check` passed; stale roots created by the initial controlled failing
+  iteration were explicitly confined and removed, and the final harness root had
+  no `run-*` child.
+
+The earlier independently bounded live legacy evidence remains exactly two
+successful turns with no retry. It was not invoked again. `TST-05`, `TST-06` and
+`E2E-01` remain candidates pending independent UI/security/integrated/hosted audit;
+no `U` or `I` gate is claimed here.
+
+An independent read-only security review found the initial candidate could retain a
+freshly allocated root when setup failed before child spawn. The transaction was
+extended over every post-allocation pre-spawn setup step and the new missing-Codex
+fault regression proves the harness root returns to the exact prior `run-*` set.
+Independent re-review closed the Medium finding and found no remaining High/Medium
+issue. Low local residuals remain for same-user mutation between identity validation
+and recursive removal, an exceptional synchronous `spawn()` throw, and theoretical
+concurrent sibling mkdir completion after a `Promise.all` rejection. These require
+adversarial or exceptional concurrent conditions outside this local harness threat
+model; no broad filesystem refactor was attempted.
+
 ## E2E-01 independent audit rejection: visual evidence and failure-path safety
 
 **Date:** 2026-08-30 (Asia/Singapore)
