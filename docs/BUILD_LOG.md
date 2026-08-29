@@ -687,3 +687,86 @@ unrelated UI or Phase 4 behavior.
 demo Mission are proven across two fresh end-to-end Missions. Scheduler, Project
 Group parser, and Ark advisory-reviewer modules exist and are focused-test-backed, but
 their service/API integration remains Phase 4 work and is not claimed here.
+
+## RST-01 — Idempotent and Serialized Demo Reset
+
+**Date:** 2026-08-29 (Asia/Singapore)
+
+**Branch:** `fix/7-rst-01-idempotent-reset`
+
+**Draft PR:** [#10](https://github.com/kyashp/shepherd/pull/10)
+
+**Reviewed implementation commit:** `19a2e45f7a67c575d9acced3dfcfbc6a32f5718e`
+
+### Root cause and correction
+
+`resetDeterministicDemo()` classified a missing durable `auth-demo` project as
+`not_found`, although a missing project is the expected state before the first demo
+Mission. The initial empty-result correction then exposed a check-without-reserve
+race: reset checked `activeProjects` but did not claim `auth-demo` across its later
+asynchronous validation and cleanup work.
+
+The scoped correction:
+
+- returns a deliberate path-free empty success with `restoredHead: null` and zero
+  removal counts when the durable project is absent;
+- creates no Mission, Agent, repository, worktree, or fixture merely to reset;
+- still calls `assertNoManagedProjectState()` so the empty path fails closed on
+  orphaned, symlinked, or unknown managed-root artifacts;
+- synchronously reserves `auth-demo` before the first reset await and releases it in
+  `finally`, serializing both clean and initialized resets against Mission startup;
+- leaves initialized trusted-identity checks, guarded Git/Plane cleanup, unrelated
+  data preservation, cursor high-water preservation, and partial-reset recovery
+  intact.
+
+### TDD and verification evidence
+
+Original clean-start RED:
+
+```sh
+npm test -w @launchpad/server -- src/shepherd/service.test.ts src/app.test.ts \
+  -t "returns the same empty result|returns an authenticated empty demo reset"
+# 2 failed as intended: service rejected "Auth demo was not found";
+# authenticated API returned 404 instead of 200
+```
+
+Concurrency RED and GREEN:
+
+```sh
+npm test -w @launchpad/server -- src/shepherd/service.test.ts \
+  -t "reserves .* demo reset against a concurrent Mission start"
+# RED: 2 failed; clean start reached the executor and initialized reset lost the race
+# GREEN after reservation: 2 passed, 21 skipped
+```
+
+Additional observed results:
+
+- reset-focused service/API selection: **8 passed, 34 skipped**;
+- adjacent persistence/recovery suites: **100 passed**;
+- complete Shepherd service suite: **23 passed**;
+- complete server suite with one worker: **25 files passed, 2 skipped; 547 tests
+  passed, 2 skipped**;
+- `npm run check` under Node 24.17.0/npm 11.17.0 with Vitest externally constrained
+  to one worker: both workspace typechecks, the same complete server suite, and both
+  production builds passed;
+- `npm audit --json`: **0 vulnerabilities across 251 dependencies**;
+- `git diff --check`: passed.
+
+Three unconstrained `npm run check` attempts after the concurrency correction hit
+different existing fixed 1-second/5-second timeouts in Git-heavy service, recovery,
+and Plane integration tests. Every affected test passed isolated, and the complete
+suite passed serialized without weakening assertions. This is recorded as `TST-01`
+in `HANDOVER.md`; no unrelated timeout or test behavior changed in PR #10.
+
+### Independent review and remaining gates
+
+An independent read-only security/correctness review found the reset/start race.
+After causal regressions and the reservation fix, its follow-up reported no Critical,
+Important, or Minor finding and marked the implementation ready to merge.
+
+GitHub reported the draft PR open and mergeable at this checkpoint, but with no
+automated status checks. `CI-01` tracks required pull-request automation separately.
+The remaining RST-01 work is lifecycle evidence: required/merge-group checks when
+available, clean and initialized reset verification on updated `main`, issue closure,
+and a merged-SHA ledger update. None requires another scoped product-code change on
+this branch.
