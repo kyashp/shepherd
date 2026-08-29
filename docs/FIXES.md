@@ -1,6 +1,6 @@
 # Shepherd Defect Queue
 
-**Assessed branch/SHA:** `mock-main` / `83954f7fbb34cacf23ac406765e626f3dd910a57`
+**Assessed branch/SHA:** `mock-main` / `2ba5cb92f27dc25e31f1f6766445de6d06b585a4`
 
 **Audited:** 2026-08-29, Asia/Singapore
 
@@ -48,6 +48,40 @@ that limitation is explicit.
   literal `npm run check` passes; auditor repeats on integrated `mock-main`.
 - **Owner/status:** `RESOLVED + AUDITED` at integrated implementation `0cb431a`;
   **100% scoped**, `T,A,C,I` passed 4/4.
+
+### `TST-03` — F-03 blocked-sibling regression is schedule-sensitive in hosted CI
+
+- **Evidence class:** reproduced once on the required hosted Node 22 gate at exact
+  head `2ba5cb9`, run [`33261198788`](https://github.com/kyashp/shepherd/actions/runs/33261198788),
+  job `99123330844`. The same integrated local gate passed 563/563 with one opt-in
+  skip; five subsequent isolated thrown-verifier runs passed 5/5, establishing an
+  intermittent schedule boundary rather than a UI regression or a correction.
+- **Failure contract:** the hosted full suite timed out
+  `atomically interrupts a blocked sibling after 'thrown verifier exception'` at
+  its explicit 30-second budget. Vitest also reported an unhandled
+  `ContractVerificationInfrastructureError` from the same Mission. Final hosted
+  counts were 558 passed, 5 environment-gated skipped, and 1 failed; builds did not
+  run. The five-skip hosted profile was unchanged.
+- **Supported root cause:** the test starts `runDeterministicDemo()`, then awaits
+  `verifier.siblingEntered` before attaching `expect(run).rejects`. The frontend
+  fixture may throw and terminalize the Mission before the backend reaches its
+  verifier under suite contention, leaving `siblingEntered` unresolved and the
+  already-rejected Mission promise temporarily unhandled. The test also lacks a
+  `finally` that releases/joins the sibling if an assertion or timeout wins. This is
+  test orchestration debt; the UI-03 CSS and browser path do not touch it.
+- **Minimal correction:** test/fixture only. Establish a deterministic two-arrival
+  barrier before the selected frontend failure is released, attach rejection
+  handling immediately, and unconditionally release and join every deferred sibling
+  in `finally`. Do not add sleeps, merely increase the timeout, swallow unhandled
+  rejection, weaken durable reload/no-promotion assertions, or change F-03 product
+  orchestration.
+- **Acceptance:** preserve the hosted RED evidence; both parameterized boundary rows
+  pass causally; the thrown row passes repeatedly alone and under full-suite
+  contention with zero unhandled errors; literal local `npm run check` passes; the
+  final `mock-main` hosted `Node 22 / npm run check` passes with the expected
+  environment-gated skip profile; Auditor integrates and closes UI-03 `C`.
+- **Owner/status:** Fixer / `READY`; **100% diagnosis, 0% correction**, 0/3
+  `T,C,I` gates; blocks hosted baseline, UI-03 final audit, and E2E-01 start.
 
 ### `F-03` — Contract verifier infrastructure failure strands active-looking state
 
@@ -139,11 +173,11 @@ that limitation is explicit.
   server 563/563 with one opt-in live skip, both typechecks, and both builds.
   Screenshots `docs/ui-review/ui-03-create-agent/{1280x800,1440x900}.png` preserve
   the accepted theme. No live/model call occurred.
-- **Owner/status:** `RESOLVED + AUDITED` at integrated implementation `83954f7`;
-  **100% scoped**, `T,C,B,U,I` passed 5/5. Auditor independently repeated the
-  focused 2/2 and full 4/4 browser gates plus harness unit 2/2, inspected both
-  screenshots, matched their regenerated hashes, and passed the integrated strict
-  type/full repository gate. `E2E-01` is unblocked.
+- **Owner/status:** integrated and independently browser-audited at `83954f7`;
+  **98% scoped**, `T,B,U,I` passed 4/5. Focused 2/2 and full 4/4 browser gates plus
+  harness unit 2/2 passed; screenshots matched and the local strict/full gate
+  passed. Hosted `C` remains pending only because unrelated `TST-03` failed the
+  final required workflow. E2E-01 waits for that baseline correction.
 
 ### `OPS-06` — macOS Docker Desktop live Shepherd preflight fails opaquely
 
@@ -192,7 +226,7 @@ that limitation is explicit.
 | `SCH-02` | Cycles are rejected during scheduling rather than before graph persistence. | Call existing DAG validator before durable Contract creation. | Worker / ready |
 | `UI-01` | Current detailed failure panel is attention-focused; ordinary failed Missions may hide typed detail. | Reuse existing failure/attention primitives; no visual redesign. | Worker / blocked by typed failures |
 | `UI-02` | Current web type has optional `estimatedDurationMs`, but no server/domain producer exists. | Persist and serve trusted estimates, clearly distinct from actuals; preserve timeline design. | Worker / ready |
-| `UI-03` | E2E-01 reproduced document widths of 2299/2579 on Create Agent because four transparent absolute preset radios retained global viewport-wide input sizing. | Resolved by bounding only the visually hidden preset-radio dimensions while preserving native semantics, labels, keyboard behavior, and accepted form visuals. | Resolved + audited at `83954f7`; E2E-01 unblocked |
+| `UI-03` | E2E-01 reproduced document widths of 2299/2579 on Create Agent because four transparent absolute preset radios retained global viewport-wide input sizing. | Resolved by bounding only the visually hidden preset-radio dimensions while preserving native semantics, labels, keyboard behavior, and accepted form visuals. | Integrated/browser-audited at `83954f7`; hosted `C` waits on TST-03 |
 | `TEST-TS` | Current server tsconfig explicitly excludes `src/**/*.test.ts`. | Add a separate no-emit test typecheck without changing production emit. | Worker / ready |
 | `CI-01` | Repository contains no `.github/workflows` required check. | Network/model-free Node install/typecheck/test/build workflow; preserve protected-main policy. | Integrator / ready |
 

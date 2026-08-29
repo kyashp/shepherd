@@ -180,9 +180,36 @@ all four label clicks, and exactly one checked radio. Regenerated screenshots ex
 matched the committed hashes and were visually inspected for adjacent layout,
 spacing, hierarchy, clipping, and theme consistency. The authenticated token was not
 rendered, temporary browser/run artifacts remained ignored, and no model/network call
-occurred. `UI-03` is **AUDITED, scoped 100%**, with `T,C,B,U,I` passed 5/5;
-`E2E-01` is now ready to resume. Hosted Node 22 evidence is recorded after the final
-audit-documentation push.
+occurred. This establishes `T,B,U,I` for UI-03. Final hosted `C` remained pending
+the audit-documentation push.
+
+### UI-03 hosted closeout failure / TST-03
+
+Required-check run
+[`33261198788`](https://github.com/kyashp/shepherd/actions/runs/33261198788),
+job `99123330844`, failed on final audit head `2ba5cb9`. Setup, checkout, Node 22,
+Docker and locked install passed. The repository gate reached server tests, then
+`atomically interrupts a blocked sibling after 'thrown verifier exception'` timed
+out at 30 seconds and emitted an unhandled
+`ContractVerificationInfrastructureError`. Hosted results were 24 files passed, 2
+skipped and 1 failed; 558 tests passed, 5 environment-gated skipped and 1 failed.
+Builds did not run. The five-skip hosted profile was unchanged.
+
+The UI-03 diff does not touch that backend service test or orchestration. Source
+inspection instead found a schedule-sensitive test contract: it awaits the backend
+fixture's `siblingEntered` promise before attaching rejection handling to the
+already-started Mission. Under contention, the frontend can terminalize first, so
+the awaited sibling signal never arrives and the Mission rejection becomes
+temporarily unhandled. The test has no unconditional sibling release/join when a
+timeout or assertion wins. Five isolated local repetitions subsequently passed 5/5,
+which confirms intermittency and does not correct the hosted RED.
+
+`TST-03` now owns the smallest test-only correction: deterministic two-arrival
+coordination, immediate rejection handling, and unconditional bounded release/join;
+no sleep, timeout increase, swallowed rejection, weakened F-03 assertion, or product
+change. Until its repeated/full/hosted acceptance is green, UI-03 remains **98%
+scoped** with `T,B,U,I` passed 4/5 and hosted `C` pending; E2E-01 remains blocked by
+the baseline rather than by its resolved Create Agent browser prerequisite.
 
 ## CI-01 required-check workflow candidate
 
