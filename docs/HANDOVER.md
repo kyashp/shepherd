@@ -823,6 +823,12 @@ environment rather than inheriting repository-routing variables. A disposable
 fixture/decoy regression poisons `GIT_DIR`, proves the selected fixture advances,
 and proves the decoy's HEAD and tree remain unchanged.
 
+The candidate was resolved against current `main` at
+`2f7a9fd8122cb62f2f2ed4e2b08cc87f311e8887`. `npm run check` on that exact head
+passed 25 files, 548 tests, with 2 opt-in tests skipped; both production builds
+completed. A test-only teardown follow-up remains in progress and must record its
+own final commit and gate before this evidence is used as a merge decision.
+
 The draft OPS-01 fix in PR [#8](https://github.com/kyashp/shepherd/pull/8) remains a
 separate startup change. It may use this test-stability evidence only after #19 has
 merged and a combined `main` gate is observed; OPS-01 is not marked resolved here.

@@ -735,3 +735,12 @@ The clean candidate contains only the causal test files. The demonstrated recove
 fixture route is fixed; the pre-push hook itself remains separate infrastructure work,
 so manual verification is required before using `ECC_SKIP_PREPUSH=1` for a scoped
 push.
+
+### Resolved-base verification
+
+The clean candidate was resolved against current `main` at
+`2f7a9fd8122cb62f2f2ed4e2b08cc87f311e8887`. On that exact resolved head,
+`npm run check` passed: 25 files passed, 548 tests passed, 2 opt-in tests skipped,
+and both production builds completed. A subsequent teardown-only audit identified a
+test-lifecycle follow-up; its final commit and verification are recorded separately
+once that bounded correction is complete.
