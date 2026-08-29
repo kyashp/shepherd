@@ -3,6 +3,7 @@ import {
   mkdtemp,
   readFile,
   rm,
+  stat,
   unlink,
   writeFile,
 } from "node:fs/promises";
@@ -15,6 +16,7 @@ import {
   resolveVerifierOwnerId,
   VERIFIER_INSTALLATION_MARKER_FILE,
   VERIFIER_INSTALLATION_NONCE_FILE,
+  writeShepherdCodexConfig,
 } from "./config.js";
 
 const temporaryDirectories: string[] = [];
@@ -99,6 +101,72 @@ describe("Shepherd configuration", () => {
     expect(config.shepherdContractTimeoutMs).toBe(1000);
     expect(config.shepherdCandidateTimeoutMs).toBe(2000);
     expect(config.shepherdVerificationTimeoutMs).toBe(3000);
+  });
+
+  it("resolves Shepherd live mode only for a configured container Runtime", () => {
+    expect(loadConfig({ NODE_ENV: "test" }).shepherdExecutionMode).toBe(
+      "deterministic",
+    );
+    expect(
+      loadConfig({
+        NODE_ENV: "test",
+        RUNTIME_PROVIDER: "container",
+        ARK_API_KEY: "test-key",
+        ARK_MODEL: "ep-agent",
+      }).shepherdExecutionMode,
+    ).toBe("live");
+    expect(
+      loadConfig({
+        NODE_ENV: "test",
+        RUNTIME_PROVIDER: "container",
+        ARK_API_KEY: "test-key",
+        ARK_MODEL: "ep-agent",
+        SHEPHERD_EXECUTION_MODE: "deterministic",
+      }).shepherdExecutionMode,
+    ).toBe("deterministic");
+    expect(() =>
+      loadConfig({
+        NODE_ENV: "test",
+        ARK_API_KEY: "test-key",
+        ARK_MODEL: "ep-agent",
+        SHEPHERD_EXECUTION_MODE: "live",
+      }),
+    ).toThrow("RUNTIME_PROVIDER=container");
+    expect(() =>
+      loadConfig({
+        NODE_ENV: "test",
+        RUNTIME_PROVIDER: "container",
+        SHEPHERD_EXECUTION_MODE: "live",
+      }),
+    ).toThrow("ARK_API_KEY and ARK_MODEL");
+  });
+
+  it("writes a private live config with the Agent model and a key-free shell", async () => {
+    const dataDirectory = await temporaryDataDirectory();
+    const privateHome = path.join(dataDirectory, "private-codex-home");
+    const secret = "ARK_SECRET_MUST_NOT_BE_WRITTEN";
+    const config = loadConfig({
+      NODE_ENV: "test",
+      APP_DATA_DIR: dataDirectory,
+      RUNTIME_PROVIDER: "container",
+      ARK_API_KEY: secret,
+      ARK_MODEL: "agent-model",
+      SHEPHERD_MODEL: "planner-model",
+    });
+
+    await writeShepherdCodexConfig(config, privateHome);
+    const contents = await readFile(path.join(privateHome, "config.toml"), "utf8");
+    expect(contents).toContain('model = "agent-model"');
+    expect(contents).not.toContain("planner-model");
+    expect(contents).not.toContain(secret);
+    expect(contents).toContain('[shell_environment_policy]');
+    expect(contents).toContain('inherit = "none"');
+    expect(contents).toContain('TMPDIR = "/tmp"');
+    expect(contents).toContain('NO_COLOR = "1"');
+    expect((await stat(privateHome)).mode & 0o777).toBe(0o700);
+    expect((await stat(path.join(privateHome, "config.toml"))).mode & 0o777).toBe(
+      0o600,
+    );
   });
 
   it("rejects ambiguous boolean and unsafe concurrency values", () => {
