@@ -28,6 +28,24 @@ that limitation is explicit.
 
 ## Immediate queue
 
+### `TST-19` — Integration identity is checked only after merge mutation
+
+- **Evidence class:** independent source/security review of corrected F-05/TST-18
+  candidate `53c8415`.
+- **Failure contract:** `mergeCommit` proves initial status is clean and records the
+  actual HEAD, but it does not compare the checked-out branch to the persisted Plane
+  branch or actual HEAD to the persisted Plane head before invoking `git merge`.
+  A clean integration worktree switched to a sibling branch/head can therefore mutate
+  or commit that branch before post-conflict inspection detects the mismatch.
+- **Minimal correction:** pass the persisted expected head and branch into the Git
+  boundary and prove both, plus clean status, before any merge command. Use fixed
+  bounded errors without raw Git output; do not repair or mutate mismatched refs.
+- **Acceptance:** real-Git branch-mismatch and head-mismatch REDs fail before mutation;
+  all managed branches/refs/worktrees, protected HEAD/canary and durable/downstream
+  state remain byte/identity unchanged; ordinary TST-18 conflict/cleanup/reset,
+  adjacent/full/security and hosted gates pass.
+- **Status:** **OPEN / Medium blocker.** Candidate is not integrated.
+
 ### `TST-18` — Merge-abort cleanup failure masks a detected Git conflict
 
 - **Evidence class:** independently injected cleanup double-fault on F-05 candidate
@@ -858,7 +876,7 @@ operator-cleanup availability residual; cross-process automatic retry is not cla
 | `F-01` | Source-evidenced: Contract timeout may surface as failure code `unknown` instead of `agent_timeout`. | Typed timeout propagated through Contract/Plane/Agent/Mission/event/API/UI; no message-regex classification. | **WORKER VERIFIED** candidate on `work/mock-main`; 95% pending Auditor |
 | `F-02` | Source-evidenced: Contract runtime errors can become generic `unknown`. | Shared typed stage error only; preserve candidate-specific handling. | **WORKER VERIFIED** candidate on `work/mock-main`; 95% pending Auditor |
 | `F-04` | Source-evidenced: initial Plane creation can fail before durable stage evidence; later mapper is too late. | Evidence on owning Contract/Mission without inventing a successful Plane. | **AUDITED** at `2cef988`; TST-17 closed |
-| `F-05` | Preserved RED proved a real textual conflict became `unknown/background_demo`. | Typed bounded Mission/integration Plane/event mapping; retain clean conflict Plane for inspection and remove it on reset. | **BLOCKED by TST-18** merge-abort precedence |
+| `F-05` | Preserved RED proved a real textual conflict became `unknown/background_demo`. | Typed bounded Mission/integration Plane/event mapping; retain clean conflict Plane for inspection and remove it on reset. | **BLOCKED by TST-19** pre-merge identity |
 | `F-06` | Store rollback is tested; recovery-visible `persistence_failed` evidence is absent. | Journal/reconciliation-safe evidence; never claim a failed write persisted itself. | Worker / depends typed foundation |
 | `F-07` | Source-evidenced: candidate timeout state mapping is inconsistent and partly regex-based. | One typed timeout class and canonical state mapping. | Worker / ready |
 | `F-08` | Source-evidenced: most non-authority candidate exceptions are retryable; second-failure coverage absent. | Retry only typed transient failures, once, from the immutable base. | Worker / ready |

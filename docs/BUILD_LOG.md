@@ -7,6 +7,23 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — TST-18 passes locally; F-05 blocked by TST-19
+
+Auditor replayed exact `53c8415`. Focused Git/service passed 67/67; the two service
+conflict rows repeated 10/10 invocations (20/20 cases), and adjacent API/store/state/
+recovery/executor/verifier passed 133/133. Enumeration, abort and post-inspection
+cleanup rows are fixed/cause-free; ordinary conflict proves absent MERGE_HEAD, clean
+status, exact observed pre-head and persisted branch. The attention path retains
+truthful cleanup state; an ephemeral cancel-then-reset check removed its exact retained
+Plane successfully. The earlier scheduling symptom did not reproduce in 10/10 focused
+candidate-cleanup repeats; however one literal full run later failed that pre-existing
+candidate-cleanup assertion under contention, so no global-stability claim is made.
+
+Independent security review found a distinct Medium precondition defect: expected
+Plane branch/head are compared only after conflict cleanup, not before merge mutation.
+A clean worktree switched to another branch/head can be mutated first. TST-19 requires
+pre-mutation identity proof. The candidate was not pushed to `mock-main`.
+
 ## 2026-08-30 — TST-18 Fixer candidate
 
 The preserved implementation RED showed conflict enumeration/path validation before
