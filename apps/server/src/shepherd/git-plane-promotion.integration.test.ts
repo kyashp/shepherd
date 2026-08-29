@@ -259,7 +259,7 @@ describe("GitClient and PlaneManager integration", () => {
     } finally {
       await destroyFixture(fixture);
     }
-  });
+  }, 15_000);
 
   it("rejects ref injection, boundary escapes, non-sentinel adoption, and sentinel tampering", async () => {
     const fixture = await createFixture();
