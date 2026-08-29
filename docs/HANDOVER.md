@@ -267,7 +267,7 @@ The following are **not** included in the fully-tested claim above: rendered UI 
 |---|---|---|---|---|
 | `OPS-01` | Local startup / `.env` | On Node 24.17/npm 11.17, root `npm run poc` executes `node --env-file-if-exists=.env --run=poc:inner`, but the shell child did not receive `ARK_API_KEY`/`ARK_MODEL`; direct `node --env-file-if-exists=.env -e ...` proved the variables are present. | The documented `.env`-based one-command startup exits with “ARK_API_KEY and ARK_MODEL are required.” | Add the smallest safe Node-to-shell launcher that inherits the already parsed environment, or otherwise fix the root script without sourcing arbitrary shell content; add an env-presence regression that never prints values. |
 | `OPS-02` | Local startup paths | `.env.example` contains container paths such as `/app/data/shepherd`. When `.env` is loaded for host PoC startup, `start-local-poc.sh` does not rebase `SHEPHERD_ROOT`/`SHEPHERD_CODEX_HOME_ROOT` into `LOCAL_POC_DATA_ROOT`. | Host startup can target unintended absolute paths or fail permissions; this also violates repository-local test-state expectations. | In local-PoC mode, derive all Agent and Shepherd data roots from the one documented local root while preserving explicit, validated opt-in overrides. Add path-resolution tests. |
-| `OPS-03` | Verifier image fallback | `.env.example` deliberately leaves `SHEPHERD_VERIFIER_IMAGE` empty, but `envSchema` rejected `""` before `loadConfig()` could fall back to `CONTAINER_RUNTIME_IMAGE`. The correction and causal config regression are implemented in [draft PR #9](https://github.com/kyashp/shepherd/pull/9). | Any startup path that loads the documented empty value exits with a Zod `too_small` error before the API listens. | Merge PR #9, then rerun the exact `.env`-loaded local-PoC smoke on updated `main`; keep `OPS-01` and `OPS-02` separate because they remain unresolved. |
+| `OPS-03` | Verifier image fallback | **Resolved on `main` by [PR #22](https://github.com/kyashp/shepherd/pull/22).** `.env.example` deliberately leaves `SHEPHERD_VERIFIER_IMAGE` empty; the schema now lets that value reach the existing `CONTAINER_RUNTIME_IMAGE` fallback, with a causal regression. | The previous Zod `too_small` startup failure is fixed. | Post-merge config tests passed 16/16 and the exact `.env`-loaded local-PoC smoke reached the listener and served HTTP 200. No `OPS-03` code work remains; keep unresolved `OPS-01` and `OPS-02` separate. |
 | `RST-01` | Demo reset | `POST /api/shepherd/demo/reset` on a clean data root returns HTTP 500 with `Auth demo was not found`; after one Mission initializes `auth-demo`, reset succeeds and removes all managed state. | “Reset demo state” fails on first launch and exposes a server error instead of an idempotent clean result. | Make clean-start reset an idempotent success or return a deliberate non-error empty result; add service/API/UI regression tests. |
 | `GC-01` | Group Chat mention buttons | `main` inserts `@Frontend Agent`, while names containing spaces require `@"Frontend Agent"`. [Draft PR #9](https://github.com/kyashp/shepherd/pull/9) generates parser-safe JSON-quoted/escaped mentions and causally covers preservation of existing multiline composer content. | Until PR #9 merges, mention buttons do not route the demo Agents. After merge, real button/keyboard/focus behavior still requires browser evidence. | Merge PR #9 after button-to-composer, keyboard activation, focus/caret, and `1280x800`/`1440x900` browser checks; keep `GC-02..06` as separate behavior defects. |
 | `GC-02` | Unmentioned Group Chat messages | The backend persists a human message with no target, but does not invoke Shepherd, create work, or post a Shepherd response. | UI says “Unmentioned → Shepherd,” but no Shepherd action occurs. | Route through an existing bounded Shepherd action/response contract; do not add free-form shell/model authority. |
@@ -313,7 +313,7 @@ The following are **not** included in the fully-tested claim above: rendered UI 
 | Repeated cancellation | Single cancellation and both promotion races are tested | Explicit idempotent repeated-cancel API/service test |
 | UI reconnect handling | Poller retains state and retries | Browser interruption, visible reconnect, cursor reconciliation, no-duplicate event test |
 | Live Mission on current `main` | Phase 3 runtime previously passed at its named checkpoint | One sparse post-integration live Mission after P0 fixes; no repeated unnecessary model calls |
-| Host local-PoC startup | Runtime build/preflight and deterministic server were reached through a safe Node env-wrapper with repository-local roots; [draft PR #9](https://github.com/kyashp/shepherd/pull/9) fixes the empty verifier-image fallback (`OPS-03`) | Fix and regression-test `OPS-01`/`OPS-02`; merge `OPS-03`; then verify the documented one-command path without shell-sourcing `.env` |
+| Host local-PoC startup | Runtime build/preflight and deterministic server were reached through a safe Node env-wrapper with repository-local roots; merged [PR #22](https://github.com/kyashp/shepherd/pull/22) fixes the empty verifier-image fallback (`OPS-03`), and the post-merge smoke reached the listener and served HTTP 200 | Fix and regression-test `OPS-01`/`OPS-02`; then verify the documented one-command path without shell-sourcing `.env` |
 
 ### Unimplemented required behavior
 
@@ -336,7 +336,7 @@ The following are **not** included in the fully-tested claim above: rendered UI 
 
 The next agent must explicitly mark each item pass/fail with the exact command and observed evidence:
 
-1. Fix and test `OPS-01`, `OPS-02`, and `RST-01`: `.env` propagation, repository-local host paths, and idempotent clean-start reset. Merge and post-merge smoke the `OPS-03` verifier fallback from [draft PR #9](https://github.com/kyashp/shepherd/pull/9).
+1. Fix and test `OPS-01`, `OPS-02`, and `RST-01`: `.env` propagation, repository-local host paths, and idempotent clean-start reset. `OPS-03` is merged in [PR #22](https://github.com/kyashp/shepherd/pull/22), and its post-merge focused test and local-PoC smoke pass.
 2. Add service fault-injection tests for `F-01..08`, missing/malformed/omitted manifests, Contract acceptance failure, objective tie, final re-verification, repeated cancellation, and persistence recovery.
 3. Complete Group Chat API/browser regressions for `GC-01..06`. PR #9 covers quoted/escaped whitespace names and pure draft preservation; still prove real mention-button keyboard/focus/viewport behavior, a clean-start state, a message that produces a bounded Shepherd result, a targeted Contract, post-Mission behavior, and manifest-derived Agent summaries.
 4. Add fake-reviewer Mission tests for completed findings, zero findings, disabled review, timeout, cancellation, malformed response, transport/provider/config failure, sensitive-value rejection, and deterministic-collision independence.
@@ -488,7 +488,7 @@ traceability.
 
 | Workstream | Recommended PR units | Stack/dependency guidance | Reviewer gate |
 |---|---|---|---|
-| Local run/reset | `OPS-01`, `OPS-02`, `OPS-03`, `RST-01` | `OPS-03` is implemented in draft PR #9 and needs post-merge smoke evidence. `OPS-02` may stack on `OPS-01`; `RST-01` is independent. Keep startup secret/path work separate from reset behavior. | Security review for env/path handling |
+| Local run/reset | `OPS-01`, `OPS-02`, `RST-01` (`OPS-03` resolved) | `OPS-03` merged independently in [PR #22](https://github.com/kyashp/shepherd/pull/22) and passed its post-merge smoke. `OPS-02` may stack on `OPS-01`; `RST-01` is independent. Keep startup secret/path work separate from reset behavior. | Security review for env/path handling |
 | Typed failures | `F-01/F-02` common typed-stage foundation, then `F-03`, `F-04`, `F-05`, `F-06`, `F-07/F-08` | Use short stacks only where a shared typed error contract is required. Each PR includes its entity/event/API tests. | Security review after the workstream |
 | Group Chat | `GC-05` safe project initialization, `GC-02` Shepherd handling, `GC-03/GC-04` targeted Contract lifecycle, `GC-06` Agent summaries, `GC-01` mention UI | One stack steward; keep parser/security foundation below service behavior and UI. Browser tests land with each UI-visible correction. | Security + UI review |
 | Advisory model | `MR-01` service composition/degradation, then `MR-02` truthful setting/UI | Deterministic collision independence is a mandatory lower-layer test. One sparse live smoke only after fake-adapter gates. | Security + UI review |
@@ -797,11 +797,16 @@ Not run after this checkpoint:
 - a final live Mission on current `main`;
 - a post-merge gate for these documentation changes.
 
-### Draft PR #9 (`GC-01`, `OPS-03`) evidence
+### Draft PR #9 (`GC-01`) and merged PR #22 (`OPS-03`) evidence
 
 [Draft PR #9](https://github.com/kyashp/shepherd/pull/9) targets `main` from
-`fix/5-gc-01-quoted-mentions`. The following was observed on 2026-08-29 without
-printing or copying `.env` values:
+`fix/5-gc-01-quoted-mentions`; its remaining functional diff against current
+`main` is limited to the Group Chat correction and documentation. Its history
+still contains the original `OPS-03` commit, so GitHub may list those two config
+files, but that content is identical to current `main` and was not rewritten under
+the branch's no-rebase/no-force-push constraint. The independent fallback was
+merged in [PR #22](https://github.com/kyashp/shepherd/pull/22). The following was
+observed on 2026-08-29 without printing or copying `.env` values:
 
 - Mention-format RED reproduced `@Frontend Agent` instead of
   `@"Frontend Agent"`; GREEN passed parser-safe quoting/escaping tests.
@@ -812,9 +817,10 @@ printing or copying `.env` values:
   existing `loadConfig()` fallback to execute.
 - `npm run check` passed: 25 test files passed, 2 skipped; 544 tests passed,
   2 skipped; web/server typechecks and production builds passed.
-- An isolated deterministic local-PoC run loaded the main-worktree `.env` with no
-  verifier-image override, built the Runtime and application, and reached
-  `Server listening at http://127.0.0.1:3000`.
+- On updated `origin/main`, the focused config suite passed 16/16. An isolated
+  deterministic local-PoC run loaded the main-worktree `.env` with an empty
+  verifier-image value, built the Runtime and application, reached
+  `Server listening at http://127.0.0.1:3000`, and served HTTP 200 responses.
 - Browser evidence is still pending: the browser runtime reported zero attachable
   browsers, so button activation, keyboard behavior, focus/caret, and
   `1280x800`/`1440x900` screenshots are not claimed.
@@ -873,12 +879,12 @@ Because this checkpoint materially changed scoped authority, public DTOs, cancel
 
 ### P0 — correctness and truthfulness
 
-1. **Restore the documented local run/reset path (`OPS-01`, `OPS-02`, `OPS-03`, `RST-01`)**
+1. **Restore the remaining documented local run/reset path (`OPS-01`, `OPS-02`, `RST-01`; `OPS-03` resolved)**
    - Load `.env` into the local-PoC shell child without sourcing it or printing
      values.
    - Resolve all host PoC data roots inside the documented local root unless an
      explicit validated override is supplied.
-   - Merge the `OPS-03` fallback from [draft PR #9](https://github.com/kyashp/shepherd/pull/9), then confirm an empty `SHEPHERD_VERIFIER_IMAGE` resolves to `CONTAINER_RUNTIME_IMAGE` on updated `main`.
+   - `OPS-03` is merged in [PR #22](https://github.com/kyashp/shepherd/pull/22): an empty `SHEPHERD_VERIFIER_IMAGE` resolves to `CONTAINER_RUNTIME_IMAGE`, and the post-merge focused test and local-PoC smoke pass.
    - Make reset idempotent on a clean root.
    - Add causal script/config/service/API tests and rerun the exact startup +
      clean-start reset reproduction.
@@ -1029,9 +1035,9 @@ Authoritative requirements/evidence:
   an existing data directory.
 - `npm run poc` is currently affected by `OPS-01`; use the verified command below
   until that issue merges.
-- On `main` before draft PR #9 merges, an empty `SHEPHERD_VERIFIER_IMAGE` is also
-  affected by `OPS-03`; use a non-empty verifier image only as a temporary
-  workaround.
+- On `main`, an empty `SHEPHERD_VERIFIER_IMAGE` now deliberately falls back to
+  `CONTAINER_RUNTIME_IMAGE`; merged [PR #22](https://github.com/kyashp/shepherd/pull/22)
+  covers the behavior and passed a post-merge local-PoC smoke.
 - Do not click **Reset demo state** before the first Mission initializes the demo;
   `RST-01` currently returns a 500 on a completely clean root.
 - The trusted verifier needs Docker, Colima, or Podman. The command below was
@@ -1049,10 +1055,10 @@ npm ci
 npm run check
 ```
 
-Latest draft PR #9 evidence: both workspace typechecks pass, 25 test files pass
-with two files skipped, 544 tests pass with two skipped, and both
-production builds pass. If counts change, record the new exact result rather than
-copying these numbers.
+Latest GC-01/OPS-03 evidence: both workspace typechecks pass, 25 test files pass
+with two files skipped, 544 tests pass with two skipped, and both production builds
+pass. The merged OPS-03 config suite also passes 16/16 on updated `origin/main`.
+If counts change, record the new exact result rather than copying these numbers.
 
 ### 2. Start a clean deterministic QA instance
 

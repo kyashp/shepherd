@@ -688,17 +688,21 @@ demo Mission are proven across two fresh end-to-end Missions. Scheduler, Project
 Group parser, and Ark advisory-reviewer modules exist and are focused-test-backed, but
 their service/API integration remains Phase 4 work and is not claimed here.
 
-## 2026-08-29 — GC-01 and OPS-03 draft corrections
+## 2026-08-29 — GC-01 draft correction and OPS-03 merge
 
-[Draft PR #9](https://github.com/kyashp/shepherd/pull/9) implements two bounded
-corrections discovered while verifying `GC-01`:
+[Draft PR #9](https://github.com/kyashp/shepherd/pull/9) implements the bounded
+`GC-01` correction discovered while verifying Project Group mentions:
 
 - Project Group mention buttons generate the parser's JSON-quoted syntax for Agent
   names containing whitespace or unsafe token characters. The pure prepend contract
   preserves existing multiline composer content; the page retains its existing
   request-animation-frame focus/caret restoration.
-- An empty `SHEPHERD_VERIFIER_IMAGE`, as documented in `.env.example`, is accepted
-  so `loadConfig()` can fall back to the validated `CONTAINER_RUNTIME_IMAGE`.
+
+The independent `OPS-03` correction was extracted into
+[PR #22](https://github.com/kyashp/shepherd/pull/22) and squash-merged to `main`
+as `d6596c3`. An empty `SHEPHERD_VERIFIER_IMAGE`, as documented in
+`.env.example`, is accepted so `loadConfig()` can fall back to the validated
+`CONTAINER_RUNTIME_IMAGE`.
 
 Strict TDD evidence:
 
@@ -709,11 +713,13 @@ Strict TDD evidence:
 - Verifier fallback RED reproduced the `SHEPHERD_VERIFIER_IMAGE` Zod `too_small`
   failure; focused GREEN passed 16/16 config tests.
 
-The final `npm run check` passed with 25 test files passed and 2 skipped, 544 tests
-passed and 2 skipped, and successful web/server typechecks and production builds.
-An isolated deterministic local-PoC run loaded the main-worktree `.env` without a
-verifier-image override and reached `Server listening at http://127.0.0.1:3000`.
-No `.env` value was printed or copied.
+The final pre-merge `npm run check` passed with 25 test files passed and 2 skipped,
+544 tests passed and 2 skipped, and successful web/server typechecks and production
+builds. On updated `origin/main`, the focused config suite passed 16/16 and an
+isolated deterministic local-PoC run loaded the main-worktree `.env` with an empty
+verifier-image value, built the Runtime and application, reached
+`Server listening at http://127.0.0.1:3000`, and served HTTP 200 responses. No
+`.env` value was printed or copied.
 
 Browser interaction and screenshots are not claimed: the browser runtime exposed no
 attachable browser. `docs/HANDOVER.md` records the remaining `GC-01` keyboard,
