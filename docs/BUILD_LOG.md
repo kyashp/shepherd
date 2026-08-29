@@ -46,6 +46,48 @@ attempt the separately labelled sparse live acceptance while deterministic E2E-0
 was red. Live call count: **0**. E2E-01 remains blocked with no acceptance gate
 claimed.
 
+### Independent Auditor reproduction
+
+**Evidence candidate:** `7b92813550f192d2b45e3e4e39f473b99c084615`
+
+**Docs integrated as:** `eb44d8633aa7e78cc7b89ea69e9215e3755be178`
+
+The candidate diff from `ace01ae` contains only this log, `FIXES.md`, and the
+`E2E-01` ledger row. It does not contain the Worker's unfinished E2E-01 code or any
+React, CSS, API, runtime, test configuration, dependency, or production change.
+The Auditor independently drove the integrated built application through access
+token unlock and the Create Agent link using the audited deterministic harness.
+
+At `1280x800`, document geometry was `clientWidth=1280`, `scrollWidth=2299`;
+the four transparent absolute radios were each `1280x38`, with bounds ending at
+`1589`, `1825.75`, `2062.5`, and `2299.25`. At `1440x900`, document geometry was
+`clientWidth=1440`, `scrollWidth=2579`; the radios were each `1440x38`, ending at
+`1749`, `2025.75`, `2302.5`, and `2579.25`. In both cases document height and all
+body X/Y measurements stayed within the viewport. This isolates the failure to
+the root X extent created by the hidden inputs; it is not ordinary page content or
+a vertical-overflow defect.
+
+The browser-computed radio style was `position:absolute`, `opacity:0`, and
+`pointer-events:none`, while global form rules still supplied `width:100%`,
+`min-height:38px`, padding, and a border. The source/geometry causal account is
+therefore confirmed. Existing native semantics were also measured as the
+preservation baseline: Generalist was the initial checked radio and the radio group
+was reached as one Tab stop; ArrowLeft moved both focus and selection to
+Verification; direct focus plus ArrowRight selected the next radio; clicking the
+wrapping Verification label left exactly one radio checked.
+
+No live/model request, Agent creation, fake Codex turn, product edit, or sibling
+branch integration occurred. Temporary screenshots/scripts and the isolated run
+root were removed; no server process remained.
+
+**Verdict:** `UI-03` is independently reproduced with **100% causal-diagnosis
+confidence** and **0% correction completion**. The Fixer must constrain only the
+hidden radio box, explicitly overriding inherited size/spacing properties without
+changing the visible form or native focus/selection/label contract. Required gates
+are focused causal Playwright coverage, `1280x800` and `1440x900` browser/screenshots
+with document/body X/Y invariants, literal `npm run check`, independent rendered
+`ui-reviewer`, and post-integration Auditor rerun. `E2E-01` remains blocked.
+
 ## E2E-HARNESS deterministic browser foundation
 
 **Date:** 2026-08-29 (Asia/Singapore)

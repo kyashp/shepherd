@@ -84,17 +84,28 @@ that limitation is explicit.
   observed four invisible `INPUT` elements, each exactly one viewport wide, with
   right edges at `1589`, `1826`, `2063`, and `2299` in the 1280 case. Their grid
   static positions cumulatively expand the root scroll area.
+- **Independent audit:** Auditor reproduced the same document widths on integrated
+  `ace01ae`. At `1440x900`, the radio right edges were `1749`, `2026`, `2303`, and
+  `2579`; every radio was `1440x38`. Body width/height stayed within the viewport,
+  isolating the failure to document-root X geometry. Native semantics still work:
+  the checked Generalist radio is reached as one Tab stop, ArrowLeft moves focus and
+  selection to Verification, direct focus plus ArrowRight selects the next radio,
+  and clicking a wrapping label leaves exactly one radio checked. The fix must
+  preserve these observed behaviors.
 - **Minimal correction:** in the existing `.preset-grid input` rule, bound the
-  visually hidden native radios (for example, explicit one-pixel width/height and
-  zero margin) while preserving the label hit target, native radio semantics,
-  checked selection, keyboard order, and accepted appearance. Do not hide the
-  symptom by weakening the document-overflow assertion or redesigning the form.
+  visually hidden native radios. Explicitly neutralize the inherited width,
+  `min-height`, padding, border, and margin so the hidden box is locally bounded,
+  while preserving the label hit target, native radio semantics, checked selection,
+  keyboard order, and accepted appearance. Do not hide the symptom by weakening
+  the document-overflow assertion, clipping another ancestor, or redesigning the
+  form.
 - **Acceptance:** reproduce RED first; then Create Agent at `1280x800` and
   `1440x900` has document/body X/Y scroll sizes within client sizes, all four labels
-  remain clickable, Generalist remains the checked recommended preset, keyboard
-  focus/selection works, screenshots preserve the current theme, E2E-01 proceeds
-  beyond its first gate, and literal `npm run check` passes. Independent UI review
-  and integrated Auditor rerun remain required.
+  remain clickable, Generalist remains the checked recommended preset, Tab reaches
+  the radio group as one native stop, arrow keys move focus/selection, screenshots
+  preserve the current theme, E2E-01 proceeds beyond its first gate, and literal
+  `npm run check` passes. Independent rendered `ui-reviewer` review and integrated
+  Auditor rerun remain required.
 - **Owner/status:** Fixer / `READY`; **100% causal diagnosis, 0% correction**; no
   production change made by the Worker.
 

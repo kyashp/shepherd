@@ -126,6 +126,7 @@ without an open issue/PR are not active ownership claims.
 
 | ID | PRD ref | Status / dependencies | Required acceptance | Confidence; gates passed; audit |
 |---|---|---|---|---|
+| `UI-03` | 0.4, 11.1–11.2, 11.7 | **READY — Fixer; blocks `E2E-01`** | Create Agent's transparent preset radios inherit global viewport-wide input sizing, expanding document width to 2299/1280 and 2579/1440. Bound only the hidden radio box, including inherited `min-height`/box spacing; preserve native checked state, wrapping-label click, one-stop Tab order and arrow-key focus/selection. Add causal Playwright coverage, rerun both required viewports with screenshots and no document/body X/Y overflow, literal full check, independent rendered UI review, and integrated audit. No design change. `T,C,B,U,I`. | **100% diagnosis, 0% correction**; 0/5 correction gates; not audited |
 | `E2E-HARNESS` | 0.4, 16 Phase 6 | **AUDITED** at integrated implementation `5b152a0` | Auditor independently verified the candidate and integrated SHA: allowlisted child environment with no `.env` or ambient Ark/model ingress; required bearer auth; bounded fake Codex/container fixtures, readiness, logs, termination, port and run-root cleanup; ignored artifacts; no production debug route or UI/runtime change. Node harness passed 2/2 and Chromium passed 2/2 at exact `1280x800` and `1440x900`; regenerated screenshot hashes matched, document/body X/Y overflow was absent, and both images preserved the accepted clean-shell UI. Literal `npm run check` passed launcher 3/3, server 555/555 with one opt-in live skip, typechecks and both builds. This foundation does not satisfy `E2E-01`–`08`, populated/composer states, accessibility, or `UI-GATE`. `T,C,B,S,I`. | **100% scoped**; `T,C,B,S,I` passed (5/5); audited |
 | `E2E-01` | 11.6.1, 17 baseline | **BLOCKED by reproduced `UI-03`**; Worker stopped without a production patch | The real authenticated journey reached Create Agent at both viewports, then failed the first required no-overflow gate: document width was 2299/1280 and 2579/1440 because transparent preset radios retain global input sizing. Fixer must land the minimal `UI-03` correction before the Worker resumes create → fake Playground artifact/test → follow-up/session → server restart continuity. No live call is permitted while deterministic acceptance is red. `C,B,L,S,U,I`. | **35%**; 0/6; not audited |
 | `E2E-02` | 11.6.2, 15 | `BLOCKED` by harness/P0 | Full hero chain with every intermediate Contract/Plane/collision/candidate/promotion state and real backend data; `C,B,S,U,I`. | **50%**; 0/5; not audited |
@@ -156,7 +157,7 @@ without an open issue/PR are not active ownership claims.
 
 ## Count and current verdict
 
-- **44 tracked work items:** 2 audited, 4 externally held, and 38 other incomplete
+- **45 tracked work items:** 2 audited, 4 externally held, and 39 other incomplete
   items across P0/P1/P2.
 - **Next ready worker assignment:** `F-01/02` unless the integrator selects another
   non-overlapping ready row.
