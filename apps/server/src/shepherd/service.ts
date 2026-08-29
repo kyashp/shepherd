@@ -74,6 +74,7 @@ import { parseProjectGroupMessage } from "./group-routing.js";
 import { GitClient, type GitClientOptions } from "./git-client.js";
 import {
   PlaneAuthorityViolationError,
+  PlaneCreationError,
   PlaneManager,
   type ExecutionWorkspace,
 } from "./plane-manager.js";
@@ -375,6 +376,7 @@ export interface ShepherdIndependentVerifier {
 }
 
 export type ShepherdFaultCheckpoint =
+  | "contract_plane_creation_start"
   | "contract_execution_workspace_ready"
   | "contract_verification_snapshot_ready"
   | "promotion_ready_for_cas"
@@ -384,6 +386,7 @@ export interface ShepherdFaultCheckpointContext {
   missionId?: string;
   contractId?: string;
   candidateId?: string;
+  planeId?: string;
 }
 
 export interface ShepherdServiceOptions {
@@ -2101,6 +2104,15 @@ export class ShepherdService {
         retryable: false,
       };
     }
+    if (error instanceof PlaneCreationError) {
+      return {
+        code: "worktree_creation_failure",
+        message: "Contract Plane worktree could not be created",
+        stage: "plane_creation",
+        at,
+        retryable: false,
+      };
+    }
     return {
       code: "unknown",
       message: this.safeText(raw),
@@ -2911,18 +2923,48 @@ export class ShepherdService {
     const snapshot = this.store.snapshot();
     const contract = snapshot.shepherd.contracts.find((item) => item.id === contractId);
     if (!contract) throw new Error("Execution Contract is missing");
-    const plane = await prepared.planeManager.createPlane({
-      id: this.identifier("plane-contract"),
-      projectId: prepared.project.projectId,
+    const planeId = this.identifier("plane-contract");
+    await this.checkpoint("contract_plane_creation_start", {
       missionId: prepared.missionId,
-      kind: "contract",
       contractId,
-      candidateId: null,
-      baseCommit: prepared.project.headCommit,
-      purpose: contract.objective,
-      executionIdentity: this.identifier("execution"),
-      authority: contract.authority,
+      planeId,
     });
+    let plane: Plane;
+    try {
+      plane = await prepared.planeManager.createPlane({
+        id: planeId,
+        projectId: prepared.project.projectId,
+        missionId: prepared.missionId,
+        kind: "contract",
+        contractId,
+        candidateId: null,
+        baseCommit: prepared.project.headCommit,
+        purpose: contract.objective,
+        executionIdentity: this.identifier("execution"),
+        authority: contract.authority,
+      });
+    } catch (error) {
+      const failedAt = this.timestamp();
+      const failure = this.makeFailure(error, "plane_creation", failedAt);
+      await this.store.mutate((database) => {
+        transitionContractAndRecord(database, contractId, "execution_failed", {
+          actor: "control_plane",
+          eventActor: SHEPHERD_ACTOR,
+          timestamp: failedAt,
+          failure,
+          summary: "Contract Plane worktree creation failed",
+          details: { failureCode: failure.code, stage: failure.stage },
+        });
+        const agent = database.agents.find((item) => item.id === contract.agentId);
+        if (agent) {
+          agent.status = "error";
+          agent.currentContractId = null;
+          agent.lastError = failure.message;
+          agent.updatedAt = failedAt;
+        }
+      });
+      throw error;
+    }
     try {
       await this.store.mutate((database) => {
         this.assertMissionRunnable(database, prepared.missionId);

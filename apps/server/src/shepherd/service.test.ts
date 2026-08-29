@@ -515,6 +515,20 @@ class TypedFailingContractExecutor implements ShepherdExecutor {
   }
 }
 
+class MustNotRunExecutor implements ShepherdExecutor {
+  readonly kind = "deterministic_fixture" as const;
+  calls = 0;
+
+  async run(): Promise<ShepherdExecutionResult> {
+    this.calls += 1;
+    throw new Error("Executor ran after Plane creation failed");
+  }
+
+  async cancel(): Promise<boolean> {
+    return false;
+  }
+}
+
 class BlockingExecutor implements ShepherdExecutor {
   readonly kind = "deterministic_fixture" as const;
   readonly executionIds: string[] = [];
@@ -2122,6 +2136,69 @@ describe("Shepherd deterministic walking skeleton", () => {
     expect(detail?.mission.failure).toMatchObject({ code: "unknown", stage: "background_demo" });
     expect(detail?.contracts.every((contract) => contract.state === "execution_failed" && contract.failure?.code === "unknown")).toBe(true);
     expect(detail?.candidates).toEqual([]);
+  });
+
+  it("persists a Contract-owned failure when its Plane worktree cannot be created", async () => {
+    const caseRoot = await makeCaseRoot();
+    const managedRoot = path.join(caseRoot, "managed");
+    const storePath = path.join(caseRoot, "state.json");
+    const outsideCanary = path.join(caseRoot, "outside-canary.txt");
+    await writeFile(outsideCanary, "outside unchanged\n", "utf8");
+    const store = new JsonStore(storePath);
+    await store.initialize();
+    const executor = new MustNotRunExecutor();
+    const verifier = new HostTrustedFixtureVerifier();
+    const verify = vi.spyOn(verifier, "verify");
+    let failedPlanePath = "";
+    const service = new ShepherdService({
+      store,
+      managedRoot,
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier,
+      executor,
+      faultCheckpoint: async (checkpoint, context) => {
+        if (checkpoint !== "contract_plane_creation_start" || failedPlanePath) return;
+        failedPlanePath = path.join(managedRoot, "planes", "auth-demo", `contract-${context.planeId}`);
+        await mkdir(failedPlanePath);
+        await writeFile(path.join(failedPlanePath, "partial-canary"), "partial\n", "utf8");
+      },
+    });
+
+    const { missionId } = await startTrackedTestMission(service);
+    await vi.waitFor(
+      () => expect(service.missionDetail(missionId)?.mission.state).toBe("failed"),
+      { timeout: 10_000 },
+    );
+    const detail = service.missionDetail(missionId);
+    if (!detail) throw new Error("Plane creation failure detail disappeared");
+    expect(detail.mission.failure).toMatchObject({ code: "worktree_creation_failure", stage: "plane_creation" });
+    expect(detail.project.activeMissionId).toBeNull();
+    const failedContracts = detail.contracts.filter((contract) => contract.failure?.code === "worktree_creation_failure");
+    expect(failedContracts).toHaveLength(1);
+    expect(failedContracts[0]).toMatchObject({ state: "execution_failed", planeId: null });
+    expect(detail.contracts.filter((contract) => contract.state === "queued" && contract.failure === null)).toHaveLength(1);
+    expect(detail.agents.filter((agent) => agent.status === "error" && agent.currentContractId === null)).toHaveLength(1);
+    expect(detail.planes).toEqual([]);
+    expect(detail.collisions).toEqual([]);
+    expect(detail.candidates).toEqual([]);
+    expect(detail.project.protectedHeadCommit).toBe(detail.mission.baseCommit);
+    expect(executor.calls).toBe(0);
+    expect(verify).not.toHaveBeenCalled();
+    expect(detail.events.filter((event) => event.contractId === failedContracts[0]?.id && event.details.failureCode === "worktree_creation_failure")).toHaveLength(1);
+    expect(detail.events.filter((event) => event.type === "mission_failed" && event.details.failureCode === "worktree_creation_failure")).toHaveLength(1);
+    const publicDetail = JSON.stringify(toPublicMissionDetail(detail, []));
+    expect(publicDetail).toContain('"code":"worktree_creation_failure"');
+    expect(publicDetail).toContain('"stage":"plane_creation"');
+    expect(publicDetail).not.toContain(caseRoot);
+    await expect(access(failedPlanePath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readFile(outsideCanary, "utf8")).toBe("outside unchanged\n");
+
+    const reloaded = new JsonStore(storePath);
+    await reloaded.initialize();
+    const persisted = reloaded.snapshot();
+    expect(persisted.shepherd.planes).toEqual([]);
+    expect(persisted.shepherd.missions.find((mission) => mission.id === missionId)?.failure).toMatchObject({ code: "worktree_creation_failure", stage: "plane_creation" });
+    expect(persisted.shepherd.contracts.filter((contract) => contract.missionId === missionId && contract.failure?.code === "worktree_creation_failure")).toHaveLength(1);
   });
 
   it("does not invoke a sibling verifier after infrastructure terminalization", async () => {

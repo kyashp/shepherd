@@ -3898,3 +3898,24 @@ F-01/02 remains at 95% pending independent Auditor and hosted integration eviden
   gaps. After correction, final read-only re-review reports PASS with no High,
   Medium or material gap; containment and symlink protections remain unchanged.
   Auditor U/I remain pending.
+
+## 2026-08-30 — F-04 Worker candidate
+
+The causal RED used the existing internal fault checkpoint to place a partial
+managed destination immediately before initial Contract Plane creation. Plane
+Manager correctly rolled it back, but the owning Contract remained queued and the
+Mission persisted generic `unknown/background_demo`. The candidate recognizes the
+existing `PlaneCreationError` without exposing its cause, persists fixed bounded
+`worktree_creation_failure/plane_creation` evidence on the owning Contract and
+Mission, releases the logical Agent/project, and records no Plane for a resource
+that never completed creation. Executor and verifier calls remain zero; no
+integration, collision, candidate or promotion state exists.
+
+The original RED became GREEN 1/1. A separate real-Git integration fault after
+worktree attachment proves rollback of the partial worktree and `shepherd/`
+branch, unchanged protected HEAD/file canary, and a fixed public error message.
+Focused coverage passed 2/2; adjacent service/Git/recovery/API/store coverage
+passed 107/107; strict test types and two literal `npm run check` runs passed
+launcher 3/3, Server 663/663 with two opt-in skips, Web 17/17 and both builds. No
+live/model/network/UI/schema change ran. F-04 remains 95% pending independent
+Auditor, security and hosted integration evidence.

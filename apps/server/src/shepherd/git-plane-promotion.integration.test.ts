@@ -31,6 +31,7 @@ import {
 } from "./git-client.js";
 import {
   PlaneAuthorityViolationError,
+  PlaneCreationError,
   PlaneManager,
   UnsafeExecutionWorkspaceError,
 } from "./plane-manager.js";
@@ -140,6 +141,44 @@ afterAll(async () => {
 });
 
 describe("GitClient and PlaneManager integration", () => {
+  it("rolls back an attached worktree and branch when initial Plane validation fails", async () => {
+    const fixture = await createFixture();
+    const planeId = "partial-create";
+    const worktreePath = path.join(fixture.planesRoot, `contract-${planeId}`);
+    const protectedCanary = path.join(fixture.repositoryPath, "shared.txt");
+    try {
+      const headFailure = vi
+        .spyOn(fixture.manager.git, "currentHead")
+        .mockRejectedValueOnce(new Error("private git diagnostic /tmp/must-not-surface"));
+      const failure = await fixture.manager
+        .createPlane({
+          id: planeId,
+          projectId: "project",
+          missionId: "mission",
+          kind: "contract",
+          contractId: "contract",
+          baseCommit: fixture.baseCommit,
+          purpose: "partial creation cleanup",
+          executionIdentity: "execution-partial",
+          authority,
+        })
+        .catch((error: unknown) => error);
+      headFailure.mockRestore();
+
+      expect(failure).toBeInstanceOf(PlaneCreationError);
+      expect((failure as Error).message).toBe(`Failed to create managed Plane ${planeId}`);
+      expect((failure as Error).message).not.toContain("/tmp/");
+      await expect(access(worktreePath)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await fixtureGit(fixture.repositoryPath, ["branch", "--list", `shepherd/contract/${planeId}`])).toBe("");
+      expect(await fixtureGit(fixture.repositoryPath, ["worktree", "list", "--porcelain"])).not.toContain(worktreePath);
+      expect(await fixtureGit(fixture.repositoryPath, ["rev-parse", "HEAD"])).toBe(fixture.baseCommit);
+      expect(await readFile(protectedCanary, "utf8")).toBe("base\n");
+    } finally {
+      vi.restoreAllMocks();
+      await destroyFixture(fixture);
+    }
+  });
+
   it("creates isolated Planes from one SHA, strips control metadata, integrates, and resets leaks", async () => {
     const fixture = await createFixture();
     try {
