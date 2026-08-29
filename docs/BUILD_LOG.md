@@ -7,6 +7,24 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — F-01/02 integration blocked by TST-13 stderr exposure
+
+The Auditor reviewed exact unintegrated candidate `685e4ff`. Focused runner,
+executor and service passed 72/72; API/store/container-service/state-machine/
+recovery/verifier adjacency passed 66/66; literal `npm run check` passed launcher
+3/3, Server 606/606 plus two explicit opt-in skips, Web 17/17, strict test/source
+types and both builds. Typed timeout/execution identity, untyped unknown,
+cancellation precedence, durable state codes, ownership release and no-promotion
+behavior were correct. No live/model/UI call ran.
+
+Independent security fallback found one Medium defect: arbitrary parsed Runtime
+error/stderr remains in `RuntimeExecutionError.message`; bounded secret/path
+redaction does not remove opaque attacker/runtime-controlled text, which is then
+persisted and publicly exposed through Contract, Plane, Mission, Agent, event,
+reload and DTO surfaces. F-01/02 was not pushed to `mock-main`. TST-13 requires a
+fixed public execution message plus a causal opaque-stderr canary across the full
+runner → executor → service boundary before integration.
+
 ## 2026-08-30 — OPS-06 diagnostics integrated; TST-12 audited
 
 The Auditor integrated exact corrected chain `68dbd59` into `mock-main`. Focused

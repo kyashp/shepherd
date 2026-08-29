@@ -36,7 +36,7 @@ The project is not complete while any row below is **OPEN** or **PARTIAL**.
 
 | Topic | Classification | Current status and evidence | Owning task(s) |
 |---|---|---|---|
-| Failure matrix sequencing | Clarification | **OPEN.** Backend-available cases may be implemented before their UI/model surfaces, but the PRD's complete named failure matrix is not complete until durable state/event/API behavior and the required browser representation pass. Existing kernel tests do not close missing manifest, Git conflict, persistence, timeout/retry, tie, polling, and model-degradation rows. | `F-01/02`, `F-04`–`F-09`, `FM-01`, `UI-01`, `E2E-04`–`E2E-08`, `MR-01/03`, `SEC-REVIEW` |
+| Failure matrix sequencing | Clarification | **OPEN.** Backend-available cases may be implemented before their UI/model surfaces, but the PRD's complete named failure matrix is not complete until durable state/event/API behavior and the required browser representation pass. F-01/02 typed timeout/execution mapping is implemented in an unintegrated candidate but is blocked by `TST-13` raw-stderr public exposure. Existing kernel tests do not close missing manifest, Git conflict, persistence, timeout/retry, tie, polling, and model-degradation rows. | `F-01/02`, `TST-13`, `F-04`–`F-09`, `FM-01`, `UI-01`, `E2E-04`–`E2E-08`, `MR-01/03`, `SEC-REVIEW` |
 | Browser-journey sequencing | Clarification | **OPEN.** Backend paths can precede UI implementation, but no PRD journey is complete without its real browser assertions and screenshots. Only `E2E-01` is currently audited; harness/shell tests and source inspection do not close `E2E-02`–`E2E-08`. | `E2E-02`–`E2E-08`, `UI-GATE` |
 
 ## Environment and assurance limitations

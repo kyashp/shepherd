@@ -28,6 +28,27 @@ that limitation is explicit.
 
 ## Immediate queue
 
+### `TST-13` — Arbitrary Agent Runtime stderr reaches durable/public failures
+
+- **Evidence class:** independent security review of unintegrated F-01/02 candidate
+  `685e4ff`; source-confirmed runner → executor → service propagation.
+- **Failure contract:** a non-zero Runtime exit builds a typed execution error whose
+  message includes the last parsed error or raw stderr. Executor redaction removes
+  configured secrets and common paths but preserves arbitrary opaque content;
+  service then persists/returns it through Contract, Plane, Mission, Agent
+  `lastError`, events, state/reload and public mission DTO. Existing tests use clean
+  synthetic messages and do not plant an opaque stderr canary across these surfaces.
+- **Minimal correction:** preserve only typed failure kind across the boundary and
+  expose fixed bounded public text (`Agent Runtime execution failed`); a timeout may
+  include only its validated numeric deadline. Add a causal real runner → executor
+  → service failure with opaque stderr, secret and path canaries absent from Error
+  message/stack/cause, durable/reloaded state, events, Agent and public DTO. Preserve
+  cancellation, untyped unknown, verifier/candidate mapping, F-03, OPS-06 and
+  authority/no-promotion behavior. No regex classification or broad redesign.
+- **Acceptance/status:** **OPEN / READY for Fixer.** Focused runner/executor/service
+  RED/GREEN, reload/API/event/Agent assertions, adjacent cancellation/F-03/verifier/
+  OPS-06, strict/literal check, diff/secret scan and independent security review.
+
 ### `TST-12` — Executor preflight cleanup can expose raw filesystem cause
 
 - **Evidence class:** independent security review of unintegrated OPS-06 rebased
