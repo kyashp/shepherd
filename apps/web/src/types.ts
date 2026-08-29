@@ -73,6 +73,7 @@ export interface SystemInfo {
   codexSandboxMode: string;
   runtimeProvider: "local-process" | "container";
   shepherdExecutionMode: "live" | "deterministic";
+  shepherdModelReviewConfigured: boolean;
   containerEngine: string | null;
   runtime: string;
 }

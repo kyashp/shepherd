@@ -7,6 +7,36 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — MR-02 truthful reviewer capability candidate
+
+The Fixer reproduced the no-reviewer mismatch before product edits: persisted
+`modelReviewEnabled=true` rendered as an enabled “Run advisory” control and allowed
+false/true PATCH even though production composed no reviewer. The candidate adds
+one public `shepherdModelReviewConfigured` boolean, computed from the same
+fail-closed startup predicate used by `index.ts`. Settings preserves the stored
+preference but renders the existing native toggle disabled with explicit
+**Unavailable** process-scoped copy when false; configured mode remains editable.
+No credential, model, endpoint or failed-predicate reason is exposed, and no live
+request ran.
+
+Observed local gates:
+
+- causal Server 12/12 and Settings component 5/5;
+- reviewer/config/API adjacency 71/71 and harness unit 6/6;
+- dedicated Chromium 2/2 at 1280x800 and 1440x900, proving zero PATCH while
+  unavailable, exactly two successful mouse/keyboard PATCHes while configured,
+  persisted state, disabled/status semantics, no overflow and no fixture secret in
+  persistence, DOM or logs;
+- full deterministic Chromium 8/8; four screenshots under ignored `.tmp` were
+  visually inspected without theme/layout drift;
+- strict Server/Web test typechecks, two literal `npm run check` passes, clean diff
+  and credential/root scans, and `npm audit` with zero vulnerabilities;
+- independent read-only security review passed with no findings. The configured
+  UI reviewer role was unavailable; a read-only fallback UI review passed with no
+  Critical/High/Medium finding and only the non-blocking absence of stored-off
+  browser screenshots (covered by component tests). Auditor integration/hosted
+  evidence remains pending, so this entry makes no audited or 100% claim.
+
 ## 2026-08-30 — MR-01 local audit and MR-02 reproduced blocker
 
 The Auditor published ownership branch `audit/mr-01-integration`, then merged

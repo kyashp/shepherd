@@ -74,6 +74,34 @@ export function NotificationSettingsSection({
   );
 }
 
+export function ModelReviewSettingsSection({
+  configured,
+  enabled,
+  onChange,
+}: {
+  configured: boolean;
+  enabled: boolean;
+  onChange: (enabled: boolean) => void;
+}) {
+  return (
+    <SettingRow
+      label="Bounded model review"
+      description={configured
+        ? "Run advisory structured semantic review. Deterministic detection remains authoritative."
+        : "Stored preference reserved because a model reviewer is not configured for this running process. Deterministic detection remains authoritative."}
+    >
+      {configured ? (
+        <Toggle checked={enabled} onChange={onChange} label="Bounded model review" />
+      ) : (
+        <div className="locked-toggle">
+          <Toggle checked={enabled} onChange={() => undefined} label="Bounded model review" disabled />
+          <span role="status">Unavailable</span>
+        </div>
+      )}
+    </SettingRow>
+  );
+}
+
 export function SettingsPage({ system }: { system: SystemInfo | null }) {
   const [settings, setSettings] = useState<ShepherdSettings | null>(null);
   const [draft, setDraft] = useState<ShepherdSettings | null>(null);
@@ -190,9 +218,11 @@ export function SettingsPage({ system }: { system: SystemInfo | null }) {
 
           {tab === "security" ? (
             <>
-              <SettingRow label="Bounded model review" description="Run advisory structured semantic review. Deterministic detection remains authoritative.">
-                <Toggle checked={draft.modelReviewEnabled} onChange={(modelReviewEnabled) => setDraft({ ...draft, modelReviewEnabled })} label="Bounded model review" />
-              </SettingRow>
+              <ModelReviewSettingsSection
+                configured={system?.shepherdModelReviewConfigured === true}
+                enabled={draft.modelReviewEnabled}
+                onChange={(modelReviewEnabled) => setDraft({ ...draft, modelReviewEnabled })}
+              />
               <SettingRow label="Authority enforcement" description="Trusted diff inspection and protected-path checks cannot be disabled from the browser.">
                 <span className="locked-value"><Icon name="check" />Enforced</span>
               </SettingRow>

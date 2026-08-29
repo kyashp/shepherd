@@ -55,8 +55,19 @@ that limitation is explicit.
   imply a call, configured enabled/disabled semantics and PATCH persistence, and
   advisory/degraded events remain visibly truthful; no X/Y overflow/theme drift;
   security/UI fallback, literal check and hosted integrated gate pass.
-- **Owner/status:** Fixer / **READY**; blocks MR-01 integration; **35% scoped**,
-  browser RED/source cause 1/7, not audited.
+- **Observed correction:** the candidate exposes only a reviewer-specific boolean
+  derived from the same fail-closed startup predicate used to compose the reviewer.
+  Settings preserves the stored preference but uses the existing disabled/locked
+  visual language and explicit **Unavailable** process-scoped copy when false; it
+  cannot issue PATCH. Configured mode retains normal mouse/keyboard PATCH behavior.
+  Server 12/12, Web 5/5, reviewer/API matrix 71/71, harness 6/6, Chromium
+  8/8 (dedicated MR-02 2/2 at both viewports), strict test typechecks, two literal
+  checks, audit 0 vulnerabilities and independent security/UI reviews passed. No live
+  request ran and no credential/configuration-failure reason is public.
+- **Owner/status:** Fixer / **CANDIDATE**; **95% scoped**, `T,A,C,B,S,U` 6/7;
+  Auditor integration/hosted `I` remains pending; not audited. The UI review noted
+  only a non-blocking evidence gap: stored-off has component rather than browser
+  screenshot coverage.
 
 ### `TST-07` — GC-01 test violates strict cross-workspace ownership
 
@@ -441,9 +452,9 @@ that limitation is explicit.
 | `GC-04` | Earlier reproduction: assignment returns conflict after the fast Mission finishes. | Remove the narrow timing dependency while keeping one mutation owner. | Worker / blocked by GC-03 |
 | `GC-05` | Current UI source disables textarea when no project exists; earlier browser observation confirmed it. | Safe read-model initialization or explicit in-panel Mission-start action; preserve composer design. | Worker / ready with GC-02 |
 | `GC-06` | Current lifecycle summaries use Shepherd sender; verified manifest-derived Agent summaries are absent. | Server-authored bounded summary only after verification, attributed to the real Agent ID. | Worker / blocked by targeted lifecycle |
-| `MR-01` | Local merge `1422fd6` composes the bounded reviewer and passes provider-free audit, but is deliberately not pushed to `mock-main` while MR-02 is open. | Advisory-only composition after trusted evidence, durable degradation, deterministic independence; integrate after truthful capability UI. | Local audit candidate; blocked by MR-02 and final MR-03/live gates |
+| `MR-01` | Audit branch `5fba12f` composes the bounded reviewer and passes provider-free audit; the MR-02 correction is now a local Fixer candidate. | Advisory-only composition after trusted evidence, durable degradation, deterministic independence; integrate and audit the truthful capability UI. | Local audit candidate; awaits MR-02 audit plus final MR-03/live gates |
 | `MR-03` | External stack evidence: one invalid evidence ref can discard otherwise valid advisory findings. | Retain independently valid bounded findings; reject only invalid ones. | **Held external: PR #25** |
-| `MR-02` | No-Ark browser/API RED: preference is true and toggle enabled with “Run” copy while the process composes no reviewer; false/true PATCH succeeds without any possible call/outcome. | Preserve preference; expose bounded server-derived availability/operational truth; no credential/model/endpoint exposure or redesign. | **READY Fixer**; blocks MR-01 integration |
+| `MR-02` | No-Ark browser/API RED showed an enabled “Run” toggle although the process composed no reviewer. The candidate now publishes one fail-closed capability boolean and renders the preserved preference disabled with explicit **Unavailable** copy; configured PATCH remains functional. | Preserve preference and existing theme; expose no credential/model/endpoint/failure reason; Auditor must integrate and host the deterministic gates. | **CANDIDATE Fixer**; `T,A,C,B,S,U` passed, `I` pending |
 | `ST-01` | Current config parses startup auto-resolution/max Planes, but `index.ts` does not pass them into `ShepherdService`. | Explicit initial-settings composition without overwriting later persisted settings. | Worker / ready |
 | `ST-02` | Notification toggles persisted although no notification behavior consumed them. | Resolved by preserving stored values behind visibly Reserved/Unavailable native disabled controls; no delivery expansion. | **RESOLVED + AUDITED** at merge `d5df930`; `T,C,B,U,I` 5/5 |
 | `SCH-01` | Current service invokes scheduler for one fixed initial batch without real busy/lock/active inputs. | Extend existing scheduler/service boundary for dependency waves; no architecture replacement. | Worker / blocked by SCH-02 |

@@ -41,7 +41,10 @@ afterEach(async () => {
   );
 });
 
-async function makeService(runner: AgentRunner = new FakeRunner()): Promise<AgentService> {
+async function makeService(
+  runner: AgentRunner = new FakeRunner(),
+  configOverrides: Record<string, string | undefined> = {},
+): Promise<AgentService> {
   const testRoot = path.resolve(process.cwd(), ".tmp", "agent-service-tests");
   await mkdir(testRoot, { recursive: true });
   const root = await mkdtemp(path.join(testRoot, "case-"));
@@ -53,6 +56,7 @@ async function makeService(runner: AgentRunner = new FakeRunner()): Promise<Agen
     CODEX_HOME: path.join(root, "codex"),
     ARK_API_KEY: "test-key",
     ARK_MODEL: "ep-test",
+    ...configOverrides,
   });
   const service = new AgentService(
     config,
@@ -63,6 +67,20 @@ async function makeService(runner: AgentRunner = new FakeRunner()): Promise<Agen
   await service.initialize();
   return service;
 }
+
+describe("System capabilities", () => {
+  it("reports only whether the Shepherd model reviewer is configured", async () => {
+    const configured = await makeService();
+    const unavailable = await makeService(new FakeRunner(), { ARK_API_KEY: "" });
+
+    await expect(configured.systemInfo()).resolves.toMatchObject({
+      shepherdModelReviewConfigured: true,
+    });
+    await expect(unavailable.systemInfo()).resolves.toMatchObject({
+      shepherdModelReviewConfigured: false,
+    });
+  });
+});
 
 const persistedAgent = (workspacePath: string): Agent => ({
   id: "persisted-agent",

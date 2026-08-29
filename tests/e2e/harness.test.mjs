@@ -84,12 +84,14 @@ test("isolated harness starts the authenticated real app and cleans up", async (
         codexAvailable: systemInfo.codexAvailable,
         runtimeProvider: systemInfo.runtimeProvider,
         shepherdExecutionMode: systemInfo.shepherdExecutionMode,
+        shepherdModelReviewConfigured: systemInfo.shepherdModelReviewConfigured,
       },
       {
         arkConfigured: false,
         codexAvailable: true,
         runtimeProvider: "local-process",
         shepherdExecutionMode: "deterministic",
+        shepherdModelReviewConfigured: false,
       },
     );
 

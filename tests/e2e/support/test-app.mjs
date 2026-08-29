@@ -146,6 +146,7 @@ async function removeManagedRunRoot(harnessRoot, runRoot) {
 export async function startTestApp({
   legacyRuntime = false,
   liveLegacyConfig,
+  modelReviewConfigured = false,
   runRoot: requestedRoot,
 } = {}) {
   const harnessRoot = await prepareHarnessRoot();
@@ -207,9 +208,15 @@ export async function startTestApp({
     CONTAINER_RUNTIME_IMAGE: "fixture.invalid/shepherd:deterministic",
     RUNTIME_INSTANCE_ID: "playwright-harness",
     APP_AUTH_TOKEN: AUTH_TOKEN,
-    ARK_API_KEY: liveLegacyConfig?.arkApiKey ?? (legacyRuntime ? LEGACY_ARK_KEY : ""),
-    ARK_MODEL: liveLegacyConfig?.arkModel ?? (legacyRuntime ? "fixture-legacy-model" : ""),
-    SHEPHERD_MODEL: legacyRuntime && !liveLegacyConfig ? "fixture-shepherd-model" : "",
+    ARK_API_KEY: liveLegacyConfig?.arkApiKey ?? (legacyRuntime
+      ? LEGACY_ARK_KEY
+      : modelReviewConfigured ? "fixture-review-key-never-send" : ""),
+    ARK_MODEL: liveLegacyConfig?.arkModel ?? (legacyRuntime
+      ? "fixture-legacy-model"
+      : modelReviewConfigured ? "fixture-agent-model" : ""),
+    SHEPHERD_MODEL: legacyRuntime && !liveLegacyConfig
+      ? "fixture-shepherd-model"
+      : modelReviewConfigured ? "fixture-review-model" : "",
     ARK_BASE_URL: liveLegacyConfig?.arkBaseUrl ?? "https://example.invalid/api/v3",
     SHEPHERD_ROOT: shepherdRoot,
     SHEPHERD_CODEX_HOME_ROOT: shepherdCodexHomeRoot,

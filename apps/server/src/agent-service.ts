@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AppConfig } from "./config.js";
-import { isArkConfigured } from "./config.js";
+import { isArkConfigured, isShepherdModelReviewConfigured } from "./config.js";
 import { HttpError, RunCancelledError } from "./errors.js";
 import { JsonStore } from "./store.js";
 import { normalizeScopedAuthority } from "./shepherd/authority.js";
@@ -361,6 +361,7 @@ export class AgentService {
       codexSandboxMode: this.config.codexSandboxMode,
       runtimeProvider: this.config.runtimeProvider,
       shepherdExecutionMode: this.config.shepherdExecutionMode,
+      shepherdModelReviewConfigured: isShepherdModelReviewConfigured(this.config),
       containerEngine:
         this.config.runtimeProvider === "container"
           ? this.config.containerEngine
