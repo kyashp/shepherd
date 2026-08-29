@@ -67,10 +67,10 @@ deterministic clean-shell browser harness are green at the snapshot named above.
 
 | ID | PRD | Status / owner | Current external work | Integration requirement |
 |---|---|---|---|---|
-| `MR-03` | 8.6, 12 | `HELD_EXTERNAL`, stacked on `MR-01` | Issue #21 / draft PR #25 / `fix/21-mr-03-partial-review-findings` | Integrate after MR-01; validate partial valid findings survive one rejected evidence reference. |
+| `MR-03` | 8.6, 12 | `LOCAL_AUDIT_BLOCKED` by `TST-08` | PR #25 merged to `main` as `5b8f835`; local conflict-free merge is `3c878b3` on `audit/tst-08-mr03-cleanup` | Focused deterministic gates passed, but literal check exposed TST-08. Fix/audit baseline before the single final live reviewer request or mock-main push. |
 
-Only `MR-03` remains externally held. `MR-01` is integrated and independently
-audited for its provider-free scope; its final `L` gate remains dependent on MR-03.
+No workstream is externally held. `MR-01` is integrated and independently audited
+for its provider-free scope; its final `L` gate remains dependent on MR-03/TST-08.
 Historical
 `feature/shepherd-phase-*`, merged startup/reset/UI branches, and remote branches
 without an open issue/PR are not active ownership claims.
@@ -95,6 +95,7 @@ without an open issue/PR are not active ownership claims.
 | `TST-02` | 0.2, 16 Phase 9B, 17 | **AUDITED** at integrated implementation `0cb431a`; test fixture only | Worker and Auditor reproduced the fixed-clock cause. Auditor verified candidate and integrated trees: isolated test 1/1, full recovery 17/17, literal `npm run check` with launcher 3/3, server 555/555 plus one opt-in skip, and both production builds. Exact diff is one test clock injection plus evidence docs; production/UI/security files and lifecycle validation are unchanged. | **100% scoped**; `T,A,C,I` passed (4/4); audited |
 | `TST-03` | 0.2, 12, 16 Phase 9B, 17 | **AUDITED** at integrated implementation `0b1c401`; test fixture only | Hosted RED run `33261198788` and a controlled pre-verifier hold proved the scheduling race. The two-arrival barrier, early rejection observer, and unconditional release/join preserve the typed failure and durable reload/late-return/no-promotion assertions. Auditor independently passed both rows 40/40, the service/container-verifier slice 43/43, strict test typecheck, the literal local gate (launcher 3/3, server 563/563 plus one opt-in skip, both builds), and integrated focused 2/2. Hosted Node 22 run `33262227553` passed the final implementation gate. No timeout, sleep/retry, assertion weakening, rejection suppression, or product/UI change. | **100% scoped**; `T,C,I` passed (3/3); audited |
 | `TST-04` | 0.2, 12, 16 Phase 9B, 17 | **AUDITED** at integrated implementation `00c81ae`; test fixture only | Preserved full-suite RED: `afterEach -> makeDeletable -> readdir` received `ENOENT` beneath a sibling `.trusted-verification/verify-*/src`. The correction records the exact blocked backend snapshot, proves Mission rejection precedes its removal, arms an exact-basename watcher before release, requires `lstat -> ENOENT`, and unconditionally joins Mission/sibling/removal before teardown. Auditor independently passed the exact row 20/20, service/container-verifier slice 43/43, strict test typecheck, literal `npm run check` twice (563/563 plus one opt-in skip and both builds), and integrated focused 1/1. Hosted Node 22 run `33263688794` passed. No cleanup suppression, sleep/retry/timeout increase, assertion/sentinel/path/symlink weakening, or product/UI change. | **100% scoped**; `T,A,C,I` passed (4/4); audited |
+| `TST-08` | 0.2, 12, 16 Phase 9B, 17 | **READY**; Fixer; blocks MR-03 integration/live | Literal check on local MR-03 merge `3c878b3` passed 590 Server tests but failed the returned-infrastructure row in teardown: `makeDeletable -> realpath` received `ENOENT` for a concurrently removed exact `.trusted-verification/verify-*` root. Isolated 1/1 and 20/20 passed, proving scheduling dependence; MR-03 focused 164/164, adjacent 100/100 and harness unit 6/6/browser 8/8 passed. Generalize the TST-04 exact sibling snapshot arrival/removal join for this row; no ENOENT suppression, cleanup-walker/product change, sleep/retry/timeout or assertion weakening. | **35% scoped**; RED preserved; 0/4 `T,C,S,I`; not audited |
 | `TST-07` | 0.2, 16 Phase 9B, 17 | **AUDITED** at integrated implementation `de3e631`; test packaging only | Exact TS6142/TS6059 RED was preserved. The complete eight-case file moved from Server to Web; explicit Web Vitest and strict test-source configs/scripts make both workspaces execute and typecheck under the root gate. Auditor independently passed focused Web 8/8, full Web 9/9, adjacent Server routing 10/10, both strict test projects, lock-backed clean install with zero vulnerabilities, literal `npm run check` (launcher 3/3, Server 563/563 plus one opt-in skip, Web 9/9 and both builds), and hosted Node 22 run `33266624301`. Server JSX/rootDir, product code and assertions are unchanged. | **100% scoped**; `T,C,I` passed (3/3); audited |
 
 ## P0 — failure and recovery correctness
@@ -165,7 +166,8 @@ without an open issue/PR are not active ownership claims.
 
 ## Count and current verdict
 
-- **51 tracked work items:** 15 audited, 1 externally held, and 35 other incomplete
+- **52 tracked work items:** 15 audited and 37 other incomplete; MR-03 is locally
+  blocked by `TST-08` rather than externally held
   items across P0/P1/P2.
 - **Next ready worker assignment:** `F-01/02` unless the integrator selects another
   non-overlapping ready row.

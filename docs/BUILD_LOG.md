@@ -7,6 +7,19 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — MR-03 integration blocked by TST-08
+
+MR-03 merged conflict-free locally as `3c878b3` but was not pushed to `mock-main`.
+The focused reviewer/service/config matrix passed 164/164, adjacent service/API/
+store/F-03/recovery/container passed 100/100, and deterministic harness passed unit
+6/6 plus Chromium 8/8. Literal `npm run check` then failed one of 591 executed
+Server tests: returned Contract verification infrastructure evidence reached
+teardown while a sibling exact trusted snapshot root was removed, producing
+`makeDeletable -> realpath -> ENOENT`. The isolated row passed 1/1 and 20/20,
+supporting a scheduling-dependent test coordination gap rather than an MR-03
+product regression. No live/model request ran (call count zero). Ownership was
+published on `audit/tst-08-mr03-cleanup`; MR-03 integration/live remains blocked.
+
 ## 2026-08-30 — MR-01/MR-02 integrated audit
 
 The Auditor integrated the controlled MR-01 merge and truthful MR-02 capability
