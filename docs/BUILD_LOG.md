@@ -7,6 +7,51 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## TEST-TS strict server test-source typecheck candidate
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Branch/base:** `work/mock-main` / `39211213bc1f77e8873673eda9e7c87da2b24abd`
+
+The production server compiler excludes `*.test.ts`, so its existing typecheck did
+not validate test sources. A separate `tsconfig.test.json` now reuses the production
+compiler options with `noEmit`, includes production and test sources, and is invoked
+after the unchanged workspace production typechecks by the root `typecheck` script.
+The production build/emit configuration remains unchanged.
+
+The initial strict RED found 14 errors across four test files: four implicit callback
+types, five Vitest 4 matcher calls using removed generic parameters, four promotion
+fixtures missing the required persistence callback, and one container verifier fixture
+missing its required owner identity. Restoring matcher typing then exposed two nullable
+fixture values. The test-only fixes add exact inferred/imported types, use `satisfies`
+for matcher shapes, complete the fixtures with inert deterministic callbacks/identity,
+and assert the already-established non-null candidate-head invariant. No assertion,
+production behavior, UI, compiler strictness, or test coverage was removed.
+
+```sh
+./node_modules/.bin/tsc -p apps/server/tsconfig.test.json --pretty false
+# RED: exit 2; 14 errors across 4 files in the categories recorded above
+
+npm run typecheck:tests -w @launchpad/server
+npm run typecheck -w @launchpad/server
+npm run build -w @launchpad/server
+# all passed; test-source and production typechecks plus production server emit
+
+npm run test -w @launchpad/server -- --run src/app.test.ts \
+  src/shepherd/git-plane-promotion.integration.test.ts \
+  src/shepherd/service.container.test.ts src/shepherd/service.test.ts
+# 4 files passed; 73/73 tests passed
+
+npm run check
+# both workspace production typechecks and the new server test-source typecheck passed
+# launcher tests: 3/3 passed
+# server: 26 files passed, 1 opt-in file skipped;
+# 563 tests passed, 1 opt-in test skipped
+# web 40-module production build and server production build passed
+```
+
+This is implementation evidence only. Independent Auditor integration/review on
+`mock-main` remains the `I` gate, so confidence is scoped to 95%, not 100%.
+
 ## CI-01 required-check workflow candidate
 
 **Date:** 2026-08-29 (Asia/Singapore)

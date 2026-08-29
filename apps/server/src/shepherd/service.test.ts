@@ -1584,7 +1584,7 @@ describe("Shepherd deterministic walking skeleton", () => {
       (event) => event.type === "verification_failed",
     );
     expect(verificationFailures).toHaveLength(1);
-    expect(verificationFailures).toSatisfy((events) =>
+    expect(verificationFailures).toSatisfy((events: typeof verificationFailures) =>
       events.every(
         (event) =>
           event.summary ===
@@ -1621,13 +1621,13 @@ describe("Shepherd deterministic walking skeleton", () => {
       code: "verification_infrastructure_error",
       stage: "contract_verification",
     });
-    expect(publicDetail.contracts).toSatisfy((contracts) =>
+    expect(publicDetail.contracts).toSatisfy((contracts: typeof publicDetail.contracts) =>
       contracts.every(
         (contract) =>
           contract.failure?.code === "verification_infrastructure_error",
       ),
     );
-    expect(publicDetail.planes).toSatisfy((planes) =>
+    expect(publicDetail.planes).toSatisfy((planes: typeof publicDetail.planes) =>
       planes.every((plane) => !("worktreePath" in plane)),
     );
   }, 30_000);

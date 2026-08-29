@@ -8,7 +8,7 @@ import {
   type ShepherdMissionDetail,
 } from "./app.js";
 import { loadConfig } from "./config.js";
-import type { AgentService } from "./agent-service.js";
+import type { AgentAuthorityPreset, AgentService } from "./agent-service.js";
 import { emptyShepherdDatabase } from "./database.js";
 import { JsonStore } from "./store.js";
 import type {
@@ -516,14 +516,15 @@ describe("HTTP boundary", () => {
       url: "/api/agent-authority-presets",
     });
     expect(presets.statusCode).toBe(200);
-    expect(presets.json().presets.map((preset) => preset.id)).toEqual([
+    const presetBody = presets.json() as { presets: AgentAuthorityPreset[] };
+    expect(presetBody.presets.map((preset) => preset.id)).toEqual([
       "frontend",
       "backend",
       "verification",
       "generalist",
     ]);
-    expect(presets.json().presets[0].authority.writable).toContain("apps/web/**");
-    expect(presets.json().presets[0].authority.forbidden).toContain(".git/**");
+    expect(presetBody.presets[0]?.authority.writable).toContain("apps/web/**");
+    expect(presetBody.presets[0]?.authority.forbidden).toContain(".git/**");
 
     const created = await app.inject({
       method: "POST",

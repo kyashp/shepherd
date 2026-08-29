@@ -227,6 +227,7 @@ describe.skipIf(!hasContainerRuntime)(
           containerEngine,
           containerImage: runtimeImage,
           containerUser,
+          ownerId: "service-container-test",
           cpuLimit: 1,
           memoryLimit: "256m",
           pidsLimit: 64,

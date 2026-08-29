@@ -422,11 +422,11 @@ describe("GitClient and PlaneManager integration", () => {
       await writeFile(path.join(rejectedCommit.worktreePath, "outside.ts"), "outside scope\n", "utf8");
       await expect(
         fixture.manager.commitPlane(rejectedCommit, "Must reject outside scope"),
-      ).rejects.toMatchObject<Partial<PlaneAuthorityViolationError>>({
+      ).rejects.toMatchObject({
         name: "PlaneAuthorityViolationError",
         operation: "commit",
         deniedPaths: ["outside.ts"],
-      });
+      } satisfies Partial<PlaneAuthorityViolationError>);
       expect(await fixture.manager.git.currentHead(rejectedCommit.worktreePath)).toBe(
         fixture.baseCommit,
       );
@@ -460,11 +460,11 @@ describe("GitClient and PlaneManager integration", () => {
           integration,
           { ...hostileSource, headCommit: hostileHead },
         ),
-      ).rejects.toMatchObject<Partial<PlaneAuthorityViolationError>>({
+      ).rejects.toMatchObject({
         name: "PlaneAuthorityViolationError",
         operation: "merge",
         deniedPaths: ["outside-merge.ts"],
-      });
+      } satisfies Partial<PlaneAuthorityViolationError>);
       expect(await fixture.manager.git.currentHead(integration.worktreePath)).toBe(
         fixture.baseCommit,
       );
@@ -552,11 +552,11 @@ describe("GitClient and PlaneManager integration", () => {
       await writeFile(path.join(execution.path, "outside.ts"), "outside\n", "utf8");
       await expect(
         fixture.manager.importExecutionWorkspace(plane, execution),
-      ).rejects.toMatchObject<Partial<PlaneAuthorityViolationError>>({
+      ).rejects.toMatchObject({
         name: "PlaneAuthorityViolationError",
         operation: "import",
         deniedPaths: ["outside.ts"],
-      });
+      } satisfies Partial<PlaneAuthorityViolationError>);
       expect(await fixture.manager.git.uncommittedFiles(plane.worktreePath)).toEqual([]);
       await rm(path.join(execution.path, "outside.ts"));
 
@@ -871,6 +871,7 @@ describe("PromotionGate integration", () => {
           expectedHead: fixture.baseCommit,
           checks: [mandatoryCheck],
           loadPersistedSelectedCandidateId: async () => candidate.id,
+          persistPromotingEvidence: async () => {},
         }),
       ).toMatchObject({ promoted: false, reason: "unauthorized_file_change" });
       expect(verifier.verify).not.toHaveBeenCalled();
@@ -889,6 +890,7 @@ describe("PromotionGate integration", () => {
           expectedHead: fixture.baseCommit,
           checks: [mandatoryCheck],
           loadPersistedSelectedCandidateId: async () => candidate.id,
+          persistPromotingEvidence: async () => {},
         }),
       ).toMatchObject({ promoted: false, reason: "final_reverification_failure" });
 
@@ -906,6 +908,7 @@ describe("PromotionGate integration", () => {
           expectedHead: fixture.baseCommit,
           checks: [mandatoryCheck],
           loadPersistedSelectedCandidateId: async () => "other-candidate",
+          persistPromotingEvidence: async () => {},
         }),
       ).toMatchObject({ promoted: false, reason: "selection_mismatch" });
 
@@ -918,6 +921,7 @@ describe("PromotionGate integration", () => {
           expectedHead: fixture.baseCommit,
           checks: [mandatoryCheck],
           loadPersistedSelectedCandidateId: async () => candidate.id,
+          persistPromotingEvidence: async () => {},
         }),
       ).toMatchObject({
         promoted: false,
@@ -1048,12 +1052,12 @@ describe("PromotionGate integration", () => {
           fixture.baseCommit,
           plane.headCommit!,
         ),
-      ).rejects.toMatchObject<Partial<ProtectedWorktreeSynchronizationError>>({
+      ).rejects.toMatchObject({
         name: "ProtectedWorktreeSynchronizationError",
         expectedHead: fixture.baseCommit,
-        candidateHead: plane.headCommit,
+        candidateHead: plane.headCommit!,
         worktreeRestored: true,
-      });
+      } satisfies Partial<ProtectedWorktreeSynchronizationError>);
       expect(await fixtureGit(fixture.repositoryPath, ["rev-parse", "main"])).toBe(
         fixture.baseCommit,
       );
@@ -1114,12 +1118,12 @@ describe("PromotionGate integration", () => {
           fixture.baseCommit,
           plane.headCommit!,
         ),
-      ).rejects.toMatchObject<Partial<ProtectedRefRollbackError>>({
+      ).rejects.toMatchObject({
         name: "ProtectedRefRollbackError",
         expectedHead: fixture.baseCommit,
-        candidateHead: plane.headCommit,
+        candidateHead: plane.headCommit!,
         actualHead: concurrentHead,
-      });
+      } satisfies Partial<ProtectedRefRollbackError>);
       expect(await fixtureGit(fixture.repositoryPath, ["rev-parse", "main"])).toBe(
         concurrentHead,
       );
