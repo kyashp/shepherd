@@ -28,6 +28,26 @@ that limitation is explicit.
 
 ## Immediate queue
 
+### `TST-14` — Execution-home cleanup leaks and overrides causal failure identity
+
+- **Evidence class:** independent exhaustive security review of unintegrated
+  F-01/02 + TST-13 chain `c7b5175`; source-confirmed in executor `run()` finally.
+- **Failure contract:** `rm(privateHome)` executes directly in `finally`. A raw
+  filesystem exception can expose opaque/private path/OS detail through Error
+  surfaces and override an otherwise bounded timeout, execution or cancellation
+  failure. Existing fault tests cover preflight home cleanup and runner container
+  cleanup, not this execution-home path.
+- **Minimal correction:** causally inject execution-private-home cleanup failure;
+  retain every cleanup attempt but bound the emitted error. Define and test
+  precedence: existing cancellation remains cancellation; existing typed timeout/
+  execution identity remains; cleanup-only failure becomes fixed typed execution
+  failure. Prove raw canaries absent from String/stack/inspect/cause, store/reload,
+  Contract/Plane/Mission/Agent/event/API/log surfaces and prove a subsequent safe
+  retry/reconciliation. Preserve TST-12, OPS-06, F-03 and no-promotion behavior.
+- **Acceptance/status:** **OPEN / READY for Fixer.** Focused execution cleanup
+  matrix, Contract and candidate causal flows, adjacent cancellation/F-03/OPS-06,
+  strict/literal check, artifact/secret scan and independent security re-review.
+
 ### `TST-13` — Arbitrary Agent Runtime stderr reaches durable/public failures
 
 - **Evidence class:** independent security review of unintegrated F-01/02 candidate
@@ -57,10 +77,10 @@ that limitation is explicit.
   promotion or moving the protected head. Focused 75/75 and adjacent 226/226 pass;
   strict test typecheck and the first literal `npm run check` pass (launcher 3/3,
   Server 607 with two explicit skips, Web 17/17, build green). External calls: 0.
-- **Acceptance/status:** **FIX CANDIDATE / Auditor integration pending.** Independent
-  security re-review closed its runner create/spawn and candidate-path findings; a
-  final closed-kind follow-up reports no High/Medium finding and the second literal
-  check passes as recorded in BUILD_LOG.
+- **Acceptance/status:** **AUDITOR VERIFIED locally / integration held by TST-14.**
+  Auditor passed focused 75/75, adjacent 66/66, literal check and this exact
+  runner-to-durable boundary. A distinct executor execution-home cleanup leak and
+  precedence defect remains open as TST-14, so the chain is not integrated.
 
 ### `TST-12` — Executor preflight cleanup can expose raw filesystem cause
 

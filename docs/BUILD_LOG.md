@@ -7,6 +7,24 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — F-01/02 + TST-13 remain blocked by TST-14 cleanup path
+
+The Auditor reviewed exact corrected chain `c7b5175`. Focused runner/executor/
+service passed 75/75; API/store/container-service/state-machine/recovery/verifier
+adjacency passed 66/66; literal `npm run check` passed launcher 3/3, Server 609/609
+plus two explicit opt-in skips, Web 17/17, strict test/source types and both builds.
+TST-13 successfully bounded parsed stdout/stderr, create/start/spawn/container-
+cleanup and hostile typed fields across Contract and candidate durable/public paths;
+candidate failure retained attention/no-promotion/protected-head behavior. No
+live/model/UI call ran.
+
+Independent exhaustive security fallback found a separate Medium defect: executor
+execution-private-home `rm()` runs directly in `finally`. Its raw exception can
+leak path/OS detail and override typed timeout/execution or cancellation identity.
+That path is not covered by TST-12 preflight or runner container cleanup tests. The
+chain was not pushed to `mock-main`; TST-14 requires bounded cleanup precedence and
+opaque-canary durable/public regression coverage before integration.
+
 ## 2026-08-30 — F-01/02 integration blocked by TST-13 stderr exposure
 
 The Auditor reviewed exact unintegrated candidate `685e4ff`. Focused runner,
