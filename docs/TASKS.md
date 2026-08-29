@@ -94,6 +94,7 @@ without an open issue/PR are not active ownership claims.
 |---|---|---|---|---|
 | `TST-02` | 0.2, 16 Phase 9B, 17 | **AUDITED** at integrated implementation `0cb431a`; test fixture only | Worker and Auditor reproduced the fixed-clock cause. Auditor verified candidate and integrated trees: isolated test 1/1, full recovery 17/17, literal `npm run check` with launcher 3/3, server 555/555 plus one opt-in skip, and both production builds. Exact diff is one test clock injection plus evidence docs; production/UI/security files and lifecycle validation are unchanged. | **100% scoped**; `T,A,C,I` passed (4/4); audited |
 | `TST-03` | 0.2, 12, 16 Phase 9B, 17 | **AUDITED** at integrated implementation `0b1c401`; test fixture only | Hosted RED run `33261198788` and a controlled pre-verifier hold proved the scheduling race. The two-arrival barrier, early rejection observer, and unconditional release/join preserve the typed failure and durable reload/late-return/no-promotion assertions. Auditor independently passed both rows 40/40, the service/container-verifier slice 43/43, strict test typecheck, the literal local gate (launcher 3/3, server 563/563 plus one opt-in skip, both builds), and integrated focused 2/2. Hosted Node 22 run `33262227553` passed the final implementation gate. No timeout, sleep/retry, assertion weakening, rejection suppression, or product/UI change. | **100% scoped**; `T,C,I` passed (3/3); audited |
+| `TST-04` | 0.2, 12, 16 Phase 9B, 17 | **REPRODUCED** at `e88dbef`; Fixer | Literal `npm run check` passed all typechecks, then failed 1/564 server tests in the F-03 thrown-verifier row: `afterEach -> removeServiceCaseRoot -> makeDeletable -> readdir` received `ENOENT` for a sibling `.trusted-verification/verify-*/src` snapshot subtree. The exact isolated row immediately passed 1/1, supporting an order-dependent teardown race: fail-fast Contract batch rejection can return while a sibling `withVerificationSnapshot` finally block is still removing its snapshot. Record the sibling `request.planePath` and causally wait for snapshot/batch quiescence before fixture teardown; do not broadly swallow `ENOENT`, add sleeps/timeouts, or change F-03 production behavior. `T,A,C,I`. | **80% diagnosis**; 0/4; not audited |
 
 ## P0 — failure and recovery correctness
 
@@ -158,11 +159,11 @@ without an open issue/PR are not active ownership claims.
 
 ## Count and current verdict
 
-- **46 tracked work items:** 8 audited, 3 externally held, and 35 other incomplete
+- **47 tracked work items:** 8 audited, 3 externally held, and 36 other incomplete
   items across P0/P1/P2.
 - **Next ready worker assignment:** `F-01/02` unless the integrator selects another
   non-overlapping ready row.
-- **First fixer assignment:** none unconditional; `OPS-06` requires collaborator/macOS evidence.
+- **First fixer assignment:** `TST-04`; preserve its cleanup-order failure contract.
 - **Current completion verdict:** incomplete. Strong kernel evidence exists, but the
   current deterministic full gate is green and all remaining rows above still
   require their stated integration/audit evidence.

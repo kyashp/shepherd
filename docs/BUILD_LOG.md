@@ -48,6 +48,56 @@ into those shared concerns.
 observed green repository run, not a claim that separately reproduced TST-04
 background-cleanup instability is resolved.
 
+Final hosted Node 22 run
+[`33262928516`](https://github.com/kyashp/shepherd/actions/runs/33262928516)
+passed the locked install, Docker availability and literal repository gate on audit
+head `7f5a719` in 1m42s.
+## TST-04 F-03 snapshot-cleanup teardown race
+
+**Date:** 2026-08-30 (Asia/Singapore)
+**Branch/base:** `work/mock-main` / `e88dbef27b0a7f55acbdab3a7f89b67c9e6900c1`
+
+The literal repository gate passed both production typechecks and the strict server
+test-source typecheck, then failed one F-03 service test during `afterEach` cleanup.
+The behavioral assertions did not fail. The cleanup walker attempted to read a
+sibling trusted-verification snapshot subtree while its owning
+`withVerificationSnapshot` finalizer was removing it:
+
+```text
+service.test.ts > Shepherd deterministic walking skeleton >
+terminalizes Contract verification infrastructure failures without promotion or sensitive diagnostics
+
+afterEach -> removeServiceCaseRoot -> makeDeletable -> readdir
+ENOENT: .tmp/shepherd-tests/service-*/managed/planes/auth-demo/
+        .trusted-verification/verify-*/src
+```
+
+```sh
+npm run check
+# RED after typechecks: server 562 passed, 1 failed, 1 opt-in skipped
+# build phase did not run
+
+npm run test -w @launchpad/server -- --run src/shepherd/service.test.ts \
+  -t 'terminalizes Contract verification infrastructure failures without promotion or sensitive diagnostics'
+# isolated GREEN: 1 passed, 33 skipped
+```
+
+The full-suite-only RED, immediate isolated GREEN, fail-fast concurrent Contract
+verification path, and disappearing snapshot path strongly support an ordering race.
+The required next discriminating check is to record the sibling
+`VerificationRequest.planePath` and prove teardown starts before that exact snapshot
+cleanup/Contract batch is quiescent. No product, UI, test, timeout, or cleanup
+behavior was changed during this diagnosis. The paused E2E-01 deterministic work is
+preserved separately; no live/model call was made.
+
+Auditor source inspection confirmed that the failing `makeDeletable` recursion does
+not suppress a directory disappearing between its entry `chmod` and `readdir`, while
+each concurrent Contract verifier owns a `withVerificationSnapshot(...finally)`
+cleanup. The unmodified current-tree literal gate passed 563/563 plus one opt-in skip,
+which is consistent with an intermittent ordering defect and does not close the
+preserved RED. The Fixer must still prove the exact sibling-path ordering causally
+before changing the fixture.
+
 ## TST-03 independent integration audit and hosted closeout
 
 **Date:** 2026-08-30 (Asia/Singapore)

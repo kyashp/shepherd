@@ -28,6 +28,40 @@ that limitation is explicit.
 
 ## Immediate queue
 
+### `TST-04` — F-03 fail-fast verification can race service fixture teardown
+
+- **Evidence class:** reproduced once inside the literal `npm run check` at
+  `e88dbef`; the exact isolated row immediately passed 1/1, demonstrating an
+  order-dependent full-suite condition rather than a deterministic assertion
+  failure.
+- **Failure contract:** after all typechecks passed, Vitest reported 562 passed,
+  one skipped, and one failed. The failure was
+  `terminalizes Contract verification infrastructure failures without promotion or
+  sensitive diagnostics`. Its stack was
+  `afterEach -> removeServiceCaseRoot -> makeDeletable -> readdir`, where `readdir`
+  received `ENOENT` for
+  `.tmp/shepherd-tests/service-*/managed/planes/auth-demo/.trusted-verification/verify-*/src`.
+  The test's behavioral assertions were not the failing surface.
+- **Supported diagnosis:** `runDeterministicDemo()` rejects on the first Contract
+  verification infrastructure failure. Each concurrent Contract runs inside
+  `withVerificationSnapshot`, whose `finally` removes its trusted snapshot. The
+  fail-fast rejection can therefore reach the test and `afterEach` while a sibling
+  snapshot's `finally` is still deleting the subtree that `makeDeletable` is
+  traversing. The full-suite RED plus isolated GREEN and the exact disappearing
+  trusted-snapshot path strongly support this race; the fixer must still capture
+  the sibling `request.planePath` and establish the removal/quiescence ordering in a
+  controlled causal test before editing.
+- **Minimal correction:** test/fixture only. Record the sibling verification path
+  and explicitly join the Contract batch/snapshot cleanup before teardown, following
+  the existing TST-03 release/join pattern. Do not broadly ignore `ENOENT` in the
+  security-sensitive cleanup walker, add sleeps, extend timeouts, weaken assertions,
+  or change F-03 production orchestration.
+- **Acceptance:** controlled RED proves teardown begins before sibling snapshot
+  cleanup completes; corrected original row passes repeatedly; entire
+  `service.test.ts`, strict test-source typecheck, literal `npm run check`, and
+  independent integrated/hosted gates pass.
+- **Owner/status:** `REPRODUCED`; Fixer; **80% diagnosis**, `T,A,C,I` pending 0/4.
+
 ### `TST-02` — deterministic recovery test becomes invalid after its fixed clock
 
 - **Evidence class:** reproduced twice: once inside `npm run check`, once as the
