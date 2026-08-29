@@ -71,6 +71,7 @@ afterAll(async () => {
 
 class RecordingExecutor implements VerifierContainerExecutor {
   readonly invocations: VerifierContainerInvocation[] = [];
+  readonly cleanupRequests: Array<{ engine: string; ownerId: string }> = [];
   constructor(private readonly results: VerifierContainerResult[]) {}
 
   async run(invocation: VerifierContainerInvocation): Promise<VerifierContainerResult> {
@@ -82,6 +83,11 @@ class RecordingExecutor implements VerifierContainerExecutor {
 
   async cancel(): Promise<boolean> {
     return false;
+  }
+
+  async cleanupOwned(input: { engine: string; ownerId: string }): Promise<string[]> {
+    this.cleanupRequests.push(input);
+    return ["0123456789ab"];
   }
 }
 
@@ -128,6 +134,7 @@ describe("independent verifier contract", () => {
         containerEngine,
         containerImage: runtimeImage,
         containerUser,
+        ownerId: "test-verifier-owner",
         cpuLimit: 0.5,
         memoryLimit: "256m",
         pidsLimit: 64,
@@ -150,6 +157,7 @@ describe("independent verifier contract", () => {
       expect(invocation.timeoutMs).toBe(5_000);
       expect(invocation.args).toEqual(
         expect.arrayContaining([
+          "io.codejam.verifier-owner=test-verifier-owner",
           "--network",
           "none",
           "--read-only",
@@ -179,6 +187,10 @@ describe("independent verifier contract", () => {
       expect(serialized).not.toContain("canary-secret-value");
       expect(serialized).not.toContain("codex-home");
       expect(serialized).not.toContain("docker.sock");
+      await verifier.reconcileInterrupted();
+      expect(executor.cleanupRequests).toEqual([
+        { engine: containerEngine, ownerId: "test-verifier-owner" },
+      ]);
     } finally {
       await destroyPlaneFixture(fixture);
     }
@@ -201,6 +213,7 @@ describe("independent verifier contract", () => {
         containerEngine,
         containerImage: runtimeImage,
         containerUser,
+        ownerId: "test-verifier-owner",
         maxOutputBytes: 1_024,
         sensitiveValues: ["canary-secret-value"],
         executor,
@@ -248,6 +261,22 @@ describe("independent verifier contract", () => {
             { id: "unsafe", command: "node", args: [], cwd: "../../outside" },
           ]),
       ).toThrow("Unsafe project-relative path");
+      expect(
+        () =>
+          new ContainerVerifier(
+            new TrustedCheckRegistry([
+              { id: "node-check", command: "node", args: [], cwd: "." },
+            ]),
+            {
+              planesRoot: fixture.planesRoot,
+              containerEngine,
+              containerImage: runtimeImage,
+              containerUser,
+              ownerId: "unsafe owner",
+              executor: new RecordingExecutor([]),
+            },
+          ),
+      ).toThrow("Invalid verifier owner ID");
       const verifier = new ContainerVerifier(
         new TrustedCheckRegistry([{ id: "node-check", command: "node", args: [], cwd: "." }]),
         {
@@ -255,6 +284,7 @@ describe("independent verifier contract", () => {
           containerEngine,
           containerImage: runtimeImage,
           containerUser,
+          ownerId: "test-verifier-owner",
           executor: new RecordingExecutor([]),
         },
       );
@@ -312,6 +342,92 @@ async function containerRuntimeAvailable(): Promise<boolean> {
 const hasContainerRuntime = await containerRuntimeAvailable();
 
 describe.skipIf(!hasContainerRuntime)("independent verifier real container", () => {
+  it("removes only interrupted containers owned by the restarted verifier", async () => {
+    const fixture = await createPlaneFixture();
+    const ownerId = "recovery-" + randomUUID().replaceAll("-", "").slice(0, 16);
+    const containerName = "shepherd-orphan-" + randomUUID().replaceAll("-", "").slice(0, 12);
+    const siblingName = "shepherd-sibling-" + randomUUID().replaceAll("-", "").slice(0, 12);
+    try {
+      await execFileAsync(
+        containerEngine,
+        [
+          "create",
+          "--name",
+          containerName,
+          "--label",
+          "io.codejam.shepherd=independent-verifier",
+          "--label",
+          "io.codejam.verifier-owner=" + ownerId,
+          runtimeImage,
+          "node",
+          "-e",
+          "process.exit(0)",
+        ],
+        { encoding: "utf8", timeout: 8_000, maxBuffer: 64_000 },
+      );
+      await execFileAsync(
+        containerEngine,
+        [
+          "create",
+          "--name",
+          siblingName,
+          "--label",
+          "io.codejam.shepherd=independent-verifier",
+          "--label",
+          "io.codejam.verifier-owner=" + ownerId + "-other",
+          runtimeImage,
+          "node",
+          "-e",
+          "process.exit(0)",
+        ],
+        { encoding: "utf8", timeout: 8_000, maxBuffer: 64_000 },
+      );
+      const verifier = new ContainerVerifier(
+        new TrustedCheckRegistry([
+          { id: "node-check", command: "node", args: [], cwd: "." },
+        ]),
+        {
+          planesRoot: fixture.planesRoot,
+          containerEngine,
+          containerImage: runtimeImage,
+          containerUser,
+          ownerId,
+        },
+      );
+      await verifier.reconcileInterrupted();
+      const listed = await execFileAsync(
+        containerEngine,
+        [
+          "ps",
+          "--all",
+          "--quiet",
+          "--filter",
+          "label=io.codejam.shepherd=independent-verifier",
+          "--filter",
+          "label=io.codejam.verifier-owner=" + ownerId,
+        ],
+        { encoding: "utf8", timeout: 5_000, maxBuffer: 64_000 },
+      );
+      expect(listed.stdout.trim()).toBe("");
+      await expect(
+        execFileAsync(containerEngine, ["container", "inspect", siblingName], {
+          encoding: "utf8",
+          timeout: 5_000,
+          maxBuffer: 64_000,
+        }),
+      ).resolves.toBeDefined();
+    } finally {
+      for (const name of [containerName, siblingName]) {
+        await execFileAsync(containerEngine, ["rm", "--force", name], {
+          encoding: "utf8",
+          timeout: 5_000,
+          maxBuffer: 64_000,
+        }).catch(() => undefined);
+      }
+      await destroyPlaneFixture(fixture);
+    }
+  }, 20_000);
+
   it("proves cleared secrets, no network, and a read-only candidate mount", async () => {
     const fixture = await createPlaneFixture();
     try {
@@ -349,6 +465,7 @@ describe.skipIf(!hasContainerRuntime)("independent verifier real container", () 
         containerEngine,
         containerImage: runtimeImage,
         containerUser,
+        ownerId: "real-verifier-boundary",
         cpuLimit: 0.5,
         memoryLimit: "256m",
         pidsLimit: 64,
@@ -403,6 +520,7 @@ describe.skipIf(!hasContainerRuntime)("independent verifier real container", () 
         containerEngine,
         containerImage: runtimeImage,
         containerUser,
+        ownerId: "real-verifier-bounds",
         maxTimeoutMs: 2_000,
         maxOutputBytes: 2_048,
       });

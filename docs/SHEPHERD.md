@@ -25,10 +25,16 @@ This is the as-built operating document for Shepherd. It will be updated at ever
 - Loopback-safe default binding; non-loopback binding requires a strong non-placeholder application token. Public DTO allowlists and bounded redacted errors prevent host-path and credential disclosure.
 - Checked compare-and-swap rollback if protected-ref/worktree synchronization fails, with distinct failure evidence when rollback itself cannot be proven.
 - Real HTTP, restart, Git, persistence, and container verification of the complete deterministic chain.
+- Strict bounded V1/V2 database validation on both load and publish, including canonical paths/refs, complete references, lifecycle proofs, exact evidence-to-Plane diffs, collision-source validity, promotion proof, and false-green completion rejection.
+- Bounded no-follow/non-blocking state and sentinel reads; exclusive synced temporary writes; atomic store publication; and fail-closed handling for symlinks, FIFOs, oversized state, invalid outgoing state, and persistence errors.
+- Startup reconciliation at five real process-kill boundaries. In-flight work becomes evidenced `interrupted/attention_required`, private artifacts are cleaned, Agents are released, and a second restart is cursor-idempotent.
+- A durable pre-CAS promotion proof containing the exact final frontend/backend/project-security verification suite. Only an exact `promoting` record with Git/worktree/ancestry corroboration can ratify a post-CAS crash; `reverifying` is never sufficient.
+- Fail-closed protected branch/index/worktree reconciliation, including detached or alternate checkout, dirty state, unregistered/substituted resolution worktrees, external movement, and the update-ref/read-tree gap.
+- Restart-stable installation-scoped verifier ownership, exact-label orphan cleanup, strict Agent workspace rebinding, and refusal to adopt old managed repositories after database loss.
 
 ### Not yet implemented
 
-The deterministic walking skeleton is complete. Remaining phases add restart reconciliation at multiple in-flight points, the general DAG scheduler and complete failure matrix, live per-Plane Codex execution, structured planning, bounded model-assisted review, cancellation/retry/tie APIs, Project Group routing, demo reset, all six UI surfaces, and full browser/rehearsal evidence. These are not described as implemented until their phase gates pass.
+The deterministic walking skeleton and persistence/restart hardening are complete. Remaining phases add the general DAG scheduler and complete failure matrix, live per-Plane Codex execution, structured planning, bounded model-assisted review, cancellation/retry/tie APIs, Project Group routing, demo reset, all six UI surfaces, and full browser/rehearsal evidence. These are not described as implemented until their phase gates pass.
 
 ## Accepted design contract
 
@@ -61,6 +67,11 @@ managed protected branch
 
 At the Phase 1 boundary, the Shepherd product path deliberately uses `DeterministicFixtureExecutor`; neither configured model is called by a Mission. This proves the kernel independently of model variance. Live Agents and the advisory reviewer are connected only in later phases, without transferring any trusted decision to a model.
 
+Phase 2 does not change that model boundary. All restart classification, evidence
+validation, interruption mapping, cleanup, and trust adoption are deterministic. No
+LLM is called during startup recovery, and no model opinion can turn interrupted work
+green.
+
 ### Deterministic responsibilities
 
 Trusted server code owns schemas, state transitions, scope intersection, actual Git-diff inspection, manifest ingestion, evidence validation, acceptance-profile lookup, no-network verification, collision predicates, candidate base equality, winner rules, final re-verification, protected-head comparison-and-swap, persistence, redaction, and event ordering.
@@ -85,6 +96,34 @@ Trusted server code owns schemas, state transitions, scope intersection, actual 
 8. The loser remains inspectable, every transition is persisted as a bounded event, and any unsafe/ambiguous result stops without promotion.
 
 The public API returns logical IDs, short Git evidence, and domain state, but strips host repository/worktree/workspace paths. The approved `.shepherd/result.json` relative control path may appear as declared evidence; it is not a host path and is absent from every promoted commit.
+
+## Durable recovery model (Phase 2)
+
+The JSON store is a single-server-per-data-root design. Within that process, mutations
+are serialized and each publish is schema-validated, scrubbed, written through a
+unique exclusive temporary file, synced, and atomically renamed. Running multiple
+servers against one data root is unsupported and must be prevented operationally; it
+is not presented as distributed durability.
+
+On startup Shepherd first validates its installation nonce/marker, managed-root and
+project sentinels, canonical Agent workspaces, Plane roots, Git registration, protected
+ref, checked-out branch, index, and worktree. It never selects a repository or Plane
+from persisted path text. Any ambiguity is made durable and startup aborts rather than
+silently adopting state.
+
+The only recoverable promotion gap is represented by a durable `promoting` Candidate
+with passing promotion evidence linked to its verified resolution Plane. That evidence
+must repeat exactly the candidate's trusted mandatory suite. The observed protected
+HEAD must be that Plane's immutable HEAD and a descendant of the persisted expected
+HEAD; the server-derived resolution branch/worktree must be registered, clean, and
+exactly checked out. All other movement is untrusted and leaves the Project fenced for
+explicit reset/recovery.
+
+Verifier cleanup uses a persisted installation nonce plus configured Runtime identity.
+The separate establishment marker makes a missing nonce after first boot a hard error,
+while a first upgrade can establish both records once. These files and all Shepherd
+identity metadata are bounded regular files opened with no-follow and non-blocking
+semantics.
 
 ## Configuration
 

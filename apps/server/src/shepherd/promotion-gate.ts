@@ -55,6 +55,11 @@ export interface PromotionRequest {
   checks: readonly AcceptanceCheck[];
   /** Re-read at the gate; a stale caller snapshot is not sufficient. */
   loadPersistedSelectedCandidateId: () => Promise<string | null>;
+  persistPromotingEvidence: (input: {
+    evidence: VerificationEvidence;
+    changedFiles: readonly string[];
+    candidateHead: string;
+  }) => Promise<void>;
 }
 
 export type PromotionFailureReason =
@@ -302,6 +307,18 @@ export class PromotionGate {
       return failed({
         reason: "protected_branch_moved",
         message: "Protected branch moved while the Mission was running",
+        actualHead: actualProtectedHead,
+        changedFiles,
+        verificationEvidence: evidence,
+      });
+    }
+
+    try {
+      await request.persistPromotingEvidence({ evidence, changedFiles, candidateHead });
+    } catch {
+      return failed({
+        reason: "promotion_infrastructure_error",
+        message: "Passing promotion evidence could not be durably persisted",
         actualHead: actualProtectedHead,
         changedFiles,
         verificationEvidence: evidence,

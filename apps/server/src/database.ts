@@ -5,7 +5,8 @@ import type {
   ShepherdEvent,
   ShepherdSettings,
 } from "./shepherd/domain.js";
-import type { Database, DatabaseV1, DatabaseV2 } from "./types.js";
+import { isValidDatabaseV1, isValidDatabaseV2 } from "./database-schema.js";
+import type { Database, DatabaseV1 } from "./types.js";
 
 export interface DatabaseLoadResult {
   database: Database;
@@ -75,40 +76,6 @@ function assertLegacyCollections(
   }
 }
 
-function assertShepherdDatabase(value: unknown): asserts value is ShepherdDatabase {
-  if (!isRecord(value)) {
-    throw new Error("Unsupported database format: shepherd state is missing");
-  }
-  const collectionNames = [
-    "projects",
-    "missions",
-    "contracts",
-    "planes",
-    "claims",
-    "collisions",
-    "candidates",
-    "events",
-    "groupMessages",
-  ] as const;
-  for (const name of collectionNames) {
-    if (!Array.isArray(value[name])) {
-      throw new Error(`Unsupported database format: shepherd.${name} must be an array`);
-    }
-  }
-  if (!isRecord(value.settings)) {
-    throw new Error("Unsupported database format: shepherd.settings is missing");
-  }
-  if (
-    typeof value.nextEventSequence !== "number" ||
-    !Number.isSafeInteger(value.nextEventSequence) ||
-    value.nextEventSequence < 1
-  ) {
-    throw new Error(
-      "Unsupported database format: shepherd.nextEventSequence must be a positive safe integer",
-    );
-  }
-}
-
 /**
  * Parses the on-disk representation and performs the only supported migration.
  * V1 collection values are cloned byte-for-byte at the JSON value level; no
@@ -123,6 +90,9 @@ export const loadDatabase = (
   }
   if (value.version === 1) {
     assertLegacyCollections(value);
+    if (!isValidDatabaseV1(value)) {
+      throw new Error("Unsupported database format: invalid version 1 state");
+    }
     const legacy = value as unknown as DatabaseV1;
     return {
       database: {
@@ -136,10 +106,11 @@ export const loadDatabase = (
     };
   }
   if (value.version === 2) {
-    assertLegacyCollections(value);
-    assertShepherdDatabase(value.shepherd);
+    if (!isValidDatabaseV2(value)) {
+      throw new Error("Unsupported database format: invalid version 2 state");
+    }
     return {
-      database: structuredClone(value as unknown as DatabaseV2),
+      database: structuredClone(value),
       migrated: false,
     };
   }

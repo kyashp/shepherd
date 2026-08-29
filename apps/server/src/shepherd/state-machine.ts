@@ -74,6 +74,7 @@ const contractTransitions = {
     transition("queued", "control_plane"),
     transition("blocked", "control_plane"),
     transition("cancelled", "control_plane", "human"),
+    transition("interrupted", "system"),
   ],
   queued: [
     transition("running", "control_plane"),
@@ -361,6 +362,7 @@ const contractEventType = (target: ExecutionContractState): ShepherdEventType =>
 interface RecordedTransitionOptions {
   eventActor: ShepherdEventActor;
   summary?: string;
+  details?: Record<string, string | number | boolean | null>;
 }
 
 /** Mutates state and appends its polling event in the same store transaction. */
@@ -385,7 +387,7 @@ export const transitionMissionAndRecord = (
     planeId: null,
     collisionId: null,
     candidateId: null,
-    details: { from, to: target },
+    details: { from, to: target, ...options.details },
   });
 };
 
@@ -412,6 +414,6 @@ export const transitionContractAndRecord = (
     planeId: contract.planeId,
     collisionId: null,
     candidateId: null,
-    details: { from, to: target },
+    details: { from, to: target, ...options.details },
   });
 };

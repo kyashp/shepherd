@@ -73,6 +73,7 @@ function candidate(
     selectionState: "pending",
     promotionState: "not_started",
     verificationEvidence: evidence(id, passed),
+    promotionEvidence: null,
     changedFiles: [`src/${id}.ts`],
     diffSummary: "one file changed",
     result: passed ? "verified" : "rejected",

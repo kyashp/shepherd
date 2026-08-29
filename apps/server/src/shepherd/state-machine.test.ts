@@ -184,6 +184,21 @@ describe("Mission state machine", () => {
 });
 
 describe("Execution Contract state machine", () => {
+  it("allows startup recovery to interrupt a persisted created Contract", () => {
+    const contract = makeContract();
+    const failure = makeFailure("execution_interrupted");
+    applyContractTransition(contract, "interrupted", {
+      actor: "system",
+      timestamp: later,
+      failure,
+    });
+    expect(contract).toMatchObject({
+      state: "interrupted",
+      failure,
+      completedAt: later,
+    });
+  });
+
   it("has no direct path from Agent completion to verified", () => {
     const contract = makeContract();
     applyContractTransition(contract, "queued", { actor: "control_plane" });

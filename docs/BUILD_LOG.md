@@ -4,7 +4,7 @@ This log records commands actually executed and evidence actually observed. Secr
 
 ## Phase 0 — Baseline Lock
 
-**Date:** 2026-08-29 (Asia/Singapore)  
+**Date:** 2026-08-29 (Asia/Singapore)
 **Branch:** `feature/shepherd-phase-0-baseline`  
 **Starting commit:** `12479cf`  
 **Environment:** Node 24.17.0, npm 11.17.0, Git 2.43.0, Docker client/server 29.7.2, Linux host. The application Runtime image is based on Node 22.
@@ -271,3 +271,199 @@ A repository-wide text scan compared the configured non-placeholder Ark credenti
 The sample environment now defaults `HOST` to `127.0.0.1`; Compose and Terraform retain explicit service binds with their required application token. The user's current ignored `.env` has both requested models and the Ark credential configured, but also has a non-loopback host without a strong application token. Test/rehearsal processes therefore use an explicit loopback override until the private file is intentionally changed; the server correctly refuses that unsafe combination.
 
 **Phase verdict:** the deterministic kernel, its hardened executor/import/verifier boundaries, real Git/container/HTTP path, restart persistence at a completed boundary, and all Phase 1 security regressions are verified. General in-flight recovery and the remaining PRD capabilities are intentionally deferred to subsequent phase gates.
+
+## Phase 2 — Domain, Persistence, and Crash Recovery Hardening
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Branch:** `feature/shepherd-phase-2-recovery`
+
+### Strict durable state
+
+The version-2 store now validates every persisted and outgoing field with strict,
+bounded schemas rather than accepting shape-compatible JSON. Validation covers
+canonical host and project-relative paths, supported authority patterns, safe Git
+branches, full object IDs, bounded collections/text/numbers/timestamps, unique IDs,
+references, event cursors, one active non-terminal Mission, and lifecycle/evidence
+relationships. The captured version-1 fixture is independently validated before its
+lossless migration.
+
+False-green completion is rejected unless verified Contracts have non-vacuous
+mandatory acceptance evidence tied to their exact Plane diff and manifest claims.
+Collision sources must be verified Contracts with canonical embedded claims. For the
+managed authentication fixture, candidate evidence must contain exactly the trusted
+frontend, backend, and project-security mandatory suite; final promotion evidence
+must repeat that exact suite. Completed collision Missions require one resolved,
+selected, promoted candidate whose verified Plane HEAD matches the protected project
+HEAD. A no-collision completion requires a verified integration Plane at the promoted
+protected HEAD.
+
+The JSON reader uses bounded, no-follow, non-blocking regular-file reads. Outgoing
+state is validated and recursively scrubbed before a unique exclusive `0600`
+temporary file is synced and atomically renamed. Oversized reads/writes, symlinks,
+fixed-name temporary symlinks, FIFOs, invalid outgoing state, and persistence failure
+before in-memory publication all have negative tests. The supported concurrency model
+is one server process per data root; mutation serialization is in-process and the JSON
+store is not a distributed database.
+
+### Restart reconciliation and trust adoption
+
+Startup now validates the sentinel-bound managed root, project metadata, repository,
+Plane roots, Plane sentinels, Git worktree registration, protected branch, index, and
+worktree before serving. Trusted identity files are bounded `O_NOFOLLOW | O_NONBLOCK`
+reads with pre/opened inode and size checks. Persisted host paths are comparison values
+only; server-derived sentinel identities select filesystem locations. Missing,
+substituted, symlinked, special-file, out-of-root, dirty, detached, unregistered, or
+unexpected artifacts fail closed.
+
+In-flight Contracts, candidates, and Planes become `interrupted`; their Mission and
+Collision become `attention_required`; Agent leases are released; private execution,
+materialization, and verification artifacts are removed. Evidence and the event cursor
+are preserved, and a second restart is idempotent.
+
+Promotion has a durable intent boundary. After final authority, immutable-head,
+selection, protected-head, and independent-verification checks—and immediately before
+compare-and-swap—Shepherd atomically records `promotionState=promoting`, the complete
+passing promotion evidence, and its Plane evidence link. Recovery never trusts the
+earlier `reverifying` state. It recognizes a post-CAS window only when the exact
+selected resolution Plane, expected-head ancestry, derived branch/worktree identity,
+live Git registration, clean/index-synchronized protected checkout, candidate HEAD,
+and complete verifier suite all corroborate. Ordinary post-marker promotion failures
+retain evidence and fence the project in `attention_required`; a same-process second
+Mission cannot silently adopt an external branch move.
+
+An empty/replaced database cannot establish a new trust root over old managed project
+artifacts. Only a missing/empty root or an existing sentinel-only root with empty known
+containers is a valid zero-project state. A non-empty unsentinelled root is still never
+adopted.
+
+### Stable verifier and Agent identities
+
+Verifier cleanup ownership is installation-scoped and restart-stable:
+`verifier.<runtime-instance>.<128-bit persisted nonce>`. A separately persisted marker
+distinguishes first boot/one-time upgrade from nonce loss; corruption, symlink/special
+files, or deletion after establishment fail closed. Concurrent first starts converge
+on one nonce, while different data roots remain distinct. Cleanup targets only the
+exact owner label.
+
+Persisted Agent workspaces are revalidated at startup and before execution against the
+canonical configured workspace root and exact Agent-ID-derived path. Escapes,
+cross-Agent substitutions, root/leaf symlinks, and durable Shepherd references during
+Agent deletion are rejected.
+
+### Problem-resolution records
+
+**Persisted state initially proved shape, not truth.** Hostile V2 fixtures could label
+evidence-free or weakly related records as verified/completed. The root cause was that
+the first V2 loader validated DTO shapes and references but not completion proofs.
+Strict semantic/lifecycle validation plus false-green fixtures now rejects invented,
+substituted, incomplete, or cross-target evidence.
+
+**A restart-unstable verifier owner could collide or leak cleanup scope.** A random
+per-process fallback changed on every boot and a configured default could be shared by
+unrelated installations. Persisted installation identity and exact-owner cleanup
+remove both ambiguities.
+
+**A persisted `reverifying` candidate was not proof that CAS had been attempted.** An
+external move to the candidate SHA during re-verification could resemble a post-CAS
+crash. The durable pre-CAS evidence marker makes the distinction explicit; recovery
+accepts only `promoting` with the exact full suite. A kill immediately before CAS keeps
+the trusted/protected head unchanged, while a kill immediately after a successful CAS
+can be corroborated and adopted.
+
+**Promotion failure could release the project fence.** The initial compensation marked
+only the Candidate/Collision before generic failure handling terminalized the Mission
+and cleared `activeMissionId`. The fixed atomic compensation preserves final evidence,
+sets Candidate promotion failure plus Mission/Collision `attention_required`, and keeps
+the project fenced. A synchronous regression proves a second Mission is rejected and
+neither the stored trusted head nor externally moved Git head changes.
+
+**Deleting only the database could orphan and then re-adopt an old repository.** The
+empty state previously looked like first boot. Startup now rejects any established
+managed project artifacts when no durable Project record exists; a hostile external
+branch move remains untrusted.
+
+**A live server could adopt an external head between Missions.** Startup reconciliation
+runs once, while the fixture re-opener returns the repository's current branch head.
+After a completed Mission, an external commit could therefore become the next Mission's
+base without a restart. Mission preparation now re-derives the sentinel-backed project
+identity and requires the protected ref, checked-out branch, HEAD, index, and worktree
+to equal the durable trusted record before any new Mission, Plane, Agent, workspace, or
+store mutation. A regression completes one Mission, commits externally, and proves a
+second synchronous run is rejected with all durable counts and both heads unchanged.
+
+**No-follow reads could still block on a FIFO.** Opening a FIFO read-only can block
+before `fstat`. Adding `O_NONBLOCK` while retaining post-open regular-file and identity
+checks makes database, verifier identity, sentinel, metadata, and policy reads reject
+special files immediately.
+
+**A real-Git winner-flip test retained a unit-test timeout.** An independent full-suite
+run exceeded Vitest's five-second default while parallel real-Git tests were active;
+the still-running test then raced teardown of a read-only snapshot. The production path
+was not failing. That integration-style test now has the same 30-second ceiling as its
+adjacent real-Git journeys. Two consecutive complete server-suite reruns passed after
+the fix (31.31 s and 31.47 s) with no teardown failure.
+
+### Phase 2 verification evidence
+
+Real process tests send `SIGKILL` at five boundaries:
+
+1. contract execution workspace ready;
+2. contract verification snapshot ready;
+3. complete promotion proof persisted immediately before CAS;
+4. successful CAS complete before final database persistence; and
+5. protected ref updated before protected index/worktree synchronization.
+
+Each ordinary boundary is restarted twice and proves non-green durable state,
+artifact cleanup, and cursor idempotence. The internal ref/index gap is rejected on
+both restarts with the original trusted head preserved.
+
+Commands and observed results:
+
+```sh
+TMPDIR="$PWD/.tmp/test-temp" npm run test -w @launchpad/server -- \
+  src/database.test.ts src/shepherd/git-plane-promotion.integration.test.ts \
+  src/shepherd/recovery.test.ts src/shepherd/recovery.process.test.ts \
+  src/shepherd/service.test.ts
+# 5 files / 111 tests passed
+
+TMPDIR="$PWD/.tmp/test-temp" npm run check
+# exit 0: both workspace type checks passed; server suite passed;
+# web and server production builds passed
+
+TMPDIR="$PWD/.tmp/test-temp" npm run test -w @launchpad/server -- \
+  --reporter=json --outputFile="$PWD/.tmp/phase2-vitest.json"
+# 21 files / 326 tests passed; 0 failed or pending
+
+# repeated twice after stabilizing the real-Git test ceiling
+# run 1: 21 files / 326 tests passed in 31.31 s
+# run 2: 21 files / 326 tests passed in 31.47 s
+
+npm audit
+# found 0 vulnerabilities
+
+terraform fmt -check -recursive deploy/volcengine
+docker compose config --quiet
+git diff --check
+# all passed
+```
+
+A repository-local exact-value scan checked 150 tracked/ignored project files outside
+`.env`, Git metadata, dependencies, builds, and test/browser scratch against the one
+configured non-placeholder secret and found zero matching files. The global verifier
+container label query returned zero containers after the suite.
+
+The dedicated `security-reviewer` role was requested after stabilization but was not
+available in this environment. A separate read-only fallback reviewer inspected the
+complete Phase 2 trust boundary and ran a 5-file/111-test security slice, server
+typecheck/build, production fault-seam scan, and whole-tree diff check. Its final
+verdict was **no remaining critical, high, or medium findings**. Residual lows are:
+directory entries are not explicitly fsynced after atomic rename (process-crash, not
+sudden-power-loss, durability is tested); one server per data root is operationally
+required; `RUNTIME_INSTANCE_ID` must remain stable for prior-owner container cleanup;
+and test-only fault seams remain constructor-injectable but are absent from config,
+API, and production composition.
+
+**Phase verdict:** strict persistence, exact evidence proof, stable ownership,
+sentinel-bound identity, five process-kill boundaries, idempotent reconciliation,
+pre/post-CAS distinction, live-process protected-head fencing, secret scanning, and
+the complete deterministic gate are verified for Phase 2.

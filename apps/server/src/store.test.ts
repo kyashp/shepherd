@@ -1,11 +1,24 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  readlink,
+  rm,
+  symlink,
+  truncate,
+  writeFile,
+} from "node:fs/promises";
+import { execFile } from "node:child_process";
 import path from "node:path";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { emptyDatabase } from "./database.js";
 import type { ShepherdEventInput } from "./database.js";
-import { JsonStore } from "./store.js";
+import { JsonStore, MAX_DATABASE_BYTES } from "./store.js";
 
 const temporaryDirectories: string[] = [];
+const execFileAsync = promisify(execFile);
 
 async function makeTemporaryDirectory(): Promise<string> {
   const root = path.resolve(process.cwd(), ".tmp", "store-tests");
@@ -19,7 +32,7 @@ const eventInput = (summary: string): ShepherdEventInput => ({
   type: "mission_created",
   summary,
   actor: { type: "shepherd", id: null, displayName: "Shepherd" },
-  missionId: "mission-1",
+  missionId: null,
   contractId: null,
   agentId: null,
   planeId: null,
@@ -37,6 +50,64 @@ afterEach(async () => {
 });
 
 describe("JsonStore", () => {
+  it("rejects a FIFO state path without blocking startup", async () => {
+    const root = await makeTemporaryDirectory();
+    const databasePath = path.join(root, "db.json");
+    await execFileAsync("mkfifo", [databasePath]);
+
+    await expect(new JsonStore(databasePath).initialize()).rejects.toThrow(
+      "Database state file must be a regular file",
+    );
+  });
+
+  it("rejects a symbolic-link state file without reading its target", async () => {
+    const root = await makeTemporaryDirectory();
+    const targetPath = path.join(root, "outside-state.json");
+    const databasePath = path.join(root, "db.json");
+    const targetContents = JSON.stringify(emptyDatabase());
+    await writeFile(targetPath, targetContents, "utf8");
+    await symlink(targetPath, databasePath);
+
+    await expect(new JsonStore(databasePath).initialize()).rejects.toThrow(
+      "Database state file must not be a symbolic link",
+    );
+    expect(await readFile(targetPath, "utf8")).toBe(targetContents);
+  });
+
+  it("rejects an oversized state file before reading or parsing it", async () => {
+    const root = await makeTemporaryDirectory();
+    const databasePath = path.join(root, "db.json");
+    await writeFile(databasePath, "{", "utf8");
+    await truncate(databasePath, MAX_DATABASE_BYTES + 1);
+
+    await expect(new JsonStore(databasePath).initialize()).rejects.toThrow(
+      "Database state file exceeds the maximum supported size",
+    );
+  });
+
+  it("uses an exclusive unique temporary file and leaves a fixed-name symlink untouched", async () => {
+    const root = await makeTemporaryDirectory();
+    const databasePath = path.join(root, "db.json");
+    const fixedTemporaryPath = databasePath + ".tmp";
+    const targetPath = path.join(root, "sentinel.txt");
+    await writeFile(targetPath, "preserve", "utf8");
+    await symlink(targetPath, fixedTemporaryPath);
+
+    const store = new JsonStore(databasePath);
+    await store.initialize();
+
+    expect(await readlink(fixedTemporaryPath)).toBe(targetPath);
+    expect(await readFile(targetPath, "utf8")).toBe("preserve");
+    expect(JSON.parse(await readFile(databasePath, "utf8"))).toMatchObject({
+      version: 2,
+    });
+    expect(
+      (await readdir(root)).filter(
+        (entry) => /^db\.json\..+\.tmp$/u.test(entry),
+      ),
+    ).toEqual([]);
+  });
+
   it("does not publish a mutation in memory when persistence fails", async () => {
     const root = await makeTemporaryDirectory();
     const originalPath = path.join(root, "db.json");
@@ -47,32 +118,16 @@ describe("JsonStore", () => {
     mutableStore.filePath = path.join(root, "missing-directory", "db.json");
     await expect(
       store.mutate((database) => {
-        database.messages.push({
-          id: "message-1",
-          agentId: "agent-1",
-          runId: "run-1",
-          role: "user",
-          content: "must not become visible",
-          createdAt: new Date().toISOString(),
-        });
+        database.shepherd.settings.modelReviewEnabled = false;
       }),
     ).rejects.toThrow();
-    expect(store.snapshot().messages).toEqual([]);
+    expect(store.snapshot().shepherd.settings.modelReviewEnabled).toBe(true);
 
     mutableStore.filePath = originalPath;
     await store.mutate((database) => {
-      database.messages.push({
-        id: "message-2",
-        agentId: "agent-1",
-        runId: "run-2",
-        role: "user",
-        content: "queue recovered",
-        createdAt: new Date().toISOString(),
-      });
+      database.shepherd.settings.modelReviewEnabled = false;
     });
-    expect(store.snapshot().messages.map((message) => message.content)).toEqual([
-      "queue recovered",
-    ]);
+    expect(store.snapshot().shepherd.settings.modelReviewEnabled).toBe(false);
   });
 
   it("migrates V1 on disk atomically and preserves legacy values", async () => {
@@ -146,6 +201,37 @@ describe("JsonStore", () => {
     expect(event.sequence).toBe(1);
   });
 
+  it("rejects an oversized mutation atomically and leaves a restartable file", async () => {
+    const root = await makeTemporaryDirectory();
+    const databasePath = path.join(root, "db.json");
+    const store = new JsonStore(databasePath, { maximumDatabaseBytes: 4_096 });
+    await store.initialize();
+    const before = await readFile(databasePath, "utf8");
+
+    await expect(
+      store.mutate((database) => {
+        database.agents.push({
+          id: "large-agent",
+          name: "Large Agent",
+          description: "",
+          instructions: "x".repeat(8_000),
+          status: "ready",
+          workspacePath: "/managed/large-agent",
+          codexThreadId: null,
+          lastError: null,
+          createdAt: "2026-08-29T12:00:00.000Z",
+          updatedAt: "2026-08-29T12:00:00.000Z",
+        });
+      }),
+    ).rejects.toThrow("Database state exceeds the maximum supported size");
+
+    expect(store.snapshot().agents).toEqual([]);
+    expect(await readFile(databasePath, "utf8")).toBe(before);
+    const restarted = new JsonStore(databasePath, { maximumDatabaseBytes: 4_096 });
+    await restarted.initialize();
+    expect(restarted.snapshot().agents).toEqual([]);
+  });
+
   it("removes configured and common credentials from every persisted string", async () => {
     const root = await makeTemporaryDirectory();
     const databasePath = path.join(root, "db.json");
@@ -157,6 +243,18 @@ describe("JsonStore", () => {
     await store.initialize();
 
     await store.mutate((database) => {
+      database.agents.push({
+        id: "agent-secret",
+        name: "Secret-safe Agent",
+        description: "abc123 ordinary marker",
+        instructions: "",
+        status: "ready",
+        workspacePath: "/managed/agent-secret",
+        codexThreadId: null,
+        lastError: null,
+        createdAt: "2026-08-29T12:00:00.000Z",
+        updatedAt: "2026-08-29T12:00:00.000Z",
+      });
       database.messages.push({
         id: "message-secret",
         agentId: "agent-secret",
@@ -181,7 +279,7 @@ describe("JsonStore", () => {
         id: "mission-secret",
         projectId: "project-1",
         originalIntent: "Preserve this legitimate mission intent",
-        baseCommit: "abc123",
+        baseCommit: "a".repeat(40),
         contractIds: [],
         dependencyEdges: [],
         collisionIds: [],
@@ -199,6 +297,16 @@ describe("JsonStore", () => {
         updatedAt: "2026-08-29T12:00:01.000Z",
         startedAt: "2026-08-29T12:00:00.000Z",
         completedAt: "2026-08-29T12:00:01.000Z",
+      });
+      database.shepherd.projects.push({
+        id: "project-1",
+        displayName: "Secret-safe project",
+        repositoryPath: "/managed/project-1",
+        protectedBranch: "main",
+        protectedHeadCommit: "a".repeat(40),
+        activeMissionId: null,
+        createdAt: "2026-08-29T12:00:00.000Z",
+        updatedAt: "2026-08-29T12:00:01.000Z",
       });
     });
     const event = await store.appendShepherdEvent({
@@ -232,6 +340,30 @@ describe("JsonStore", () => {
     const databasePath = path.join(root, "db.json");
     const canary = "EXISTING_CANARY_91ea35";
     const database = emptyDatabase("2026-08-29T12:00:00.000Z");
+    database.agents.push({
+      id: "agent-1",
+      name: "Existing Agent",
+      description: "",
+      instructions: "",
+      status: "ready",
+      workspacePath: "/managed/agent-1",
+      codexThreadId: null,
+      lastError: null,
+      createdAt: "2026-08-29T12:00:00.000Z",
+      updatedAt: "2026-08-29T12:00:00.000Z",
+    });
+    database.runs.push({
+      id: "run-1",
+      agentId: "agent-1",
+      status: "completed",
+      prompt: "Keep this request",
+      output: "Stored",
+      error: null,
+      usage: null,
+      startedAt: "2026-08-29T12:00:00.000Z",
+      completedAt: "2026-08-29T12:00:00.000Z",
+      createdAt: "2026-08-29T12:00:00.000Z",
+    });
     database.messages.push({
       id: "existing-message",
       agentId: "agent-1",
