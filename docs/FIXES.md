@@ -44,9 +44,23 @@ that limitation is explicit.
   failure. Prove raw canaries absent from String/stack/inspect/cause, store/reload,
   Contract/Plane/Mission/Agent/event/API/log surfaces and prove a subsequent safe
   retry/reconciliation. Preserve TST-12, OPS-06, F-03 and no-promotion behavior.
-- **Acceptance/status:** **OPEN / READY for Fixer.** Focused execution cleanup
-  matrix, Contract and candidate causal flows, adjacent cancellation/F-03/OPS-06,
-  strict/literal check, artifact/secret scan and independent security re-review.
+- **Observed correction:** candidate `fix/f-01-02-private-home-cleanup` records
+  whether execution already has a primary outcome, always clears active/cancellation
+  ownership and attempts the exact private-home removal. A cleanup-only fault becomes
+  a fresh fixed `RuntimeExecutionError("execution")`; cancellation and typed timeout/
+  execution remain authoritative, with no raw cleanup cause or field. The four-row
+  causal matrix proves Error/string/stack/inspection/cause redaction, inactive cancel,
+  owner-scoped failed-home reconciliation and a clean subsequent execution. Contract
+  and candidate flows prove fixed durable/event/store/reload/public and real mission
+  HTTP response output; candidate failures do not promote or move protected head.
+  Console error/warn capture is canary-free. Executor/OPS-06 slice 21/21, focused and
+  adjacent 108/108, strict test typecheck and first literal check pass (launcher 3/3,
+  Server 615 + two explicit skips, Web 17/17, builds). External calls: 0.
+- **Acceptance/status:** **FIX CANDIDATE / Auditor integration pending.** Independent
+  security review found no High/Medium issue; its initial evidence gaps were closed
+  with inactive-cancel, log-capture and real HTTP assertions. Final re-review reports
+  no material gap and two post-correction literal checks pass; scans are recorded in
+  BUILD_LOG.
 
 ### `TST-13` — Arbitrary Agent Runtime stderr reaches durable/public failures
 

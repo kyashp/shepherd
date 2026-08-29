@@ -3755,3 +3755,36 @@ F-01/02 remains at 95% pending independent Auditor and hosted integration eviden
   and a scoped PASS. Second literal `npm run check` is green (launcher 3/3,
   Server 609 passed + two explicit skips, Web 17/17, production builds green).
   Auditor U/I remain required.
+## 2026-08-30 — TST-14 execution-home cleanup precedence candidate
+
+- **Branch/base:** `fix/f-01-02-private-home-cleanup` from Auditor evidence
+  `61b3ced` atop bounded Runtime chain `c7b5175`; pushed before edits.
+- **RED:** execution-private-home `rm()` threw its raw opaque/path/OS diagnostic
+  from `finally`, overriding success, cancellation, typed timeout and typed execution
+  in all four controlled rows.
+- **Correction:** executor records only whether a primary outcome failed, clears its
+  active/cancellation ownership, and always attempts exact scoped home removal. A
+  cleanup-only failure becomes fresh fixed typed execution failure; any primary
+  cancellation/timeout/execution remains authoritative. Raw cleanup error is neither
+  attached as cause nor persisted. Failed `0700` owner-scoped homes remain eligible
+  for bounded reconciliation rather than being followed outside their root.
+- **Causal evidence:** 4/4 outcome rows exclude opaque, configured-secret, Mac path
+  and OS-code canaries from Error/string/stack/inspection/cause; inactive cancel
+  returns false; reconciliation removes exactly the retained home; a later distinct
+  execution succeeds and cleans. Contract state proves Mission/Contract/Plane/Agent,
+  event, raw store, reload, public DTO, real `GET /api/shepherd/missions/:id` response
+  and console error/warn capture are canary-free. Candidate cleanup failure exhausts
+  to attention, never starts promotion and leaves protected head at Mission base.
+- **Observed checks:** executor including OPS-06/preflight 21/21; focused/adjacent
+  108/108; strict Server test typecheck; first literal `npm run check` green with
+  launcher 3/3, Server 615 passed + two explicit skips, Web 17/17 and both builds.
+  No live/model/UI/network call ran.
+- **Security review:** initial read-only review found no High/Medium and requested
+  explicit inactive-cancel, log-capture, HTTP and OPS-06 evidence; all are now covered.
+  Final follow-up reports no High/Medium or material evidence gap. A full-suite run
+  exposed and corrected one test-only overclaim: under contention, an unrelated
+  candidate can fail before executor cleanup, so the assertion now requires all
+  candidates terminal/no-promotion, at least one causal fixed cleanup failure and
+  universal canary absence. No timeout/product change was made. Two post-correction
+  literal checks pass identically (launcher 3/3, Server 615 + two explicit skips,
+  Web 17/17, strict types and builds). Auditor U/I remain required.

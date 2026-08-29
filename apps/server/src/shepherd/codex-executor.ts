@@ -527,6 +527,7 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
     this.activeExecutionIds.add(request.executionId);
 
     let privateHome: string | null = null;
+    let primaryFailed = false;
     try {
       const privateHomeRoot = await this.preparePrivateHomeRoot(
         request.workspacePath,
@@ -581,11 +582,20 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
         runtimeSessionId: result.runtimeSessionId,
         usage: result.usage,
       };
+    } catch (error) {
+      primaryFailed = true;
+      throw error;
     } finally {
       this.activeExecutionIds.delete(request.executionId);
       this.cancellationRequests.delete(request.executionId);
       if (privateHome) {
-        await rm(privateHome, { recursive: true, force: true });
+        try {
+          await rm(privateHome, { recursive: true, force: true });
+        } catch {
+          if (!primaryFailed) {
+            throw new RuntimeExecutionError("execution");
+          }
+        }
       }
     }
   }

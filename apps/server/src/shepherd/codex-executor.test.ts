@@ -10,6 +10,8 @@ import {
 import path from "node:path";
 import { inspect } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createApp, toPublicMissionDetail } from "../app.js";
+import type { AgentService } from "../agent-service.js";
 import { loadConfig, type AppConfig } from "../config.js";
 import { RunCancelledError, RuntimeExecutionError } from "../errors.js";
 import { JsonStore } from "../store.js";
@@ -21,13 +23,19 @@ import type {
 } from "../types.js";
 import { isFreshEphemeralRunnerRequest } from "../types.js";
 import { CodexShepherdExecutor } from "./codex-executor.js";
-import type { ShepherdExecutionRequest } from "./executor.js";
+import {
+  DeterministicFixtureExecutor,
+  type ShepherdExecutionRequest,
+  type ShepherdExecutor,
+} from "./executor.js";
 import { ShepherdService } from "./service.js";
+import { HostTrustedFixtureVerifier } from "./test-fixtures/host-trusted-verifier.js";
 
 const OWNER = "verifier.test.0123456789abcdef0123456789abcdef";
 const temporaryRoots: string[] = [];
 const cleanupFault = vi.hoisted(() => ({
   target: null as string | null,
+  targets: new Set<string>(),
   error: null as Error | null,
 }));
 
@@ -36,7 +44,10 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   return {
     ...actual,
     rm: async (...args: Parameters<typeof actual.rm>) => {
-      if (cleanupFault.target === args[0]) throw cleanupFault.error;
+      if (
+        cleanupFault.target === args[0] ||
+        (typeof args[0] === "string" && cleanupFault.targets.has(args[0]))
+      ) throw cleanupFault.error;
       return actual.rm(...args);
     },
   };
@@ -153,7 +164,9 @@ class FakeContainerRunner implements EphemeralContainerRunner {
 }
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   cleanupFault.target = null;
+  cleanupFault.targets.clear();
   cleanupFault.error = null;
   await Promise.all(
     temporaryRoots.splice(0).map((root) =>
@@ -261,6 +274,79 @@ describe("CodexShepherdExecutor", () => {
     });
   });
 
+  it.each([
+    { primary: "success" as const, expectedKind: "execution" as const },
+    { primary: "cancelled" as const, expectedKind: "cancelled" as const },
+    { primary: "timeout" as const, expectedKind: "timeout" as const },
+    { primary: "execution" as const, expectedKind: "execution" as const },
+  ])("bounds execution-home cleanup after $primary", async ({ primary, expectedKind }) => {
+    const test = await environment();
+    const runner = new FakeContainerRunner();
+    const executor = new CodexShepherdExecutor(test.config, OWNER, runner);
+    const opaqueCanary = "OPAQUE_EXECUTION_HOME_CLEANUP_8675309";
+    const privatePath = "/Users/private-user/Library/Containers/runtime.sock";
+    const cleanupDiagnostic = `${opaqueCanary} ${test.config.arkApiKey} ${privatePath} EACCES`;
+    const originalRun = runner.run.bind(runner);
+    let faultInjected = false;
+    runner.run = async (runnerRequest) => {
+      if (!isFreshEphemeralRunnerRequest(runnerRequest)) {
+        throw new Error("Expected a fresh ephemeral request");
+      }
+      if (!faultInjected) {
+        faultInjected = true;
+        cleanupFault.target = runnerRequest.codexHome;
+        cleanupFault.error = new Error(cleanupDiagnostic);
+        runner.runError =
+          primary === "cancelled"
+            ? new RunCancelledError()
+            : primary === "timeout"
+              ? new RuntimeExecutionError("timeout", 4_321)
+              : primary === "execution"
+                ? new RuntimeExecutionError("execution")
+                : null;
+      }
+      return await originalRun(runnerRequest);
+    };
+
+    const failure = await executor
+      .run(executionRequest(test.workspace))
+      .catch((error: unknown) => error);
+    if (expectedKind === "cancelled") {
+      expect(failure).toBeInstanceOf(RunCancelledError);
+      expect((failure as Error).message).toBe("Run cancelled");
+    } else {
+      expect(failure).toBeInstanceOf(RuntimeExecutionError);
+      expect(failure).toMatchObject({ kind: expectedKind });
+      expect((failure as Error).message).toBe(
+        expectedKind === "timeout"
+          ? "Agent Runtime exceeded the 4321 ms execution deadline"
+          : "Agent Runtime execution failed",
+      );
+    }
+    const exposed = [
+      String(failure),
+      (failure as Error).stack ?? "",
+      inspect(failure, { depth: 5 }),
+      inspect((failure as Error & { cause?: unknown }).cause, { depth: 5 }),
+    ].join("\n");
+    for (const canary of [opaqueCanary, test.config.arkApiKey, privatePath, "EACCES"]) {
+      expect(exposed).not.toContain(canary);
+    }
+    await expect(executor.cancel("plane-execution-1")).resolves.toBe(false);
+    await expect(stat(runner.privateHomes[0]!)).resolves.toBeDefined();
+
+    cleanupFault.target = null;
+    cleanupFault.error = null;
+    runner.runError = null;
+    await expect(executor.reconcileInterrupted()).resolves.toBe(1);
+    await expect(stat(runner.privateHomes[0]!)).rejects.toMatchObject({ code: "ENOENT" });
+    runner.sessionIds = ["thread-retry"];
+    await expect(
+      executor.run(executionRequest(test.workspace, `retry-${primary}`)),
+    ).resolves.toMatchObject({ runtimeSessionId: "thread-retry" });
+    await expect(stat(runner.privateHomes.at(-1)!)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("replaces Runtime diagnostics with a fixed public execution failure", async () => {
     const test = await environment();
     const runner = new FakeContainerRunner();
@@ -365,6 +451,161 @@ describe("CodexShepherdExecutor", () => {
     }
     expect(durableSurfaces).toContain("Agent Runtime execution failed");
   });
+
+  it("keeps execution-home cleanup diagnostics out of Contract durable/public state", async () => {
+    const test = await environment();
+    const runner = new FakeContainerRunner();
+    runner.sessionIds = ["contract-thread-1", "contract-thread-2"];
+    const originalRun = runner.run.bind(runner);
+    const opaqueCanary = "OPAQUE_CONTRACT_HOME_CLEANUP_101010";
+    const privatePath = "/Users/private-user/contract/codex-home";
+    cleanupFault.error = new Error(
+      `${opaqueCanary} ${test.config.arkApiKey} ${privatePath} EPERM`,
+    );
+    runner.run = async (runnerRequest) => {
+      if (!isFreshEphemeralRunnerRequest(runnerRequest)) {
+        throw new Error("Expected a fresh ephemeral request");
+      }
+      cleanupFault.targets.add(runnerRequest.codexHome);
+      return await originalRun(runnerRequest);
+    };
+    const executor = new CodexShepherdExecutor(test.config, OWNER, runner);
+    const storePath = path.join(test.root, "cleanup-contract-state.json");
+    const store = new JsonStore(storePath, {
+      sensitiveValues: [test.config.arkApiKey],
+    });
+    await store.initialize();
+    const service = new ShepherdService({
+      store,
+      managedRoot: test.config.shepherdRoot,
+      agentWorkspaceRoot: test.config.workspaceRoot,
+      executor,
+      verifier: new HostTrustedFixtureVerifier(),
+      sensitiveValues: [test.config.arkApiKey],
+    });
+    await service.initialize();
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const warningLog = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const failure = await service.runDeterministicDemo().catch((error: unknown) => error);
+    expect(failure).toMatchObject({
+      name: "RuntimeExecutionError",
+      kind: "execution",
+      message: "Agent Runtime execution failed",
+    });
+    const missionId = service.state().missions.at(-1)?.id;
+    const detail = service.missionDetail(missionId ?? "missing");
+    expect(detail?.mission).toMatchObject({
+      state: "failed",
+      failure: { code: "agent_runtime_error", message: "Agent Runtime execution failed" },
+    });
+    expect(detail?.contracts.some((contract) => contract.state === "execution_failed")).toBe(true);
+    expect(detail?.planes.some((plane) => plane.error?.code === "agent_runtime_error")).toBe(true);
+    expect(detail?.agents.some((agent) => agent.lastError === "Agent Runtime execution failed")).toBe(true);
+    expect(detail?.events.some((event) => event.details.failureCode === "agent_runtime_error")).toBe(true);
+    expect(detail?.candidates).toEqual([]);
+    expect(detail?.events.some((event) => event.type === "promotion_started")).toBe(false);
+
+    const reloaded = new JsonStore(storePath, { sensitiveValues: [test.config.arkApiKey] });
+    await reloaded.initialize();
+    const app = await createApp(test.config, {} as AgentService, service);
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/shepherd/missions/${missionId}`,
+      ...(test.config.authToken
+        ? { headers: { authorization: `Bearer ${test.config.authToken}` } }
+        : {}),
+    });
+    expect(response.statusCode).toBe(200);
+    await app.close();
+    const surfaces = [
+      String(failure),
+      (failure as Error).stack ?? "",
+      inspect(failure, { depth: 5 }),
+      JSON.stringify(detail),
+      JSON.stringify(toPublicMissionDetail(detail!, [])),
+      JSON.stringify(reloaded.snapshot()),
+      await readFile(storePath, "utf8"),
+      response.body,
+      JSON.stringify(errorLog.mock.calls),
+      JSON.stringify(warningLog.mock.calls),
+    ].join("\n");
+    for (const canary of [opaqueCanary, test.config.arkApiKey, privatePath, "EPERM"]) {
+      expect(surfaces).not.toContain(canary);
+    }
+  }, 30_000);
+
+  it("keeps candidate cleanup failures bounded and prevents promotion", async () => {
+    const test = await environment();
+    const runner = new FakeContainerRunner();
+    runner.sessionIds = Array.from({ length: 8 }, (_, index) => `candidate-thread-${index}`);
+    const originalRun = runner.run.bind(runner);
+    const opaqueCanary = "OPAQUE_CANDIDATE_HOME_CLEANUP_202020";
+    const privatePath = "/private/tmp/candidate/codex-home";
+    cleanupFault.error = new Error(`${opaqueCanary} ${privatePath} EACCES`);
+    runner.run = async (runnerRequest) => {
+      if (!isFreshEphemeralRunnerRequest(runnerRequest)) {
+        throw new Error("Expected a fresh ephemeral request");
+      }
+      cleanupFault.targets.add(runnerRequest.codexHome);
+      return await originalRun(runnerRequest);
+    };
+    const liveExecutor = new CodexShepherdExecutor(test.config, OWNER, runner);
+    const fixtureExecutor = new DeterministicFixtureExecutor();
+    const routedExecutor: ShepherdExecutor = {
+      kind: "deterministic_fixture",
+      run: async (request) =>
+        request.operation.kind === "resolution_candidate"
+          ? await liveExecutor.run(request)
+          : await fixtureExecutor.run(request),
+      cancel: async (executionId) =>
+        (await liveExecutor.cancel(executionId)) ||
+        (await fixtureExecutor.cancel(executionId)),
+    };
+    const storePath = path.join(test.root, "cleanup-candidate-state.json");
+    const store = new JsonStore(storePath);
+    await store.initialize();
+    const service = new ShepherdService({
+      store,
+      managedRoot: test.config.shepherdRoot,
+      agentWorkspaceRoot: test.config.workspaceRoot,
+      executor: routedExecutor,
+      verifier: new HostTrustedFixtureVerifier(),
+    });
+
+    await expect(service.runDeterministicDemo()).rejects.toThrow(
+      "Resolution requires attention: all_candidates_failed",
+    );
+    const mission = service.state().missions.at(-1);
+    const detail = service.missionDetail(mission?.id ?? "missing");
+    expect(detail?.mission).toMatchObject({
+      state: "attention_required",
+      attentionReason: "all_candidates_failed",
+    });
+    expect(
+      detail?.candidates.every((candidate) =>
+        candidate.executionState === "failed" &&
+        candidate.promotionState === "not_started"
+      ),
+      JSON.stringify(detail?.candidates),
+    ).toBe(true);
+    expect(
+      detail?.candidates.some(
+        (candidate) =>
+          candidate.failure?.message === "Agent Runtime execution failed",
+      ),
+    ).toBe(true);
+    expect(detail?.events.some((event) => event.type === "promotion_started")).toBe(false);
+    expect(detail?.project.protectedHeadCommit).toBe(mission?.baseCommit);
+    const surfaces = [
+      JSON.stringify(detail),
+      JSON.stringify(toPublicMissionDetail(detail!, [])),
+      await readFile(storePath, "utf8"),
+    ].join("\n");
+    for (const canary of [opaqueCanary, privatePath, "EACCES"]) {
+      expect(surfaces).not.toContain(canary);
+    }
+  }, 30_000);
 
   it("preserves cancellation type without propagating a raw cancellation error", async () => {
     const test = await environment();
