@@ -95,7 +95,7 @@ export function titleCase(value: string): string {
 export function stateTone(value: string): "success" | "danger" | "warning" | "purple" | "neutral" {
   if (/verified|passed|selected|promoted|completed|ready/u.test(value)) return "success";
   if (/failed|denied|timed_out|error|rejected/u.test(value)) return "danger";
-  if (/attention|collision|blocked|interrupted|cancelled/u.test(value)) return "warning";
+  if (/attention|collision|blocked|interrupted|cancelled|degraded/u.test(value)) return "warning";
   if (/running|verifying|resolving|busy|queued|created|promoting/u.test(value)) return "purple";
   return "neutral";
 }

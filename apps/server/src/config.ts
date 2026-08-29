@@ -399,6 +399,16 @@ export function isArkConfigured(config: AppConfig): boolean {
   return hasUsableArkConfiguration(config.arkApiKey, config.arkModel);
 }
 
+/**
+ * The advisory Shepherd reviewer uses SHEPHERD_MODEL, which falls back to
+ * ARK_MODEL. It is deliberately independent of shepherdExecutionMode: the
+ * reviewer is a bounded outbound request with no container, worktree, or Codex
+ * session, so it stays available in deterministic mode.
+ */
+export function isShepherdModelReviewConfigured(config: AppConfig): boolean {
+  return hasUsableArkConfiguration(config.arkApiKey, config.shepherdModel);
+}
+
 function arkCodexConfigToml(
   config: Pick<AppConfig, "arkModel" | "arkBaseUrl">,
   hardenModelShell: boolean,

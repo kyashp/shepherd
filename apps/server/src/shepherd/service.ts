@@ -22,6 +22,7 @@ import {
   type AuthTransport,
 } from "./auth-fixture.js";
 import {
+  isAlwaysProtectedPath,
   intersectScopedAuthority,
   validateChangedPaths,
 } from "./authority.js";
@@ -60,6 +61,12 @@ import {
   type ShepherdExecutor,
 } from "./executor.js";
 import { ingestContractResultManifest } from "./manifest.js";
+import type {
+  ModelReviewContractInput,
+  ModelReviewInput,
+  ModelReviewResult,
+  ModelReviewer,
+} from "./model-reviewer.js";
 import { parseProjectGroupMessage } from "./group-routing.js";
 import { GitClient, type GitClientOptions } from "./git-client.js";
 import {
@@ -102,6 +109,13 @@ const VERIFIER_ACTOR = {
 } as const;
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$/u;
 const MAX_MANIFEST_BYTES = 64 * 1024;
+/** How often an in-flight advisory review re-checks durable cancellation. */
+const MODEL_REVIEW_CANCELLATION_POLL_MS = 250;
+/**
+ * Service-side ceiling on any injected reviewer. ArkModelReviewer bounds itself,
+ * but the service must stay bounded even when a caller injects one that does not.
+ */
+const MODEL_REVIEW_SERVICE_DEADLINE_MS = 45_000;
 
 export {
   AUTH_FRONTEND_PROFILE_ID,
@@ -200,6 +214,12 @@ export interface ShepherdServiceOptions {
   idFactory?: (prefix: string) => string;
   contractTimeoutMs?: number;
   candidateTimeoutMs?: number;
+  /**
+   * Advisory-only semantic reviewer. Absent means no review is attempted and
+   * no advisory event is emitted. Its output can never influence deterministic
+   * collision detection, winner selection, or promotion.
+   */
+  reviewer?: ModelReviewer;
 }
 
 export interface DeterministicDemoOptions {
@@ -504,6 +524,7 @@ export class ShepherdService {
   private readonly idFactory: (prefix: string) => string;
   private readonly contractTimeoutMs: number;
   private readonly candidateTimeoutMs: number;
+  private readonly reviewer: ModelReviewer | null;
   private initialization: Promise<void> | null = null;
   private readonly activeProjects = new Set<string>();
   private readonly backgroundRuns = new Map<
@@ -537,6 +558,7 @@ export class ShepherdService {
       options.candidateTimeoutMs ?? 600_000,
       "Candidate",
     );
+    this.reviewer = options.reviewer ?? null;
   }
 
   async initialize(): Promise<void> {
@@ -2451,6 +2473,7 @@ export class ShepherdService {
     const integrationPlane = await this.integrateContracts(prepared);
     const integrationCommit = integrationPlane.headCommit;
     if (!integrationCommit) throw new Error("Integration Plane has no immutable head");
+    await this.runAdvisoryModelReview(prepared.missionId, integrationPlane.id);
     const collision = await this.detectAndPersistCollision(
       prepared.missionId,
       integrationPlane,
@@ -3303,6 +3326,161 @@ export class ShepherdService {
       replaceById(database.shepherd.collisions, collision);
     });
     return collision;
+  }
+
+  /**
+   * Advisory-only. Builds a bounded review input from evidence that is already
+   * trusted: verified Contract objectives, ingested manifest summaries,
+   * corroborated claims, and committed Plane diffs. Never throws; returns null
+   * when there is nothing cross-Contract to compare.
+   */
+  private buildModelReviewInput(missionId: string): ModelReviewInput | null {
+    const snapshot = this.store.snapshot();
+    const bounded = (value: string, max: number): string =>
+      this.safeText(value, max).slice(0, max).trim();
+    const contracts: ModelReviewContractInput[] = [];
+    for (const contract of snapshot.shepherd.contracts) {
+      if (contract.missionId !== missionId) continue;
+      if (contract.state !== "verified") continue;
+      const plane = snapshot.shepherd.planes.find(
+        (item) =>
+          item.missionId === missionId &&
+          item.kind === "contract" &&
+          item.contractId === contract.id,
+      );
+      if (!plane) continue;
+      const claims = snapshot.shepherd.claims
+        .filter((claim) => claim.contractId === contract.id && claim.valid)
+        .map((claim) => ({
+          key: claim.key.trim().slice(0, 128),
+          value: claim.value.trim().slice(0, 256),
+          scope: claim.scope.trim().slice(0, 128),
+          mode: "exclusive" as const,
+        }))
+        .filter(
+          (claim) =>
+            claim.key.length > 0 && claim.value.length > 0 && claim.scope.length > 0,
+        )
+        .sort((left, right) => left.key.localeCompare(right.key))
+        .slice(0, 32);
+      contracts.push({
+        contractId: contract.id,
+        objective:
+          bounded(contract.objective, 4_000) ||
+          bounded(contract.title, 4_000) ||
+          contract.id,
+        manifestSummary:
+          bounded(contract.manifest?.summary ?? "", 2_000) ||
+          "No trusted manifest summary was ingested for this Contract.",
+        claims,
+        changedFiles: plane.changedFiles
+          .filter(
+            (file) =>
+              file.length > 0 && file.length <= 512 && !isAlwaysProtectedPath(file),
+          )
+          .slice(0, 128),
+        diffSummary: bounded(plane.diffSummary, 8_000),
+      });
+      if (contracts.length === 8) break;
+    }
+    return contracts.length >= 2 ? { contracts } : null;
+  }
+
+  /**
+   * Runs the bounded advisory reviewer and records its outcome as a durable
+   * event. Returns void so no reviewer value can reach the deterministic
+   * collision, winner, or promotion path, and never rejects so no reviewer
+   * outcome can fail or stall a Mission.
+   */
+  private async runAdvisoryModelReview(
+    missionId: string,
+    integrationPlaneId: string,
+  ): Promise<void> {
+    const reviewer = this.reviewer;
+    if (!reviewer) return;
+    try {
+      if (!this.settings().modelReviewEnabled) return;
+      if (this.missionIsCancelled(missionId)) return;
+      const input = this.buildModelReviewInput(missionId);
+      if (!input) return;
+
+      const controller = new AbortController();
+      const poll = setInterval(() => {
+        if (this.missionIsCancelled(missionId)) controller.abort();
+      }, MODEL_REVIEW_CANCELLATION_POLL_MS);
+      poll.unref?.();
+      let deadline: ReturnType<typeof setTimeout> | undefined;
+      let result: ModelReviewResult;
+      try {
+        const bound = new Promise<ModelReviewResult>((resolve) => {
+          deadline = setTimeout(
+            () => resolve({ status: "degraded", reason: "timeout", retryable: true }),
+            MODEL_REVIEW_SERVICE_DEADLINE_MS,
+          );
+          deadline.unref?.();
+        });
+        result = await Promise.race([reviewer.review(input, controller.signal), bound]);
+      } catch {
+        // A reviewer that throws is itself a degradation, never a fake "safe".
+        result = { status: "degraded", reason: "provider_error", retryable: false };
+      } finally {
+        clearInterval(poll);
+        if (deadline) clearTimeout(deadline);
+      }
+      if (result.status === "disabled" || result.status === "cancelled") return;
+
+      const at = this.timestamp();
+      const contractCount = input.contracts.length;
+      await this.store.mutate((database) => {
+        this.assertMissionRunnable(database, missionId);
+        if (result.status === "degraded") {
+          this.recordEvent(database, {
+            type: "model_review_degraded",
+            summary:
+              "Advisory model review degraded; deterministic detection remains authoritative",
+            missionId,
+            planeId: integrationPlaneId,
+            timestamp: at,
+            details: {
+              advisory: true,
+              reason: result.reason,
+              retryable: result.retryable,
+              contractCount,
+            },
+          });
+          return;
+        }
+        const findingCount = result.findings.length;
+        const top = result.findings[0];
+        this.recordEvent(database, {
+          type: "model_review_completed",
+          summary:
+            findingCount > 0
+              ? `Advisory model review reported ${findingCount} non-authoritative finding(s)`
+              : "Advisory model review reported no cross-Contract findings",
+          missionId,
+          planeId: integrationPlaneId,
+          timestamp: at,
+          details: {
+            advisory: true,
+            findingCount,
+            contractCount,
+            ...(top
+              ? {
+                  topKind: top.kind,
+                  topConfidence: top.confidence,
+                  topLeftKey: top.leftKey,
+                  topRightKey: top.rightKey,
+                }
+              : {}),
+          },
+        });
+      });
+    } catch {
+      // Advisory review may never fail, delay, or alter a Mission. Cancellation
+      // is re-derived from durable state by detectAndPersistCollision's own
+      // ensureMissionRunnable on the very next statement.
+    }
   }
 
   private async createCandidates(

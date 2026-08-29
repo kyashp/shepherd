@@ -45,7 +45,7 @@ const blockedDetailKeys = /secret|token|prompt|session|workspace|worktree|execut
 function matchesFilter(event: ShepherdEvent, filter: EventFilter): boolean {
   if (filter === "all") return true;
   if (filter === "contracts") return /contract|agent_completed|authority/u.test(event.type);
-  if (filter === "verification") return /verification|claim/u.test(event.type);
+  if (filter === "verification") return /verification|claim|model_review/u.test(event.type);
   if (filter === "collisions") return /collision/u.test(event.type);
   return /resolution|candidate|tie|promotion/u.test(event.type);
 }
