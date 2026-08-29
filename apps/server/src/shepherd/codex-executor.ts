@@ -18,7 +18,7 @@ import {
   type AppConfig,
 } from "../config.js";
 import { ContainerCodexRunner } from "../container-codex-runner.js";
-import { RunCancelledError } from "../errors.js";
+import { RunCancelledError, RuntimeExecutionError } from "../errors.js";
 import type {
   EphemeralContainerRunner,
   RunUsage,
@@ -62,7 +62,10 @@ function safeRuntimeError(error: unknown, config: AppConfig): Error {
     secrets: [config.arkApiKey, config.authToken],
     maxStringLength: MAX_RUNTIME_ERROR_CHARACTERS,
   });
-  return new Error(message || "Live Shepherd Runtime failed");
+  return new RuntimeExecutionError(
+    error instanceof RuntimeExecutionError ? error.kind : "execution",
+    message || "Live Shepherd Runtime failed",
+  );
 }
 
 function pathsOverlap(left: string, right: string): boolean {

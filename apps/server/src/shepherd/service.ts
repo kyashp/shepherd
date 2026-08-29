@@ -5,6 +5,7 @@ import {
   appendProjectGroupMessage,
   appendShepherdEvent,
 } from "../database.js";
+import { RuntimeExecutionError } from "../errors.js";
 import { JsonStore } from "../store.js";
 import type { Agent, Database } from "../types.js";
 import { WorkspaceManager } from "../workspace.js";
@@ -2087,6 +2088,15 @@ export class ShepherdService {
 
   private makeFailure(error: unknown, stage: string, at: string): FailureInfo {
     const raw = error instanceof Error ? error.message : "Unknown failure";
+    if (error instanceof RuntimeExecutionError) {
+      return {
+        code: error.kind === "timeout" ? "agent_timeout" : "agent_runtime_error",
+        message: this.safeText(raw),
+        stage: "contract_execution",
+        at,
+        retryable: false,
+      };
+    }
     return {
       code: "unknown",
       message: this.safeText(raw),
@@ -3077,12 +3087,20 @@ export class ShepherdService {
         transitionContractAndRecord(
           database,
           input.contractId,
-          "execution_failed",
+          failure.code === "agent_timeout"
+            ? "execution_timed_out"
+            : "execution_failed",
           {
             actor: "control_plane",
             eventActor: SHEPHERD_ACTOR,
             timestamp: failedAt,
             failure,
+            ...(failure.code === "agent_timeout"
+              ? { summary: "Agent Runtime execution timed out" }
+              : failure.code === "agent_runtime_error"
+                ? { summary: "Agent Runtime execution failed" }
+                : {}),
+            details: { failureCode: failure.code },
           },
         );
         const plane = database.shepherd.planes.find(
@@ -4842,6 +4860,12 @@ export class ShepherdService {
           eventActor: SHEPHERD_ACTOR,
           timestamp: failedAt,
           failure,
+          ...(failure.code === "agent_timeout"
+            ? { summary: "Mission failed because an Agent Runtime timed out" }
+            : failure.code === "agent_runtime_error"
+              ? { summary: "Mission failed because an Agent Runtime execution failed" }
+              : {}),
+          details: { failureCode: failure.code },
         });
       }
       const project = database.shepherd.projects.find(

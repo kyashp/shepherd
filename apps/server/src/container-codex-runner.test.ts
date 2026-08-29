@@ -16,7 +16,7 @@ import {
   SHEPHERD_RUNTIME_OWNER_LABEL,
   type ContainerCodexRunnerOptions,
 } from "./container-codex-runner.js";
-import { RunCancelledError } from "./errors.js";
+import { RunCancelledError, RuntimeExecutionError } from "./errors.js";
 import type { FreshEphemeralRunnerRequest } from "./types.js";
 
 const OWNER = "verifier.test.0123456789abcdef0123456789abcdef";
@@ -378,7 +378,10 @@ describe("Container Codex runner", () => {
       .run(request({ timeoutMs: 1_000 }))
       .catch((error: unknown) => error);
     await vi.advanceTimersByTimeAsync(1_000);
-    expect((await outcome as Error).message).toContain("timed out after 1000 ms");
+    const failure = await outcome;
+    expect(failure).toBeInstanceOf(RuntimeExecutionError);
+    expect(failure).toMatchObject({ kind: "timeout" });
+    expect((failure as Error).message).toContain("1000 ms execution deadline");
     expect(owned).toBe(false);
   });
 

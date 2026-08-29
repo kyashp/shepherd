@@ -10,7 +10,7 @@ import {
   resolveRunnerTimeoutMs,
   type ParsedEvents,
 } from "./codex-runner.js";
-import { RunCancelledError } from "./errors.js";
+import { RunCancelledError, RuntimeExecutionError } from "./errors.js";
 import type {
   AgentRunner,
   EphemeralPreflightResult,
@@ -642,7 +642,10 @@ export class ContainerCodexRunner implements AgentRunner {
       );
       if (active.cancelled) throw new RunCancelledError();
       if (active.timedOut) {
-        throw new Error("Runtime timed out after " + timeoutMs + " ms");
+        throw new RuntimeExecutionError(
+          "timeout",
+          "Agent Runtime exceeded the " + timeoutMs + " ms execution deadline",
+        );
       }
       const child = this.spawnRuntime(
         this.config.containerEngine,
@@ -720,7 +723,10 @@ export class ContainerCodexRunner implements AgentRunner {
     active.child = null;
     if (active.cancelled) throw new RunCancelledError();
     if (active.timedOut) {
-      throw new Error("Runtime timed out after " + timeoutMs + " ms");
+      throw new RuntimeExecutionError(
+        "timeout",
+        "Agent Runtime exceeded the " + timeoutMs + " ms execution deadline",
+      );
     }
     if (active.outputExceeded) {
       throw new Error("Container create output exceeded CODEX_MAX_OUTPUT_BYTES");
@@ -788,14 +794,21 @@ export class ContainerCodexRunner implements AgentRunner {
     if (active.cancelled) throw new RunCancelledError();
     if (active.timedOut) {
       const timeoutMs = resolveRunnerTimeoutMs(request, this.config.codexTimeoutMs);
-      throw new Error("Runtime timed out after " + timeoutMs + " ms");
+      throw new RuntimeExecutionError(
+        "timeout",
+        "Agent Runtime exceeded the " + timeoutMs + " ms execution deadline",
+      );
     }
     if (active.outputExceeded) {
-      throw new Error("Codex output exceeded CODEX_MAX_OUTPUT_BYTES");
+      throw new RuntimeExecutionError(
+        "execution",
+        "Agent Runtime output exceeded its configured byte ceiling",
+      );
     }
     if (exitCode !== 0) {
       const detail = parsed.errors.at(-1) ?? stderr.trim() ?? "No error detail";
-      throw new Error(
+      throw new RuntimeExecutionError(
+        "execution",
         this.config.containerEngine +
           " Runtime exited with code " +
           exitCode +
@@ -807,7 +820,12 @@ export class ContainerCodexRunner implements AgentRunner {
       ? requireEphemeralThreadId(parsed)
       : parsed.threadId;
     const output = parsed.messages.at(-1)?.trim();
-    if (!output) throw new Error("Codex completed without an agent message");
+    if (!output) {
+      throw new RuntimeExecutionError(
+        "execution",
+        "Agent Runtime completed without an agent message",
+      );
+    }
     return { output, threadId, usage: parsed.usage };
   }
 

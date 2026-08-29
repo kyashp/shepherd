@@ -11,7 +11,7 @@ import path from "node:path";
 import { inspect } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadConfig, type AppConfig } from "../config.js";
-import { RunCancelledError } from "../errors.js";
+import { RunCancelledError, RuntimeExecutionError } from "../errors.js";
 import { JsonStore } from "../store.js";
 import type {
   EphemeralContainerRunner,
@@ -280,6 +280,8 @@ describe("CodexShepherdExecutor", () => {
       .catch((error: unknown) => error);
 
     expect(failure).toBeInstanceOf(Error);
+    expect(failure).toBeInstanceOf(RuntimeExecutionError);
+    expect(failure).toMatchObject({ kind: "execution" });
     expect(failure).not.toBe(runner.runError);
     expect((failure as Error).message).not.toContain(test.config.arkApiKey);
     expect((failure as Error).message).not.toContain(commonPatternCanary);
@@ -289,6 +291,25 @@ describe("CodexShepherdExecutor", () => {
     await expect(stat(runner.privateHomes[0]!)).rejects.toMatchObject({
       code: "ENOENT",
     });
+  });
+
+  it("preserves typed timeout identity while redacting the Runtime message", async () => {
+    const test = await environment();
+    const runner = new FakeContainerRunner();
+    runner.runError = new RuntimeExecutionError(
+      "timeout",
+      "deadline exposed " + test.config.arkApiKey,
+    );
+    const executor = new CodexShepherdExecutor(test.config, OWNER, runner);
+
+    const failure = await executor
+      .run(executionRequest(test.workspace))
+      .catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(RuntimeExecutionError);
+    expect(failure).toMatchObject({ kind: "timeout" });
+    expect((failure as Error).message).toContain("[REDACTED]");
+    expect((failure as Error).message).not.toContain(test.config.arkApiKey);
   });
 
   it("keeps Runtime secrets out of thrown and persisted service failures", async () => {

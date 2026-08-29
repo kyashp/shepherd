@@ -3667,3 +3667,24 @@ canary, reset restoration and exact port/process/container/root cleanup. It made
 zero live/model calls and did not change production code, UI or CSS. E2E-02 remains
 at 95% until independent Auditor review and hosted integration evidence; `GC-06`
 remains open because lifecycle summaries are truthfully Shepherd-authored.
+
+## 2026-08-30 — F-01/02 Worker candidate
+
+The original two-case RED proved that typed Agent Runtime timeout and execution
+failures both reached the Mission as `unknown`. The candidate introduces one
+bounded typed Runtime error across the container and executor redaction boundary.
+A timeout now persists Contract `execution_timed_out` with `agent_timeout`; a
+non-timeout execution failure persists `execution_failed` with
+`agent_runtime_error`. Both produce the same causal failure on the failed Plane,
+logical Agent and failed Mission, release active project/Contract ownership, emit
+bounded durable event details, survive store reload and public DTO conversion, and
+leave collision/candidate/promotion state empty. Untyped exceptions remain
+`unknown`; cancellation, verifier infrastructure and candidate behavior are
+unchanged and no message regex was added.
+
+The RED 2/2 became GREEN 3/3 including the untyped control. Runner/executor/service
+focused coverage passed 11/11, adjacent runner/executor/service/API/store coverage
+passed 102/102, strict test typecheck passed, and two literal
+`npm run check` runs passed server 606/606 with two opt-in skips, Web 17/17, launcher
+3/3 and both builds. No live/model call, UI/theme change or schema migration ran.
+F-01/02 remains at 95% pending independent Auditor and hosted integration evidence.

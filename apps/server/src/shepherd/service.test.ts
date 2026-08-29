@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { toPublicMissionDetail } from "../app.js";
+import { RuntimeExecutionError } from "../errors.js";
 import { JsonStore } from "../store.js";
 import { WorkspaceManager } from "../workspace.js";
 import {
@@ -477,6 +478,20 @@ class FailCookieCandidateOnceExecutor implements ShepherdExecutor {
 
   async cancel(executionId: string): Promise<boolean> {
     return await this.inner.cancel(executionId);
+  }
+}
+
+class TypedFailingContractExecutor implements ShepherdExecutor {
+  readonly kind = "deterministic_fixture" as const;
+
+  constructor(private readonly error: Error) {}
+
+  async run(): Promise<ShepherdExecutionResult> {
+    throw this.error;
+  }
+
+  async cancel(): Promise<boolean> {
+    return false;
   }
 }
 
@@ -2066,6 +2081,29 @@ describe("Shepherd deterministic walking skeleton", () => {
     }
   }, 30_000);
 
+  it("keeps a truly untyped execution exception classified as unknown", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      executor: new TypedFailingContractExecutor(new Error("untyped synthetic failure")),
+    });
+
+    const { missionId } = await startTrackedTestMission(service);
+    await vi.waitFor(
+      () => expect(service.missionDetail(missionId)?.mission.state).toBe("failed"),
+      { timeout: 10_000 },
+    );
+    const detail = service.missionDetail(missionId);
+    expect(detail?.mission.failure).toMatchObject({ code: "unknown", stage: "background_demo" });
+    expect(detail?.contracts.every((contract) => contract.state === "execution_failed" && contract.failure?.code === "unknown")).toBe(true);
+    expect(detail?.candidates).toEqual([]);
+  });
+
   it("does not invoke a sibling verifier after infrastructure terminalization", async () => {
     const caseRoot = await makeCaseRoot();
     const store = new JsonStore(path.join(caseRoot, "state.json"));
@@ -2159,6 +2197,58 @@ describe("Shepherd deterministic walking skeleton", () => {
         .missionDetail(result.mission.id)
         ?.events.some((event) => event.type === "candidate_retried"),
     ).toBe(true);
+  }, 30_000);
+
+  it.each([
+    {
+      kind: "timeout" as const,
+      code: "agent_timeout" as const,
+      contractState: "execution_timed_out" as const,
+      message: "Agent Runtime exceeded the 1234 ms execution deadline",
+    },
+    {
+      kind: "execution" as const,
+      code: "agent_runtime_error" as const,
+      contractState: "execution_failed" as const,
+      message: "Agent Runtime exited before producing a result",
+    },
+  ])("persists typed Agent Runtime $kind failures across every terminal surface", async ({ kind, code, contractState, message }) => {
+    const caseRoot = await makeCaseRoot();
+    const statePath = path.join(caseRoot, "state.json");
+    const store = new JsonStore(statePath);
+    await store.initialize();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      executor: new TypedFailingContractExecutor(new RuntimeExecutionError(kind, message)),
+    });
+
+    const { missionId } = await startTrackedTestMission(service);
+    await vi.waitFor(
+      () => expect(service.missionDetail(missionId)?.mission.state).toBe("failed"),
+      { timeout: 10_000 },
+    );
+    const detail = service.missionDetail(missionId);
+    if (!detail) throw new Error("Typed Runtime failure detail disappeared");
+    expect(detail.mission).toMatchObject({ state: "failed", failure: { code, message } });
+    expect(detail.project.activeMissionId).toBeNull();
+    expect(detail.contracts.every((contract) => contract.state === contractState && contract.failure?.code === code)).toBe(true);
+    expect(detail.planes.every((plane) => plane.kind === "contract" && plane.state === "failed" && plane.error?.code === code)).toBe(true);
+    expect(detail.agents.every((agent) => agent.status === "error" && agent.currentContractId === null && agent.lastError === message)).toBe(true);
+    expect(detail.candidates).toEqual([]);
+    expect(detail.collisions).toEqual([]);
+    expect(detail.project.protectedHeadCommit).toBe(detail.mission.baseCommit);
+    expect(detail.events.filter((event) => event.contractId !== null && event.details.failureCode === code)).toHaveLength(2);
+    expect(detail.events.filter((event) => event.type === "mission_failed" && event.details.failureCode === code)).toHaveLength(1);
+    expect(JSON.stringify(toPublicMissionDetail(detail, []))).toContain(`"code":"${code}"`);
+
+    const reloaded = new JsonStore(statePath);
+    await reloaded.initialize();
+    const persisted = reloaded.snapshot();
+    expect(persisted.shepherd.missions.find((mission) => mission.id === missionId)?.failure?.code).toBe(code);
+    expect(persisted.shepherd.contracts.filter((contract) => contract.missionId === missionId).every((contract) => contract.failure?.code === code)).toBe(true);
   }, 30_000);
 
   it("persists cancellation before stopping exact executor identities", async () => {

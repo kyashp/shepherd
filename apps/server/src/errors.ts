@@ -14,3 +14,16 @@ export class RunCancelledError extends Error {
     this.name = "RunCancelledError";
   }
 }
+
+export type RuntimeExecutionFailureKind = "timeout" | "execution";
+
+/** Typed boundary failure from an Agent Runtime; public/persisted consumers must redact its message. */
+export class RuntimeExecutionError extends Error {
+  constructor(
+    public readonly kind: RuntimeExecutionFailureKind,
+    message: string,
+  ) {
+    super(message);
+    this.name = "RuntimeExecutionError";
+  }
+}
