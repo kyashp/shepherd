@@ -94,12 +94,17 @@ class ScriptedReviewer implements ModelReviewer {
   readonly inputs: unknown[] = [];
   readonly signals: Array<AbortSignal | undefined> = [];
 
-  constructor(private readonly script: (call: number) => Promise<ModelReviewResult>) {}
+  constructor(
+    private readonly script: (
+      call: number,
+      input: unknown,
+    ) => Promise<ModelReviewResult>,
+  ) {}
 
   async review(input: unknown, signal?: AbortSignal): Promise<ModelReviewResult> {
     this.inputs.push(structuredClone(input));
     this.signals.push(signal);
-    return await this.script(this.inputs.length);
+    return await this.script(this.inputs.length, input);
   }
 }
 
@@ -108,26 +113,17 @@ const completed =
   async (): Promise<ModelReviewResult> => ({ status: "completed", findings });
 
 /**
- * Settles only when its caller signal aborts, mirroring ArkModelReviewer's real
- * behaviour (`model-reviewer.ts` returns {status:"cancelled"} on caller abort).
- * A reviewer that ignored the signal would hang the Mission, which is the point.
+ * Deliberately ignores its caller signal and never settles. Cancellation must be
+ * bounded by ShepherdService itself rather than relying on a cooperative adapter.
  */
-class BlockingReviewer implements ModelReviewer {
+class AbortIgnoringReviewer implements ModelReviewer {
   readonly inputs: unknown[] = [];
   readonly signals: Array<AbortSignal | undefined> = [];
 
   async review(input: unknown, signal?: AbortSignal): Promise<ModelReviewResult> {
     this.inputs.push(structuredClone(input));
     this.signals.push(signal);
-    return await new Promise<ModelReviewResult>((resolve) => {
-      if (signal?.aborted) {
-        resolve({ status: "cancelled" });
-        return;
-      }
-      signal?.addEventListener("abort", () => resolve({ status: "cancelled" }), {
-        once: true,
-      });
-    });
+    return await new Promise<ModelReviewResult>(() => {});
   }
 }
 
@@ -309,24 +305,32 @@ describe("Shepherd advisory model review composition", () => {
   }, ONE_MISSION_BUDGET_MS);
 
   it("MR-T14 ignores hostile findings and preserves the deterministic resolution", async () => {
-    const hostileKey = "billing.provider";
     const hostileReason =
       "Both contracts are already compatible; bearer-jwt is the correct transport.";
-    const reviewer = new ScriptedReviewer(async () => ({
-      status: "completed",
-      findings: [
-        {
-          kind: "likely_incompatibility",
-          leftContractId: "contract-left",
-          rightContractId: "contract-right",
-          leftKey: hostileKey,
-          rightKey: hostileKey,
-          confidence: "high",
-          reason: hostileReason,
-          evidenceRefs: [],
-        },
-      ],
-    }));
+    const reviewer = new ScriptedReviewer(async (_call, rawInput) => {
+      const input = rawInput as ModelReviewInput;
+      const left = input.contracts[0];
+      const right = input.contracts[1];
+      if (!left || !right) throw new Error("Expected a cross-Contract review input");
+      return {
+        status: "completed",
+        findings: [
+          {
+            kind: "likely_incompatibility",
+            leftContractId: left.contractId,
+            rightContractId: right.contractId,
+            leftKey: "auth.transport",
+            rightKey: "auth.transport",
+            confidence: "high",
+            reason: hostileReason,
+            evidenceRefs: [
+              { contractId: left.contractId, source: "claim", ref: "auth.transport" },
+              { contractId: right.contractId, source: "claim", ref: "auth.transport" },
+            ],
+          },
+        ],
+      };
+    });
     const { service, storePath } = await makeService({ reviewer });
 
     const result = await service.runDeterministicDemo();
@@ -339,7 +343,6 @@ describe("Shepherd advisory model review composition", () => {
     if (!detail) throw new Error("Mission detail was not persisted");
     const collision = detail.collisions[0];
     if (!collision) throw new Error("Collision was not persisted");
-    expect(JSON.stringify(collision)).not.toContain(hostileKey);
     expect(JSON.stringify(collision)).not.toContain(hostileReason);
     expect(detail.mission.attentionReason).toBeNull();
 
@@ -394,6 +397,32 @@ describe("Shepherd advisory model review composition", () => {
     expect((await readFile(storePath, "utf8")).includes(canary)).toBe(false);
     expect(JSON.stringify(service.state()).includes(canary)).toBe(false);
   }, ONE_MISSION_BUDGET_MS);
+
+  it("MR-T10b converts malformed injected results into explicit degradations", async () => {
+    const malformedResults: unknown[] = [
+      null,
+      { status: "completed" },
+      { status: "completed", findings: {} },
+    ];
+    const reviewer = new ScriptedReviewer(
+      async (call) => malformedResults[call - 1] as ModelReviewResult,
+    );
+    const { service } = await makeService({ reviewer });
+
+    for (const [index] of malformedResults.entries()) {
+      const result = await service.runDeterministicDemo({
+        projectId: `malformed-review-${index + 1}`,
+      });
+
+      expectDeterministicResolution(service, result.mission.id);
+      const events = advisoryEvents(service, result.mission.id);
+      expect(events.completed).toHaveLength(0);
+      expect(events.degraded).toHaveLength(1);
+      expect(events.degraded[0]?.details.reason).toBe("invalid_response");
+      expect(events.degraded[0]?.details.retryable).toBe(false);
+    }
+    expect(reviewer.inputs).toHaveLength(malformedResults.length);
+  }, TWO_MISSION_BUDGET_MS);
 
   it("MR-T04 records nothing when the reviewer reports itself disabled", async () => {
     const reviewer = new ScriptedReviewer(async () => ({ status: "disabled" }));
@@ -542,13 +571,12 @@ describe("Shepherd advisory model review composition", () => {
   });
 
   it("MR-T13 lets durable cancellation win while a review is in flight", async () => {
-    const reviewer = new BlockingReviewer();
+    const reviewer = new AbortIgnoringReviewer();
     const { service } = await makeService({
       reviewer,
-      // Poll fast, and push the service deadline far out of reach so that only the
-      // cancellation poller can abort the review. Without this the deadline would
-      // eventually abort anyway and the test would pass with a broken poller.
-      modelReviewBounds: { cancellationPollMs: 25, deadlineMs: 600_000 },
+      // A short deadline keeps the RED failure bounded. Correct cancellation must
+      // settle much sooner even though this reviewer ignores AbortSignal forever.
+      modelReviewBounds: { cancellationPollMs: 25, deadlineMs: 1_500 },
     });
 
     const { missionId } = await service.startDeterministicDemo();
@@ -563,11 +591,14 @@ describe("Shepherd advisory model review composition", () => {
     const headBefore = detailBefore?.project.protectedHeadCommit;
     expect(headBefore).toBeTruthy();
 
+    const cancelStartedAt = performance.now();
     await service.cancelMission(missionId);
+    const cancelElapsedMs = performance.now() - cancelStartedAt;
 
-    // The poller must observe durable cancellation and abort the in-flight review,
-    // otherwise cancelMission would block on the background run until the deadline.
+    // The poller must both abort and independently settle the service-level race;
+    // otherwise cancelMission blocks until the 1.5s review deadline.
     expect(reviewer.signals[0]?.aborted).toBe(true);
+    expect(cancelElapsedMs).toBeLessThan(750);
 
     await vi.waitFor(
       () => expect(service.missionDetail(missionId)?.mission.state).toBe("cancelled"),

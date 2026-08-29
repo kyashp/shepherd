@@ -1303,6 +1303,53 @@ rendered UI behavior. The final security/correctness review, push/required check
 merge, and post-merge verification remain separate gates and are not implied by
 this entry.
 
+### Final-review correctness corrections
+
+The independent final review of integrated checkpoint `aa76ebf` found three
+important service-boundary gaps. All three were reproduced with causal tests before
+production changes:
+
+- the readiness predicate accepted six configurations that `ArkModelReviewer`
+  rejects (short/control-character keys, an invalid model identifier, and insecure,
+  credential-bearing, or query-bearing endpoints);
+- malformed injected reviewer results could bypass an explicit durable degradation;
+- durable Mission cancellation only aborted the injected reviewer signal, so a
+  reviewer that ignored aborts held `cancelMission()` until the 1.5-second test
+  deadline.
+
+The combined RED run observed 32 passing and 8 failing assertions across the two
+affected files. The correction keeps `model-reviewer.ts` unchanged because active
+stacked PR #25 owns that adapter. Instead, `config.ts` mirrors the adapter's exact
+credential/model/HTTPS endpoint acceptance rules, while `ShepherdService` validates
+the closed, bounded result shape from any injected reviewer and converts invalid
+values to `invalid_response`. A service-owned cancellation settlement now races both
+the reviewer and deadline, so cancellation remains bounded even when the injected
+implementation never settles. The result validator accepts the bounded optional
+`droppedFindingCount` field planned by the stacked `MR-03` change without persisting
+it or giving it authority.
+
+Fresh Node 24 follow-up evidence:
+
+```text
+apps/server/src/config.test.ts
+# 1 file passed; 26/26 tests
+
+service.model-review.test.ts -t MR-T10b
+# 1/1 passed; 13 skipped
+
+service.model-review.test.ts -t MR-T13
+# 1/1 passed; 13 skipped
+
+npm run typecheck --workspace @launchpad/server
+# passed
+```
+
+One aggregate affected-file run reached 39/40 before a Git-fixture `worktree` command
+exited 128 in `MR-T12`; that case then passed 1/1 immediately in isolation. This is
+recorded as an infrastructure interruption, not presented as a clean aggregate pass.
+The literal exact-head Node 24 check, final independent follow-up, push/required
+checks, merge, and post-merge verification remain lifecycle gates.
+
 ## ST-02 — Truthful unavailable notification preferences
 
 **Date:** 2026-08-29 (Asia/Singapore)

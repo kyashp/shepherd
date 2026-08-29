@@ -61,11 +61,13 @@ import {
   type ShepherdExecutor,
 } from "./executor.js";
 import { ingestContractResultManifest } from "./manifest.js";
-import type {
-  ModelReviewContractInput,
-  ModelReviewInput,
-  ModelReviewResult,
-  ModelReviewer,
+import {
+  MODEL_REVIEW_MAX_EVIDENCE_REFS,
+  MODEL_REVIEW_MAX_FINDINGS,
+  type ModelReviewContractInput,
+  type ModelReviewInput,
+  type ModelReviewResult,
+  type ModelReviewer,
 } from "./model-reviewer.js";
 import { parseProjectGroupMessage } from "./group-routing.js";
 import { GitClient, type GitClientOptions } from "./git-client.js";
@@ -116,6 +118,194 @@ const MODEL_REVIEW_CANCELLATION_POLL_MS = 250;
  * but the service must stay bounded even when a caller injects one that does not.
  */
 const MODEL_REVIEW_SERVICE_DEADLINE_MS = 45_000;
+
+const MODEL_REVIEW_DEGRADED_REASONS: ReadonlySet<string> = new Set([
+  "invalid_input",
+  "timeout",
+  "transport_error",
+  "rate_limited",
+  "authentication_error",
+  "configuration_error",
+  "provider_error",
+  "incomplete_response",
+  "invalid_response",
+  "storage_contract_violation",
+]);
+const MODEL_REVIEW_FINDING_KINDS: ReadonlySet<string> = new Set([
+  "equivalent_key",
+  "likely_incompatibility",
+]);
+const MODEL_REVIEW_CONFIDENCES: ReadonlySet<string> = new Set([
+  "low",
+  "medium",
+  "high",
+]);
+const MODEL_REVIEW_EVIDENCE_SOURCES: ReadonlySet<string> = new Set([
+  "objective",
+  "manifest",
+  "claim",
+  "changed_file",
+  "diff_summary",
+]);
+const MODEL_REVIEW_COMPLETED_KEYS: ReadonlySet<string> = new Set([
+  "status",
+  "findings",
+  // MR-03 may report bounded overflow metadata; this service does not persist it.
+  "droppedFindingCount",
+]);
+const MODEL_REVIEW_DEGRADED_KEYS: ReadonlySet<string> = new Set([
+  "status",
+  "reason",
+  "retryable",
+]);
+const MODEL_REVIEW_STATUS_KEYS: ReadonlySet<string> = new Set(["status"]);
+const MODEL_REVIEW_FINDING_KEYS: ReadonlySet<string> = new Set([
+  "kind",
+  "leftContractId",
+  "rightContractId",
+  "leftKey",
+  "rightKey",
+  "confidence",
+  "reason",
+  "evidenceRefs",
+]);
+const MODEL_REVIEW_EVIDENCE_KEYS: ReadonlySet<string> = new Set([
+  "contractId",
+  "source",
+  "ref",
+]);
+const MODEL_REVIEW_IDENTIFIER = /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/u;
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function hasOnlyKeys(
+  value: Record<string, unknown>,
+  allowed: ReadonlySet<string>,
+): boolean {
+  return Object.keys(value).every((key) => allowed.has(key));
+}
+
+function isBoundedText(value: unknown, minimum: number, maximum: number): value is string {
+  return (
+    typeof value === "string" &&
+    value === value.trim() &&
+    value.length >= minimum &&
+    value.length <= maximum
+  );
+}
+
+function isModelReviewIdentifier(value: unknown): value is string {
+  return isBoundedText(value, 1, 128) && MODEL_REVIEW_IDENTIFIER.test(value);
+}
+
+function isModelReviewEvidenceReference(
+  value: unknown,
+  pair: ReadonlySet<string>,
+): value is Record<string, unknown> {
+  return (
+    isPlainRecord(value) &&
+    hasOnlyKeys(value, MODEL_REVIEW_EVIDENCE_KEYS) &&
+    isModelReviewIdentifier(value.contractId) &&
+    pair.has(value.contractId) &&
+    typeof value.source === "string" &&
+    MODEL_REVIEW_EVIDENCE_SOURCES.has(value.source) &&
+    isBoundedText(value.ref, 1, 512)
+  );
+}
+
+function isModelReviewFinding(
+  value: unknown,
+  inputContractIds: ReadonlySet<string>,
+): value is Record<string, unknown> {
+  if (
+    !isPlainRecord(value) ||
+    !hasOnlyKeys(value, MODEL_REVIEW_FINDING_KEYS) ||
+    typeof value.kind !== "string" ||
+    !MODEL_REVIEW_FINDING_KINDS.has(value.kind) ||
+    !isModelReviewIdentifier(value.leftContractId) ||
+    !isModelReviewIdentifier(value.rightContractId) ||
+    value.leftContractId === value.rightContractId ||
+    !inputContractIds.has(value.leftContractId) ||
+    !inputContractIds.has(value.rightContractId) ||
+    !isBoundedText(value.leftKey, 0, 128) ||
+    !isBoundedText(value.rightKey, 0, 128) ||
+    (value.kind === "equivalent_key" &&
+      (value.leftKey.length === 0 || value.rightKey.length === 0)) ||
+    typeof value.confidence !== "string" ||
+    !MODEL_REVIEW_CONFIDENCES.has(value.confidence) ||
+    !isBoundedText(value.reason, 1, 512) ||
+    !Array.isArray(value.evidenceRefs) ||
+    value.evidenceRefs.length < 1 ||
+    value.evidenceRefs.length > MODEL_REVIEW_MAX_EVIDENCE_REFS
+  ) {
+    return false;
+  }
+
+  const pair = new Set([value.leftContractId, value.rightContractId]);
+  if (
+    !value.evidenceRefs.every((reference) =>
+      isModelReviewEvidenceReference(reference, pair),
+    )
+  ) {
+    return false;
+  }
+  const referencedContracts = new Set(
+    value.evidenceRefs.map((reference) => reference.contractId),
+  );
+  return (
+    referencedContracts.has(value.leftContractId) &&
+    referencedContracts.has(value.rightContractId)
+  );
+}
+
+function isModelReviewResult(
+  value: unknown,
+  input: ModelReviewInput,
+): value is ModelReviewResult {
+  try {
+    if (!isPlainRecord(value) || typeof value.status !== "string") return false;
+    if (value.status === "disabled" || value.status === "cancelled") {
+      return hasOnlyKeys(value, MODEL_REVIEW_STATUS_KEYS);
+    }
+    if (value.status === "degraded") {
+      return (
+        hasOnlyKeys(value, MODEL_REVIEW_DEGRADED_KEYS) &&
+        typeof value.reason === "string" &&
+        MODEL_REVIEW_DEGRADED_REASONS.has(value.reason) &&
+        typeof value.retryable === "boolean"
+      );
+    }
+    if (
+      value.status !== "completed" ||
+      !hasOnlyKeys(value, MODEL_REVIEW_COMPLETED_KEYS) ||
+      !Array.isArray(value.findings) ||
+      value.findings.length > MODEL_REVIEW_MAX_FINDINGS
+    ) {
+      return false;
+    }
+    if (
+      value.droppedFindingCount !== undefined &&
+      (typeof value.droppedFindingCount !== "number" ||
+        !Number.isSafeInteger(value.droppedFindingCount) ||
+        value.droppedFindingCount < 1 ||
+        value.droppedFindingCount > MODEL_REVIEW_MAX_FINDINGS)
+    ) {
+      return false;
+    }
+    const inputContractIds = new Set(
+      input.contracts.map((contract) => contract.contractId),
+    );
+    return value.findings.every((finding) =>
+      isModelReviewFinding(finding, inputContractIds),
+    );
+  } catch {
+    return false;
+  }
+}
 
 export {
   AUTH_FRONTEND_PROFILE_ID,
@@ -3422,8 +3612,15 @@ export class ShepherdService {
       if (!input) return;
 
       const controller = new AbortController();
+      let settleCancellation: (() => void) | undefined;
+      const cancellation = new Promise<ModelReviewResult>((resolve) => {
+        settleCancellation = () => resolve({ status: "cancelled" });
+      });
       const poll = setInterval(() => {
-        if (this.missionIsCancelled(missionId)) controller.abort();
+        if (this.missionIsCancelled(missionId)) {
+          controller.abort();
+          settleCancellation?.();
+        }
       }, this.modelReviewPollMs);
       poll.unref?.();
       let deadline: ReturnType<typeof setTimeout> | undefined;
@@ -3438,7 +3635,14 @@ export class ShepherdService {
           }, this.modelReviewDeadlineMs);
           deadline.unref?.();
         });
-        result = await Promise.race([reviewer.review(input, controller.signal), bound]);
+        const candidate: unknown = await Promise.race([
+          reviewer.review(input, controller.signal),
+          bound,
+          cancellation,
+        ]);
+        result = isModelReviewResult(candidate, input)
+          ? candidate
+          : { status: "degraded", reason: "invalid_response", retryable: false };
       } catch {
         // A reviewer that throws is itself a degradation, never a fake "safe".
         result = { status: "degraded", reason: "provider_error", retryable: false };

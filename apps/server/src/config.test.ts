@@ -347,4 +347,17 @@ describe("Shepherd advisory model review configuration", () => {
       ),
     ).toBe(false);
   });
+
+  it.each([
+    ["short API key", { ARK_API_KEY: "short" }],
+    ["control character in API key", { ARK_API_KEY: "ark-key-value-\u0000-secret" }],
+    ["invalid model identifier", { SHEPHERD_MODEL: "review model" }],
+    ["insecure endpoint", { ARK_BASE_URL: "http://ark.example.test/api/v3" }],
+    ["endpoint credentials", { ARK_BASE_URL: "https://user@ark.example.test/api/v3" }],
+    ["endpoint query", { ARK_BASE_URL: "https://ark.example.test/api/v3?debug=1" }],
+  ])("is unconfigured for an adapter-rejected %s", (_case, overrides) => {
+    expect(
+      isShepherdModelReviewConfigured(loadConfig({ ...configured, ...overrides })),
+    ).toBe(false);
+  });
 });
