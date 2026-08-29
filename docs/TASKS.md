@@ -1,7 +1,7 @@
 # Shepherd Completion Task Ledger
 
 **Canonical implementation snapshot:** `mock-main` at
-`d5df930923503cf337f865f8c0361fa1b3bd8530`
+`00c81ae067961d43ee63acb777bf070ca808c113`
 
 **Audited:** 2026-08-29, Asia/Singapore
 
@@ -94,7 +94,7 @@ without an open issue/PR are not active ownership claims.
 |---|---|---|---|---|
 | `TST-02` | 0.2, 16 Phase 9B, 17 | **AUDITED** at integrated implementation `0cb431a`; test fixture only | Worker and Auditor reproduced the fixed-clock cause. Auditor verified candidate and integrated trees: isolated test 1/1, full recovery 17/17, literal `npm run check` with launcher 3/3, server 555/555 plus one opt-in skip, and both production builds. Exact diff is one test clock injection plus evidence docs; production/UI/security files and lifecycle validation are unchanged. | **100% scoped**; `T,A,C,I` passed (4/4); audited |
 | `TST-03` | 0.2, 12, 16 Phase 9B, 17 | **AUDITED** at integrated implementation `0b1c401`; test fixture only | Hosted RED run `33261198788` and a controlled pre-verifier hold proved the scheduling race. The two-arrival barrier, early rejection observer, and unconditional release/join preserve the typed failure and durable reload/late-return/no-promotion assertions. Auditor independently passed both rows 40/40, the service/container-verifier slice 43/43, strict test typecheck, the literal local gate (launcher 3/3, server 563/563 plus one opt-in skip, both builds), and integrated focused 2/2. Hosted Node 22 run `33262227553` passed the final implementation gate. No timeout, sleep/retry, assertion weakening, rejection suppression, or product/UI change. | **100% scoped**; `T,C,I` passed (3/3); audited |
-| `TST-04` | 0.2, 12, 16 Phase 9B, 17 | **FIXED — pending integrated Auditor/hosted rerun**; Fixer | Preserved full-suite RED: after all typechecks, `afterEach -> makeDeletable -> readdir` received `ENOENT` beneath a sibling `.trusted-verification/verify-*/src`, while the isolated row passed. The test-only candidate records the blocked backend `VerificationRequest.planePath`, uses two-arrival coordination, observes typed Mission rejection while that exact owned snapshot root still exists, then watches its parent for the exact basename and requires `lstat -> ENOENT` within the existing bounded quiescence helper. `finally` releases/joins the Mission, sibling and removal signal before teardown. Exact row passed 20/20 in 28s, service/verifier slice 43/43, strict test typecheck, and literal `npm run check` twice with 563/563 plus one opt-in skip. No cleanup suppression, sleep/retry/timeout increase, assertion weakening, or production/UI change. `T,A,C,I`. | **100% scoped candidate**; `T,A,C` passed (3/4), `I`/hosted pending; not audited |
+| `TST-04` | 0.2, 12, 16 Phase 9B, 17 | **AUDITED** at integrated implementation `00c81ae`; test fixture only | Preserved full-suite RED: `afterEach -> makeDeletable -> readdir` received `ENOENT` beneath a sibling `.trusted-verification/verify-*/src`. The correction records the exact blocked backend snapshot, proves Mission rejection precedes its removal, arms an exact-basename watcher before release, requires `lstat -> ENOENT`, and unconditionally joins Mission/sibling/removal before teardown. Auditor independently passed the exact row 20/20, service/container-verifier slice 43/43, strict test typecheck, literal `npm run check` twice (563/563 plus one opt-in skip and both builds), and integrated focused 1/1. Hosted Node 22 run `33263688794` passed. No cleanup suppression, sleep/retry/timeout increase, assertion/sentinel/path/symlink weakening, or product/UI change. | **100% scoped**; `T,A,C,I` passed (4/4); audited |
 
 ## P0 — failure and recovery correctness
 
@@ -130,7 +130,7 @@ without an open issue/PR are not active ownership claims.
 |---|---|---|---|---|
 | `UI-03` | 0.4, 11.1–11.2, 11.7 | **AUDITED** at integrated implementation `83954f7`; hosted closeout restored by `TST-03` at `0b1c401` | Create Agent's transparent preset radios inherited global viewport-wide input sizing, expanding document width to 2299/1280 and 2579/1440. The integrated correction bounds only the hidden radio box and adds a theme-matched visible card focus outline. Auditor independently passed focused Chromium 2/2, full browser 4/4 and harness unit 2/2 at both required viewports; document/body X/Y, exact neutralized 1x1 boxes, accessible group/names, Generalist default, one Tab stop, arrow focus/selection, visible 2px outline, all label clicks and exactly one checked radio passed. Regenerated screenshot hashes matched the committed images; visual review preserved layout/theme. Integrated local check passed. Hosted run `33262227553` passed after the unrelated schedule-sensitive TST-03 fixture was corrected without touching UI code. | **100% scoped**; `T,C,B,U,I` passed (5/5); audited |
 | `E2E-HARNESS` | 0.4, 16 Phase 6 | **AUDITED** at integrated implementation `5b152a0` | Auditor independently verified the candidate and integrated SHA: allowlisted child environment with no `.env` or ambient Ark/model ingress; required bearer auth; bounded fake Codex/container fixtures, readiness, logs, termination, port and run-root cleanup; ignored artifacts; no production debug route or UI/runtime change. Node harness passed 2/2 and Chromium passed 2/2 at exact `1280x800` and `1440x900`; regenerated screenshot hashes matched, document/body X/Y overflow was absent, and both images preserved the accepted clean-shell UI. Literal `npm run check` passed launcher 3/3, server 555/555 with one opt-in live skip, typechecks and both builds. This foundation does not satisfy `E2E-01`–`08`, populated/composer states, accessibility, or `UI-GATE`. `T,C,B,S,I`. | **100% scoped**; `T,C,B,S,I` passed (5/5); audited |
-| `E2E-01` | 11.6.1, 17 baseline | **BLOCKED only by `TST-04` integration/hosted audit**; Worker state preserved | After the deterministic teardown candidate passes integrated/hosted audit, resume the authenticated create → fake Playground artifact/test → follow-up/session → server restart continuity journey at both required viewports. The Create Agent prerequisite remains independently browser-audited. No live call until the deterministic journey passes. `C,B,L,S,U,I`. | **35%**; 0/6 journey gates; not audited |
+| `E2E-01` | 11.6.1, 17 baseline | `READY`; Worker state preserved | Resume the authenticated create → fake Playground artifact/test → follow-up/session → server restart continuity journey at both required viewports. The Create Agent prerequisite and deterministic teardown baseline are audited. No live call until the deterministic journey passes. `C,B,L,S,U,I`. | **35%**; 0/6 journey gates; not audited |
 | `E2E-02` | 11.6.2, 15 | `BLOCKED` by harness/P0 | Full hero chain with every intermediate Contract/Plane/collision/candidate/promotion state and real backend data; `C,B,S,U,I`. | **50%**; 0/5; not audited |
 | `E2E-03` | 11.6.3 | `BLOCKED` by Group Chat work | Targeted Project Group Contract from click/type through Agent summary; `C,B,S,U,I`. | **10%**; 0/5; not audited |
 | `E2E-04` | 11.6.4, 12 | `BLOCKED` by failure UI | Unauthorized diff visibly denied with evidence and no promotion; `C,B,S,U,I`. | **45%**; 0/5; not audited |
@@ -159,11 +159,11 @@ without an open issue/PR are not active ownership claims.
 
 ## Count and current verdict
 
-- **47 tracked work items:** 8 audited, 3 externally held, and 36 other incomplete
+- **47 tracked work items:** 9 audited, 3 externally held, and 35 other incomplete
   items across P0/P1/P2.
 - **Next ready worker assignment:** `F-01/02` unless the integrator selects another
   non-overlapping ready row.
-- **First fixer assignment:** `TST-04`; preserve its cleanup-order failure contract.
+- **First fixer assignment:** none unconditional; `OPS-06` requires collaborator/macOS evidence.
 - **Current completion verdict:** incomplete. Strong kernel evidence exists, but the
   current deterministic full gate is green and all remaining rows above still
   require their stated integration/audit evidence.

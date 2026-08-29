@@ -1,6 +1,6 @@
 # Shepherd Defect Queue
 
-**Assessed branch/SHA:** `mock-main` / `d5df930923503cf337f865f8c0361fa1b3bd8530`
+**Assessed branch/SHA:** `mock-main` / `00c81ae067961d43ee63acb777bf070ca808c113`
 
 **Audited:** 2026-08-29, Asia/Singapore
 
@@ -73,9 +73,10 @@ that limitation is explicit.
   passed; and literal `npm run check` passed twice in 39s/39s with launcher 3/3,
   server 563/563 plus one opt-in live skip, all typechecks and both builds. The
   security-sensitive cleanup walker and production code are unchanged.
-- **Owner/status:** Fixer / `RESOLVED — PENDING INTEGRATED/HOSTED AUDIT`; **100%
-  scoped candidate**, `T,A,C` passed 3/4 and `I` remains pending. E2E-01 remains
-  paused until that deterministic baseline is audited.
+- **Owner/status:** `RESOLVED + AUDITED` at integrated implementation `00c81ae`;
+  **100% scoped**, `T,A,C,I` passed 4/4. Auditor independently passed exact-row
+  repeats 20/20, adjacent 43/43, strict typecheck, two literal repository gates,
+  integrated focused 1/1, and hosted Node 22 run `33263688794`. E2E-01 is ready.
 
 ### `TST-02` — deterministic recovery test becomes invalid after its fixed clock
 

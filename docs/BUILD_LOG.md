@@ -7,6 +7,35 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## TST-04 independent integration audit and hosted closeout
+
+**Date:** 2026-08-30 (Asia/Singapore)
+
+Auditor inspected the exact candidate and integrated it as
+`00c81ae067961d43ee63acb777bf070ca808c113`. The diff changes only
+`service.test.ts` and evidence docs. It leaves `makeDeletable`, product/service/
+verifier/UI code, timeouts, retries, sleeps, behavioral assertions, sentinel checks,
+path confinement and symlink rejection unchanged.
+
+The captured backend `planePath` is resolved beneath the sentinel-owned case root,
+with exact `.trusted-verification` parent and `verify-*` basename assertions. The
+two-arrival barrier ensures capture before the selected frontend failure; the test
+then observes typed Mission rejection while that root still exists. The watcher is
+armed on the exact parent before sibling release, filters the exact basename, and
+accepts quiescence only after `lstat` returns `ENOENT`. `finally` idempotently
+releases all gates and joins the Mission, sibling return and conditional removal
+promise without replacing the primary assertion failure.
+
+Independent evidence: exact row 20/20 in 28 seconds; service/container-verifier
+slice 43/43; strict test-source typecheck; literal `npm run check` twice in 38/40
+seconds with launcher 3/3, server 563/563 plus one opt-in live skip and both builds;
+integrated focused row 1/1; and `git diff --check`. Hosted Node 22 run
+[`33263688794`](https://github.com/kyashp/shepherd/actions/runs/33263688794)
+passed the locked install, Docker and literal repository gate in 1m42s.
+
+**Verdict:** TST-04 is **AUDITED at scoped 100%**, `T,A,C,I` 4/4. E2E-01 is
+unblocked. No live/model/browser request occurred.
+
 ## TST-04 exact verification-snapshot quiescence candidate
 
 **Date:** 2026-08-30 (Asia/Singapore)
