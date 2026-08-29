@@ -98,11 +98,15 @@ a locking mechanism.
    takeover of apparently stale work requires a comment and integrator decision.
 3. Assign the issue to yourself and move it to `In Progress`.
 4. Create a branch named `feat/<issue>-<slug>`, `fix/<issue>-<slug>`,
-   `test/<issue>-<slug>`, `audit/<issue>-<slug>`, or `refactor/<issue>-<slug>`.
-5. Open a linked **draft PR immediately**, using the repository PR template. Record
-   the HANDOVER ID, PRD references, owned files, base/parent branch, dependencies,
-   acceptance criteria, and test plan.
-6. Keep the issue, branch, and draft PR updated. If no useful update is posted for
+   `test/<issue>-<slug>`, `audit/<issue>-<slug>`, `refactor/<issue>-<slug>`, or
+   `docs/<issue>-<slug>`.
+5. **Push the new branch to `origin` immediately, before implementation edits,** so
+   its name is an early ownership signal visible to every other agent. A remote
+   branch remains a provisional claim subject to the stale-work rule above.
+6. Open a linked **draft PR immediately once the branch has a comparable commit**,
+   using the repository PR template. Record the HANDOVER ID, PRD references, owned
+   files, base/parent branch, dependencies, acceptance criteria, and test plan.
+7. Keep the issue, branch, and draft PR updated. If no useful update is posted for
    24 hours, the integrator may ask whether the claim should be released.
 
 Recommended GitHub Project states:
