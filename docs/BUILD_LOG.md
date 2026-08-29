@@ -1804,3 +1804,98 @@ remains the explicitly non-green result recorded above: 557 tests passed, 2
 unchanged server tests failed under suite load, and 5 were skipped. This scoped
 post-merge gate does not reclassify that unrelated process/shared-state
 instability, and it does not close the separately owned `GC-02..07` work.
+
+## 2026-08-30 — CI-01 required pull-request checks and merge evidence
+
+Issue [#36](https://github.com/kyashp/shepherd/issues/36) was implemented from
+current `main` on `test/36-ci-01-required-checks`. The branch was published before
+edits and owned only `.github/workflows/pull-request-checks.yml`; product code,
+assertions, timeouts, dependencies, shared evidence documents, credentials, and
+repository rules were excluded from the implementation PR.
+
+### Workflow contract and local evidence
+
+The pre-implementation contract probe observed the expected RED because
+`.github/workflows/pull-request-checks.yml` did not exist. Commit
+`9501b95f952b5ba02d1c5413960999adcde362a3` added the smallest workflow:
+
+- `pull_request` for `main` plus `merge_group: checks_requested`;
+- one deterministic job named `Required checks` on `ubuntu-latest` and Node 22;
+- literal `npm ci` followed by literal `npm run check`;
+- top-level `contents: read`, superseded-run cancellation, a 30-minute job bound,
+  no persisted checkout credentials, no package-manager cache, and no secret or
+  `.env` access;
+- `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1`
+  (`v7.0.1`) and
+  `actions/setup-node@820762786026740c76f36085b0efc47a31fe5020`
+  (`v7.0.0`) pinned to immutable release commits.
+
+Observed local evidence at the reviewed workflow bytes:
+
+```text
+PowerShell workflow contract
+PASS: trigger, permissions, concurrency, runner, timeout, immutable actions,
+Node 22, npm ci, npm run check, and forbidden secret/env patterns
+
+actionlint v1.7.12 .github/workflows/pull-request-checks.yml
+PASS; release checksum matched
+6e7241b51e6817ea6a047693d8e6fed13b31819c9a0dd6c5a726e1592d22f6e9
+
+npm audit --json
+PASS: 0 vulnerabilities across 251 dependencies
+
+git diff --check
+PASS
+
+independent CI/repository-administration review
+PASS: no Critical, Important, or Minor finding
+```
+
+A clean Node 22 Docker execution on both unmodified `main` and the candidate
+exposed the same existing Linux absolute-path redaction assertion in
+`service.test.ts`; an additional baseline-only timeout did not recur. No test or
+timeout was weakened. GitHub's hosted Ubuntu runner subsequently passed the literal
+repository command, so the local discrepancy remains recorded rather than treated
+as workflow evidence.
+
+### Hosted positive, controlled-negative, and restored-positive proof
+
+Draft [PR #37](https://github.com/kyashp/shepherd/pull/37) produced the stable
+workflow/job context `Pull request checks / Required checks`:
+
+1. Representative commit `9501b95` passed hosted run
+   [33262643612](https://github.com/kyashp/shepherd/actions/runs/33262643612) in
+   1m24s, including literal `npm run check`.
+2. Temporary workflow-only commit `d9dcea9` appended `exit 1` after the unchanged
+   repository command. Hosted run
+   [33262766467](https://github.com/kyashp/shepherd/actions/runs/33262766467)
+   concluded failure in 1m34s, proving a controlled red candidate cannot satisfy
+   the same context.
+3. Commit `edc240f42ab7398bb710a524859ecdfc816927c5` removed the temporary step and
+   restored the independently reviewed workflow byte-for-byte. Hosted run
+   [33262875107](https://github.com/kyashp/shepherd/actions/runs/33262875107)
+   passed in 1m29s.
+
+PR #37 merged into `main` as
+`1f1fda7782b27e2077a505be5e5be8b413c7f446`. Its closing keyword automatically
+closed issue #36; the issue was reopened because repository administration and
+post-activation evidence remain. The remote implementation branch was removed.
+
+The next merged product change, [PR #16](https://github.com/kyashp/shepherd/pull/16),
+passed the merged workflow's `Required checks` run
+[33266134939](https://github.com/kyashp/shepherd/actions/runs/33266134939) before
+merging as `403fc095b07d60e17de1cb3f82b4e16b6a778919`. This is post-workflow proof
+that a real product PR can satisfy the context.
+
+### Deliberately pending repository administration
+
+The repository ruleset query still returns `[]`. Active draft PR #25 was retargeted
+to `main` after the workflow merged and currently has no `Required checks` result;
+activating the rule now could strand that owner. CI-01 therefore remains open for:
+
+1. PR #25's owner to trigger and pass the stable context;
+2. integrator-approved ruleset activation and read-back;
+3. merge-group execution proof if a merge queue is enabled; and
+4. a post-activation PR proof that a red required context cannot merge.
+
+No repository rule was created or changed by the workflow or this evidence update.

@@ -1,6 +1,6 @@
 # Shepherd Engineering Handover
 
-**Date:** 2026-08-29 (Asia/Singapore)
+**Date:** 2026-08-30 (Asia/Singapore)
 
 **Track:** TikTok TechJam 2026, Track 1 — Agent Launchpad middleware
 
@@ -75,12 +75,14 @@ The repository now has a strong deterministic Shepherd kernel, a proven live
 Codex-in-container boundary, a strict authenticated API, durable
 cancellation/retry/tie/reset controls, Agent roles and scoped authority, and all
 six requested React surfaces implemented in source. The rendered UI gate is still
-pending. On merged `main` at `fae0852`, the latest scoped `GC-01` regression,
-production typechecks, builds, and exact-viewport browser matrix are green. The
-full `npm run check` was not rerun post-merge; its latest pre-merge attempt was
-not green (557 tests passed, 2 unchanged server tests failed under suite load, and
-5 were skipped). Unconstrained parallel execution also has the fixed-timeout
-stability gap tracked as `TST-01`.
+pending. On merged `main` at `403fc09`, the CI-01 workflow from
+[PR #37](https://github.com/kyashp/shepherd/pull/37) is present and PR #16's
+`Required checks` job passed before merge. The latest scoped `GC-01` regression,
+production typechecks, builds, and exact-viewport browser matrix remain green at
+`fae0852`. The full `npm run check` was not rerun post-merge for GC-01; its latest
+pre-merge attempt was not green (557 tests passed, 2 unchanged server tests failed
+under suite load, and 5 were skipped). Unconstrained parallel execution also has
+the fixed-timeout stability gap tracked as `TST-01`.
 
 The remaining work is material:
 
@@ -298,6 +300,33 @@ composition on `main`, and every missing/partial row in the failure matrix.
 | `ST-02` | Stored notification values remain visible, but native disabled controls label the unimplemented capability **Reserved** and **Unavailable**. After TST-02/PR #34, the `8149a7c` current-main base was merged conflict-free at `f1ad0b9`; the exact four-file diff retained a focused 1/1 regression, literal full check (554 passed, 2 skipped), zero-vulnerability audit, and terminal Chromium proof at both required viewports without mutation, focus, PATCH, overflow, clipping, or runtime errors. The earlier independent audit reported no finding and **Ready to merge: Yes**; its final integrated-diff confirmation remains the pre-push review gate. | [Draft PR #13](https://github.com/kyashp/shepherd/pull/13), integrated merge commit `f1ad0b9811e9b77dddc933c11df6a6e3fd17cf61` | Final independent follow-up, exact-head literal check, push/required checks, merge, and post-merge verification. |
 | `MR-01` / behavioural `MR-02` | `ShepherdService` accepts an optional bounded reviewer; `index.ts` composes `ArkModelReviewer` only from adapter-aligned trusted configuration; the persisted setting causally gates one advisory call. Completed/degraded events are redacted, injected results are runtime-validated, and cancellation/deadlines stay bounded even when a reviewer ignores aborts. Hostile or malformed findings cannot influence deterministic collision, winner selection, or promotion. Integrated Node 24 evidence before the final base refresh: focused 33/33 and literal full check with launcher 3/3, server 568 passed/6 skipped, both typechecks, and both builds. Final-review follow-up reproduced all three boundary defects RED, then passed the 26/26 config suite, isolated malformed-result/cancellation regressions, and server typecheck. The opt-in live gate made one request and durably reported `invalid_response`, exposing separately scoped `MR-03`/#21 without affecting promotion. Presentation-only event regex deltas were removed during final integration, so the final diff adds no rendered UI behavior. | [PR #16](https://github.com/kyashp/shepherd/pull/16), current-main merge `5972aa8`, reviewed-base checkpoint `aa76ebf` plus final-review follow-up | Commit and independently re-review the boundary corrections, run the exact-head Node 24 gate, push/required checks, merge, and post-merge verification. The unconfigured-server control truthfulness remainder is still separate from behavioural `MR-02`. |
 
+### CI-01 required pull-request automation
+
+[PR #37](https://github.com/kyashp/shepherd/pull/37) merged the least-privilege
+`.github/workflows/pull-request-checks.yml` workflow into `main` as
+`1f1fda7782b27e2077a505be5e5be8b413c7f446`. It runs the deterministic
+`Required checks` job for pull requests targeting `main` and merge-queue check
+requests, using Node 22, `npm ci`, and the repository's literal `npm run check`.
+Official checkout/setup actions are pinned to immutable release SHAs, checkout
+credentials and package caching are disabled, permissions are limited to
+`contents: read`, and superseded runs are cancelled.
+
+GitHub-hosted evidence proves both directions under the same stable context:
+
+- representative PR #37 run `33262643612` passed in 1m24s;
+- controlled workflow-only candidate `d9dcea9` failed run `33262766467` in
+  1m34s after the repository check passed and a temporary command returned 1;
+- restored final PR #37 run `33262875107` passed in 1m29s;
+- the first subsequently merged product branch, PR #16, passed run
+  `33266134939` before merging as `403fc095b07d60e17de1cb3f82b4e16b6a778919`.
+
+The controlled failure was removed and the final workflow is byte-for-byte equal
+to the independently reviewed representative configuration. The repository
+ruleset query still returns an empty list. Do **not** activate the required rule
+while active PR #25 lacks a `Required checks` result; its owner must first trigger
+and pass the context. Merge-group execution/read-back, ruleset activation, and a
+post-activation PR gate remain CI-01's explicit integration work.
+
 ### Confirmed defects and partial behavior
 
 | ID | Area | Confirmed defect / mismatch | User-visible or safety impact | Required minimal correction |
@@ -329,7 +358,7 @@ composition on `main`, and every missing/partial row in the failure matrix.
 | `UI-01` | Failed Mission evidence | Detailed failure UI is focused on `attention_required`; ordinary `failed` Missions can hide the specific failure. | A failed run may look unexplained. | Reuse the current attention/failure components for all non-green terminal Mission failures. |
 | `UI-02` | Timeline estimates | The UI renders an `est.` bar only if `estimatedDurationMs` exists, but no server/domain path produces or persists that field. | PRD Goal 16 / 11.3 estimated durations are absent in real Missions. | Persist a clearly labelled trusted estimate or remove the dead optional UI branch only if the PRD is explicitly revised; add API and browser assertions that distinguish estimates from actual timing. |
 | `TST-01` | Parallel test stability | On the RST-01 branch, three unconstrained `npm run check` attempts hit different existing 1-second/5-second timeouts in Git-heavy service, recovery, and Plane integration tests. Each affected test passed isolated; the complete suite passed with one worker and unchanged assertions. | Required checks can fail nondeterministically under local/CI resource contention even when product behavior is correct. | In a separate test-harness PR, replace timing proxies with condition barriers where applicable, give real-Git integration journeys evidence-based ceilings, or cap Vitest workers. Preserve assertions and first reproduce RED under contention. |
-| `CI-01` | Pull-request checks | GitHub reports no status checks for [draft PR #10](https://github.com/kyashp/shepherd/pull/10). | A locally verified branch can reach review without an independent automated typecheck/test/build result. | Add or repair required pull-request automation for the documented Node runtime; protect `main` with the resulting checks. Keep workflow/configuration changes separate from RST-01. |
+| `CI-01` | Pull-request checks | **Workflow implemented and hosted pass/fail behavior proven on merged PR #37.** PR #16 then passed the same `Required checks` context before merge. The repository ruleset remains absent and active PR #25 has no check result after retargeting to `main`. | Pull requests now receive independent Node 22 typecheck/test/build evidence after an eligible trigger, but `main` does not yet require it and enabling the rule immediately could strand PR #25. | Have PR #25's owner trigger and pass `Required checks`; then the integrator may activate/read back the exact context, verify merge-group behavior if a queue is enabled, and prove a post-activation PR cannot merge while red. |
 
 ### Implemented but not fully tested
 
@@ -528,7 +557,7 @@ traceability.
 | Workstream | Recommended PR units | Stack/dependency guidance | Reviewer gate |
 |---|---|---|---|
 | Local run/reset | `OPS-01`, `OPS-02`; `RST-01` is implemented on [draft PR #10](https://github.com/kyashp/shepherd/pull/10) | `OPS-02` may stack on `OPS-01`. Keep startup secret/path work separate from the reset PR; after PR #10 merges, perform its clean/initialized post-merge reset gate. | Security review for env/path handling; PR #10 independent review is complete |
-| Test/PR assurance | `TST-01`, `CI-01` | Stabilize the Git-heavy test harness without weakening assertions, then add/require the resulting typecheck/test/build checks on pull requests. Keep this independent of product fixes. | Test-infrastructure and repository-administration review |
+| Test/PR assurance | `TST-01`, `CI-01` | CI-01's workflow and stable `Required checks` context are merged and proven in both directions. Trigger it on retargeted PR #25 before the integrator activates the repository rule; keep TST-01 assertion-preserving stabilization separate. | Test-infrastructure and repository-administration review |
 | Typed failures | `F-01/F-02` common typed-stage foundation, then `F-03`, `F-04`, `F-05`, `F-06`, `F-07/F-08` | Use short stacks only where a shared typed error contract is required. Each PR includes its entity/event/API tests. | Security review after the workstream |
 | Group Chat | `GC-05` safe project initialization, `GC-02` Shepherd handling, `GC-03/GC-04` targeted Contract lifecycle, `GC-06` Agent summaries, `GC-07` canonical Agent-name validation; `GC-01` mention UI is merged and post-merge verified on PR #9 | One stack steward; keep parser/security foundation below service behavior and UI. Browser tests land with each UI-visible correction. | Security + UI review |
 | Advisory model | `MR-01` service composition/degradation, then `MR-02` truthful setting/UI | Deterministic collision independence is a mandatory lower-layer test. One sparse live smoke only after fake-adapter gates. | Security + UI review |
