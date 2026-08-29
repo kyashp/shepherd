@@ -96,6 +96,23 @@ async function capture(page, testInfo, stage) {
   return screenshotPath;
 }
 
+async function scrollIntoVisibleDrawerEvidence(marker) {
+  await marker.scrollIntoViewIfNeeded();
+  const intersection = await marker.evaluate((element) => {
+    const drawer = element.closest(".detail-drawer");
+    if (!drawer) return null;
+    const markerRect = element.getBoundingClientRect();
+    const drawerRect = drawer.getBoundingClientRect();
+    return {
+      width: Math.max(0, Math.min(markerRect.right, drawerRect.right, window.innerWidth) - Math.max(markerRect.left, drawerRect.left, 0)),
+      height: Math.max(0, Math.min(markerRect.bottom, drawerRect.bottom, window.innerHeight) - Math.max(markerRect.top, drawerRect.top, 0)),
+    };
+  });
+  expect(intersection?.width).toBeGreaterThan(0);
+  expect(intersection?.height).toBeGreaterThan(0);
+  await expect(marker).toBeVisible();
+}
+
 async function releaseGate(name) {
   const directory = path.join(app.runRoot, "home", ".fake-container-engine", "gates");
   await mkdir(directory, { recursive: true });
@@ -331,6 +348,8 @@ test("real Shepherd hero chain verifies, resolves, and promotes protected output
   const candidateTab = drawer.getByRole("tab", { name: "Candidate verification" });
   const promotionTab = drawer.getByRole("tab", { name: "Final promotion re-verification" });
   await expect(candidateTab).toHaveAttribute("aria-selected", "true");
+  const selectedCandidateMarker = drawer.getByText(finalSelected.verificationEvidence.summary, { exact: true });
+  await scrollIntoVisibleDrawerEvidence(selectedCandidateMarker);
   await capture(page, testInfo, "09-selected-candidate-evidence");
   await candidateTab.press("ArrowRight");
   await expect(promotionTab).toBeFocused();
@@ -345,6 +364,8 @@ test("real Shepherd hero chain verifies, resolves, and promotes protected output
   await rejectedButton.click();
   await expect(drawer).toContainText("Failed");
   await expect(drawer).toContainText("Candidate verification");
+  const rejectedCandidateMarker = drawer.getByText(finalRejected.verificationEvidence.summary, { exact: true });
+  await scrollIntoVisibleDrawerEvidence(rejectedCandidateMarker);
   await capture(page, testInfo, "11-rejected-plane-evidence");
   await page.keyboard.press("Escape");
 

@@ -50,11 +50,18 @@ that limitation is explicit.
   already-visible stage-10 final evidence and TST-10 promotion event behavior. No
   production UI/CSS/theme, sleep/retry/timing increase, hidden-only assertion,
   fake state, or `GC-06`/`UI-02` overclaim.
-- **Acceptance/status:** **OPEN / READY for Fixer.** Run two focused invocations at
-  both viewports, inspect the complete 52-observation semantic manifest, require
-  every named marker visibly present and all distinct-stage hashes unique, then
-  full Chromium/harness, strict typecheck, literal `npm run check`, security/UI,
-  cleanup/artifact scans and hosted integrated gate.
+- **Observed correction:** test-only candidate on `fix/e2e-02-drawer-evidence`.
+  Before stages 09 and 11, the journey now scrolls the exact selected or rejected
+  Candidate verification summary inside `.detail-drawer`, proves positive
+  marker/drawer/browser intersection, and requires that exact marker to be visible.
+  Stage 10's keyboard-selected final-promotion evidence and TST-10 are unchanged.
+- **Acceptance/status:** **FIXER VERIFIED / AUDITOR PENDING.** Two focused
+  invocations passed both viewports (4/4 journeys; 52 capture observations). Manual
+  semantic review found all 13 named claims visible at both viewports, with 26/26
+  unique hashes. Harness unit 7/7, full Chromium 12/12, strict test typecheck and
+  two literal `npm run check` gates passed. No production/UI/CSS/theme, timing,
+  retry, dependency, live or model change. Hosted integrated Auditor evidence
+  remains required.
 
 ### `TST-10` — E2E-02 promotion stage screenshot does not show promotion
 

@@ -7,6 +7,31 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — TST-11 visible drawer-evidence candidate
+
+The Fixer reproduced the Auditor's four visual REDs on exact parent `041521b`:
+stages 09 and 11 at both viewports showed Plane metadata while their named selected
+or rejected Candidate verification summaries remained below the internally
+scrolling drawer. DOM text assertions alone did not prove screenshot visibility.
+
+The test-only correction scrolls each exact evidence summary inside
+`.detail-drawer`, asserts positive intersection with both the drawer content
+viewport and browser viewport, and then requires that marker visibly present before
+capture. It preserves stage 10's ArrowRight/focus/selected final-promotion evidence,
+TST-10's promotion-event visibility, Escape/opener focus, and all functional and
+security assertions. No production, frontend, CSS, theme, timeout, retry, sleep,
+dependency, live or model behavior changed.
+
+Two focused invocations passed both viewports (4/4 journeys; 52 capture
+observations). Manual review of every final image confirmed all 13 named semantic
+claims visibly present at both viewports, and all 26 PNGs had unique hashes. Full
+harness passed unit 7/7 and Chromium 12/12. Two literal `npm run check` gates each
+passed launcher 3/3, Server 592/592 plus two explicit opt-in skips, Web 17/17,
+strict server/web test typechecks and both builds. Dependency, cleanup, ignored
+artifact, bounded-output, diff and visual-theme review were clean. No external,
+live, model or network request ran. Independent hosted Auditor integration remains
+required before TST-11 or E2E-02 can be called audited.
+
 ## 2026-08-30 — E2E-02 remains blocked by TST-11 drawer evidence
 
 The Auditor independently verified TST-10 on exact corrected chain `79da51a`:
