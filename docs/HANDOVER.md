@@ -81,7 +81,11 @@ fixed-timeout stability gap tracked as `TST-01`.
 
 The remaining work is material:
 
-- `SHEPHERD_MODEL` is implemented only as a bounded standalone `ArkModelReviewer`; it is not composed into Mission orchestration.
+- `SHEPHERD_MODEL` Mission composition is implemented and test-backed on active
+  [PR #16](https://github.com/kyashp/shepherd/pull/16), but is not on `main` until
+  that PR passes final review and merges. Its live completed-finding path remains
+  blocked by `MR-03`/issue #21; degradation is explicit and deterministic behavior
+  remains authoritative.
 - Several PRD Section 12 failures still collapse to a generic Mission failure or lack service-level fault tests.
 - No Playwright configuration, eight-journey suite, screenshots, or independent rendered UI review exists yet.
 - Final architecture/test-report/README completion, repeated stability runs, and
@@ -279,7 +283,7 @@ For **every UI fix**, the following additional rules are mandatory:
 
 The following are **not** included in the fully-tested claim above: rendered UI
 behavior beyond the narrowly scoped Project Group layout row, complete Group Chat
-behavior, general DAG scheduling, model-review Mission composition, and every
+behavior, general DAG scheduling, model-review Mission composition on `main`, and every
 missing/partial row in the failure matrix.
 
 ### Fixed on an active PR, pending merge
@@ -288,6 +292,7 @@ missing/partial row in the failure matrix.
 |---|---|---|---|
 | `RST-01` | A clean root now returns a deliberate path-free empty success without creating a Mission or fixture. Clean and initialized resets reserve `auth-demo` across all asynchronous work, so Mission startup cannot race destructive cleanup. Causal service/API and concurrency regressions, adjacent persistence/recovery suites, a full constrained check, and an independent follow-up review are green. | [Draft PR #10](https://github.com/kyashp/shepherd/pull/10), reviewed implementation commit `19a2e45f7a67c575d9acced3dfcfbc6a32f5718e` | Merge/required checks, rerun clean and initialized reset on updated `main`, then update issue and merged-SHA ledgers. |
 | `ST-02` | Stored notification values remain visible, but native disabled controls label the unimplemented capability **Reserved** and **Unavailable**. After TST-02/PR #34, the `8149a7c` current-main base was merged conflict-free at `f1ad0b9`; the exact four-file diff retained a focused 1/1 regression, literal full check (554 passed, 2 skipped), zero-vulnerability audit, and terminal Chromium proof at both required viewports without mutation, focus, PATCH, overflow, clipping, or runtime errors. The earlier independent audit reported no finding and **Ready to merge: Yes**; its final integrated-diff confirmation remains the pre-push review gate. | [Draft PR #13](https://github.com/kyashp/shepherd/pull/13), integrated merge commit `f1ad0b9811e9b77dddc933c11df6a6e3fd17cf61` | Final independent follow-up, exact-head literal check, push/required checks, merge, and post-merge verification. |
+| `MR-01` / behavioural `MR-02` | `ShepherdService` accepts an optional bounded reviewer; `index.ts` composes `ArkModelReviewer` only from configured trusted values; the persisted setting causally gates one advisory call. Completed/degraded events are redacted, cancellation and deadlines are bounded, and hostile findings cannot influence deterministic collision, winner selection, or promotion. Integrated Node 24 evidence: focused 33/33 and literal full check with launcher 3/3, server 568 passed/6 skipped, both typechecks, and both builds. The opt-in live gate made one request and durably reported `invalid_response`, exposing separately scoped `MR-03`/#21 without affecting promotion. Presentation-only event regex deltas were removed during final integration, so the final diff adds no rendered UI behavior. | [PR #16](https://github.com/kyashp/shepherd/pull/16), integrated checkpoint `2dc7ac2` | Final security/correctness review, push/required checks, merge, and post-merge verification. The unconfigured-server control truthfulness remainder is still separate from behavioural `MR-02`. |
 
 ### Confirmed defects and partial behavior
 
@@ -303,8 +308,8 @@ missing/partial row in the failure matrix.
 | `GC-04` | Mission timing | `@Agent` returns `409` after the active Mission finishes, and the deterministic Mission may finish before a human can use Group Chat. | The demo interaction is unreliable. | Make the bounded targeted journey independent of a narrow timing race while retaining one-project/one-mutation safety. |
 | `GC-05` | Pre-Mission chat | Composer is disabled until a Shepherd project exists. | Group Chat appears broken on a clean start. | Either initialize the safe demo project read model without starting execution or provide a clear in-panel Mission-start action. |
 | `GC-06` | Agent summaries | Lifecycle summaries are sent as Shepherd; Agents do not post concise manifest-derived completion summaries as `senderType: agent`. | Required human/Shepherd/Agent conversation is incomplete. | Map verified manifest summaries to bounded server-authored Agent messages after verification. |
-| `MR-01` | Shepherd advisory model | `ArkModelReviewer` is not injected into `ShepherdService` or composed in `index.ts`. | `SHEPHERD_MODEL` is unused by Missions. | Add advisory-only composition after trusted Contract evidence exists; deterministic collision/winner/promotion must remain authoritative. |
-| `MR-02` | Model-review setting | `modelReviewEnabled` persists and the UI presents it as functional, but it changes no execution behavior. | Misleading control. | Wire `MR-01`, or disable and label the control unavailable until wired. |
+| `MR-01` (fixed on PR #16) | Shepherd advisory model | Active PR #16 composes `ArkModelReviewer` after trusted Contract evidence and records bounded completed/degraded events; `main` remains uncomposed until merge. | No Mission model review on current `main`; the active PR degrades explicitly and preserves deterministic authority. | Complete review/merge/post-merge gates; retain `MR-03`/#21 as a separate adapter-validation correction. |
+| `MR-02` (behaviour fixed on PR #16) | Model-review setting | Active PR #16 makes `modelReviewEnabled` causally gate the review call. An unconfigured server can still render the control as active. | Behaviour is truthful when configured; configured-ness is not yet visible to the control. | Merge PR #16, then expose trusted configured-ness or label the control unavailable when no reviewer is composed. |
 | `ST-01` | Startup settings | `SHEPHERD_AUTO_RESOLUTION` and `SHEPHERD_MAX_PARALLEL_PLANES` are parsed by config but not passed to `ShepherdService` as initial settings. | Environment configuration can be silently ignored. | Add explicit initial-setting composition and tests without overriding later persisted operator settings unexpectedly. |
 | `F-01` | Contract timeout | Contract timeouts can flow through `makeFailure()` as `unknown` instead of `agent_timeout`. | Failure evidence is generic. | Preserve a typed timeout error through Contract, Plane, Agent, Mission, event, API, and UI state. |
 | `F-02` | Contract runtime error | Candidate runtime errors are typed, but Contract runtime errors can become `unknown`. | Failure matrix is incomplete. | Introduce typed stage errors and one causal regression test. |
@@ -348,7 +353,7 @@ missing/partial row in the failure matrix.
 
 | Required behavior | Status |
 |---|---|
-| Mission-composed bounded `SHEPHERD_MODEL` semantic review and durable `model_review_degraded` event | **Unimplemented**; standalone adapter only |
+| Mission-composed bounded `SHEPHERD_MODEL` semantic review and durable `model_review_degraded` event | **Implemented + tested on active PR #16, pending final review/merge**; current `main` remains uncomposed |
 | General multi-wave DAG scheduling with actual Agent occupancy, mutation lock, active Plane capacity, and downstream re-evaluation | **Unimplemented in service orchestration**; scheduler module exists |
 | Complete unmentioned-message → Shepherd action/reply behavior | **Unimplemented**; persistence only |
 | Bounded Project Group `@Agent` Contract creation independent of an already-existing active Contract | **Unimplemented** |
@@ -368,8 +373,8 @@ The next agent must explicitly mark each item pass/fail with the exact command a
 1. Fix and test `OPS-01` and `OPS-02`: `.env` propagation and repository-local host paths. Keep startup secret/path work separate from the reviewed `RST-01` reset PR.
 2. Add service fault-injection tests for `F-01..08`, missing/malformed/omitted manifests, Contract acceptance failure, objective tie, final re-verification, repeated cancellation, and persistence recovery.
 3. Add Group Chat unit/API/browser regressions for `GC-01..06`, including quoted whitespace names, a clean-start state, a message that produces a bounded Shepherd result, a targeted Contract, post-Mission behavior, and manifest-derived Agent summaries.
-4. Add fake-reviewer Mission tests for completed findings, zero findings, disabled review, timeout, cancellation, malformed response, transport/provider/config failure, sensitive-value rejection, and deterministic-collision independence.
-5. Run at most one opt-in live `SHEPHERD_MODEL` structured smoke after item 4 passes; never print credentials.
+4. **PASS on PR #16:** 13 service-level cases cover no reviewer, completed/zero/hostile findings, the persisted toggle, degraded/throw/disabled/cancelled/deadline behavior, real-adapter redaction/config composition, insufficient verified Contracts, and mid-review cancellation. The integrated focused command passed 33/33 under Node 24.
+5. **PASS with a tracked product finding:** the double-gated live `SHEPHERD_MODEL` smoke made exactly one request and preserved the deterministic outcome while durably reporting `invalid_response`. The provider returned a valid finding that adapter evidence-reference validation rejected; `MR-03`/#21 owns that separate correction. No credential was printed.
 6. Add real service DAG-wave tests for dependencies, failed-required blocking, busy Agent, mutation lock, capacity, cycle rejection before persistence, and overlapping timestamps.
 7. Implement and test real `estimatedDurationMs` production data for `UI-02`, clearly separated from actual timestamps.
 8. Implement and run all eight PRD Playwright journeys: baseline Playground, Mission, `@Agent`, authority failure, all-fail attention, objective tie/human choice, cancellation, and restart.
@@ -413,7 +418,7 @@ known requirement mismatch exists; **Unimplemented** = no composed product path;
 | `G-10` | Verified-only deterministic promotion; fail closed | **I+T, 96% — review required** | Winner flip, re-verification, selected identity, and expected-HEAD tests pass. |
 | `G-11` | Preserve failure evidence and use `attention_required` safely | **Partial, 68%** | Several failures remain generic or strand entities. `F-01..08`, `UI-01`. |
 | `G-12` | Explicit `@Agent` Project Group routing | **Defective/partial, 45%** | Parser is strong; composed behavior fails requirements. `GC-01`, `GC-03`, `GC-04`, `GC-05`. |
-| `G-13` | Advisory model reviewer, never demo-critical | **Unimplemented composition, 35%** | Standalone adapter only. `MR-01`, `MR-02`. |
+| `G-13` | Advisory model reviewer, never demo-critical | **I+T on active PR #16, 90% — review required** | Mission composition, explicit degradation, toggle causality, and hostile-finding independence pass; merge/post-merge evidence and the separate `MR-03` live completed path remain. |
 | `G-14` | Human selection on objective tie | **I-U, 72%** | Service/API/UI control exists; no real service-generated tie browser journey. `E2E-06`. |
 | `G-15` | Mission cancellation and bounded retry | **I-U/partial, 84%** | Race and one-retry tests pass; retry classification, repeated cancel, and browser journeys remain. `F-07`, `F-08`, `E2E-07`. |
 | `G-16` | Clearly labelled duration estimates in timeline | **Unimplemented production data, 20%** | Optional UI renderer exists but no server produces estimates. `UI-02`. |
@@ -440,7 +445,7 @@ known requirement mismatch exists; **Unimplemented** = no composed product path;
 | `K-03` | 8.3 general scheduler rules and concurrency | **Partial, 65%** | `SCH-01`, `SCH-02`; final timing measurement pending. |
 | `K-04` | 8.4 integration Plane and explicit Git-conflict state | **Partial, 84%** | Normal integration passes; textual conflict becomes generic failure (`F-05`). |
 | `K-05` | 8.5 deterministic collision predicate | **I+T, 97% — review required** | Exhaustive near-miss tests pass. |
-| `K-06` | 8.6 bounded model-assisted reviewer and degradation event | **Unimplemented composition, 35%** | `MR-01`, `MR-02`. |
+| `K-06` | 8.6 bounded model-assisted reviewer and degradation event | **I+T on active PR #16, 90% — review required** | Focused/full deterministic gates and one opt-in degraded live request pass; final review/merge and `MR-03` remain. |
 | `K-07` | 8.7 live speculative resolution | **I+T backend, 93% — review required** | Deterministic/current run and Phase 3 live evidence pass; sparse current live smoke pending. |
 | `K-08` | 8.8 winner policy and winner flip | **I+T, 97% — review required** | Unit/service/integration flip evidence passes; service tie journey pending. |
 | `K-09` | 8.9 final promotion gate | **I+T core, 96% — review required** | Negative gate/compensation tests pass; durable final reverify failure journey remains. |
@@ -730,9 +735,19 @@ The model never decides protected-branch promotion and never supplies host paths
 - evidence-reference validation;
 - sensitive-value checks and safe failure results.
 
-**Important:** the adapter is not passed into `ShepherdService` in `apps/server/src/index.ts`. `modelReviewEnabled` currently changes persisted settings/UI only and has no behavioral effect. No `model_review_degraded` Mission event is emitted. This is a P0 truthfulness defect: either wire it before demoing the control, or disable/label the UI control until composition is complete.
+**Active PR #16:** `apps/server/src/index.ts` constructs the adapter only when
+`SHEPHERD_MODEL` is configured and injects it into `ShepherdService`. A review runs
+after verified Contract integration and before deterministic collision detection;
+`modelReviewEnabled` causally gates the call. Any non-disabled failure records a
+bounded `model_review_degraded` event, while completed output records only closed
+counts/enums and Shepherd-supplied keys. Reviewer output cannot reach collision,
+winner, or promotion decisions.
 
-No post-composition live `SHEPHERD_MODEL` smoke was run in this checkpoint.
+The double-gated post-composition live smoke made exactly one request. Composition,
+durable degradation, and deterministic independence passed, but the real adapter
+reported `invalid_response`; the provider's otherwise valid finding used a manifest
+reference representation rejected by the adapter. `MR-03`/#21 owns that separately.
+No live completed finding has been observed yet.
 
 ### Deterministic trusted components
 
@@ -1058,7 +1073,7 @@ PRD Section 12 is **not complete**.
 | Server restart mid-Mission | Strong four-checkpoint process recovery coverage. |
 | Persistence error | Store atomic rollback covered; no durable `persistence_failed` recovery-visible Mission path. |
 | UI polling interruption | UI retries and shows reconnect state; no browser interruption/cursor-reconciliation test. |
-| Model reviewer failure | Standalone adapter covered; not composed, so no Mission degradation event. |
+| Model reviewer failure | Active PR #16 composes the adapter and causally covers disabled, cancelled, timeout, thrown/provider, configuration/redaction, and hostile-result cases. Failures durably degrade without failing or changing the deterministic Mission; merge/post-merge evidence remains. |
 
 Related gaps:
 
@@ -1105,14 +1120,14 @@ Because this checkpoint materially changed scoped authority, public DTOs, cancel
    - Assert entity state, event, public API representation, and absence of promotion.
    - Add exactly-once retry failure coverage and idempotent repeated cancellation.
 
-4. **Compose the Shepherd model reviewer**
-   - Add an optional `ModelReviewer` dependency to `ShepherdService`.
-   - Construct `ArkModelReviewer` in `apps/server/src/index.ts` with `config.shepherdModel`, Ark base URL/key, bounded timeout, and sensitive values.
-   - Build bounded input from verified objectives, manifest summaries, trusted claims, changed files, and Plane diff summaries after integration and before/alongside deterministic collision detection.
-   - Emit a safe completion/finding event; on any non-disabled failure emit durable `model_review_degraded` with bounded reason.
-   - Never allow reviewer output to influence the deterministic collision required by the demo, winner selection, or promotion.
-   - Prove collision succeeds with reviewer disabled and degraded.
-   - Run at most one opt-in live `SHEPHERD_MODEL` structured smoke after fake-adapter tests pass. Do not print credentials.
+4. **Finish and merge the Shepherd model reviewer composition**
+   - PR #16 implements the optional dependency, configured `index.ts` composition,
+     bounded trusted input, safe completed/degraded events, toggle causality,
+     cancellation/deadline containment, and deterministic independence.
+   - Complete final security/correctness review, merge through the protected PR,
+     then repeat the scoped deterministic flow on updated `main`. The final diff has
+     no rendered UI behavior after the presentation-only regex deltas were removed.
+   - Keep `MR-03`/#21 separate; do not weaken evidence-reference validation in PR #16.
 
 5. **Fix or disable misleading UI states**
    - Until item 3 is complete, disable or clearly label the model-review setting as unavailable.
@@ -1362,8 +1377,10 @@ updated tests and handover evidence.
    Select it, confirm the dialog, and verify the same trusted promotion path reaches
    `completed`.
 7. Restore **Automatic resolution** to its original value.
-8. Treat **Bounded model review** as a known misleading/inert control until
-   `MR-01/MR-02` are fixed. Under **Notifications**, verify the PR #13 `ST-02` state:
+8. On current `main`, treat **Bounded model review** as inert until PR #16 merges.
+   On PR #16 it causally gates a bounded advisory call when configured; an
+   unconfigured server still needs separate truthful unavailable/configured copy.
+   Under **Notifications**, verify the PR #13 `ST-02` state:
    the section says **Unavailable**, each stored preference is labelled **Reserved**,
    controls are disabled and cannot receive focus or mutate, and interaction sends no
    settings `PATCH`. Persistence remains future-state data, not delivery evidence.
@@ -1425,9 +1442,10 @@ Run this only when one bounded live test is justified:
    `.tmp/manual-qa` root, unlock, and confirm the Agent, both turns, Runs, and
    workspace continuity remain.
 
-This exercises the legacy Agent model, not Shepherd's currently uncomposed
-`SHEPHERD_MODEL` reviewer. Do not run `npm run test:shepherd:live` merely to inspect
-the UI; that opt-in suite can be long and expensive.
+This exercises the legacy Agent model, not Shepherd's reviewer. Current `main` is
+still uncomposed until PR #16 merges; on PR #16 the reviewer has its separate,
+double-gated `test:shepherd:model-review:live` command. Do not run either live suite
+merely to inspect the UI; both are opt-in and consume real capacity.
 
 ### 8. Record bugs so agents can act on them
 

@@ -1203,9 +1203,69 @@ value rather than dropping it or naming a caller-side mistake.
 - No container runtime was available, so the two container-gated suites skipped as
   designed. The new tests require none; they drive full Missions through an
   in-process trusted fixture verifier.
-- No rendered-browser evidence was captured for the two regex changes
-  (`model_review` joining the Verification stream filter, and `degraded` mapping to
-  the existing amber tone). No component, layout, token, or copy changed.
+- During final integration, the two presentation-only regex changes (`model_review`
+  joining the Verification stream filter and `degraded` mapping to the existing
+  amber tone) were removed with user approval because this GPT CLI device has no
+  connected browser runtime. The event contract typing remains, but the final diff
+  adds no rendered UI behavior and therefore has no UI-specific browser gate.
+
+### Integrated current-main verification
+
+**Date:** 2026-08-30 (Asia/Singapore)
+**Branch:** `feat/12-mr-01-compose-model-reviewer`
+**Integrated base:** `origin/main` at `d27dea6`
+**Merge commit:** `fbf3038`
+**Verified checkpoint:** `2dc7ac2`
+
+Current `origin/main` was merged without rebasing or force-pushing. All code merged
+automatically; the only conflict was this build log, where the complete MR-01 and
+current-main evidence blocks were both preserved.
+
+The first focused baseline exposed an environmental timing failure rather than a
+reviewer defect: `JsonStore.persist()` rejected lifecycle state after Docker Desktop
+stepped its wall clock backwards. Path-only diagnostics isolated
+`updatedAt < createdAt` across Project, Contract, and Plane records. A standalone
+Node 24 probe then measured two backward steps in 40 seconds, with a largest step of
+`-35,921 ms`, while the monotonic timer advanced normally. The new Mission test
+fixture now uses the service's existing `now` seam with a strictly monotonic
+per-service test clock; production timestamp and reviewer behavior are unchanged.
+
+RED was observed repeatedly before that test-only correction. Fresh GREEN evidence:
+
+```text
+npx vitest run --config apps/server/vitest.config.ts \
+  apps/server/src/shepherd/service.model-review.test.ts
+# host isolation: 1 file passed; 13/13 tests; 100.10s
+
+# Node 24, focused model-review + config gate
+# 2 files passed; 33/33 tests; 219.95s
+```
+
+The first bind-mounted literal check was not reported green: it stopped in the
+launcher suite because Windows checkout conversion produced a `bash\r` shebang.
+The committed head was therefore cloned into a fresh Linux Docker volume so Git
+materialized LF files, and the same unmodified command passed:
+
+```text
+npm run check
+# launcher: 3/3 passed
+# server: 26 files passed, 3 skipped; 568 tests passed, 6 skipped
+# web and server typechecks passed
+# web production build: 40 modules transformed
+# server production build passed
+
+npm audit --json
+# 0 vulnerabilities across 251 dependencies
+```
+
+The local Vite UI was started for the two-regex rendered gate, but the required
+browser runtime reported no connected in-app or extension browser. The server was
+stopped and no screenshot, viewport, or visual claim is made. With user approval,
+both presentation-only regex deltas were then removed; the final diff adds no
+rendered UI behavior. The final security/correctness review, push/required checks,
+merge, and post-merge verification remain separate gates and are not implied by
+this entry.
+
 ## ST-02 — Truthful unavailable notification preferences
 
 **Date:** 2026-08-29 (Asia/Singapore)
