@@ -7,6 +7,22 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — MR-01/MR-03/TST-08/TST-09 integrated audit
+
+Auditor gates passed at `35ec268`: config 27/27 plus one default live skip,
+TST-08 returned 20/20 and paired 40/40, reviewer/service/config 165/165, harness
+unit 6/6 and Chromium 8/8, and literal check with launcher 3/3, Server 592/592
+plus two opt-in skips, Web 13/13, strict types and builds. Audit reported zero
+vulnerabilities; diff, credential, snapshot and artifact scans were clean.
+
+The corrected explicit live command was command attempt two overall but made the
+only external reviewer request (1/1); the earlier attempt made zero. Bounded result:
+`completed findings=2`. The test proved exactly one advisory event, unchanged
+deterministic collision/winner/promotion, exact promoted HEAD, store/state secret
+absence and live-root cleanup. The 21-byte ignored outcome file was read once and
+removed. Hosted Required checks run `33270168480` passed. LIVE-01's reviewer
+component is satisfied; its current live Shepherd Mission remains open.
+
 ## 2026-08-30 — TST-09 reviewer-only environment isolation candidate
 
 Without making another live request, the Fixer corrected only the reviewer live
