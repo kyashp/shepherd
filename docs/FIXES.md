@@ -83,8 +83,21 @@ that limitation is explicit.
   contention with zero unhandled errors; literal local `npm run check` passes; the
   final `mock-main` hosted `Node 22 / npm run check` passes with the expected
   environment-gated skip profile; Auditor integrates and closes UI-03 `C`.
-- **Owner/status:** Fixer / `READY`; **100% diagnosis, 0% correction**, 0/3
-  `T,C,I` gates; blocks hosted baseline, UI-03 final audit, and E2E-01 start.
+- **Observed correction:** test fixture only. A reusable two-arrival barrier now
+  holds the selected frontend failure until both Contract verifiers arrive. The
+  Mission promise gets a success/failure observer immediately before any gate is
+  awaited, and `finally` idempotently releases both gates and joins the Mission and
+  sibling. The durable failure/reload/late-return/no-verification-event/no-candidate/
+  no-promotion assertions are unchanged. Both rows passed 40/40 across 20 isolated
+  invocations in 37 seconds; the full service/verifier slice passed 43/43; strict
+  test-source typecheck passed; and literal `npm run check` passed twice in 39s and
+  40s with launcher 3/3, server 563/563 plus one opt-in live skip, and both builds.
+  No timeout, sleep/retry, suppressed rejection, production/UI edit, or weakened
+  assertion was introduced. Unmodified hosted run `33261491905` also passed and
+  corroborates intermittency, but candidate hosted evidence remains pending.
+- **Owner/status:** Fixer / `RESOLVED — PENDING INTEGRATED/HOSTED AUDIT`; **100%
+  scoped candidate**, `T,C` passed 2/3 and `I` remains pending; UI-03 final hosted
+  closeout and E2E-01 remain blocked until integration.
 
 ### `F-03` — Contract verifier infrastructure failure strands active-looking state
 

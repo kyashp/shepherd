@@ -7,6 +7,49 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## TST-03 deterministic concurrent-verifier regression candidate
+
+**Date:** 2026-08-30 (Asia/Singapore)
+**Branch/base:** `fix/mock-main` / `346ab91bd807ee787ac275d43f10bfe08b5a5532`
+
+The controlled RED remains hosted run
+[`33261198788`](https://github.com/kyashp/shepherd/actions/runs/33261198788):
+the thrown-verifier row exhausted its existing 30-second budget and emitted an
+unhandled `ContractVerificationInfrastructureError` after 558 passed, 5 skipped,
+and 1 failed tests. The prior disposable backend pre-verifier hold reproduced the
+same ordering defect in one second. A subsequent unmodified docs-only hosted run
+[`33261491905`](https://github.com/kyashp/shepherd/actions/runs/33261491905) on
+`346ab91` passed, which corroborates schedule sensitivity but does not make the
+fixture deterministic.
+
+The candidate changes only `service.test.ts`. A reusable two-arrival barrier makes
+the selected frontend thrown/returned infrastructure outcome wait until the backend
+has entered the verifier. A `then` success/failure observer is attached to the
+Mission promise immediately, before `siblingEntered` or any other gate is awaited.
+The assertion still requires the typed infrastructure failure. `finally` releases
+the pair and sibling gates idempotently and joins both the Mission and sibling exit,
+so an assertion failure cannot strand deferred work or create an unhandled
+rejection. Existing atomic terminalization, durable reload, ownership release,
+late-return, no `verification_passed`, no collision/candidate/promotion, and bounded
+Plane assertions remain intact.
+
+Observed GREEN evidence:
+
+- focused parameterized test: 2/2 passed initially in 1.47s (929ms test time);
+- 20 independent focused invocations: both parameter rows passed 40/40 in 37s;
+- Shepherd service/container-verifier slice: 43/43 passed in 32.29s;
+- strict `typecheck:tests`: passed;
+- literal `npm run check` passed twice, in 39s and 40s: both production and strict
+  test-source typechecks, launcher 3/3, server 563/563 with one opt-in live skip,
+  and both production builds passed;
+- `git diff --check`: passed.
+
+No timeout changed, no sleep/retry was added, no failure was swallowed, and no
+product, service, verifier, API, persistence, UI, workflow, dependency, or live/model
+path changed. `TST-03` is a **100% scoped candidate** with `T,C` passed; integrated
+Auditor/hosted gate `I` is pending. UI-03 stays at 98% until that hosted closeout,
+and E2E-01 remains blocked only on the deterministic baseline integration.
+
 ## TEST-TS strict server test-source typecheck candidate
 
 **Date:** 2026-08-29 (Asia/Singapore)
