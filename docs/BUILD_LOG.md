@@ -7,6 +7,48 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## OPS-02 direct local startup candidate
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Branch/commit:** `fix/27-ops-02-direct-env-launch` / `e4cb2e5`
+**Draft PR:** [#28](https://github.com/kyashp/shepherd/pull/28)
+
+Direct `./scripts/start-local-poc.sh` previously exited 2 before Runtime detection
+because it did not read the repository `.env`. The preserved RED launcher fixture
+observed the generic missing-Ark-variable error. The candidate performs one guarded
+handoff through Node's dotenv parser and marks the returned shell environment to
+prevent recursion; `.env` is never sourced or printed.
+
+The same fixture established the adjacent host-path defect: `.env.example` Docker
+defaults would otherwise remain `/app/...`. The candidate maps only those exact
+defaults into the existing platform local-state root and leaves explicit custom host
+paths unchanged. The fake engine/npm boundary captures values only in a private
+temporary test file and asserts that planted Ark/model sentinels never reach stdout
+or stderr.
+
+Observed verification:
+
+```sh
+node --test scripts/start-local-poc-launcher.test.mjs
+# 2/2 passed: npm launcher compatibility; direct dotenv/path behavior
+
+bash -n scripts/start-local-poc.sh
+node --check scripts/start-local-poc-launcher.mjs
+git diff --check
+# all passed
+
+npm run check
+# exit 0: both workspace typechecks passed
+# launcher tests 2/2 passed
+# 26 server test files passed, 1 opt-in live file skipped
+# 551 tests passed, 1 opt-in live test skipped
+# web and server production builds passed
+```
+
+No live Ark or Shepherd-model request was made. A required independent security
+review and post-merge real zero-parameter startup smoke remain before `OPS-02` may
+be marked complete on `main`.
+
 ## Phase 0 — Baseline Lock
 
 **Date:** 2026-08-29 (Asia/Singapore)

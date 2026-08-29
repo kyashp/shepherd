@@ -18,14 +18,18 @@ Requirements:
 - An Ark API key and Responses-capable endpoint
 
 ```bash
-ARK_API_KEY=your-ark-api-key ARK_MODEL=ep-your-endpoint-id npm run poc
+./scripts/start-local-poc.sh
 ```
+
+The script safely reads the repository's ignored `.env`; configure
+`ARK_API_KEY` and `ARK_MODEL` there before starting. It does not source `.env`
+as shell code.
 
 Open <http://localhost:3000>. Press `Ctrl+C` to stop the server and remove this
 instance's remaining Runtime containers.
 
-Force an engine with `CONTAINER_ENGINE=docker` or
-`CONTAINER_ENGINE=podman`. Colima uses the Docker CLI.
+Force an engine by setting `CONTAINER_ENGINE=docker` or
+`CONTAINER_ENGINE=podman` in `.env`. Colima uses the Docker CLI.
 
 ## Data and Runtime
 
@@ -88,13 +92,11 @@ podman info
 podman run --rm docker.io/library/alpine:3.20 echo PODMAN_OK
 ```
 
-`podman info` must report `rootless: true`. Start the POC:
+`podman info` must report `rootless: true`. Set `CONTAINER_ENGINE=podman` in
+`.env`, then start the POC:
 
 ```bash
-CONTAINER_ENGINE=podman \
-ARK_API_KEY=your-ark-api-key \
-ARK_MODEL=ep-your-endpoint-id \
-npm run poc
+./scripts/start-local-poc.sh
 ```
 
 This flow was verified on veLinux 2 with rootless Podman 4.3.1. A `vfs` storage
@@ -103,12 +105,9 @@ build.
 
 ## Common options
 
-```bash
-CONTAINER_RUNTIME_APT_PACKAGES='ca-certificates git ripgrep python3 build-essential' \
-ARK_API_KEY=your-ark-api-key \
-ARK_MODEL=ep-your-endpoint-id \
-npm run poc
-```
+Set optional values such as
+`CONTAINER_RUNTIME_APT_PACKAGES='ca-certificates git ripgrep python3 build-essential'`
+in `.env`, then run `./scripts/start-local-poc.sh`.
 
 For restricted networks, configure:
 

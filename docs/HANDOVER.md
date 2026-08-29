@@ -80,8 +80,9 @@ The remaining work is material:
 - No Playwright configuration, eight-journey suite, screenshots, or independent rendered UI review exists yet.
 - Final architecture/test-report/README completion, repeated stability runs, and
   three timed rehearsals are not complete.
-- `npm run poc` currently fails to pass `.env` values into its shell child in this
-  environment; the verified safe workaround is documented below.
+- Merged PR #8 fixes `.env` propagation for `npm run poc`. Draft PR #28 extends
+  the same safe Node-parsed behavior to direct `./scripts/start-local-poc.sh`
+  invocation and localizes the exact Docker-default data paths for host use.
 - A clean-start demo reset returns `500 Auth demo was not found`; reset succeeds
   after the first demo project has been initialized.
 
@@ -275,8 +276,8 @@ missing/partial row in the failure matrix.
 
 | ID | Area | Confirmed defect / mismatch | User-visible or safety impact | Required minimal correction |
 |---|---|---|---|---|
-| `OPS-01` | Local startup / `.env` | On Node 24.17/npm 11.17, root `npm run poc` executes `node --env-file-if-exists=.env --run=poc:inner`, but the shell child did not receive `ARK_API_KEY`/`ARK_MODEL`; direct `node --env-file-if-exists=.env -e ...` proved the variables are present. | The documented `.env`-based one-command startup exits with “ARK_API_KEY and ARK_MODEL are required.” | Add the smallest safe Node-to-shell launcher that inherits the already parsed environment, or otherwise fix the root script without sourcing arbitrary shell content; add an env-presence regression that never prints values. |
-| `OPS-02` | Local startup paths | `.env.example` contains container paths such as `/app/data/shepherd`. When `.env` is loaded for host PoC startup, `start-local-poc.sh` does not rebase `SHEPHERD_ROOT`/`SHEPHERD_CODEX_HOME_ROOT` into `LOCAL_POC_DATA_ROOT`. | Host startup can target unintended absolute paths or fail permissions; this also violates repository-local test-state expectations. | In local-PoC mode, derive all Agent and Shepherd data roots from the one documented local root while preserving explicit, validated opt-in overrides. Add path-resolution tests. |
+| `OPS-01` (resolved) | Local startup / `.env` | Merged PR #8 uses Node's dotenv parser and an explicit launcher that inherits the parsed environment without shell-sourcing or logging it. | `npm run poc` is restored on `main`. | Retain the secret-sentinel launcher regression. |
+| `OPS-02` | Direct local startup / paths | Current `main` still requires the npm entry point, and `.env.example` contains Docker paths such as `/app/data/shepherd`. Draft PR #28 makes `./scripts/start-local-poc.sh` perform one guarded Node dotenv handoff and maps only the exact Docker defaults into the host local state root. | Until #28 merges, direct zero-parameter shell startup does not load `.env` and Docker paths can target unintended absolute locations. | Review and merge #28 after its launcher regression, full gate, and required security review pass. Explicit custom host paths must remain unchanged. |
 | `RST-01` | Demo reset | `POST /api/shepherd/demo/reset` on a clean data root returns HTTP 500 with `Auth demo was not found`; after one Mission initializes `auth-demo`, reset succeeds and removes all managed state. | “Reset demo state” fails on first launch and exposes a server error instead of an idempotent clean result. | Make clean-start reset an idempotent success or return a deliberate non-error empty result; add service/API/UI regression tests. |
 | `GC-01` | Group Chat mention buttons | UI inserts `@Frontend Agent`, while names containing spaces require `@"Frontend Agent"`. The UI-generated value reproduces `unknown_agent`. | Mention buttons do not route the demo Agents. | Quote/escape whitespace-containing names using the parser's existing JSON mention syntax; add a browser regression test. |
 | `GC-02` | Unmentioned Group Chat messages | The backend persists a human message with no target, but does not invoke Shepherd, create work, or post a Shepherd response. | UI says “Unmentioned → Shepherd,” but no Shepherd action occurs. | Route through an existing bounded Shepherd action/response contract; do not add free-form shell/model authority. |
@@ -322,7 +323,7 @@ missing/partial row in the failure matrix.
 | Repeated cancellation | Single cancellation and both promotion races are tested | Explicit idempotent repeated-cancel API/service test |
 | UI reconnect handling | Poller retains state and retries | Browser interruption, visible reconnect, cursor reconciliation, no-duplicate event test |
 | Live Mission on current `main` | Phase 3 runtime previously passed at its named checkpoint | One sparse post-integration live Mission after P0 fixes; no repeated unnecessary model calls |
-| Host local-PoC startup | Runtime build/preflight and deterministic server were reached through a safe Node env-wrapper with repository-local roots | Fix and regression-test `OPS-01`/`OPS-02`; then verify the documented one-command path without shell-sourcing `.env` |
+| Host local-PoC startup | Merged #8 fixes `npm run poc`; draft #28 adds direct-shell dotenv loading plus exact Docker-default path localization. Its isolated launcher test passes both localized defaults and preserved custom paths. | Required security review and a post-merge zero-parameter real startup smoke on `main` |
 
 ### Unimplemented required behavior
 
@@ -1125,9 +1126,9 @@ Authoritative requirements/evidence:
   configured model and consumes real capacity.
 - Use repository-local state for QA. Do not point the demo at another repository or
   an existing data directory.
-- `npm run poc` is currently affected by `OPS-01`; use the verified command below
-  until that issue merges. Draft PR #8 is separate from the pending test-lifecycle
-  merge gate in PR #19.
+- `npm run poc` is fixed on current `main` by merged PR #8. Draft PR #28 makes
+  `./scripts/start-local-poc.sh` itself the zero-parameter entry point; until #28
+  merges, use `npm run poc` on `main`.
 - Do not click **Reset demo state** before the first Mission initializes the demo;
   `RST-01` currently returns a 500 on a completely clean root.
 - The trusted verifier needs Docker, Colima, or Podman. The command below was
@@ -1150,34 +1151,18 @@ files pass with one opt-in live file skipped, 544 tests pass with one skipped, a
 both production builds pass. If counts change, record the new exact result rather
 than copying these numbers.
 
-### 2. Start a clean deterministic QA instance
+### 2. Start the local PoC
 
-Copy this command exactly. If port `3000` is already in use, change the `PORT` line
-and use that same port in every URL below.
-
-If `.tmp/manual-qa` already contains evidence you want to preserve, replace
-`manual-qa` with one new exact suffix in all three path variables; do not delete an
-ambiguous or broad directory merely to obtain a clean run.
+On draft PR #28 and after it merges, configure the required values in the ignored
+repository `.env` and run the direct entry point without additional parameters:
 
 ```sh
-HOST=127.0.0.1 \
-PORT=3000 \
-LOCAL_POC_DATA_ROOT="$PWD/.tmp/manual-qa" \
-SHEPHERD_ROOT="$PWD/.tmp/manual-qa/data/shepherd" \
-SHEPHERD_CODEX_HOME_ROOT="$PWD/.tmp/manual-qa/data/shepherd-codex-homes" \
-SHEPHERD_EXECUTION_MODE=deterministic \
-SHEPHERD_DEMO_MODE=true \
-node --env-file-if-exists=.env --input-type=module -e '
-import { spawn } from "node:child_process";
-const child = spawn("./scripts/start-local-poc.sh", {
-  stdio: "inherit",
-  env: process.env,
-});
-child.on("exit", (code, signal) => {
-  process.exit(code ?? (signal ? 1 : 0));
-});
-'
+./scripts/start-local-poc.sh
 ```
+
+Node parses `.env`; the script never sources it. Exact Docker-default `/app/...`
+data paths are mapped to the platform's local state root, while explicit custom
+host paths remain unchanged. On current `main` before #28 merges, use `npm run poc`.
 
 Wait for `Server listening at http://127.0.0.1:3000`. Keep this terminal open.
 The first run may build `volc-agent-runtime:local`.
