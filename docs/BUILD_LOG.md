@@ -7,6 +7,27 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — F-06 audit blocked by TST-21 persistence-boundary defects
+
+Auditor replayed exact Worker candidate
+`6bc67b3272b530897149aa5a9507e46c2393453a` locally as `1a3be1a` over canonical
+`mock-main` `19876cb740d80c2e868d401f4b5f6164e20ff330`. The focused persistence/journal
+selection passed once (18 passed, 62 skipped) and then passed 10/10 repeated
+invocations. The exact-byte digest, bounded schema, no-follow/size/mode/owner
+checks, pending-recovery mutation/event lock, representative running-to-verifying
+scope, and immediate/two-restart reconciliation design were inspected; no broader
+arbitrary-store recovery claim is accepted.
+
+Integration is blocked. Independent read-only security review found two Medium
+gaps outside the existing single-stage fault matrix. First, non-`ENOENT`/`ELOOP`
+journal open/stat/read failures escape initialization as raw native errors, including
+configured path and OS diagnostic. Second, database or journal primary failure plus
+temp-unlink failure suppresses the cleanup fault; a database temp can retain the
+complete serialized state with no tracking/restart reconciliation, and repetitions
+can accumulate sensitive artifacts. Existing tests have no unlink fault checkpoint
+or native read-fault rows. These are recorded as `TST-21`; no F-06 product commit was
+pushed to `mock-main`, and no full/hosted gate or live/model/UI call was claimed.
+
 ## 2026-08-30 — TST-20 audited; F-05 final stability restored
 
 Exact test-only `cdcfa95` passed Auditor row stress 30/30, service/store 56/56,

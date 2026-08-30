@@ -28,6 +28,38 @@ that limitation is explicit.
 
 ## Immediate queue
 
+### `TST-21` — Recovery-journal reads and temp cleanup are not closed boundaries
+
+- **Evidence class:** independent source/security audit of unintegrated F-06
+  candidate `6bc67b3272b530897149aa5a9507e46c2393453a`; focused persistence/journal
+  tests passed 10/10 repetitions but do not inject either double-fault class.
+- **Failure contract:** `readRecoveryIntent()` converts `ENOENT` and symlink
+  `ELOOP`, but native open/stat/read failures such as `EACCES` or `EIO` escape
+  initialization with their raw configured path and operating-system diagnostic.
+  Separately, when a primary database or journal-temp operation has already failed,
+  a subsequent non-`ENOENT` temp unlink failure is deliberately suppressed. The
+  database temp contains the complete serialized state, is not journaled or
+  enumerated on restart, and repeated double faults can retain unbounded sensitive
+  artifacts. The journal writer has the same untracked-temp structure.
+- **Minimal correction:** close every journal open/stat/read failure except the
+  exact absent-file case into fixed cause-free `PersistenceBoundaryError` evidence.
+  Preserve the primary write error as causal while explicitly tracking and retrying
+  cleanup of the exact managed database/journal temp, or otherwise proving bounded
+  removal without enumerating/deleting unrelated files. Do not expose native
+  causes/paths, swallow cleanup failure, weaken no-follow/containment/mode/owner
+  checks, broaden recovery to arbitrary store mutations, or alter the accepted UI.
+- **Acceptance:** causal native open/stat/read injections expose no raw error,
+  `cause`, path or errno through startup/log/Error surfaces. Database and journal
+  primary+unlink double-fault rows preserve the fixed primary outcome, retain
+  truthful bounded cleanup evidence, and remove only their exact managed temp on
+  same-process retry and restart; repeated faults do not accumulate artifacts.
+  Re-run the complete journal-stage matrix, immediate and two-restart exactly-once
+  reconciliation, concurrent mutation/event lock, service/API/reload/security,
+  literal `npm run check`, and hosted Node 22. Unix/macOS errors must not be
+  swallowed; any Windows exception must remain narrowly platform-gated.
+- **Status:** **OPEN / Fixer READY.** F-06 is unintegrated and blocked; no product
+  commit was pushed to `mock-main`.
+
 ### `TST-20` — Fail-fast verifier sibling persists after test-root teardown
 
 - **Evidence class:** hosted final-head run `33282108035`, exact annotation at
