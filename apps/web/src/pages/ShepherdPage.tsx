@@ -4,6 +4,7 @@ import { navigate } from "../router";
 import { useShepherdPolling } from "../shepherd-hooks";
 import type {
   Agent,
+  AuthTransport,
   ExecutionContract,
   Mission,
   Plane,
@@ -81,6 +82,92 @@ export function EvidenceSummary({ evidence }: { evidence: VerificationEvidence }
         </div>
       ) : null}
     </div>
+  );
+}
+
+export function ExecutionContractPanel({
+  contract,
+  agent,
+}: {
+  contract: ExecutionContract;
+  agent: Agent | null;
+}) {
+  const timestamps = [
+    ["Created", contract.createdAt],
+    ["Updated", contract.updatedAt],
+    ["Started", contract.startedAt],
+    ["Agent completed", contract.agentCompletedAt],
+    ["Verified", contract.verifiedAt],
+    ["Completed", contract.completedAt],
+  ].filter((entry): entry is [string, string] => Boolean(entry[1]));
+  return (
+    <section className="contract-definition" aria-label="Agent execution contract">
+      <div className="contract-definition-heading">
+        <div><span className="eyebrow">Agent execution contract</span><strong>{contract.title}</strong></div>
+        <StatePill value={contract.state} />
+      </div>
+      <dl className="event-details contract-core-details">
+        <div><dt>Contract ID</dt><dd>{contract.id}</dd></div>
+        <div><dt>Assigned Agent</dt><dd>{agent?.name ?? contract.agentId}</dd></div>
+        <div><dt>Agent ID</dt><dd>{contract.agentId}</dd></div>
+        <div><dt>Mission</dt><dd>{contract.missionId}</dd></div>
+        <div><dt>Plane</dt><dd>{contract.planeId ?? "Assigned when execution starts"}</dd></div>
+      </dl>
+      <div className="contract-definition-section">
+        <strong>Objective</strong>
+        <p>{contract.objective}</p>
+      </div>
+      <div className="contract-definition-grid">
+        <div>
+          <strong>Dependencies</strong>
+          <p>{contract.dependencyIds.length > 0 ? contract.dependencyIds.join(" · ") : "None — runnable in parallel"}</p>
+        </div>
+        <div>
+          <strong>Semantic contract</strong>
+          <p>Scopes: {contract.semanticScopes.join(" · ") || "None"}</p>
+          <p>Exclusive claims: {contract.declaredClaimKeys.join(" · ") || "None"}</p>
+        </div>
+      </div>
+      <div className="contract-definition-section">
+        <strong>Contextual inputs</strong>
+        {contract.contextualInputs.length > 0 ? (
+          <ul className="contract-compact-list">
+            {contract.contextualInputs.map((input) => (
+              <li key={`${input.name}-${input.sourceContractId ?? "mission"}`}><span>{input.name}</span><code>{input.value}</code></li>
+            ))}
+          </ul>
+        ) : <p>None</p>}
+      </div>
+      <div className="contract-definition-section">
+        <strong>Scoped authority</strong>
+        <dl className="contract-authority">
+          <div><dt>Readable</dt><dd>{contract.authority.readable.join(" · ")}</dd></div>
+          <div><dt>Writable</dt><dd>{contract.authority.writable.join(" · ")}</dd></div>
+          <div><dt>Forbidden</dt><dd>{contract.authority.forbidden.join(" · ")}</dd></div>
+        </dl>
+      </div>
+      <div className="contract-definition-section">
+        <strong>Expected artifacts</strong>
+        <ul className="contract-compact-list">
+          {contract.expectedArtifacts.map((artifact) => (
+            <li key={artifact.path}><code>{artifact.path}</code><span>{artifact.required ? "Required" : "Optional"} · {artifact.description}</span></li>
+          ))}
+        </ul>
+      </div>
+      <div className="contract-definition-section">
+        <strong>Independent acceptance</strong>
+        <ul className="contract-compact-list">
+          {contract.acceptance.checks.map((check) => (
+            <li key={check.id}><span>{check.name}</span><code>{check.profileId} · {check.mandatory ? "mandatory" : "optional"} · {formatDuration(check.timeoutMs)}</code></li>
+          ))}
+        </ul>
+        <p>Result manifest: <code>{contract.resultManifestPath}</code></p>
+        <p>Objective tie-breakers: {contract.acceptance.objectiveTieBreakers.join(" · ") || "None"}</p>
+      </div>
+      <dl className="event-details contract-timestamps">
+        {timestamps.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{formatDateTime(value)}</dd></div>)}
+      </dl>
+    </section>
   );
 }
 
@@ -200,9 +287,11 @@ export function CandidateEvidencePanel({
 function EventEvidence({
   event,
   state,
+  agents,
 }: {
   event: ShepherdEvent;
   state: ShepherdState;
+  agents: Agent[];
 }) {
   const contract = event.contractId
     ? state.contracts.find((item) => item.id === event.contractId) ?? null
@@ -215,12 +304,18 @@ function EventEvidence({
     : null;
   const evidencePresentation = eventEvidencePresentation(event, contract, candidate);
   const safeDetails = Object.entries(event.details).filter(([key]) => !blockedDetailKeys.test(key));
-  if (!evidencePresentation && !collision && safeDetails.length === 0 && !contract?.failure && !candidate?.failure) {
+  if (!contract && !evidencePresentation && !collision && safeDetails.length === 0 && !candidate?.failure) {
     return null;
   }
   return (
     <details className="event-evidence">
       <summary>View evidence</summary>
+      {contract ? (
+        <ExecutionContractPanel
+          contract={contract}
+          agent={agents.find((item) => item.id === contract.agentId) ?? null}
+        />
+      ) : null}
       {evidencePresentation ? (
         <section aria-label={evidencePresentation.label}>
           <strong className="evidence-stage-label">{evidencePresentation.label}</strong>
@@ -253,12 +348,14 @@ function EventEvidence({
 
 function ContractStream({
   state,
+  agents,
   events,
   mission,
   filter,
   setFilter,
 }: {
   state: ShepherdState;
+  agents: Agent[];
   events: ShepherdEvent[];
   mission: Mission | null;
   filter: EventFilter;
@@ -308,7 +405,7 @@ function ContractStream({
                 {event.actor.displayName}
                 {event.contractId ? ` · ${shortId(event.contractId, 13)}` : ""}
               </p>
-              <EventEvidence event={event} state={state} />
+              <EventEvidence event={event} state={state} agents={agents} />
             </div>
           </article>
         ))}
@@ -580,7 +677,7 @@ function PlaneTree({
                 <span><strong>{collision.key}</strong><small>{collision.leftClaim.value} ≠ {collision.rightClaim.value}</small></span>
                 <StatePill value={collision.state} />
               </summary>
-              <p>{collision.reason}</p>
+              <p>{collision.reason} The competing Resolution Planes below fork from the same integration commit and must independently pass the project invariant.</p>
             </details>
           ))}
           {resolutionPlanes.map((plane) => planeButton(plane, 2))}
@@ -614,6 +711,7 @@ function AttentionControls({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const collisions = state.collisions.filter((item) => item.missionId === mission.id);
+  const ticketId = collisions[0]?.id ?? mission.id;
   const tied = state.candidates.filter((candidate) =>
     candidate.missionId === mission.id && candidate.selectionState === "tied" && candidate.executionState === "passed",
   );
@@ -635,8 +733,9 @@ function AttentionControls({
     <section className="attention-panel" aria-labelledby="attention-title">
       <Icon name="alert" />
       <div>
-        <span className="eyebrow">Human decision required</span>
+        <span className="eyebrow">Internal human-review ticket</span>
         <h2 id="attention-title">{tied.length > 0 ? "Verified candidates are objectively tied" : "Mission needs attention"}</h2>
+        <span className="attention-ticket-ref">Reference {ticketId} · durable attention_required</span>
         <p>{mission.attentionReason ?? mission.failure?.message ?? "Inspect the preserved evidence before deciding what happens next."}</p>
         {error ? <div className="field-error" role="alert">{error}</div> : null}
         {tied.length > 0 ? (
@@ -670,7 +769,24 @@ export function ShepherdPage({ agents, search }: { agents: Agent[]; search: stri
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [frontendAgentId, setFrontendAgentId] = useState<string>("");
+  const [backendAgentId, setBackendAgentId] = useState<string>("");
+  const [frontendTransport, setFrontendTransport] = useState<AuthTransport>("http-only-session-cookie");
+  const [backendTransport, setBackendTransport] = useState<AuthTransport>("bearer-jwt");
   const requestedPlaneId = new URLSearchParams(search).get("plane");
+
+  const frontendAgents = useMemo(
+    () => agents.filter((agent) => agent.role === "Frontend"),
+    [agents],
+  );
+  const backendAgents = useMemo(
+    () => agents.filter((agent) => agent.role === "Backend"),
+    [agents],
+  );
+  const assignedFrontendId = frontendAgentId || frontendAgents[0]?.id || "";
+  const assignedBackendId = backendAgentId || backendAgents[0]?.id || "";
+  const hasUserAssignments = Boolean(assignedFrontendId && assignedBackendId);
+  const collisionReady = frontendTransport !== backendTransport;
 
   const sortedMissions = useMemo(() => [...(state?.missions ?? [])].sort((a, b) =>
     new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
@@ -687,7 +803,21 @@ export function ShepherdPage({ agents, search }: { agents: Agent[]; search: stri
     setSubmitting(true);
     setActionError(null);
     try {
-      const result = await api.sendShepherdMessage(intent.trim());
+      const result = await api.sendShepherdMessage(
+        intent.trim(),
+        hasUserAssignments
+          ? {
+              frontend: {
+                agentId: assignedFrontendId,
+                transport: frontendTransport,
+              },
+              backend: {
+                agentId: assignedBackendId,
+                transport: backendTransport,
+              },
+            }
+          : undefined,
+      );
       setSelectedMissionId(result.missionId);
       setIntent("");
       await refresh();
@@ -746,7 +876,7 @@ export function ShepherdPage({ agents, search }: { agents: Agent[]; search: stri
       {mission ? <AttentionControls state={state} mission={mission} onChanged={() => void refresh()} /> : null}
 
       <div className="shepherd-grid">
-        <ContractStream state={state} events={events} mission={mission} filter={filter} setFilter={setFilter} />
+        <ContractStream state={state} agents={agents} events={events} mission={mission} filter={filter} setFilter={setFilter} />
         <div className="kernel-right-column">
           <Timeline mission={mission} contracts={contracts} candidates={candidates} agents={agents} collisions={collisions} />
           <PlaneTree mission={mission} project={project} state={state} agents={agents} requestedPlaneId={requestedPlaneId} />
@@ -754,6 +884,44 @@ export function ShepherdPage({ agents, search }: { agents: Agent[]; search: stri
       </div>
 
       <form className="kernel-composer" onSubmit={submitMission}>
+        <fieldset className="mission-assignments" disabled={submitting || Boolean(project?.activeMissionId && mission && !terminalMissionStates.has(mission.state))}>
+          <legend className="sr-only">Execution contract assignments</legend>
+          {hasUserAssignments ? (
+            <div className="mission-assignment-grid">
+              <div className="mission-assignment-group">
+                <label htmlFor="frontend-contract-agent">Frontend Agent</label>
+                <select id="frontend-contract-agent" value={assignedFrontendId} onChange={(event) => setFrontendAgentId(event.target.value)}>
+                  {frontendAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+                </select>
+                <label className="sr-only" htmlFor="frontend-contract-transport">Frontend authentication transport</label>
+                <select id="frontend-contract-transport" value={frontendTransport} onChange={(event) => setFrontendTransport(event.target.value as AuthTransport)}>
+                  <option value="http-only-session-cookie">HttpOnly session cookie</option>
+                  <option value="bearer-jwt">Bearer JWT</option>
+                </select>
+              </div>
+              <div className="mission-assignment-group">
+                <label htmlFor="backend-contract-agent">Backend Agent</label>
+                <select id="backend-contract-agent" value={assignedBackendId} onChange={(event) => setBackendAgentId(event.target.value)}>
+                  {backendAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+                </select>
+                <label className="sr-only" htmlFor="backend-contract-transport">Backend authentication transport</label>
+                <select id="backend-contract-transport" value={backendTransport} onChange={(event) => setBackendTransport(event.target.value as AuthTransport)}>
+                  <option value="bearer-jwt">Bearer JWT</option>
+                  <option value="http-only-session-cookie">HttpOnly session cookie</option>
+                </select>
+              </div>
+            </div>
+          ) : (
+            <p>Create one Frontend Agent and one Backend Agent to assign your own identities; otherwise Shepherd uses its managed demo Agents.</p>
+          )}
+          {hasUserAssignments ? (
+            <small className={collisionReady ? "assignment-ready" : "assignment-warning"}>
+              {collisionReady
+                ? "Two incompatible exclusive auth.transport claims will be independently verified before integration."
+                : "Choose different transports to demonstrate a semantic collision."}
+            </small>
+          ) : null}
+        </fieldset>
         <label htmlFor="shepherd-intent" className="sr-only">Message Shepherd</label>
         <textarea
           id="shepherd-intent"
@@ -766,7 +934,7 @@ export function ShepherdPage({ agents, search }: { agents: Agent[]; search: stri
             }
           }}
           placeholder="Describe a Mission for Shepherd…"
-          rows={2}
+          rows={1}
           maxLength={2_000}
           disabled={submitting || Boolean(project?.activeMissionId && mission && !terminalMissionStates.has(mission.state))}
         />
@@ -776,7 +944,7 @@ export function ShepherdPage({ agents, search }: { agents: Agent[]; search: stri
               ? "One mutating Mission at a time · cancel or wait before starting another"
               : `Enter to send · polled about every second${lastUpdated ? ` · updated ${formatTime(lastUpdated.toISOString())}` : ""}`}
           </span>
-          <button className="send-button" aria-label="Send Mission" disabled={!intent.trim() || submitting || Boolean(project?.activeMissionId && mission && !terminalMissionStates.has(mission.state))}>
+          <button className="send-button" aria-label="Send Mission" disabled={!intent.trim() || submitting || !collisionReady || Boolean(project?.activeMissionId && mission && !terminalMissionStates.has(mission.state))}>
             {submitting ? <Spinner label="Creating Mission" /> : <Icon name="send" />}
           </button>
         </div>

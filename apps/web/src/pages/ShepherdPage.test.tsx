@@ -2,12 +2,15 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type {
+  Agent,
+  ExecutionContract,
   ResolutionCandidate,
   ShepherdEvent,
   VerificationEvidence,
 } from "../types";
 import {
   CandidateEvidencePanel,
+  ExecutionContractPanel,
   candidateEvidenceStages,
   eventEvidencePresentation,
 } from "./ShepherdPage";
@@ -56,6 +59,79 @@ function candidate(overrides: Partial<ResolutionCandidate> = {}): ResolutionCand
 const event = (type: ShepherdEvent["type"]): Pick<ShepherdEvent, "type"> => ({ type });
 
 describe("Shepherd evidence presentation", () => {
+  it("renders the complete public Agent execution contract with existing evidence context", () => {
+    const contract: ExecutionContract = {
+      id: "contract-front-1",
+      missionId: "mission-1",
+      agentId: "11111111-1111-4111-8111-111111111111",
+      title: "Implement frontend authentication transport",
+      objective: "Use an HttpOnly session cookie.",
+      contextualInputs: [{ name: "policy", value: "secure", sourceContractId: null }],
+      dependencyIds: [],
+      semanticScopes: ["authentication"],
+      declaredClaimKeys: ["auth.transport"],
+      authority: {
+        readable: ["**"],
+        writable: ["src/frontend/**"],
+        forbidden: [".git/**", ".shepherd/**"],
+      },
+      expectedArtifacts: [{
+        path: "src/frontend/auth.json",
+        description: "Authentication transport configuration",
+        required: true,
+      }],
+      acceptance: {
+        checks: [{
+          id: "frontend-contract",
+          name: "Frontend authentication contract",
+          profileId: "auth-frontend",
+          mandatory: true,
+          timeoutMs: 30_000,
+        }],
+        objectiveTieBreakers: [],
+      },
+      planeId: "plane-1",
+      resultManifestPath: ".shepherd/result.json",
+      verificationEvidence: [],
+      state: "verified",
+      failure: null,
+      createdAt: "2026-08-30T00:00:00.000Z",
+      updatedAt: "2026-08-30T00:00:01.000Z",
+      startedAt: "2026-08-30T00:00:00.100Z",
+      agentCompletedAt: "2026-08-30T00:00:00.500Z",
+      verifiedAt: "2026-08-30T00:00:01.000Z",
+      completedAt: "2026-08-30T00:00:01.000Z",
+    };
+    const agent: Agent = {
+      id: contract.agentId,
+      name: "My Frontend Agent",
+      description: "",
+      instructions: "",
+      status: "ready",
+      lastError: null,
+      role: "Frontend",
+      authority: contract.authority,
+      currentContractId: null,
+      createdAt: contract.createdAt,
+      updatedAt: contract.updatedAt,
+    };
+    const markup = renderToStaticMarkup(
+      createElement(ExecutionContractPanel, { contract, agent }),
+    );
+    for (const visibleText of [
+      "Agent execution contract",
+      "My Frontend Agent",
+      "Use an HttpOnly session cookie.",
+      "auth.transport",
+      "src/frontend/**",
+      "src/frontend/auth.json",
+      "auth-frontend",
+      ".shepherd/result.json",
+    ]) {
+      expect(markup).toContain(visibleText);
+    }
+  });
+
   it("selects final evidence only for completed promotion events", () => {
     const item = candidate();
     expect(eventEvidencePresentation(event("promotion_completed"), null, item)).toMatchObject({

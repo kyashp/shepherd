@@ -22,7 +22,7 @@ import { z } from "zod";
 import { toPublicMissionDetail } from "../app.js";
 import { RuntimeExecutionError } from "../errors.js";
 import { JsonStore } from "../store.js";
-import type { Database } from "../types.js";
+import type { Agent, Database } from "../types.js";
 import { WorkspaceManager } from "../workspace.js";
 import {
   BEARER_TRANSPORT,
@@ -1013,6 +1013,131 @@ async function gitOutput(cwd: string, args: string[]): Promise<string> {
 }
 
 describe("Shepherd deterministic walking skeleton", () => {
+  it("binds concurrent Mission idempotency to both transport assignments", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+    });
+    const input = {
+      content: "Run the bounded assignment idempotently.",
+      preset: "auth-demo" as const,
+      clientMessageId: "same-mission-request",
+      frontendTransport: COOKIE_TRANSPORT,
+      backendTransport: BEARER_TRANSPORT,
+    };
+    const [first, duplicate] = await Promise.all([
+      service.startMissionFromMessage(input),
+      service.startMissionFromMessage(input),
+    ]);
+    expect(duplicate.missionId).toBe(first.missionId);
+    expect(store.snapshot().shepherd.missions).toHaveLength(1);
+    expect(
+      store.snapshot().shepherd.groupMessages.find(
+        (message) => message.missionId === first.missionId && message.senderType === "human",
+      )?.requestFingerprint,
+    ).toMatch(/^[a-f0-9]{64}$/u);
+    const recoveredService = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+    });
+    await expect(recoveredService.startMissionFromMessage(input)).resolves.toMatchObject({
+      missionId: first.missionId,
+    });
+    expect(store.snapshot().shepherd.missions).toHaveLength(1);
+    await expect(service.startMissionFromMessage({
+      ...input,
+      frontendTransport: BEARER_TRANSPORT,
+      backendTransport: COOKIE_TRANSPORT,
+    })).rejects.toMatchObject({ code: "idempotency_conflict" });
+    expect(store.snapshot().shepherd.missions).toHaveLength(1);
+    backgroundTestMissions.push({ service, missionId: first.missionId });
+  }, 30_000);
+
+  it("assigns user-created role Agents to opposite auth transport contracts", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const agentWorkspaceRoot = path.join(caseRoot, "agent-workspaces");
+    const workspaces = new WorkspaceManager(agentWorkspaceRoot);
+    await workspaces.initialize();
+    const createdAt = "2026-08-30T00:00:00.000Z";
+    const frontendAgent: Agent = {
+      id: "11111111-1111-4111-8111-111111111111",
+      name: "Demo Frontend",
+      description: "User-created frontend specialist",
+      instructions: "Implement only assigned frontend contracts.",
+      status: "ready",
+      workspacePath: workspaces.workspacePath("11111111-1111-4111-8111-111111111111"),
+      codexThreadId: null,
+      lastError: null,
+      role: "Frontend",
+      authority: {
+        readable: ["**"],
+        writable: ["src/frontend/**"],
+        forbidden: [".git/**", ".shepherd/**", "checks/**", "policy.json"],
+      },
+      createdAt,
+      updatedAt: createdAt,
+    };
+    const backendAgent: Agent = {
+      ...frontendAgent,
+      id: "22222222-2222-4222-8222-222222222222",
+      name: "Demo Backend",
+      description: "User-created backend specialist",
+      role: "Backend",
+      workspacePath: workspaces.workspacePath("22222222-2222-4222-8222-222222222222"),
+      authority: {
+        readable: ["**"],
+        writable: ["src/backend/**"],
+        forbidden: [".git/**", ".shepherd/**", "checks/**", "policy.json"],
+      },
+    };
+    await workspaces.create(frontendAgent);
+    await workspaces.create(backendAgent);
+    await store.mutate((database) => database.agents.push(frontendAgent, backendAgent));
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot,
+      verifier: new HostTrustedFixtureVerifier(),
+    });
+
+    const result = await service.runDeterministicDemo({
+      originalIntent: "Demonstrate a user-assigned authentication collision.",
+      frontendAgentId: frontendAgent.id,
+      backendAgentId: backendAgent.id,
+      frontendTransport: COOKIE_TRANSPORT,
+      backendTransport: BEARER_TRANSPORT,
+    });
+    const detail = service.missionDetail(result.mission.id);
+    expect(detail?.agents.map((agent) => [agent.id, agent.name])).toEqual([
+      [frontendAgent.id, frontendAgent.name],
+      [backendAgent.id, backendAgent.name],
+    ]);
+    expect(detail?.contracts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        agentId: frontendAgent.id,
+        objective: expect.stringContaining(COOKIE_TRANSPORT),
+      }),
+      expect.objectContaining({
+        agentId: backendAgent.id,
+        objective: expect.stringContaining(BEARER_TRANSPORT),
+      }),
+    ]));
+    expect(detail?.claims.map((claim) => claim.value).sort()).toEqual(
+      [BEARER_TRANSPORT, COOKIE_TRANSPORT].sort(),
+    );
+    expect(result.selectedCandidate.targetValue).toBe(COOKIE_TRANSPORT);
+    expect(result.mission.state).toBe("completed");
+  }, 30_000);
+
   it("cleans a case root containing a read-only trusted verification snapshot", async () => {
     const caseRoot = await makeCaseRoot();
     const snapshotPath = path.join(

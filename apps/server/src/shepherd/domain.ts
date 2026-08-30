@@ -458,6 +458,8 @@ export interface ProjectGroupMessage {
   content: string;
   targetAgentId: string | null;
   contractId: string | null;
+  /** Server-only durable binding for Mission-creation idempotency. */
+  requestFingerprint?: string;
   createdAt: IsoTimestamp;
 }
 

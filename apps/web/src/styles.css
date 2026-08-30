@@ -1104,6 +1104,111 @@ label small {
   border-bottom: 1px solid #e3e1d9;
 }
 
+.contract-definition {
+  border-bottom: 1px solid #e3e1d9;
+  background: #fbfaf7;
+}
+
+.contract-definition-heading {
+  padding: 9px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.contract-definition-heading strong,
+.contract-definition-section > strong,
+.contract-definition-grid strong {
+  display: block;
+  color: #4b4c46;
+  font-size: 8px;
+}
+
+.contract-definition-heading strong {
+  margin-top: 3px;
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.contract-core-details,
+.contract-timestamps {
+  border-top: 1px solid #e7e5de;
+}
+
+.contract-definition-section,
+.contract-definition-grid {
+  padding: 8px;
+  border-top: 1px solid #e7e5de;
+}
+
+.contract-definition-section > p,
+.contract-definition-grid p {
+  margin: 4px 0 0;
+  color: #686962;
+  font-size: 8px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.contract-definition-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.contract-authority {
+  margin: 4px 0 0;
+}
+
+.contract-authority > div {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.contract-authority dt,
+.contract-authority dd {
+  margin: 0;
+  color: #686962;
+  font-size: 8px;
+  overflow-wrap: anywhere;
+}
+
+.contract-authority dt {
+  color: #686962;
+}
+
+.contract-compact-list {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.contract-compact-list li {
+  padding: 4px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-top: 1px solid #ebe9e2;
+  color: #686962;
+  font-size: 8px;
+  overflow-wrap: anywhere;
+}
+
+.contract-compact-list code,
+.contract-definition code {
+  color: #5d4ab4;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 8px;
+}
+
+.contract-definition .event-details dt,
+.contract-definition .event-details dd {
+  font-size: 8px;
+}
+
 .evidence-summary {
   padding: 9px;
 }
@@ -1663,8 +1768,81 @@ label small {
   flex: 0 0 auto;
   min-height: 65px;
   margin-top: 10px;
-  padding: 7px 10px;
+  padding: 5px 10px;
   border-radius: 9px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  row-gap: 3px;
+}
+
+.mission-assignments {
+  grid-column: 1 / -1;
+  margin: 0 0 5px;
+  padding: 3px 7px 4px;
+  border: 1px solid #e1ded6;
+  border-radius: 7px;
+  background: #f5f3ed;
+}
+
+.mission-assignments legend {
+  padding: 0 4px;
+  color: #777871;
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.mission-assignments > p,
+.mission-assignments > small {
+  margin: 0;
+  color: #686962;
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.mission-assignment-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.mission-assignment-group {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(90px, 1fr) minmax(130px, 1.2fr);
+  align-items: center;
+  gap: 5px;
+}
+
+.mission-assignment-group > label:not(.sr-only) {
+  color: #686962;
+  font-size: 8px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.mission-assignment-group select {
+  min-width: 0;
+  min-height: 24px;
+  margin: 0;
+  padding: 0 22px 0 6px;
+  font-size: 8px;
+}
+
+.mission-assignments > small {
+  display: block;
+  margin-top: 2px;
+}
+
+.mission-assignments .assignment-ready {
+  color: #2f6f56;
+}
+
+.mission-assignments .assignment-warning {
+  color: #a15c39;
 }
 
 .kernel-composer textarea,
@@ -1678,6 +1856,21 @@ label small {
   resize: none;
   background: transparent;
   font-size: 10px;
+}
+
+.kernel-composer textarea {
+  min-height: 25px;
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.kernel-composer > div {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.kernel-composer > div > span {
+  display: none;
 }
 
 .kernel-composer > div,
@@ -1746,6 +1939,14 @@ label small {
 .attention-panel > div > p {
   margin: 0;
   font-size: 8px;
+}
+
+.attention-ticket-ref {
+  display: block;
+  margin: 2px 0 4px;
+  color: #8a642c;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 7px;
 }
 
 .tie-options {
