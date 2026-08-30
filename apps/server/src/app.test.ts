@@ -784,6 +784,42 @@ describe("HTTP boundary", () => {
     await app.close();
   });
 
+  it("protects API routes spelled with a percent-encoded prefix", async () => {
+    // The hook decides whether to authenticate from the RAW request target while
+    // the router percent-decodes before matching, so any encoded spelling of the
+    // prefix skipped the hook and still reached the handler. Destructive routes
+    // included: the demo reset removes Plane worktrees and restores protected HEAD.
+    const app = await createApp(
+      loadConfig({ NODE_ENV: "test", APP_AUTH_TOKEN: "a-strong-bounded-test-token" }),
+      service,
+      createShepherdService(),
+    );
+    for (const url of [
+      "/%61pi/system",
+      "/%61pi/agents",
+      "/%61pi/shepherd/state",
+      "/ap%69/shepherd/state",
+    ]) {
+      const denied = await app.inject({ method: "GET", url });
+      expect(denied.statusCode, url).toBe(401);
+    }
+    // The exemptions stay exact-match: a query string on a public route still
+    // fails closed, which is the behaviour before this correction.
+    const healthWithQuery = await app.inject({ method: "GET", url: "/api/health?x=1" });
+    expect(healthWithQuery.statusCode).toBe(401);
+    const health = await app.inject({ method: "GET", url: "/api/health" });
+    expect(health.statusCode).toBe(200);
+
+    // The canonical spelling must keep working with a valid token.
+    const allowed = await app.inject({
+      method: "GET",
+      url: "/api/shepherd/state",
+      headers: { authorization: "Bearer a-strong-bounded-test-token" },
+    });
+    expect(allowed.statusCode).toBe(200);
+    await app.close();
+  });
+
   it("preserves Fastify client error status codes", async () => {
     const app = await createApp(loadConfig({ NODE_ENV: "test" }), service);
     const malformed = await app.inject({

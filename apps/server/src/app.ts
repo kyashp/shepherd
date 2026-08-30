@@ -887,11 +887,23 @@ export async function createApp(
   });
 
   app.addHook("onRequest", async (request, reply) => {
+    // Decide from the decoded path, not the raw target. Fastify percent-decodes
+    // static segments before route matching, so testing the raw URL let any encoded
+    // spelling of the prefix — `/%61pi/...` — skip this hook while the router still
+    // resolved the request to the real handler. Anything that does not decode is
+    // treated as protected rather than exempt.
+    let routedUrl: string;
+    try {
+      routedUrl = decodeURIComponent(request.url);
+    } catch {
+      // An undecodable target is treated as protected, never exempt.
+      routedUrl = "/api/";
+    }
     if (
       !config.authToken ||
-      !request.url.startsWith("/api/") ||
-      request.url === "/api/health" ||
-      request.url === "/api/auth"
+      !routedUrl.startsWith("/api/") ||
+      routedUrl === "/api/health" ||
+      routedUrl === "/api/auth"
     ) {
       return;
     }

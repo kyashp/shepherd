@@ -7,6 +7,103 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-31 — SEC-REVIEW parts 1-3, and an authentication bypass found and fixed
+
+Branch `audit/49-sec-review-evidence` from `main` at `bd9b093`; hosted exact-head
+gate on that head is run `33323137812`. Issue #49 reopened after being closed on
+2026-08-30 with its row unsatisfied. Parts 1-3 of its acceptance are claimed here;
+parts 4 and 5 are not. No live or model call ran.
+
+### `SEC-01` — the bearer hook was bypassable by percent-encoding the prefix
+
+- Reproduced against the real `createApp`, with `APP_AUTH_TOKEN` configured and no
+  `Authorization` header: `GET /api/system` returns 401 while `GET /%61pi/system`
+  returns **200** and executes the handler.
+- Cause: the `onRequest` hook decided whether to authenticate from `request.url`,
+  the raw request target, while Fastify percent-decodes static path segments before
+  route matching. Any encoded spelling of `/api/` failed the hook's string test, so
+  the hook returned early and the router still resolved the request.
+- Every route was affected, including destructive ones: the audit observed
+  `PATCH /%61pi/shepherd/settings`, `POST /%61pi/shepherd/demo/reset` and
+  `DELETE /%61pi/agents/<id>` all returning 200 and executing their service calls.
+  The reset route removes Plane worktrees and restores the protected HEAD.
+- Reachable remotely wherever the token is the only control, because
+  `docker-compose.yml` binds `0.0.0.0` and publishes its port with no address prefix.
+- **Not introduced by any recent change, and not caught by the suite.** The existing
+  auth tests only ever exercised canonical spellings, so `app.test.ts`,
+  `authority.test.ts` and `manifest.test.ts` passed while the bypass was live.
+- Corrected by deciding from the decoded target, treating an undecodable target as
+  protected rather than exempt. The `/api/health` and `/api/auth` exemptions stay
+  exact-match, so a query string on a public route still fails closed — an earlier
+  form of this fix stripped the query string and thereby widened those exemptions,
+  which is a behaviour change and was reverted. Both properties are asserted.
+- Causal: reverting the hook to the raw-URL test fails the new test. `app.test.ts`
+  21/21, `config.test.ts` included 55/55, web 20/20, strict typecheck clean.
+
+### Part 1 — canary scan: pass with two low observations
+
+- Exactly two configuration values are credentials, both assembled into one
+  `sensitiveValues` set and threaded to the store, verifier, service, prompt builder
+  and model reviewer, with the API layer reconstructing the same pair independently.
+- No path was found by which either reaches the persisted state, a model prompt, a
+  4xx or 5xx response body, the DOM, browser storage, a URL, the logger, or a tracked
+  file. The Ark key is never placed in argv — the runner passes the name only and
+  injects the value through the child environment — and never written into the
+  generated Codex configuration. The prompt builder fails the whole turn rather than
+  emit a prompt containing a secret.
+- Mechanically confirmed here: no credential file is tracked, `.gitignore` covers
+  `.env` and `.env.production`, the only key-shaped literal in tracked source is a
+  deliberately planted canary in `redaction.test.ts`, and the web client holds the
+  token in a module variable and sends it only as an `Authorization` header — no
+  `localStorage`, `sessionStorage`, cookie or query parameter anywhere in the client.
+- Observations, both low and neither exploitable with a normally shaped credential:
+  `/api/system` is the only response serializer with no redaction pass, and
+  `ARK_API_KEY` has no minimum length while the redaction sets apply a 4-character
+  floor.
+
+### Part 2 — five invariant-mutation evidence cases
+
+Each invariant was broken in production source and an existing test caught it. All
+source was restored after each; `git status` clean. Baseline before mutating: 66/66.
+
+| Invariant | Mutation | Caught by |
+|---|---|---|
+| Bearer auth enforced on every `/api/` route | `app.ts` `if (!valid)` to `if (false)` | 2 failed, including *protects API routes with the configured shared token* |
+| No promotion without passing final mandatory re-verification | `promotion-gate.ts` `if (!evidence.passed)` to `if (false)` | *FM-01 ... persists failed final re-verification evidence without promotion* |
+| Protected branch advances only by expected-HEAD CAS | `git-client.ts` `before !== persistedHead` to `false` | 1 failed in `git-plane-promotion.integration` |
+| Writes must fall inside declared writable authority | `authority.ts` `matchesAny(path, grants)` to `true` | 2 failed in `authority.test.ts` |
+| Verification Plane stays inside the managed root | `verifier.ts` containment check to `if (false)` | 1 failed in `verifier.container.test.ts` |
+
+Two invariants were deliberately excluded and the reason recorded: the hook's
+constant-time comparison has no mutation coverage, because replacing
+`timingSafeEqual` with a plain comparison is behaviourally identical and no test can
+distinguish it; and the promotion gate's own expected-HEAD check is not detectable in
+isolation because the Git layer re-checks the same condition and the gate maps the
+error to the same reason. The second is defence in depth working, which is why the
+CAS is demonstrated at the Git layer instead.
+
+### Part 3 — boundary audit: FAIL on one sub-surface
+
+Route inventory carries no debug, introspection or diagnostic route; static serving
+and the not-found handler are traversal-proof; every identifier reaching a filesystem
+path, Git ref or container name is server-generated and revalidated; the Contract
+authority model cannot be broadened by a manifest or a model-produced plan; and
+promotion cannot proceed without mandatory independent re-verification of the exact
+commit, behind a real `git update-ref <ref> <new> <old>`. The bypass sub-surface
+failed, which is `SEC-01` above. Other evasion vectors were probed and hold: casing,
+trailing slash, query string, dot segments, encoded separator, double slash, and
+method. There is no websocket or SSE upgrade.
+
+### Not claimed
+
+Parts 4 and 5 are unclaimed. The independent read-only security review must not be
+performed by the author of `config.ts`'s token floor,
+`scripts/check-deploy-auth-token.mjs`, the deploy guard, the `OPS-06` `A`-gate tests,
+or the `SEC-01` fix above — all of which sit inside this issue's audit surface. The
+carried `OPS-06` High finding remains a posture decision for that reviewer and the
+maintainer: `docker-compose.yml` binds `0.0.0.0` with an unprefixed port while
+`README` documents two entry points a deploy-script guard cannot reach.
+
 ## 2026-08-31 — OPS-06 and ST-01 integrated; the OPS-06 High finding is carried
 
 Protected `main` at `3087b69` (merge of PR #69). That head also carries PR #73
