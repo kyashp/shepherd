@@ -1085,6 +1085,11 @@ function hasValidLifecycle(database: DatabaseV2): boolean {
     if (promotionEvidenceForbidden && candidate.promotionEvidence !== null) return false;
     if (candidate.promotionEvidence !== null) {
       const plane = planes.get(candidate.planeId);
+      const preservesFinalVerificationFailure =
+        candidate.promotionState === "failed" &&
+        candidate.failure?.code === "final_reverification_failure" &&
+        candidate.failure.stage === "promotion" &&
+        !candidate.promotionEvidence.passed;
       const candidateMandatory =
         candidate.verificationEvidence?.checks
           .filter((check) => check.mandatory)
@@ -1093,18 +1098,18 @@ function hasValidLifecycle(database: DatabaseV2): boolean {
         .filter((check) => check.mandatory)
         .map((check) => `${check.id}\u0000${check.profileId}`);
       if (
-        !candidate.promotionEvidence?.passed ||
+        (!candidate.promotionEvidence.passed && !preservesFinalVerificationFailure) ||
         candidate.promotionEvidence.targetType !== "promotion" ||
         candidate.promotionEvidence.targetId !== candidate.id ||
         !sameIds(candidate.promotionEvidence.changedFiles, candidate.changedFiles) ||
         !plane?.verificationEvidenceIds.includes(candidate.promotionEvidence.id) ||
         plane.state !== "verified" ||
         !sameIds(promotionMandatory, candidateMandatory) ||
-        candidate.promotionEvidence.checks.some(
+        (candidate.promotionEvidence.passed && candidate.promotionEvidence.checks.some(
           (check) =>
             check.mandatory &&
             (!check.passed || check.status !== "passed"),
-        )
+        ))
       ) {
         return false;
       }

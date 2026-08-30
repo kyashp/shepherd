@@ -7,6 +7,139 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — issue #43 integrated verification
+
+PR #75 merged to protected `main` as
+`fbc937fed21ad4441e24ab301f591fe5aa03a025`; issue #43 closed and GitHub
+removed the remote feature branch. The required integrated verification ran in
+the clean issue worktree detached at that exact SHA before the docs-only
+closeout branch was created.
+
+- `git diff` found no tree difference between reviewed candidate `66e0c0e` and
+  merge `fbc937f`, so the independent security/UI audit and re-review apply to
+  the integrated bytes with no remaining Critical, Important or Minor finding.
+- Fresh literal `npm run check` passed: launcher 3/3, Server 808 passed plus
+  three explicit skips, Web 20/20, all production/test-source typechecks and
+  both builds. The PR's `Required checks` and `Node 22 / npm run check` hosted
+  jobs also completed successfully before merge.
+- Fresh integrated Chromium passed the real-service unauthorized-diff journey
+  2/2 at `1280x800` and `1440x900`, including durable reload, typed visible
+  denial, unchanged stored and actual protected heads, zero Candidates,
+  integration Planes or promotion, keyboard focus/activation, bounded public
+  evidence and no document/body overflow.
+- The four reviewed E2E-04 screenshot hashes remain unchanged. No live Runtime,
+  model call, credential, product, CSS, schema, dependency or protected-branch
+  mutation ran during closeout. Candidate-time unrelated harness limitations
+  remain recorded in the preceding entry rather than being reclassified.
+
+## 2026-08-30 — FM-01 integrated verification and event-evidence follow-up
+
+PR #72 merged to `main` as `2e4058107311170ab12cadc6a6d283aeaefef895`.
+Issue #42 closed and the feature branch was removed. The required integrated
+verification ran from a clean detached worktree at that exact SHA.
+
+- **Integrated evidence:** the FM-01 plus database/service/Git-promotion/recovery
+  slice passed 187/187. Literal `npm run check` passed launcher 3/3, Server
+  808/808 with three explicit skips, Web 19/19, all production/test typechecks and
+  both builds. A lock-backed clean install and `npm audit` reported zero
+  vulnerabilities; the merged feature files matched the reviewed branch bytes.
+- **Independent audit finding:** the final re-verification row asserted
+  `promotion_started` and no completion, but not the resulting
+  `resolving -> attention_required` event. The event had a bounded reason but not
+  the matching failure code/stage, so event removal or misclassification could
+  remain false-green. No schema-widening, protected-promotion, authorization,
+  secret-exposure or data-loss blocker was found.
+- **Causal follow-up:** branch `test/42-fm-01-final-event-evidence`, implementation
+  `471f5e8`, draft PR #74. RED passed 5/6 and failed only because the causal event
+  lacked `failureCode` and `stage`. The existing atomic transition now carries
+  those two fixed fields, and the matrix asserts its exact summary,
+  `resolving -> attention_required`, reason, code and stage through both durable
+  service state and the public events API.
+- **Follow-up evidence:** matrix 6/6, adjacent 187/187, Server production/test
+  types, and a fresh literal gate with the same fully green counts passed. The
+  same read-only Auditor returned PASS with no remaining blocker.
+  `git diff --check` passed. No UI, dependency, schema, promotion-gate, live
+  Runtime or model change ran.
+- `T,A,C` are complete. `I` remains pending until PR #74 is integrated and the
+  corrected focused flow is rerun on updated `origin/main`.
+
+## 2026-08-30 — issue #43 unauthorized-diff denial candidate
+
+Branch `fix/43-ui-01-unauthorized-denial`, initially based on protected `main`
+`2e4058107311170ab12cadc6a6d283aeaefef895` and rebased onto current `main`
+`18daa3a`. This is reviewed candidate evidence for issue #43; protected-main
+integration is not claimed.
+
+- **RED/correction:** an ordinary failed Mission rendered only a generic Failed
+  timeline pill even though its denied Contract retained
+  `unauthorized_file_change` at `contract_authority`. The existing attention
+  panel now uses that precise Contract cause for failed Missions, labels the
+  safety stop and no-promotion outcome, and keeps the shortened Contract ID
+  traceable through its full-value title. The focused presentation regression
+  failed for each missing behavior before its correction and passes 6/6.
+- **Causal browser proof:** a test-only executor wrapper uses the real compiled
+  service, store and host-trusted verifier to modify `policy.json` outside a
+  delegated `src/frontend/**` scope. The real authority boundary rejects it,
+  durable state reloads through the production server, and authenticated
+  Chromium proves the typed Contract denial, failed Mission, unchanged stored
+  and actual protected heads, zero Candidates, zero integration or promotion,
+  keyboard/focus evidence expansion, bounded public evidence and no page
+  overflow at `1280x800` and `1440x900`. The focused journey passed 2/2; all
+  four committed screenshots were inspected under `docs/ui-review/e2e-04/`.
+- **Checks observed:** Web passed 20/20, the exact real-service authority test
+  passed, both production builds passed, harness unit passed 7/7, strict syntax
+  checks and `git diff --check` passed, and literal `npm run check` passed with
+  launcher 3/3, Server 808 passed plus three explicit skips, Web 20/20, strict
+  production/test-source types and both builds. `npm audit` reported zero
+  vulnerabilities across 251 dependencies.
+- The subsequent pre-push hook reproduced the existing parallel interrupted-policy
+  cleanup race: Server 806 passed plus three skips while two
+  `general-project.test.ts` cases failed. That file then passed 8/8 alone. The
+  hook-created staged `policy.json` artifact was cleared, and only the documented
+  hook was bypassed for the branch update; no test or assertion was changed.
+- The full browser harness passed 22/24. Both failures are unchanged
+  `starter-kit.spec.mjs` behavior outside the owned surface and reproduce in
+  that spec alone: a 0.09375px legacy viewport-boundary assertion at 1280 and a
+  30-second legacy follow-up response timeout at 1440. No assertion, retry,
+  timeout, starter UI or unrelated source was changed to conceal them.
+- Independent read-only audit and re-review found no remaining Critical,
+  Important or Minor issue in #43 scope and returned Pass for security and UI.
+  No production backend/schema, CSS, dependency, live Runtime or model path
+  changed; the accepted UI design remains frozen. Protected-main integration
+  and its rerun remain pending.
+
+## 2026-08-30 — FM-01 deterministic failure matrix candidate
+
+Branch `feat/42-fm-01-failure-matrix`, implementation `051b32a`, draft PR #72.
+This is candidate evidence for issue #42; protected-main integration and audit are
+not claimed.
+
+- **RED:** the first six-case run passed only the existing objective-tie path. Four
+  missing/malformed/omitted-key/acceptance cases persisted `unknown` at Mission
+  level, and failed final re-verification omitted its promotion evidence.
+- **Correction:** known Contract-boundary failures now retain the exact fixed code
+  and stage on Mission, Contract, Plane and bounded event details. Final failed
+  promotion evidence is retained on the selected Candidate and linked from its
+  Plane; the database admits this only for a promotion-stage
+  `final_reverification_failure` while retaining target, diff, mandatory-profile
+  and Plane-link invariants.
+- **Causal evidence:** `failure-matrix.test.ts` passed 6/6 without sleeps, retries,
+  network or model calls. Each case verifies service state, durable reload, public
+  Mission/events API, absence of `promotion_completed`, stored protected-head
+  immutability and the repository's actual Git HEAD.
+- **Adjacent evidence:** database, service, Git promotion and recovery passed
+  181/181. Server production and test-source TypeScript checks passed. The root
+  production build completed for both Web and Server, and `npm audit` reported
+  zero vulnerabilities across 251 dependencies.
+- **Literal gate:** the pre-push hook reached Server 806 passed plus three explicit
+  skips, with two failures in the pre-existing parallel-only interrupted-policy
+  cleanup rows in `general-project.test.ts`. The same failures were observed before
+  FM-01 edits; the file passes 8/8 in isolation. The hook-created staged
+  `policy.json` artifact was cleared, and only the documented hook was skipped for
+  the branch push. `C` remains pending rather than inferred.
+- No UI, dependency, live Runtime, model, credential or protected-branch change
+  ran. UI evidence remains assigned to the dependent E2E rows.
+
 ## 2026-08-30 — issue #41 audited Project Group journey candidate
 
 Branch `feat/41-project-group-journey`, draft PR #64. This is candidate evidence;
