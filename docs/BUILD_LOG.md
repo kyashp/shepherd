@@ -7,6 +7,170 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — the launcher selects its own state layout
+
+Same branch and host. `LOCAL_POC_STATE_MODE` defaulted to `host-bind`, so the
+affected host had to be told to use the container state volume even though the
+launcher's own probes already knew. The probe, not the operating system, is the
+correct signal: what matters is whether the engine sees a native filesystem, and a
+host can fail that on any platform.
+
+- Default is now `auto`. The state selection, mount specification and both probes
+  became functions, so the launcher can apply the host layout, probe it, and on
+  failure apply the volume layout and probe again within one run. `run_state_probes`
+  returns a typed status — 1 the engine cannot mount and write the state, 2 the
+  Codex sandbox cannot govern the workspace — so the fallback message names the
+  actual reason. An explicit `host-bind` or `container-volume` disables the
+  fallback, so a host that should work still fails loudly.
+- Observed on the affected host with no environment variables set at all:
+
+  ```
+  [local-poc] Persistent state: /Users/…/.volc-agent-launchpad
+  [local-poc] Checking that the Runtime can mount and write the configured state directories.
+  [local-poc] Checking that the Codex sandbox can govern the configured workspace.
+  [local-poc] The Codex sandbox cannot govern a workspace on /Users/…/.volc-agent-launchpad.
+  [local-poc] Switching to the launchpad-state-auto container state volume and retrying.
+  [local-poc] Preparing the launchpad-state-auto state volume for the Agent Runtime.
+  [local-poc] Persistent state: launchpad-state-auto (container volume)
+  [local-poc] Checking that the Runtime can mount and write the configured state directories.
+  [local-poc] Checking that the Codex sandbox can govern the configured workspace.
+  [local-poc] Building and starting the containerized control plane.
+  ```
+
+  The mount-and-write probe passed on the host share and the sandbox probe failed,
+  which is the expected split. `GET /api/health` then returned
+  `{"ok":true,"service":"volc-agent-launchpad"}` and the running control plane
+  resolved `executionMode: "live"`, `authTokenLength: 0`. The smoke volume was
+  removed afterwards.
+- `scripts/start-local-poc-launcher.test.mjs` passed 3/3, including the darwin case
+  that pins the five exported host paths: under `auto` its stub engine reports
+  success, the host layout is kept, and the exported paths are unchanged.
+
+## 2026-08-30 — APP_AUTH_TOKEN requirement removed, capability retained
+
+Same branch and host as the entry below. Requested scope was the requirement, not
+the feature: the bearer boundary stays in the product and stays enforced whenever
+a token is configured.
+
+- The request originally read as deleting the token entirely. Survey first: the
+  request hook at `apps/server/src/app.ts:843` already returns early when the
+  token is empty, so every route is open and `/api/auth` reports
+  `required:false`. Exactly one line forced a value — the non-loopback guard in
+  `loadConfig`. Removing the whole feature would have touched 18 non-test source
+  references and 26 test references and left `deploy/volcengine/main.tf` serving
+  an unauthenticated Agent-execution API on a public interface, so the narrower
+  correction was agreed instead.
+- Removed the guard and its two now-unused helpers. Removed the matching guard
+  from `scripts/start-local-poc.sh` and the required interpolation in
+  `docker-compose.state-volume.yml`. The schema still rejects a token that cannot
+  be sent as a bearer credential — non-URL-safe characters, or over 128.
+- Replaced rather than deleted the affected assertions. The former
+  "requires a strong non-placeholder token for every non-loopback bind" now proves
+  the new contract: `0.0.0.0`, `192.0.2.10`, `127.0.0.1` and `::` all start with an
+  empty token across all three `NODE_ENV` values, and a short or placeholder value
+  is carried verbatim instead of refused. A second case keeps the bearer-shape
+  rejections. The reviewer-clone test keeps its non-mutation assertions without the
+  removed throw.
+- Verified on the affected host with **no token set at all**. The launcher logged
+  `No APP_AUTH_TOKEN is set, so the control plane will not require one`, the
+  control plane started, `/api/auth` returned `{"required":false}`, and
+  `GET /api/system` with no `Authorization` header returned `200`. Resolved
+  configuration inside the container was `executionMode: "live"`,
+  `authTokenLength: 0`, `host: 0.0.0.0` — so the Codex Runtime preflight still
+  passes with the boundary disabled. The smoke volume was removed afterwards.
+- Enforcement with a token configured is unchanged: `config.test.ts` and
+  `app.test.ts` passed 52/52, including the 401 paths.
+- Documentation updated to describe the token as optional in `README.md`,
+  `.env.example`, `docs/LOCAL_POC.md`, `docs/SHEPHERD.md` and
+  `docker-compose.state-volume.yml`. `SECURITY.md` now states plainly that a
+  server started without a token serves every route to anyone who can reach the
+  port, and that a token must be set before exposing it beyond the local machine,
+  including ECS. Prior log entries are left as written; they remain true for the
+  commits they name.
+
+## 2026-08-30 — OPS-06 affected-host cause reproduced and corrected
+
+Branch `fix/47-ops-06-container-state-volume`, PR #56, on the affected host
+(macOS, Docker Desktop 29.5.3, LinuxKit 6.12 aarch64, `volc-agent-runtime:local`).
+
+- Reproduced the reported failure from the repository's own generated preflight
+  arguments: `docker create` succeeded, `docker start --attach` exited 49, and the
+  only Runtime stderr was
+  `sh: 1: cannot create /workspace/.shepherd-sandbox-probe: Permission denied`.
+- Isolated the cause by holding image, Codex configuration and container flags
+  fixed and varying only the workspace filesystem. Inside
+  `codex sandbox linux --full-auto`, an ext4 named volume, the image overlayfs and
+  a tmpfs all permitted `: > file`; the macOS host share denied it. On that share
+  `mkdir`, `rmdir` and `unlink` succeeded while `open()` for read, write, create
+  and truncate returned `EACCES`, and the file was left behind by the denied
+  create — Landlock grants `MAKE_REG` there but not `WRITE_FILE`.
+- `strace -f -y` on both a passing and a failing run showed byte-identical
+  `landlock_create_ruleset`, five `landlock_add_rule` calls over the same paths
+  (`/`, `/dev/null`, `/codex-home/memories`, `/workspace`, `/tmp`) and
+  `landlock_restrict_self`, all returning 0. Only the subsequent
+  `openat(AT_FDCWD, "w1", O_WRONLY|O_CREAT|O_TRUNC)` differed: `-1 EACCES` versus a
+  file descriptor. The ruleset is identical; the filesystem cannot enforce it.
+- Confirmed the independent `touch` probe defect: on the same share `touch`
+  exited 0 **and created the file**, while `: >` in the same shell was denied.
+- Verified the correction on the same host. With
+  `--mount type=volume,...,volume-subpath=...,volume-nocopy=true`, workspace read,
+  workspace write and a full `git init`/`add`/`commit` all succeeded inside the
+  sandbox while the private `CODEX_HOME` write stayed denied. The **unmodified**
+  preflight script then printed `codex-cli 0.111.0` and
+  `SHEPHERD_RUNTIME_PREFLIGHT_OK` with exit 0.
+- Established that `volume-nocopy` is mandatory. Without it an empty subpath is
+  served with the image's own `/workspace` ownership: `ls -ldn` reported `0 0`
+  through the mount while the directory on the volume was `10001 10001`, and a
+  plain non-sandbox write was already denied. With `volume-nocopy=true` ownership
+  was preserved and both the plain write and the sandboxed write succeeded.
+- Proved the full loop: a non-root containerized control plane (uid 10001,
+  joined to the engine socket group) created its workspace and private home,
+  derived the state-relative subpaths, started the sibling Runtime container,
+  and read back the file the sandboxed Agent had written.
+- Repository gate on this host is **not green, before or after the change**.
+  Pristine `origin/main` (`c0802e8`) failed `npm run test -w @launchpad/server`
+  with 39 failed / 696 passed; the branch failed with 61 failed / 686 passed.
+  Every failure in both runs is `Test timed out` or a `vi.waitFor` state
+  assertion behind one, and the `main` failure set is a strict subset of the
+  branch set — this machine is too slow to run the suite in parallel with the
+  container engine, not a regression. Run serially
+  (`--no-file-parallelism --maxWorkers=1`), the five heaviest files passed
+  **167/168** on the branch in 434s; the single failure,
+  `expected 'resolving' to be 'attention_required'`, is the same timing flake
+  observed on pristine `main`. `npm run typecheck` and `npm run build` passed.
+  `npm run test:e2e:harness:unit` passed 6/7; the one failure is the documented
+  macOS non-canonical `os.tmpdir()` issue in a fixture this change does not
+  touch, and the fake-container-engine test pinning the read-only bind mount
+  passed. A green full gate on a Linux host remains required before integration.
+- Ran the default `host-bind` launch on the affected host after the probe
+  correction. It now stops at startup with
+  `Codex workspace-write Landlock cannot govern the configured workspace in the
+  hardened non-root Runtime`, naming `LOCAL_POC_STATE_MODE=container-volume`,
+  instead of passing a false gate and crashing later inside the server. The
+  mount-and-write probe passed in the same run, which is the expected split: a
+  plain write to the host share succeeds while the Landlock-governed write does
+  not.
+- Ran the `container-volume` startup smoke on the affected host with a one-off
+  token supplied in the environment; the repository `.env` was not modified. The
+  first attempt exposed a real wiring defect: the launcher validated its resolved
+  `APP_AUTH_TOKEN` while the control plane re-read a different value from
+  `env_file`, so the container crash-looped on
+  `APP_AUTH_TOKEN must be a non-placeholder token`. Corrected by pinning
+  `APP_AUTH_TOKEN` in the compose `environment:` block from the caller's resolved
+  value and exporting it from the launcher, so the validated token is the token
+  the server receives.
+- After that correction the profile came up on the first try: both preflight
+  probes passed in volume mode, the control-plane image built, and
+  `GET /api/health` returned `{"ok":true,"service":"volc-agent-launchpad"}` with
+  the port published to `127.0.0.1` only. Resolved configuration inside the
+  running container was `executionMode: "live"`, `runtimeProvider: "container"`,
+  `containerStateRoot: /app/state`, `codexSandboxMode: workspace-write`. Live mode
+  means `CodexShepherdExecutor.preflight()` ran and passed inside the server —
+  the exact call that previously threw
+  `Live Shepherd Runtime preflight failed (stage=container_start
+  reason=sandbox_probe_failed)`. The smoke volume was removed afterwards.
+- No live or model call ran; no Mission was started.
+
 ## 2026-08-30 — private Agent-chat Contract candidate
 
 - Ownership: issue #55, branch `feat/55-private-chat-contracts`, draft PR #57;

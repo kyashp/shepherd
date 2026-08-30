@@ -332,6 +332,47 @@ else process.exit(0);
     }
   });
 
+  it("mounts the candidate Plane read-only from the state volume", async () => {
+    const fixture = await createPlaneFixture();
+    try {
+      const executor = new RecordingExecutor([result({})]);
+      const stateRoot = await realpath(fixture.casePath);
+      const verifier = new ContainerVerifier(
+        new TrustedCheckRegistry([
+          { id: "node-check", command: "node", args: ["-e", ""], cwd: "." },
+        ]),
+        {
+          planesRoot: fixture.planesRoot,
+          containerEngine,
+          containerImage: runtimeImage,
+          containerUser,
+          ownerId: "state-volume-owner",
+          stateRoot,
+          stateVolume: "launchpad-state",
+          executor,
+          idFactory: () => "evidence-id",
+        },
+      );
+      await verifier.verify({
+        targetType: "candidate",
+        targetId: "candidate-a",
+        planePath: fixture.planePath,
+        checks: [check()],
+        changedFiles: ["fixture.txt"],
+      });
+      const args = executor.invocations[0]!.args;
+      const subpath = path.relative(stateRoot, await realpath(fixture.planePath));
+      expect(args).toContain(
+        "type=volume,source=launchpad-state,target=/workspace,volume-subpath=" +
+          subpath +
+          ",volume-nocopy=true,readonly",
+      );
+      expect(args.filter((value) => value.startsWith("type=bind"))).toHaveLength(0);
+    } finally {
+      await destroyPlaneFixture(fixture);
+    }
+  });
+
   it("redacts outputs and maps timeout, output overflow, optional failure, and unknown profiles", async () => {
     const fixture = await createPlaneFixture();
     try {

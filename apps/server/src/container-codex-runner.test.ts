@@ -66,6 +66,20 @@ function config(overrides: NodeJS.ProcessEnv = {}) {
   });
 }
 
+/** Every mounted root must sit on the state volume, so they all move together. */
+function stateConfig(overrides: NodeJS.ProcessEnv = {}) {
+  return config({
+    CONTAINER_STATE_ROOT: "/tmp/state",
+    CONTAINER_STATE_VOLUME: "launchpad-state",
+    APP_DATA_DIR: "/tmp/state/data",
+    AGENT_WORKSPACE_ROOT: "/tmp/state/workspaces",
+    CODEX_HOME: "/tmp/state/codex-home",
+    SHEPHERD_ROOT: "/tmp/state/data/shepherd",
+    SHEPHERD_CODEX_HOME_ROOT: "/tmp/state/data/shepherd-codex-homes",
+    ...overrides,
+  });
+}
+
 function request(
   overrides: Partial<FreshEphemeralRunnerRequest> = {},
 ): FreshEphemeralRunnerRequest {
@@ -227,6 +241,96 @@ describe("Container Codex runner", () => {
         OWNER,
       ),
     ).toThrow("shared Agent home");
+  });
+
+  it("mounts every runtime surface from the state volume", () => {
+    const args = buildContainerCreateArgs(
+      request({
+        workspacePath:
+          "/tmp/state/data/shepherd/planes/plane-1/.execution-workspaces/execution-1",
+        codexHome: "/tmp/state/data/shepherd-codex-homes/private-home",
+      }),
+      stateConfig(),
+      OWNER,
+    );
+    expect(args).toContain(
+      "type=volume,source=launchpad-state,target=/workspace" +
+        ",volume-subpath=data/shepherd/planes/plane-1/.execution-workspaces/execution-1" +
+        ",volume-nocopy=true",
+    );
+    expect(args).toContain(
+      "type=volume,source=launchpad-state,target=/codex-home" +
+        ",volume-subpath=data/shepherd-codex-homes/private-home,volume-nocopy=true",
+    );
+    expect(args.filter((value) => value.startsWith("type=bind"))).toHaveLength(0);
+  });
+
+  it("fails closed for a mount source outside the state root", () => {
+    // The state root itself has no subpath, so it can never be a mount source.
+    // Asserted on a legacy request because a fresh one would trip the earlier
+    // guard that keeps the private home out of the workspace subtree.
+    expect(() =>
+      buildContainerRunArgs(
+        {
+          agentId: "agent-1",
+          workspacePath: "/tmp/state",
+          prompt: "resume",
+          threadId: "thread-1",
+        },
+        stateConfig(),
+      ),
+    ).toThrow("Workspace mount source escapes CONTAINER_STATE_ROOT");
+    for (const workspacePath of [
+      "/tmp/execution-workspace",
+      "/tmp/state-evil/execution-1",
+    ]) {
+      expect(() =>
+        buildContainerCreateArgs(
+          request({
+            workspacePath,
+            codexHome: "/tmp/state/data/shepherd-codex-homes/private-home",
+          }),
+          stateConfig(),
+          OWNER,
+        ),
+      ).toThrow("escapes CONTAINER_STATE_ROOT");
+    }
+  });
+
+  it("keeps the legacy Agent home on the state volume and rejects an unsafe shared home", () => {
+    const legacy = {
+      agentId: "agent-1",
+      workspacePath: "/tmp/state/workspaces/agent-1",
+      prompt: "resume",
+      threadId: "thread-1",
+    };
+    expect(buildContainerRunArgs(legacy, stateConfig())).toContain(
+      "type=volume,source=launchpad-state,target=/codex-home" +
+        ",volume-subpath=codex-home,volume-nocopy=true",
+    );
+    expect(() =>
+      buildContainerRunArgs(legacy, config({ CODEX_HOME: "/tmp/shared,codex-home" })),
+    ).toThrow("Shared Agent home mount source is invalid");
+  });
+
+  it("keeps the preflight shape when the state volume is active", () => {
+    const { args } = buildEphemeralPreflightCreateArgs(
+      "/tmp/state/data/shepherd/.shepherd-runtime-preflight-abc123",
+      "/tmp/state/data/shepherd-codex-homes/preflight-home",
+      stateConfig(),
+      OWNER,
+    );
+    expect(args[0]).toBe("create");
+    expect(args).toContain("--read-only");
+    expect(args).toContain("/tmp:rw,nosuid,nodev,mode=1777");
+    expect(args).not.toContain("ARK_API_KEY");
+    expect(args.filter((value) => value.startsWith("type=bind"))).toHaveLength(0);
+    expect(args.at(-3)).toBe("sh");
+    expect(args.at(-2)).toBe("-c");
+    const script = args.at(-1) ?? "";
+    expect(script).toContain("codex sandbox linux --full-auto");
+    expect(script).toContain(".shepherd-sandbox-negative-probe");
+    expect(script).toContain("net.createServer()");
   });
 
   it("builds a no-key preflight with the exact hardened sandbox shape", () => {

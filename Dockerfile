@@ -1,4 +1,10 @@
 ARG NODE_IMAGE=node:22-bookworm-slim
+ARG DOCKER_CLI_IMAGE=docker:cli
+
+# Engine client only. The control plane starts the disposable Agent Runtime as a
+# sibling container, so it needs the client, never a daemon inside this image.
+FROM ${DOCKER_CLI_IMAGE} AS engine-client
+
 FROM ${NODE_IMAGE} AS build
 WORKDIR /app
 
@@ -32,12 +38,16 @@ RUN if [ -n "$DEBIAN_SECURITY_MIRROR" ]; then \
     && codex --version \
     && rm -rf /var/lib/apt/lists/*
 
+COPY --from=engine-client /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/apps/server/package.json ./apps/server/package.json
 COPY --from=build /app/apps/server/dist ./apps/server/dist
 COPY --from=build /app/apps/web/dist ./apps/web/dist
 
-RUN mkdir -p /app/data /app/workspaces /app/codex-home \
+# /app/state is the state-volume mount point. A fresh named volume inherits the
+# ownership of the image directory it is mounted on, so seeding it here is what
+# lets the non-root control plane own its own persistent state.
+RUN mkdir -p /app/data /app/workspaces /app/codex-home /app/state \
     && chown -R node:node /app
 
 USER node

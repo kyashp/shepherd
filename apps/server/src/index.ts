@@ -74,6 +74,8 @@ const shepherdVerifier = new ContainerVerifier(shepherdChecks, {
   maxTimeoutMs: Math.min(config.shepherdVerificationTimeoutMs, 600_000),
   maxOutputBytes: Math.min(config.codexMaxOutputBytes, 4_194_304),
   sensitiveValues,
+  stateRoot: config.containerStateRoot,
+  stateVolume: config.containerStateVolume,
 });
 const shepherdExecutor =
   config.shepherdExecutionMode === "live"
