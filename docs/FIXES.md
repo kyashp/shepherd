@@ -54,8 +54,12 @@ that limitation is explicit.
   Plane-unwind attention, durable reload, protected head/canary and raw-diagnostic
   assertions unchanged. Run the combined TST-17/TST-22/F-06 slice, strict/full and
   hosted Node 22.
-- **Status:** **OPEN / Fixer READY.** Blocks TST-22/F-06 integration only; no
-  product or Store correction is requested.
+- **Status:** **FIXER CANDIDATE / Auditor pending.** The exact test-owned no-op
+  Store sentinel is placed after attention observation and before reload. The row
+  passed 20/20; combined Store/recovery/TST-17/TST-20 coverage passed 138/138 with
+  no late rejection or retained artifact. A distinct transient F-06 recovery row
+  remained order-sensitive in the full suite, so TST-22/F-06 integration and the
+  full gate are still blocked; no product or Store correction is claimed here.
 
 ### `TST-22` — Cleanup markers do not form a crash-safe retry protocol
 

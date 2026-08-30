@@ -7,6 +7,22 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — TST-23 Fixer candidate
+
+The TST-17 Plane-unwind attention row now awaits one test-owned no-op
+`store.mutate` sentinel after observing `attention_required` and before reading
+durable reload state. Because Store operations are serialized, this joins all prior
+original-store persistence without sleeping, retrying, suppressing a rejection or
+changing product behavior. The exact row passed 20/20; combined Store, recovery and
+service coverage passed 138/138 with no unhandled rejection or retained root/temp.
+
+The first literal full gate advanced past TST-23 but stopped in a distinct transient
+Mission-verification persistence row: Server reported 735 passed, two opt-in skips
+and one failure because the row observed attention before its recovery intent was
+cleared. That row passed 10/10 isolated, establishing contention sensitivity rather
+than closure. It is outside TST-23 ownership and is not edited or hidden here; the
+TST-22/F-06 full gate remains blocked pending separately owned evidence/correction.
+
 ## 2026-08-30 — TST-23 independently reproduced on TST-22 checkpoint
 
 On exact checkpoint `619e3ddd369d2dd8a0ce3b04134c0064c240142e`, Auditor ran only

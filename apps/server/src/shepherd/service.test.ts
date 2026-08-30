@@ -2362,6 +2362,7 @@ describe("Shepherd deterministic walking skeleton", () => {
         ),
       { timeout: 10_000 },
     );
+    await store.mutate(() => undefined);
     const detail = service.missionDetail(missionId);
     if (!detail) throw new Error("Plane unwind attention detail disappeared");
     expect(detail.mission).toMatchObject({
