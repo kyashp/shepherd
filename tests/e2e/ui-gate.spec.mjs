@@ -10,12 +10,16 @@ import {
 import {
   assertMinimumContrast,
   assertNoDocumentOverflow,
+  assertNoSensitiveCanaries,
+  assertSafeUiGateSurface,
+  assertScrollOwner,
   assertVisibleFocus,
   captureUiGate,
 } from "./support/ui-gate.mjs";
 
 const LONG_AGENT_NAME = "WWWWWWWWW WWWWWWWWW WWWWWWWWW WWWWWWWWW WWWWWWWWW WWWWWWWWW WWWWWWWWW WWWWWWWWWW";
 const EDITED_DESCRIPTION = "Edited through the clean-shell UI gate.";
+const MISSION_INTENT = "Implement frontend and backend authentication, detect their semantic transport collision, and promote the independently verified resolution.";
 const UNKNOWN_ROUTE = "/ui-gate-route-that-does-not-exist";
 
 let app;
@@ -48,6 +52,40 @@ async function settingsTabState(tablist) {
     tabIndexAttribute: tab.getAttribute("tabindex"),
     tabIndexProperty: tab.tabIndex,
   })));
+}
+
+function authHeaders() {
+  return { Authorization: `Bearer ${AUTH_TOKEN}` };
+}
+
+async function shepherdState(request) {
+  const response = await request.get(`${app.baseURL}/api/shepherd/state`, { headers: authHeaders() });
+  expect(response.status()).toBe(200);
+  return (await response.json()).state;
+}
+
+async function waitForMissionState(request, missionId, expectedState, timeout = 20_000) {
+  const deadline = Date.now() + timeout;
+  let latest;
+  while (Date.now() < deadline) {
+    latest = await shepherdState(request);
+    const mission = latest.missions.find((item) => item.id === missionId);
+    if (mission?.state === expectedState) return latest;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  const observed = latest?.missions.find((item) => item.id === missionId)?.state ?? "missing";
+  throw new Error(`Mission did not reach ${expectedState}; observed ${observed}`);
+}
+
+async function unlockShepherd(page) {
+  await page.goto(`${app.baseURL}/shepherd`);
+  const tokenInput = page.getByLabel("Access token");
+  if (await tokenInput.isVisible()) {
+    await tokenInput.fill(AUTH_TOKEN);
+    await page.getByRole("button", { name: "Open Launchpad" }).click();
+  }
+  await expect(page.getByRole("heading", { name: "Shepherd", exact: true })).toBeVisible();
+  await expect(page.getByText("Kernel online", { exact: true })).toBeVisible();
 }
 
 test.beforeAll(async () => {
@@ -335,4 +373,138 @@ test("covers the clean shell, authentication, Agents, Settings, and not-found st
   const selectedTab = initial.find((tab) => tab.ariaSelected === "true");
   expect.soft(selectedTab?.ariaControls, "the active tab controls the rendered tabpanel").toBe(panels[0]?.id);
   expect.soft(panels[0]?.ariaLabelledby, "the rendered tabpanel is labelled by the active tab").toBe(selectedTab?.id);
+});
+
+test("covers Shepherd loading, empty, and reconnect states", async ({ page }, testInfo) => {
+  const viewport = testInfo.project.use.viewport;
+  expect(viewport).toBeDefined();
+  const viewportName = `${viewport.width}x${viewport.height}`;
+
+  let releaseInitialState;
+  let observeInitialState;
+  const initialStateHeld = new Promise((resolve) => { observeInitialState = resolve; });
+  const initialStateRelease = new Promise((resolve) => { releaseInitialState = resolve; });
+  let heldInitialState = false;
+  const holdInitialState = async (route) => {
+    if (heldInitialState || route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    heldInitialState = true;
+    observeInitialState();
+    await initialStateRelease;
+    await route.continue();
+  };
+  await page.route("**/api/shepherd/state", holdInitialState);
+
+  await page.goto(`${app.baseURL}/shepherd`);
+  await page.getByLabel("Access token").fill(AUTH_TOKEN);
+  await page.getByRole("button", { name: "Open Launchpad" }).click();
+  await initialStateHeld;
+  await expect(page.getByText("Connecting to the Shepherd kernel…", { exact: true })).toBeVisible();
+  await captureUiGate(page, viewportName, "08-shepherd-loading");
+
+  releaseInitialState();
+  await expect(page.getByRole("heading", { name: "Shepherd", exact: true })).toBeVisible();
+  await expect(page.getByText("No Mission yet", { exact: true })).toBeVisible();
+  await expect(page.getByText("Timeline waiting", { exact: true })).toBeVisible();
+  await expect(page.getByText("No Planes yet", { exact: true })).toBeVisible();
+  await assertNoDocumentOverflow(page);
+  await captureUiGate(page, viewportName, "09-shepherd-empty");
+  await page.unroute("**/api/shepherd/state", holdInitialState);
+
+  let failedStateRead = false;
+  const failOneStateRead = async (route) => {
+    if (!failedStateRead && route.request().method() === "GET") {
+      failedStateRead = true;
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "UI gate transient state read" }),
+      });
+      return;
+    }
+    await route.continue();
+  };
+  await page.route("**/api/shepherd/state", failOneStateRead);
+  const reconnectBanner = page.getByRole("status").filter({ hasText: "Showing the last confirmed state" });
+  await expect(reconnectBanner).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByText("No Mission yet", { exact: true })).toBeVisible();
+  await expect(page.getByText("Reconnecting", { exact: true })).toBeVisible();
+  await captureUiGate(page, viewportName, "10-shepherd-reconnecting");
+  await page.unroute("**/api/shepherd/state", failOneStateRead);
+  await expect(page.getByText("Kernel online", { exact: true })).toBeVisible({ timeout: 5_000 });
+  await expect(reconnectBanner).toHaveCount(0);
+});
+
+test("covers every populated Shepherd surface and exposes full Plane identifiers", async ({ page, request }, testInfo) => {
+  test.setTimeout(60_000);
+  const viewport = testInfo.project.use.viewport;
+  expect(viewport).toBeDefined();
+  const viewportName = `${viewport.width}x${viewport.height}`;
+  await unlockShepherd(page);
+
+  const composer = page.getByLabel("Message Shepherd");
+  await composer.fill(MISSION_INTENT);
+  const acceptedResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST" && response.url().endsWith("/api/shepherd/messages"),
+  );
+  await composer.press("Enter");
+  const accepted = await acceptedResponse;
+  expect(accepted.status()).toBe(202);
+  const missionId = (await accepted.json()).missionId;
+  const snapshot = await waitForMissionState(request, missionId, "completed");
+  const mission = snapshot.missions.find((item) => item.id === missionId);
+  const contracts = snapshot.contracts.filter((item) => item.missionId === missionId);
+  const planes = snapshot.planes.filter((item) => item.missionId === missionId);
+  const candidates = snapshot.candidates.filter((item) => item.missionId === missionId);
+  expect(mission).toBeDefined();
+  expect(contracts).toHaveLength(2);
+  expect(planes).toHaveLength(5);
+  expect(candidates).toHaveLength(2);
+
+  await expect(page.locator(".timeline-panel .state-pill")).toHaveText("Completed", { timeout: 5_000 });
+  await expect(page.locator(".plane-tree")).toContainText("Promoted");
+  await assertScrollOwner(page.locator(".event-list"));
+  await assertScrollOwner(page.locator(".timeline-scroll"));
+  await assertScrollOwner(page.locator(".plane-tree"));
+  await assertNoDocumentOverflow(page);
+  await assertNoSensitiveCanaries({ page });
+  await captureUiGate(page, viewportName, "11-shepherd-active");
+
+  for (const name of ["Contracts", "Verification", "Collisions", "Resolution"]) {
+    const filter = page.getByRole("button", { name, exact: true });
+    await filter.click();
+    await expect(filter).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("article.event-card").first()).toBeVisible();
+  }
+  await captureUiGate(page, viewportName, "12-shepherd-filtered");
+  await page.getByRole("button", { name: "All", exact: true }).click();
+
+  const selectedCandidate = candidates.find((item) => item.selectionState === "selected");
+  expect(selectedCandidate).toBeDefined();
+  const selectedPlane = planes.find((item) => item.id === selectedCandidate.planeId);
+  expect(selectedPlane).toBeDefined();
+  const selectedNode = page.locator("button.tree-node").filter({ hasText: selectedCandidate.targetValue });
+  await selectedNode.scrollIntoViewIfNeeded();
+  const shortenedPlaneId = selectedNode.locator("small");
+  await expect(shortenedPlaneId).toHaveText(`${selectedPlane.id.slice(0, 14)}…`);
+  await expect.soft(shortenedPlaneId, "the shortened Plane ID exposes its full value").toHaveAttribute("title", selectedPlane.id);
+
+  await selectedNode.click();
+  const drawer = page.getByRole("dialog");
+  await expect(drawer).toBeVisible();
+  await assertSafeUiGateSurface(drawer);
+  const closeDrawer = drawer.getByRole("button", { name: "Close Plane detail" });
+  await expect(closeDrawer).toBeFocused();
+  const candidateTab = drawer.getByRole("tab", { name: "Candidate verification" });
+  const promotionTab = drawer.getByRole("tab", { name: "Final promotion re-verification" });
+  await candidateTab.focus();
+  await candidateTab.press("ArrowRight");
+  await expect(promotionTab).toBeFocused();
+  await expect(promotionTab).toHaveAttribute("aria-selected", "true");
+  await captureUiGate(page, viewportName, "13-plane-drawer");
+  await page.keyboard.press("Escape");
+  await expect(drawer).toHaveCount(0);
+  await expect(selectedNode).toBeFocused();
 });
