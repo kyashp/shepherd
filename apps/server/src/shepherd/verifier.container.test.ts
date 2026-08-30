@@ -373,6 +373,49 @@ else process.exit(0);
     }
   });
 
+  it("fails closed when a Plane escapes the state root instead of falling back to a bind mount", async () => {
+    const fixture = await createPlaneFixture();
+    try {
+      const executor = new RecordingExecutor([result({})]);
+      // A sibling of the real root: `<case>-outside` is not inside `<case>`, so the
+      // volume subpath cannot be derived. Falling back to a bind mount here would
+      // hand the check a workspace the Agent sandbox cannot govern on an affected
+      // host, so the only safe outcome is to refuse.
+      const stateRoot = (await realpath(fixture.casePath)) + "-outside";
+      await mkdir(stateRoot, { recursive: true });
+      const verifier = new ContainerVerifier(
+        new TrustedCheckRegistry([
+          { id: "node-check", command: "node", args: ["-e", ""], cwd: "." },
+        ]),
+        {
+          planesRoot: fixture.planesRoot,
+          containerEngine,
+          containerImage: runtimeImage,
+          containerUser,
+          ownerId: "state-volume-escape-owner",
+          stateRoot,
+          stateVolume: "launchpad-state",
+          executor,
+          idFactory: () => "evidence-id",
+        },
+      );
+      await expect(
+        verifier.verify({
+          targetType: "candidate",
+          targetId: "candidate-a",
+          planePath: fixture.planePath,
+          checks: [check()],
+          changedFiles: ["fixture.txt"],
+        }),
+      ).rejects.toThrow("Plane path escapes CONTAINER_STATE_ROOT");
+      // Nothing may be launched, and above all not through a bind mount.
+      expect(executor.invocations).toHaveLength(0);
+      await rm(stateRoot, { recursive: true, force: true });
+    } finally {
+      await destroyPlaneFixture(fixture);
+    }
+  });
+
   it("redacts outputs and maps timeout, output overflow, optional failure, and unknown profiles", async () => {
     const fixture = await createPlaneFixture();
     try {

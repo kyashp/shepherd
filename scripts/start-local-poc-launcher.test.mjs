@@ -280,3 +280,140 @@ test("direct shell launch reads dotenv and localizes Docker-default data paths",
     assert.equal((await readFile(capturePath, "utf8")).trim().split("\n").at(-1), expectedHost);
   }
 });
+
+
+async function copyLauncherScripts(scriptsDirectory) {
+  await Promise.all(
+    ["start-local-poc.sh", "start-local-poc-launcher.mjs"].map(async (name) =>
+      writeFile(
+        path.join(scriptsDirectory, name),
+        await readFile(path.join(repositoryRoot, "scripts", name), "utf8"),
+      ),
+    ),
+  );
+}
+
+test("auto state mode falls back to the container volume when the sandbox probe fails on the host layout", async () => {
+  // The probe, not the platform, decides the layout. A host share the engine can
+  // write but Landlock cannot govern must be detected and replaced, because
+  // continuing would hand every Plane an Agent that cannot write its own workspace.
+  const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "ops-06-auto-"));
+  temporaryDirectories.push(temporaryDirectory);
+  const scriptsDirectory = path.join(temporaryDirectory, "scripts");
+  const binDirectory = path.join(temporaryDirectory, "bin");
+  const homeDirectory = path.join(temporaryDirectory, "home");
+  const capturePath = path.join(temporaryDirectory, "compose-environment");
+  const engineLogPath = path.join(temporaryDirectory, "engine-invocations");
+  await Promise.all([mkdir(scriptsDirectory), mkdir(binDirectory), mkdir(homeDirectory)]);
+  await copyLauncherScripts(scriptsDirectory);
+  await writeFile(
+    path.join(temporaryDirectory, ".env"),
+    ["ARK_API_KEY=ops-06-key", "ARK_MODEL=ops-06-model", "CONTAINER_ENGINE=docker", ""].join("\n"),
+    "utf8",
+  );
+  // Landlock is denied on a bind-mounted workspace and permitted on a volume one.
+  // Every other engine call succeeds, so the fallback is the only thing under test.
+  await writeFile(
+    path.join(binDirectory, "docker"),
+    [
+      "#!/usr/bin/env bash",
+      'printf "%s\\n" "$*" >> "$OPS_06_ENGINE_LOG"',
+      'if [[ "$*" == *"stat -c %g"* ]]; then echo 999; exit 0; fi',
+      'if [[ "$1" == "compose" ]]; then',
+      "  {",
+      '    printf "%s\\n" "${CONTAINER_STATE_ROOT:-unset}"',
+      '    printf "%s\\n" "${CONTAINER_STATE_VOLUME:-unset}"',
+      '    printf "%s\\n" "${CONTAINER_ENGINE_SOCKET_GID:-unset}"',
+      '  } > "$OPS_06_CAPTURE"',
+      "  exit 0",
+      "fi",
+      'if [[ "$*" == *"codex sandbox linux"* && "$*" == *"type=bind"* ]]; then exit 1; fi',
+      "exit 0",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await writeFile(path.join(binDirectory, "npm"), "#!/usr/bin/env bash\nexit 0\n", "utf8");
+  await Promise.all([
+    chmod(path.join(scriptsDirectory, "start-local-poc.sh"), 0o755),
+    chmod(path.join(binDirectory, "docker"), 0o755),
+    chmod(path.join(binDirectory, "npm"), 0o755),
+  ]);
+
+  const result = await run(path.join(scriptsDirectory, "start-local-poc.sh"), [], {
+    cwd: temporaryDirectory,
+    env: {
+      PATH: `${binDirectory}${path.delimiter}${process.env.PATH ?? ""}`,
+      HOME: homeDirectory,
+      OPS_06_CAPTURE: capturePath,
+      OPS_06_ENGINE_LOG: engineLogPath,
+    },
+  });
+
+  // The launcher logs to stderr; assert against both streams rather than assuming.
+  const output = result.stdout + result.stderr;
+  assert.equal(result.code, 0, output);
+  assert.match(output, /The Codex sandbox cannot govern a workspace on/u);
+  assert.match(output, /Switching to the .* container state volume and retrying\./u);
+  // The switch must reach the control plane, not just the log line.
+  const [stateRoot, stateVolume] = (await readFile(capturePath, "utf8")).trim().split("\n");
+  assert.notEqual(stateRoot, "unset");
+  assert.notEqual(stateVolume, "unset");
+  // The retry must actually be a volume mount, and the volume must be created first.
+  const invocations = (await readFile(engineLogPath, "utf8")).trim().split("\n");
+  assert.ok(invocations.some((entry) => entry.startsWith("volume create ")));
+  assert.ok(
+    invocations.some(
+      (entry) => entry.includes("codex sandbox linux") && entry.includes("type=volume"),
+    ),
+  );
+});
+
+test("an explicit host-bind state mode fails loudly instead of falling back", async () => {
+  // A host that should work must not be silently rewritten: the operator asked for
+  // the bind layout and needs to see it refused rather than quietly replaced.
+  const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "ops-06-explicit-"));
+  temporaryDirectories.push(temporaryDirectory);
+  const scriptsDirectory = path.join(temporaryDirectory, "scripts");
+  const binDirectory = path.join(temporaryDirectory, "bin");
+  const homeDirectory = path.join(temporaryDirectory, "home");
+  await Promise.all([mkdir(scriptsDirectory), mkdir(binDirectory), mkdir(homeDirectory)]);
+  await copyLauncherScripts(scriptsDirectory);
+  await writeFile(
+    path.join(temporaryDirectory, ".env"),
+    ["ARK_API_KEY=ops-06-key", "ARK_MODEL=ops-06-model", "CONTAINER_ENGINE=docker", ""].join("\n"),
+    "utf8",
+  );
+  await writeFile(
+    path.join(binDirectory, "docker"),
+    [
+      "#!/usr/bin/env bash",
+      'if [[ "$*" == *"codex sandbox linux"* ]]; then exit 1; fi',
+      "exit 0",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await writeFile(path.join(binDirectory, "npm"), "#!/usr/bin/env bash\nexit 0\n", "utf8");
+  await Promise.all([
+    chmod(path.join(scriptsDirectory, "start-local-poc.sh"), 0o755),
+    chmod(path.join(binDirectory, "docker"), 0o755),
+    chmod(path.join(binDirectory, "npm"), 0o755),
+  ]);
+
+  const result = await run(path.join(scriptsDirectory, "start-local-poc.sh"), [], {
+    cwd: temporaryDirectory,
+    env: {
+      PATH: `${binDirectory}${path.delimiter}${process.env.PATH ?? ""}`,
+      HOME: homeDirectory,
+      LOCAL_POC_STATE_MODE: "host-bind",
+    },
+  });
+
+  const output = result.stdout + result.stderr;
+  // The wrapper reports the script's own exit 2 and then fails non-zero itself.
+  assert.notEqual(result.code, 0);
+  assert.match(output, /Local PoC exited with 2/u);
+  assert.doesNotMatch(output, /Switching to the .* container state volume/u);
+  assert.match(output, /will not fall back to danger-full-access/u);
+});
