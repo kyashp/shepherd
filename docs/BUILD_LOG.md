@@ -7,6 +7,206 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-31 — SEC-REVIEW parts 4-5 moved to a successor issue
+
+Documentation only; no product code. Protected `main` at `c158480`.
+
+- `SEC-REVIEW` `#49` was closed three times with its scope unsatisfied: manually on
+  2026-08-30 at 08:30 before the OPS-06 `S` review had run, reopened at 16:40, then
+  closed again at 17:16 by **PR #86, which left `#49` in its closing references while
+  its own body stated that parts 4 and 5 were not claimed**. That third closure was
+  the author's own error and was not noticed at merge.
+- Rather than reopen a fourth time, the remaining scope moved to issue `#89`, whose
+  title and acceptance match what is actually left: the independent read-only review,
+  the fixes that depend on it, and an explicit decision on the carried `OPS-06`
+  compose exposure. `#49` is left closed with the history recorded on it.
+- Pointers corrected: the `SEC-REVIEW` row, the `OPS-06` row's owner reference for
+  the carried High finding, and the hackathon-cut list all named `#49`. The closure
+  comment posted on `#47` named it too and was corrected in a follow-up comment.
+- Nothing about any gate changed. `SEC-REVIEW` stays `PARTIAL` at 70% with parts 1-3
+  evidenced, and `OPS-06` keeps its scoped 100 with the High finding carried.
+- `#89` records the instruction that closed `#49` twice: do not put a closing keyword
+  for it in a PR body unless that PR completes every part.
+
+## 2026-08-31 — ST-01 and OPS-06 integration rerun, self-performed
+
+Protected `main` at `a62e29b` (merge of PR #86). Branch
+`docs/44-47-integration-rerun`. No live or model call ran.
+
+- **This rerun was performed by the author of the implementations under test.**
+  `docs/TASKS.md` reserves `AUDITED` for independent end-to-end evidence and defines
+  the `I` gate as a rerun by the auditor. Neither row is marked `AUDITED` on the
+  strength of this entry, and an independent rerun is still owed for both.
+- **Hosted exact-head gate.** Run `33324819058` on `a62e29b`, literal
+  `npm run check` on `ubuntu-latest` / Node 22: success. This is the primary
+  evidence, and it is platform-independent of the notes below.
+- **Local gate on the same SHA.** `npm run typecheck` passed. Launcher and deploy
+  script tests 9/9. Web 20/20. Both production builds passed. The server suite run
+  serially reported **837 passed, 7 failed, 2 skipped** across 34 files.
+- **On those 7 local failures.** A second serial run on the same SHA reproduced the
+  identical set — 837 passed, 7 failed, 2 skipped, same tests — so this is a stable
+  host condition rather than a varying draw. Enumerated: five in
+  `recovery.process.test.ts` (the four SIGKILL-checkpoint cases and the
+  update-ref/read-tree fail-closed case), and two in `service.test.ts` (the `PERF-01`
+  scheduled-interval case and the `cancels tracked attention-required Missions`
+  case). Every one is a timing failure — `Timed out waiting for recovered`,
+  `Test timed out in 5000ms`, and the recorded
+  `expected 'resolving' to be 'attention_required'` `vi.waitFor` flake. No assertion
+  failure of substance appears in either run. The same commit passes the full suite
+  on Linux in CI, and this host's documented inability to run the suite green —
+  recorded since the OPS-06 work, where pristine `main` itself failed 39 and the
+  branch 61, all timeouts — is the standing explanation. No local figure in this
+  entry is offered as a pass.
+- **Targeted surfaces on the same head passed**: the ST-01, composition,
+  verifier-container, codex-executor, app and config suites together 149/149, plus
+  the 9/9 script tests. These are the rows' own surfaces and are unaffected by the
+  suite-wide timing condition.
+- **A stale claim corrected.** The OPS-06 row still said the carried High finding had
+  "no open owner" because `SEC-REVIEW` was closed. `#49` was reopened on 2026-08-31,
+  so the row now names it as the owner.
+- **Why the independent rerun still matters for OPS-06.** The `SEC-REVIEW` boundary
+  audit found `SEC-01`, an authentication bypass reachable by percent-encoding the
+  `/api/` prefix, on the same `APP_AUTH_TOKEN` boundary this row's `S` gate covers.
+  The author of that gate had worked beside the hook repeatedly without noticing it,
+  and the first correction offered for it silently widened an exemption. Both were
+  caught by someone else looking.
+
+## 2026-08-31 — SEC-REVIEW parts 1-3, and an authentication bypass found and fixed
+
+Branch `audit/49-sec-review-evidence` from `main` at `bd9b093`; hosted exact-head
+gate on that head is run `33323137812`. Issue #49 reopened after being closed on
+2026-08-30 with its row unsatisfied. Parts 1-3 of its acceptance are claimed here;
+parts 4 and 5 are not. No live or model call ran.
+
+### `SEC-01` — the bearer hook was bypassable by percent-encoding the prefix
+
+- Reproduced against the real `createApp`, with `APP_AUTH_TOKEN` configured and no
+  `Authorization` header: `GET /api/system` returns 401 while `GET /%61pi/system`
+  returns **200** and executes the handler.
+- Cause: the `onRequest` hook decided whether to authenticate from `request.url`,
+  the raw request target, while Fastify percent-decodes static path segments before
+  route matching. Any encoded spelling of `/api/` failed the hook's string test, so
+  the hook returned early and the router still resolved the request.
+- Every route was affected, including destructive ones: the audit observed
+  `PATCH /%61pi/shepherd/settings`, `POST /%61pi/shepherd/demo/reset` and
+  `DELETE /%61pi/agents/<id>` all returning 200 and executing their service calls.
+  The reset route removes Plane worktrees and restores the protected HEAD.
+- Reachable remotely wherever the token is the only control, because
+  `docker-compose.yml` binds `0.0.0.0` and publishes its port with no address prefix.
+- **Not introduced by any recent change, and not caught by the suite.** The existing
+  auth tests only ever exercised canonical spellings, so `app.test.ts`,
+  `authority.test.ts` and `manifest.test.ts` passed while the bypass was live.
+- Corrected by deciding from the decoded target, treating an undecodable target as
+  protected rather than exempt. The `/api/health` and `/api/auth` exemptions stay
+  exact-match, so a query string on a public route still fails closed — an earlier
+  form of this fix stripped the query string and thereby widened those exemptions,
+  which is a behaviour change and was reverted. Both properties are asserted.
+- Causal: reverting the hook to the raw-URL test fails the new test. `app.test.ts`
+  21/21, `config.test.ts` included 55/55, web 20/20, strict typecheck clean.
+
+### Part 1 — canary scan: pass with two low observations
+
+- Exactly two configuration values are credentials, both assembled into one
+  `sensitiveValues` set and threaded to the store, verifier, service, prompt builder
+  and model reviewer, with the API layer reconstructing the same pair independently.
+- No path was found by which either reaches the persisted state, a model prompt, a
+  4xx or 5xx response body, the DOM, browser storage, a URL, the logger, or a tracked
+  file. The Ark key is never placed in argv — the runner passes the name only and
+  injects the value through the child environment — and never written into the
+  generated Codex configuration. The prompt builder fails the whole turn rather than
+  emit a prompt containing a secret.
+- Mechanically confirmed here: no credential file is tracked, `.gitignore` covers
+  `.env` and `.env.production`, the only key-shaped literal in tracked source is a
+  deliberately planted canary in `redaction.test.ts`, and the web client holds the
+  token in a module variable and sends it only as an `Authorization` header — no
+  `localStorage`, `sessionStorage`, cookie or query parameter anywhere in the client.
+- Observations, both low and neither exploitable with a normally shaped credential:
+  `/api/system` is the only response serializer with no redaction pass, and
+  `ARK_API_KEY` has no minimum length while the redaction sets apply a 4-character
+  floor.
+
+### Part 2 — five invariant-mutation evidence cases
+
+Each invariant was broken in production source and an existing test caught it. All
+source was restored after each; `git status` clean. Baseline before mutating: 66/66.
+
+| Invariant | Mutation | Caught by |
+|---|---|---|
+| Bearer auth enforced on every `/api/` route | `app.ts` `if (!valid)` to `if (false)` | 2 failed, including *protects API routes with the configured shared token* |
+| No promotion without passing final mandatory re-verification | `promotion-gate.ts` `if (!evidence.passed)` to `if (false)` | *FM-01 ... persists failed final re-verification evidence without promotion* |
+| Protected branch advances only by expected-HEAD CAS | `git-client.ts` `before !== persistedHead` to `false` | 1 failed in `git-plane-promotion.integration` |
+| Writes must fall inside declared writable authority | `authority.ts` `matchesAny(path, grants)` to `true` | 2 failed in `authority.test.ts` |
+| Verification Plane stays inside the managed root | `verifier.ts` containment check to `if (false)` | 1 failed in `verifier.container.test.ts` |
+
+Two invariants were deliberately excluded and the reason recorded: the hook's
+constant-time comparison has no mutation coverage, because replacing
+`timingSafeEqual` with a plain comparison is behaviourally identical and no test can
+distinguish it; and the promotion gate's own expected-HEAD check is not detectable in
+isolation because the Git layer re-checks the same condition and the gate maps the
+error to the same reason. The second is defence in depth working, which is why the
+CAS is demonstrated at the Git layer instead.
+
+### Part 3 — boundary audit: FAIL on one sub-surface
+
+Route inventory carries no debug, introspection or diagnostic route; static serving
+and the not-found handler are traversal-proof; every identifier reaching a filesystem
+path, Git ref or container name is server-generated and revalidated; the Contract
+authority model cannot be broadened by a manifest or a model-produced plan; and
+promotion cannot proceed without mandatory independent re-verification of the exact
+commit, behind a real `git update-ref <ref> <new> <old>`. The bypass sub-surface
+failed, which is `SEC-01` above. Other evasion vectors were probed and hold: casing,
+trailing slash, query string, dot segments, encoded separator, double slash, and
+method. There is no websocket or SSE upgrade.
+
+### Not claimed
+
+Parts 4 and 5 are unclaimed. The independent read-only security review must not be
+performed by the author of `config.ts`'s token floor,
+`scripts/check-deploy-auth-token.mjs`, the deploy guard, the `OPS-06` `A`-gate tests,
+or the `SEC-01` fix above — all of which sit inside this issue's audit surface. The
+carried `OPS-06` High finding remains a posture decision for that reviewer and the
+maintainer: `docker-compose.yml` binds `0.0.0.0` with an unprefixed port while
+`README` documents two entry points a deploy-script guard cannot reach.
+
+## 2026-08-31 — OPS-06 and ST-01 integrated; the OPS-06 High finding is carried
+
+Protected `main` at `3087b69` (merge of PR #69). That head also carries PR #73
+merge `a8d2266` (ST-01) and PR #68 merge `6137f36` (OPS-06 `A` gate). No live or
+model call ran.
+
+- **Hosted exact-head gate.** Run `33322423938` on `3087b69`, job
+  `Node 22 / npm run check` on `ubuntu-latest`: success.
+- **Observed on the integrated head.** The startup-settings, composition,
+  verifier-container, config and app suites passed 76/76; the deploy-token and
+  launcher script tests passed 9/9. These are targeted and adjacent runs by the
+  implementer, not the auditor's `I` rerun, which is still required before either
+  row is called audited.
+- **`OPS-06` reaches scoped 100 with `T,A,C,S,I`.** `A` is integrated at `6137f36`
+  and `S` at `3087b69`. Scoped 100 means every gate listed for that row passed; it
+  does not mean the trust boundary is closed.
+- **The `S` review's High finding is carried, not closed.** The independent review
+  returned FAIL on the merged range because `e6a5878` removed the non-loopback
+  `APP_AUTH_TOKEN` requirement and the documented existing-ECS path then started an
+  unauthenticated Agent-execution API on every interface. `scripts/deploy-existing-ecs.sh`
+  now refuses that deploy, resolving the token through `docker compose config` so the
+  check and the container share one parser and one rule. But `docker-compose.yml`
+  still binds `0.0.0.0` and publishes its port with no address prefix, and `README`
+  documents two other entry points against it — `docker compose up --build` and
+  `docker compose --env-file .env.production up -d` — which the script guard cannot
+  reach. Pinning that file to loopback was rejected because the profile is meant to
+  be reachable behind a security group and the same file serves the local Docker
+  path. The remainder is `SEC-REVIEW` (`#49`) scope. **No row may be read as closing
+  it.**
+- **`ST-01` is integrated at `a8d2266`,** with the behaviour change it carries
+  recorded in the entry for that work: `SHEPHERD_MAX_PARALLEL_PLANES=1` previously
+  booted because the parsed value was discarded and now fails at `loadConfig`, and a
+  host that never set the variable moves from a nominal 4 to the 2 it actually ran
+  with.
+- **Process note.** The three branches were authored and, apart from PR #69, merged
+  by the same person. `AGENTS.md` assigns merges and the `I` rerun to the integrator
+  and auditor precisely so neither is self-certified; the `I` gate for both rows
+  remains open on that basis.
+
 ## 2026-08-30 — ST-01 startup settings composed into the service
 
 Branch `fix/44-st-01-startup-settings`, PR #73, against `main` at `07f4202`. No
@@ -251,6 +451,47 @@ protected-main integration is not claimed.
   joined causally. Protected-main integration remains pending. The same-OS-user
   recursive-path swap and Project-journal sudden-power-loss ordering are retained as
   Low residuals under the existing single-owner local PoC threat/availability model.
+## 2026-08-30 — the deploy guard is resolved through Compose, not re-parsed
+
+Branches `fix/47-ops-06-auth-boundary` (PR #69) and `test/47-ops-06-adjacent-coverage`
+(PR #68), against `main` at `07f4202`. No live or model call ran.
+
+- **The shell guard was the wrong mechanism, not merely buggy.** Adversarial review
+  found six environment-file shapes where `sed -n 's/^APP_AUTH_TOKEN=//p'` reads a
+  valid token while Docker Compose resolves the variable to empty or absent, so the
+  deploy was approved and the container then started with the bearer boundary
+  disabled on the `0.0.0.0` bind this profile publishes. Reproduced directly: a file
+  whose valid line is followed by `export APP_AUTH_TOKEN=` gives `sed` the token and
+  `docker compose config` `APP_AUTH_TOKEN: ""`. `sed` does not implement compose-go's
+  handling of `export`, leading whitespace, quoting, escape sequences, multi-line
+  values or `${VAR}` interpolation, and every divergence is a chance to approve a
+  token the container never receives. Three further shapes passed the guard and then
+  aborted the container at startup, contradicting the guard's own stated guarantee.
+- **Correction.** `scripts/check-deploy-auth-token.mjs` resolves the value through
+  `docker compose config --format json` — Compose's own parser, with
+  `LAUNCHPAD_ENV_FILE` set as the deploy script sets it — and applies the same rule
+  as `apps/server/src/config.ts`: trim, URL-safe shape, 24-character floor, no
+  `replace-` placeholder. `scripts/deploy-existing-ecs.sh` delegates to it. Because
+  the check and the container now read one parser and one rule, neither the bypass
+  class nor the approved-then-rejected class remains.
+- **Observed against the real Compose parser** on this host: the `export` override,
+  the indented override, a quoted run of spaces, an undefined interpolation, a
+  trailing comment padding the line length, and a CRLF empty value all resolve to
+  refusal; a quoted 23-character token and a quoted `replace-` placeholder resolve
+  to `weak` where a shell parse counted the quotes and passed; a genuine 36-character
+  token resolves to `ok`. Tests 4/4. Causality checked by mutation: removing the
+  24-character floor fails 2 cases, removing the trim fails 1.
+- **Ledger.** `PR #63` merged ahead of both evidence branches and left the OPS-06 row
+  claiming `T,A,C,S,I` while neither was integrated. Both branches now carry the same
+  row text, which claims neither `A` nor `S` until its PR is an ancestor of
+  `origin/main`; identical text on both sides also removes the merge conflict the two
+  earlier, differing corrections created. The two should land back-to-back and both
+  gates be flipped in one follow-up.
+- **Still not closed.** The High finding remains partly open: this guards the deploy
+  script, while `README` still documents `docker compose up --build` and
+  `docker compose --env-file .env.production up -d` against the same unguarded
+  `docker-compose.yml`. Carried into `SEC-REVIEW`.
+
 ## 2026-08-30 — OPS-06 `A` and `S` gates, and a corrected reconciliation
 
 Protected `main` advanced to `f900656` (PR #71) while this reconciliation branch was

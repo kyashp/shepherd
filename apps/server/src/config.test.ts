@@ -117,18 +117,31 @@ describe("Shepherd configuration", () => {
       }
     }
 
-    // A short or previously rejected placeholder value is now carried verbatim
-    // rather than refused, and any configured token is still enforced downstream.
+    // A genuine token is carried verbatim on any bind. Weakness is asserted
+    // separately, so this case keeps proving only what it is named for.
     expect(
       loadConfig({
         HOST: "0.0.0.0",
         NODE_ENV: "production",
-        APP_AUTH_TOKEN: "replace-with-a-long-token-value",
+        APP_AUTH_TOKEN: "a-genuinely-configured-operator-token",
       }).authToken,
-    ).toBe("replace-with-a-long-token-value");
-    expect(
-      loadConfig({ HOST: "0.0.0.0", APP_AUTH_TOKEN: "short" }).authToken,
-    ).toBe("short");
+    ).toBe("a-genuinely-configured-operator-token");
+  });
+
+  it("rejects a configured token that is too weak to be a credential", () => {
+    // Optional and weak are separable. An empty token is a deliberate loopback
+    // convenience; a token that IS set presents an unlock screen and reports
+    // required:true, so accepting a value published in this repository's own
+    // history would advertise a boundary that is not one.
+    expect(() =>
+      loadConfig({
+        HOST: "0.0.0.0",
+        APP_AUTH_TOKEN: "replace-with-a-long-token-value",
+      }),
+    ).toThrow(/non-placeholder/u);
+    expect(() =>
+      loadConfig({ HOST: "0.0.0.0", APP_AUTH_TOKEN: "short" }),
+    ).toThrow(/non-placeholder/u);
   });
 
   it("still rejects a token that cannot be sent as a bearer credential", () => {
@@ -402,7 +415,7 @@ describe("Shepherd advisory model review configuration", () => {
   it("allows a reviewer-only loopback clone without mutating unsafe source hosting", () => {
     const sourceEnvironment: NodeJS.ProcessEnv = {
       HOST: "0.0.0.0",
-      APP_AUTH_TOKEN: "short",
+      APP_AUTH_TOKEN: "a-carried-reviewer-clone-token",
       ARK_API_KEY: "ark-key-value-123456",
       ARK_MODEL: "ep-agent-model",
       SHEPHERD_MODEL: "ep-review-model",
@@ -416,7 +429,7 @@ describe("Shepherd advisory model review configuration", () => {
     const config = loadConfig(reviewerEnvironment);
 
     expect(sourceEnvironment.HOST).toBe("0.0.0.0");
-    expect(sourceEnvironment.APP_AUTH_TOKEN).toBe("short");
+    expect(sourceEnvironment.APP_AUTH_TOKEN).toBe("a-carried-reviewer-clone-token");
     expect(config).toMatchObject({
       host: "127.0.0.1",
       arkApiKey: sourceEnvironment.ARK_API_KEY,

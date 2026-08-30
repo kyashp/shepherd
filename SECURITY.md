@@ -23,6 +23,7 @@ credentials, personal data, or exploit details in an issue.
 - Ordinary local containers, not hardened multi-tenant sandboxes
 - Broad outbound network access
 - Prompt-triggered command and file execution
+- Control plane holds the container engine socket in `container-volume` mode, which is equivalent to control of the engine; see `docs/DEVIATIONS.md`
 - Ark key available to the server and active Runtime container
 - Ark key stored in Terraform POC state
 
