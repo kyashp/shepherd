@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import path from "node:path";
-import { mkdir, readFile } from "node:fs/promises";
+import { access, mkdir, readFile } from "node:fs/promises";
 import { AUTH_TOKEN, repositoryRoot, startTestApp } from "./support/test-app.mjs";
 
 let app;
@@ -246,6 +246,80 @@ test("general Agent chat clarifies missing Contract details before verified exec
     ),
     fullPage: false,
   });
+});
+
+test("clarification-only Shepherd drafts do not trap an Agent lifecycle", async ({ page, request }, testInfo) => {
+  const viewport = testInfo.project.use.viewport;
+  const screenshotDirectory = path.join(repositoryRoot, ".tmp", "agent-delete-clarification");
+  await mkdir(screenshotDirectory, { recursive: true });
+  await unlock(page);
+  await createAgent(page, "Disposable Draft Agent", "Generalist");
+
+  const agentsResponse = await request.get(`${app.baseURL}/api/agents`, {
+    headers: headers(),
+  });
+  expect(agentsResponse.status()).toBe(200);
+  const agent = (await agentsResponse.json()).agents.find(
+    (item) => item.name === "Disposable Draft Agent",
+  );
+  expect(agent).toBeDefined();
+
+  const composer = page.getByLabel("Message Disposable Draft Agent");
+  for (const prompt of [
+    "Create a greeting script.",
+    "Create scripts/hello.txt containing a greeting.",
+  ]) {
+    await composer.fill(prompt);
+    const clarificationResponse = page.waitForResponse((response) =>
+      response.request().method() === "POST" &&
+      /\/api\/shepherd\/agents\/[^/]+\/contracts$/u.test(response.url()),
+    );
+    await composer.press("Enter");
+    expect((await clarificationResponse).status()).toBe(201);
+  }
+  await expect(page.getByText(/Before I create the Execution Contract/u)).toHaveCount(2);
+  const pendingState = await state(request);
+  expect(pendingState.contracts).toHaveLength(0);
+  expect(pendingState.missions).toHaveLength(0);
+  await assertNoDocumentOverflow(page);
+  await page.screenshot({
+    path: path.join(
+      screenshotDirectory,
+      `clarification-${viewport.width}x${viewport.height}.png`,
+    ),
+    fullPage: false,
+  });
+
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await expect(page.getByText("Agent stopped", { exact: true })).toBeVisible();
+  page.once("dialog", (dialog) => dialog.accept());
+  const deletionResponse = page.waitForResponse((response) =>
+    response.request().method() === "DELETE" &&
+    response.url().endsWith(`/api/agents/${agent.id}`),
+  );
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  expect((await deletionResponse).status()).toBe(200);
+  await expect(page.getByRole("heading", { name: "Your Agents", exact: true })).toBeVisible();
+  await expect(page.getByText("No Agents yet", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Disposable Draft Agent/u })).toHaveCount(0);
+  expect((await state(request)).projects).toHaveLength(0);
+  await assertNoDocumentOverflow(page);
+  await page.screenshot({
+    path: path.join(
+      screenshotDirectory,
+      `deleted-${viewport.width}x${viewport.height}.png`,
+    ),
+    fullPage: false,
+  });
+
+  for (const target of [
+    path.join(app.runRoot, "workspaces", agent.id),
+    path.join(app.runRoot, "shepherd", "repositories", `agent-${agent.id}`),
+    path.join(app.runRoot, "shepherd", "planes", `agent-${agent.id}`),
+    path.join(app.runRoot, "shepherd", "projects", `agent-${agent.id}.json`),
+  ]) {
+    await expect(access(target)).rejects.toMatchObject({ code: "ENOENT" });
+  }
 });
 
 test("unresolved promotion creates a visible durable human-review reference", async ({ page, request }) => {
