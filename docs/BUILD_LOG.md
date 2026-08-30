@@ -7,6 +7,45 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-31 — OPS-06 and ST-01 integrated; the OPS-06 High finding is carried
+
+Protected `main` at `3087b69` (merge of PR #69). That head also carries PR #73
+merge `a8d2266` (ST-01) and PR #68 merge `6137f36` (OPS-06 `A` gate). No live or
+model call ran.
+
+- **Hosted exact-head gate.** Run `33322423938` on `3087b69`, job
+  `Node 22 / npm run check` on `ubuntu-latest`: success.
+- **Observed on the integrated head.** The startup-settings, composition,
+  verifier-container, config and app suites passed 76/76; the deploy-token and
+  launcher script tests passed 9/9. These are targeted and adjacent runs by the
+  implementer, not the auditor's `I` rerun, which is still required before either
+  row is called audited.
+- **`OPS-06` reaches scoped 100 with `T,A,C,S,I`.** `A` is integrated at `6137f36`
+  and `S` at `3087b69`. Scoped 100 means every gate listed for that row passed; it
+  does not mean the trust boundary is closed.
+- **The `S` review's High finding is carried, not closed.** The independent review
+  returned FAIL on the merged range because `e6a5878` removed the non-loopback
+  `APP_AUTH_TOKEN` requirement and the documented existing-ECS path then started an
+  unauthenticated Agent-execution API on every interface. `scripts/deploy-existing-ecs.sh`
+  now refuses that deploy, resolving the token through `docker compose config` so the
+  check and the container share one parser and one rule. But `docker-compose.yml`
+  still binds `0.0.0.0` and publishes its port with no address prefix, and `README`
+  documents two other entry points against it — `docker compose up --build` and
+  `docker compose --env-file .env.production up -d` — which the script guard cannot
+  reach. Pinning that file to loopback was rejected because the profile is meant to
+  be reachable behind a security group and the same file serves the local Docker
+  path. The remainder is `SEC-REVIEW` (`#49`) scope. **No row may be read as closing
+  it.**
+- **`ST-01` is integrated at `a8d2266`,** with the behaviour change it carries
+  recorded in the entry for that work: `SHEPHERD_MAX_PARALLEL_PLANES=1` previously
+  booted because the parsed value was discarded and now fails at `loadConfig`, and a
+  host that never set the variable moves from a nominal 4 to the 2 it actually ran
+  with.
+- **Process note.** The three branches were authored and, apart from PR #69, merged
+  by the same person. `AGENTS.md` assigns merges and the `I` rerun to the integrator
+  and auditor precisely so neither is self-certified; the `I` gate for both rows
+  remains open on that basis.
+
 ## 2026-08-30 — ST-01 startup settings composed into the service
 
 Branch `fix/44-st-01-startup-settings`, PR #73, against `main` at `07f4202`. No
