@@ -12,10 +12,10 @@ and phase named in each entry.
 
 ## Hackathon status snapshot
 
-The canonical delivery target is protected `main`. The latest verified product
-candidate is PR #40 source `3d1a041`, integrated on the temporary campaign branch
-at `005a51e`; protected-`main` promotion and post-merge evidence are pending this
-integration. The deterministic kernel, strict
+The canonical delivery branch is protected `main`. PR #53 promoted the verified
+campaign through protected review at merge `5ccd0f1`; that exact merge passed the
+post-integration repository gate recorded in `BUILD_LOG.md`. The latest product
+feature in the campaign is PR #40 source `3d1a041`. The deterministic kernel, strict
 persistence/API boundaries, live isolated Runtime adapter, Agent roles and scoped
 authority, cancellation/retry/selection/reset controls, Project Group lifecycle
 storage, and all six requested UI surfaces are implemented.

@@ -1,10 +1,10 @@
 # Shepherd Completion Task Ledger
 
-**Canonical delivery target:** protected `main`.
+**Canonical implementation branch:** protected `main`.
 
-**Latest verified product candidate:** PR #40 source `3d1a041`, integrated on the
-temporary campaign branch at `005a51e`; protected-`main` promotion and post-merge
-evidence are pending this integration.
+**Latest verified integration:** PR #53 merge `5ccd0f1` on protected `main`; the
+latest product feature in that campaign is PR #40 source `3d1a041`. Exact
+post-integration evidence is recorded in `BUILD_LOG.md`.
 
 **Audited:** 2026-08-30, Asia/Singapore
 
