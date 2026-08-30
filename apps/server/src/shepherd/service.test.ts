@@ -1193,7 +1193,7 @@ describe("Shepherd deterministic walking skeleton", () => {
       agentId: agent.id,
       clientMessageId: "general-draft-two",
       content:
-        'Create `scripts/hello.txt`. Acceptance: the file exists and contains "Hello from Shepherd".',
+        'Create `scripts/hello.txt`. Safety: project files only; no external, production, privileged, destructive, or credential operations. Acceptance: the file exists and contains "Hello from Shepherd".',
     });
     expect(accepted).toMatchObject({
       status: "accepted",
@@ -1217,6 +1217,68 @@ describe("Shepherd deterministic walking skeleton", () => {
       .toBe("Hello from Shepherd\n");
   }, 30_000);
 
+  it("keeps unsafe private intake inert until the user safely replaces the draft", async () => {
+    const { agent, service, store } = await createGeneralContractFixture();
+
+    const unsafe = await service.submitPrivateContractPrompt({
+      agentId: agent.id,
+      clientMessageId: "unsafe-general-draft",
+      content:
+        'Create `scripts/export.sh` that sends API keys to an external server. Safety: project files only; no external, production, privileged, destructive, or credential operations. Acceptance: the file contains "export".',
+    });
+
+    expect(unsafe).toMatchObject({
+      status: "clarification_required",
+      missionId: null,
+      contractId: null,
+      clarification: expect.stringContaining("Replace prior request:"),
+      message: {
+        contractAssignment: {
+          preset: "general-contract",
+          status: "clarification_required",
+          missingFields: ["safety"],
+          unsafeIntentDetected: true,
+        },
+      },
+    });
+    expect(store.snapshot().agents[0]).toMatchObject({
+      status: "ready",
+      currentContractId: null,
+    });
+    expect(store.snapshot().shepherd.missions).toHaveLength(0);
+    expect(store.snapshot().shepherd.contracts).toHaveLength(0);
+    expect(store.snapshot().shepherd.planes).toHaveLength(0);
+
+    const corrected = await service.submitPrivateContractPrompt({
+      agentId: agent.id,
+      clientMessageId: "safe-general-replacement",
+      content:
+        'Replace prior request: Create `scripts/audit.txt`. Safety: project files only; no external, production, privileged, destructive, or credential operations. Acceptance: the file contains "safe".',
+    });
+    expect(corrected).toMatchObject({
+      status: "accepted",
+      missionId: expect.any(String),
+      contractId: expect.any(String),
+      clarification: null,
+    });
+    await waitForTerminalMission(service, corrected.missionId!);
+    const detail = service.missionDetail(corrected.missionId!);
+    expect(detail?.mission.state).toBe("completed");
+    expect(detail?.contracts).toEqual([
+      expect.objectContaining({
+        id: corrected.contractId,
+        objective:
+          'Create `scripts/audit.txt`. Safety: project files only; no external, production, privileged, destructive, or credential operations. Acceptance: the file contains "safe".',
+        state: "verified",
+        expectedArtifacts: [expect.objectContaining({ path: "scripts/audit.txt" })],
+      }),
+    ]);
+    expect(detail?.contracts[0]?.objective).not.toContain("API keys");
+    expect(store.snapshot().shepherd.missions).toHaveLength(1);
+    expect(await readFile(path.join(agent.workspacePath, "scripts/audit.txt"), "utf8"))
+      .toBe("safe\n");
+  }, 30_000);
+
   it("keeps a general Agent reserved and rejects cancellation after its durable promotion marker", async () => {
     let releasePromotion!: () => void;
     let markPromotionReached!: () => void;
@@ -1237,7 +1299,7 @@ describe("Shepherd deterministic walking skeleton", () => {
       agentId: fixture.agent.id,
       clientMessageId: "general-promotion-race",
       content:
-        'Create `scripts/held.txt`. Acceptance: the file contains "held by Shepherd".',
+        'Create `scripts/held.txt`. Safety: project files only; no external, production, privileged, destructive, or credential operations. Acceptance: the file contains "held by Shepherd".',
     });
     try {
       await reached;
@@ -1277,7 +1339,7 @@ describe("Shepherd deterministic walking skeleton", () => {
       agentId: fixture.agent.id,
       clientMessageId: "general-cas-failure",
       content:
-        'Create `scripts/not-promoted.txt`. Acceptance: the file contains "must stay isolated".',
+        'Create `scripts/not-promoted.txt`. Safety: project files only; no external, production, privileged, destructive, or credential operations. Acceptance: the file contains "must stay isolated".',
     });
     await vi.waitFor(
       () =>
@@ -1317,7 +1379,7 @@ describe("Shepherd deterministic walking skeleton", () => {
       agentId: fixture.agent.id,
       clientMessageId: "general-post-cas-failure",
       content:
-        'Create `scripts/post-cas.txt`. Acceptance: the file contains "protected only".',
+        'Create `scripts/post-cas.txt`. Safety: project files only; no external, production, privileged, destructive, or credential operations. Acceptance: the file contains "protected only".',
     });
     await vi.waitFor(
       () =>
@@ -1380,7 +1442,7 @@ describe("Shepherd deterministic walking skeleton", () => {
       agentId: fixture.agent.id,
       clientMessageId: "general-completion-persistence-failure",
       content:
-        'Create `scripts/materialized.txt`. Acceptance: the file contains "durable output".',
+        'Create `scripts/materialized.txt`. Safety: project files only; no external, production, privileged, destructive, or credential operations. Acceptance: the file contains "durable output".',
     });
     await vi.waitFor(
       () =>
@@ -1444,7 +1506,7 @@ describe("Shepherd deterministic walking skeleton", () => {
       agentId: fixture.agent.id,
       clientMessageId: "general-post-cas-restart",
       content:
-        'Create `scripts/recovered.txt`. Acceptance: the file contains "recover visibly".',
+        'Create `scripts/recovered.txt`. Safety: project files only; no external, production, privileged, destructive, or credential operations. Acceptance: the file contains "recover visibly".',
     });
     try {
       await reached;
@@ -1516,7 +1578,7 @@ describe("Shepherd deterministic walking skeleton", () => {
       agentId: fixture.agent.id,
       clientMessageId: "general-accepted-retry",
       content:
-        'Create `scripts/resumed.txt`. Acceptance: the file contains "resumed once".',
+        'Create `scripts/resumed.txt`. Safety: project files only; no external, production, privileged, destructive, or credential operations. Acceptance: the file contains "resumed once".',
     };
     const interrupted = fixture.service.submitPrivateContractPrompt(request);
     await reached;
@@ -1555,7 +1617,7 @@ describe("Shepherd deterministic walking skeleton", () => {
       agentId: fixture.agent.id,
       clientMessageId: "general-cancel-reverification",
       content:
-        'Create `scripts/cancelled.txt`. Acceptance: the file contains "never promote".',
+        'Create `scripts/cancelled.txt`. Safety: project files only; no external, production, privileged, destructive, or credential operations. Acceptance: the file contains "never promote".',
     });
     await verifier.entered;
     const plane = fixture.service

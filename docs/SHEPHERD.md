@@ -70,7 +70,7 @@ just the percentage.
 | Preserved starter platform | Agent create/edit/start/stop/delete, Playground messages, Runs, workspaces, session continuity, persistence, and local container execution remain functional. | 95% |
 | One-command local PoC | The launcher reads `.env`, localizes Docker-default paths, builds the Runtime and application, performs mount/startup checks, and serves the authenticated local UI. | 95% |
 | User-selected specialists | Reviewed candidate PR #57 lets a user prompt Frontend and Backend Agents separately in private chat. Server-side bounded transport parsing, restart-safe prompt records and serialized intake bind both exact prompts to one Mission; role, readiness, authority, idempotency and deletion races are revalidated before execution. | 98% candidate; integration pending |
-| General private-chat Contract intake | Stacked candidate PR #59 makes Shepherd routing the default for all roles. A constrained whole-statement parser asks in-chat for missing or unenforceable objective/artifact/acceptance data and creates no executable entity until complete; confirmed work uses scoped authority, isolated Git, strict manifests, independent verification, final CAS promotion and exact artifact sync. Post-CAS completion and policy-update recovery are journaled/tested. | 98% candidate; integration pending |
+| General private-chat Contract intake | PR #59 is integrated and makes Shepherd routing the default for all roles. Issue #81's reviewed candidate additionally fails closed on unsafe, ambiguous, negated, conditional, privileged, credential, external/network and destructive wording; it requires an exact project-only safety boundary, a direct quoted artifact, and literal acceptance evidence. Clarifications create no executable entity, unsafe intent remains sticky, and explicit replacement permits safe recovery. Confirmed work continues through scoped authority, isolated Git, strict manifests, independent verification, final CAS promotion and exact artifact sync. | 99% deterministic candidate; issue #81 integration pending |
 | Execution Contracts | Shepherd persists and displays Agent, Mission, Plane, objective, dependencies, semantic scope/claims, contextual inputs, scoped authority, artifacts, acceptance profile/checks, manifest path, and timestamps. | 96% |
 | Isolated Planes | Each Contract and candidate executes in its own Git worktree from a trusted immutable base; Agents receive Git-free authority-filtered exports rather than protected repository access. | 94% |
 | Independent verification | Registry-owned, credential-free, no-network checks inspect the exact committed output. Agent-authored manifests cannot self-certify acceptance. | 95% |
@@ -81,7 +81,7 @@ just the percentage.
 | Durable audit and recovery | Typed lifecycle events, redaction, request idempotency, serialized schema-validated persistence, cancellation/reset, restart classification, Plane cleanup, and representative crash recovery are implemented. | 93% |
 | Bounded model assistance | `SHEPHERD_MODEL` may perform one validated advisory semantic review. It cannot verify, choose, execute arbitrary commands, or promote; deterministic logic remains authoritative and degrades explicitly when review fails. | 90% |
 | Middleware observability UI | Contract stream, execution timeline, Plane tree, collision/candidate evidence, Project Group lifecycle, Settings, and private Agent chat expose real backend state rather than static success screens. | 90% |
-| Automated assurance | Current stacked-candidate evidence includes launcher 3/3, Server 771 passed plus two explicit live skips, Web 18/18, strict production/test type checks, builds, and six focused browser journeys across both required viewports. PR #57 and PR #59 have scoped independent UI/security passes with no High/Medium finding. | 97% |
+| Automated assurance | Exact issue #81 candidate evidence includes launcher 3/3, Server 824 passed plus two explicit live skips, Web 20/20, strict production/test type checks, both builds, and eight focused browser journeys across both required viewports. Independent UI/security review passed with no High/Medium finding. The separately attempted exact live Mission failed because the Agent result manifest was missing, so this evidence does not claim live end-to-end completion. | 97% deterministic; live gate open |
 
 Confidence is scoped to the recorded deterministic/local evidence. It is not a claim
 that the open exact-head live, final security, stability, and rehearsal gates passed.
@@ -227,7 +227,10 @@ Runtime containers and private artifacts, then runs a credential-free preflight.
 preflight requires `codex-cli 0.111.0`, a non-root read-only-root container, and the
 inner `workspace-write` sandbox. Inside that sandbox it proves `/workspace` is
 writable, `/codex-home` is not, and TCP listen/connect operations are denied. A failed
-or partially cleaned preflight prevents startup.
+or partially cleaned preflight prevents startup. The issue #81 candidate also plants
+a parent-only fake credential canary and scans readable process environments from
+inside the real Codex sandbox; visibility fails startup with bounded
+`credential_isolation_failed` evidence.
 
 For each Contract or resolution candidate:
 

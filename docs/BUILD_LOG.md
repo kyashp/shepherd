@@ -5024,3 +5024,35 @@ Auditor, security and hosted integration evidence.
   A second literal gate passed with the same counts. Independent
   Auditor/security/hosted evidence remains. No live/model/network/UI-design call
   ran.
+
+## 2026-08-30 — CHAT-03 unsafe and underspecified Contract intake
+
+- **Scope:** issue #81 strengthens the integrated general private-chat Contract
+  planner without changing the frozen UI theme. A request must end with one direct,
+  allowlisted action on a quoted authority-contained project artifact, the exact
+  bounded project-only `Safety:` statement, and one literal-content `Acceptance:`
+  predicate. Ambiguous, conditional, negated, approval-dependent, credential,
+  privileged, destructive, external/network and safeguard-bypass wording remains an
+  inert clarification and creates no Mission, Contract or Plane.
+- **Recovery:** unsafe intent is accumulated rather than erased by incremental
+  follow-ups. Exact `Replace prior request:` starts a clean bounded draft; a complete
+  follow-up replaces only earlier vague drafts that contained neither an artifact nor
+  unsafe intent. The Agent remains startable/stoppable/deletable after clarification.
+- **Runtime boundary:** the live preflight plants a fake parent credential canary and
+  scans `/proc/[0-9]*/environ` inside the actual Codex Linux sandbox. The unguarded
+  control could read the canary; the generated production preflight in the freshly
+  built Runtime image passed only after the sandboxed child could not recover it.
+  Visibility maps to fixed `credential_isolation_failed` evidence.
+- **Observed deterministic checks:** focused planner/service 27/27; literal
+  `npm run check` passed launcher 3/3, Server 824 passed + two explicit opt-in skips,
+  Web 20/20, strict production/test type checks and both builds. Authenticated
+  Chromium passed 8/8 across exact 1280×800 and 1440×900 projects, covering the auth
+  collision, clarification/correction, lifecycle recovery, durable human review and
+  no document overflow. `git diff --check` passed. Independent security and UI
+  reviews passed with no High/Medium finding.
+- **Live evidence and limitation:** the first broad command incorrectly discovered a
+  stale ignored recording worktree and is not counted. The corrected exact-source,
+  single-worker live command made the bounded provider attempt, reached Contract
+  execution, and failed after 35 seconds with `Contract result manifest is missing`.
+  No retry was made. This is separate Agent-output reliability work and means neither
+  this candidate nor `LIVE-01` claims an exact-head live Mission pass.

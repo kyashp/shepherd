@@ -148,6 +148,7 @@ export type EphemeralPreflightResult =
         | "codex_version_probe_failed"
         | "sandbox_listen_denial_failed"
         | "sandbox_connect_denial_failed"
+        | "credential_isolation_failed"
         | "sandbox_probe_failed"
         | "output_too_large"
         | "codex_version_mismatch"

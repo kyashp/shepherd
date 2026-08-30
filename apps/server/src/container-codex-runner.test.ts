@@ -201,6 +201,8 @@ describe("Container Codex runner", () => {
     expect(args).not.toContain("/tmp/shared-codex-home");
     expect(args).not.toContain("/tmp/app-data");
     expect(args).not.toContain(prompt);
+    const runtimeImageIndex = args.indexOf("runtime:test");
+    expect(args[runtimeImageIndex + 1]).toBe("codex");
     expect(args.slice(-9)).toEqual([
       "exec",
       "--ephemeral",
@@ -766,6 +768,12 @@ describe("Container Codex runner", () => {
     expect(calls.find((call) => call.args[0] === "create")?.env.ARK_API_KEY).toBe(
       undefined,
     );
+    const createArgs = calls.find((call) => call.args[0] === "create")?.args;
+    const preflightScript = createArgs?.at(-1);
+    expect(preflightScript).toContain("SHEPHERD_PARENT_ENV_CANARY");
+    expect(preflightScript).toContain("/proc/[0-9]*/environ");
+    expect(preflightScript).toContain("env -u SHEPHERD_PARENT_ENV_CANARY");
+    expect(preflightScript).toContain("exit 50");
     expect(calls.some((call) => call.args[0] === "rm")).toBe(true);
     expect(calls.filter((call) => call.args[0] === "ps").at(-1)?.args).toEqual(
       expect.arrayContaining([
@@ -806,6 +814,7 @@ describe("Container Codex runner", () => {
     [43, "sandbox_listen_denial_failed"],
     [46, "sandbox_connect_denial_failed"],
     [49, "sandbox_probe_failed"],
+    [50, "credential_isolation_failed"],
     [1, "engine_error"],
   ] as const)("maps preflight exit %i to bounded reason %s", async (exitCode, reason) => {
     const privateDiagnostic = "OPS06_PRIVATE_DIAGNOSTIC_CANARY";

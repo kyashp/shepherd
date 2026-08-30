@@ -2457,6 +2457,7 @@ export class ShepherdService {
             status:
               plan.status === "ready" ? "accepted" : "clarification_required",
             missingFields: [...plan.missingFields],
+            unsafeIntentDetected: plan.unsafeIntentDetected,
             expectedArtifacts: structuredClone(plan.expectedArtifacts),
             acceptanceSummary: plan.acceptanceSummary,
             requiredContent: plan.requiredContent,

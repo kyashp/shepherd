@@ -483,7 +483,9 @@ export interface ProjectGroupMessage {
           | "expected_artifact"
           | "acceptance_evidence"
           | "authority"
+          | "safety"
         )[];
+        unsafeIntentDetected?: boolean;
         expectedArtifacts: ExpectedArtifact[];
         acceptanceSummary: string | null;
         requiredContent: string | null;
