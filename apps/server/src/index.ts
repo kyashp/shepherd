@@ -15,6 +15,7 @@ import {
   AUTH_BACKEND_PROFILE_ID,
   AUTH_FRONTEND_PROFILE_ID,
   AUTH_PROJECT_PROFILE_ID,
+  GENERAL_CONTRACT_PROFILE_ID,
   ShepherdService,
 } from "./shepherd/service.js";
 import {
@@ -40,7 +41,6 @@ await service.initialize();
 const shepherdPlanesRoot = path.join(
   config.shepherdRoot,
   "planes",
-  "auth-demo",
 );
 const shepherdChecks = new TrustedCheckRegistry([
   {
@@ -59,6 +59,12 @@ const shepherdChecks = new TrustedCheckRegistry([
     id: AUTH_PROJECT_PROFILE_ID,
     command: "node",
     args: ["checks/project-security.cjs"],
+    cwd: ".",
+  },
+  {
+    id: GENERAL_CONTRACT_PROFILE_ID,
+    command: "node",
+    args: ["checks/general-contract.cjs"],
     cwd: ".",
   },
 ]);

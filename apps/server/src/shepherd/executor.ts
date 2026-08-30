@@ -25,6 +25,12 @@ export type DeterministicOperation =
       kind: "resolution_candidate";
       candidateId: string;
       targetTransport: AuthTransport;
+    }
+  | {
+      kind: "general_contract";
+      contractId: string;
+      artifactPaths: string[];
+      requiredContent: string | null;
     };
 
 export interface ShepherdExecutionRequest {
@@ -138,6 +144,13 @@ export class DeterministicFixtureExecutor implements ShepherdExecutor {
             usage: null,
           };
         }
+        case "general_contract":
+          return await this.writeGeneralContract(
+            request.workspacePath,
+            request.operation.contractId,
+            request.operation.artifactPaths,
+            request.operation.requiredContent,
+          );
       }
     } finally {
       this.active.delete(request.executionId);
@@ -197,6 +210,47 @@ export class DeterministicFixtureExecutor implements ShepherdExecutor {
     return {
       summary,
       changedFiles: [artifactPath, ".shepherd/result.json"],
+      completedAt: new Date().toISOString(),
+      runtimeSessionId: null,
+      usage: null,
+    };
+  }
+
+  private async writeGeneralContract(
+    workspacePath: string,
+    contractId: string,
+    artifactPaths: readonly string[],
+    requiredContent: string | null,
+  ): Promise<ShepherdExecutionResult> {
+    const content = (requiredContent ?? "Completed general Shepherd Contract") + "\n";
+    for (const artifactPath of artifactPaths) {
+      const destination = resolveInside(workspacePath, artifactPath);
+      await mkdir(path.dirname(destination), { recursive: true });
+      await writeFile(destination, content, "utf8");
+    }
+    const manifest: ContractResultManifest = {
+      schemaVersion: 1,
+      contractId,
+      summary: "Completed the bounded general Shepherd Contract.",
+      artifacts: artifactPaths.map((artifactPath) => ({
+        path: artifactPath,
+        kind: "changed" as const,
+        description: "Required artifact from the confirmed Contract",
+      })),
+      semanticClaims: [],
+      agentDeclaredTests: [
+        {
+          name: "general Contract output",
+          passed: true,
+          summary: "Informational only; Shepherd independently verifies it.",
+        },
+      ],
+      notes: "Deterministic fixture output",
+    };
+    await writeJson(workspacePath, ".shepherd/result.json", manifest);
+    return {
+      summary: manifest.summary,
+      changedFiles: [...artifactPaths, ".shepherd/result.json"],
       completedAt: new Date().toISOString(),
       runtimeSessionId: null,
       usage: null,

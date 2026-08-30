@@ -30,6 +30,17 @@ selectors are removed. Literal checks, the two-viewport browser journey, and
 independent security/UI re-reviews pass; `TASKS.md` records the remaining integration
 gate and keeps the separate Project Group journey open.
 
+Stacked candidate PR #59 extends that private-chat route beyond the fixed auth
+phrasing. Shepherd is now the default for every Agent role, while a visible toggle
+retains direct Playground chat. Incomplete requests are stored only as clarification
+drafts; no executable entity exists until the user supplies a concrete change,
+writable project-relative artifacts, and explicit `Acceptance:` evidence. Confirmed
+requests run as one authority-bounded Contract through an isolated Plane, strict
+manifest ingestion, independent verification, integration, final re-verification,
+protected-head compare-and-swap promotion, and exact verified-artifact sync to the
+Agent workspace. This does not claim free-form DAG decomposition or complete the
+separate Project Group issue #41.
+
 This is a strong Track 1 proof of concept, not a full-PRD completion claim. Current
 hackathon-submission completion is **82%**. The core middleware demonstration itself
 is **90% demo-ready** because the primary deterministic journey is functional and
@@ -59,6 +70,7 @@ just the percentage.
 | Preserved starter platform | Agent create/edit/start/stop/delete, Playground messages, Runs, workspaces, session continuity, persistence, and local container execution remain functional. | 95% |
 | One-command local PoC | The launcher reads `.env`, localizes Docker-default paths, builds the Runtime and application, performs mount/startup checks, and serves the authenticated local UI. | 95% |
 | User-selected specialists | Reviewed candidate PR #57 lets a user prompt Frontend and Backend Agents separately in private chat. Server-side bounded transport parsing, restart-safe prompt records and serialized intake bind both exact prompts to one Mission; role, readiness, authority, idempotency and deletion races are revalidated before execution. | 98% candidate; integration pending |
+| General private-chat Contract intake | Stacked candidate PR #59 makes Shepherd routing the default for all roles. A constrained whole-statement parser asks in-chat for missing or unenforceable objective/artifact/acceptance data and creates no executable entity until complete; confirmed work uses scoped authority, isolated Git, strict manifests, independent verification, final CAS promotion and exact artifact sync. Post-CAS completion and policy-update recovery are journaled/tested. | 98% candidate; integration pending |
 | Execution Contracts | Shepherd persists and displays Agent, Mission, Plane, objective, dependencies, semantic scope/claims, contextual inputs, scoped authority, artifacts, acceptance profile/checks, manifest path, and timestamps. | 96% |
 | Isolated Planes | Each Contract and candidate executes in its own Git worktree from a trusted immutable base; Agents receive Git-free authority-filtered exports rather than protected repository access. | 94% |
 | Independent verification | Registry-owned, credential-free, no-network checks inspect the exact committed output. Agent-authored manifests cannot self-certify acceptance. | 95% |
@@ -69,7 +81,7 @@ just the percentage.
 | Durable audit and recovery | Typed lifecycle events, redaction, request idempotency, serialized schema-validated persistence, cancellation/reset, restart classification, Plane cleanup, and representative crash recovery are implemented. | 93% |
 | Bounded model assistance | `SHEPHERD_MODEL` may perform one validated advisory semantic review. It cannot verify, choose, execute arbitrary commands, or promote; deterministic logic remains authoritative and degrades explicitly when review fails. | 90% |
 | Middleware observability UI | Contract stream, execution timeline, Plane tree, collision/candidate evidence, Project Group lifecycle, Settings, and private Agent chat expose real backend state rather than static success screens. | 90% |
-| Automated assurance | Final candidate evidence currently includes launcher 3/3, Server 742 passed plus two explicit live skips, Web 18/18, strict production/test type checks, builds, four focused browser journeys at both required viewports, and scoped independent UI/security passes. | 93% |
+| Automated assurance | Current stacked-candidate evidence includes launcher 3/3, Server 771 passed plus two explicit live skips, Web 18/18, strict production/test type checks, builds, and six focused browser journeys across both required viewports. PR #57 and PR #59 have scoped independent UI/security passes with no High/Medium finding. | 97% |
 
 Confidence is scoped to the recorded deterministic/local evidence. It is not a claim
 that the open exact-head live, final security, stability, and rehearsal gates passed.

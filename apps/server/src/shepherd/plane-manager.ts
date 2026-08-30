@@ -152,8 +152,10 @@ interface TreeCopyOptions {
   skipRootGitMetadata: boolean;
   readOnly: boolean;
   includeFile?: (projectPath: string) => boolean;
+  excludePath?: (projectPath: string, directory: boolean) => boolean;
   onFileCopied?: (projectPath: string) => void;
   replaceExisting?: boolean;
+  rejectDestinationSymlinks?: boolean;
 }
 
 function isAllowedTreePath(
@@ -259,6 +261,22 @@ async function copyValidatedProjectTree(
   if (!sourceRootStat.isDirectory() || sourceRootStat.isSymbolicLink()) {
     throw new UnsafeExecutionWorkspaceError("Workspace root must be a real directory");
   }
+  const canonicalDestinationRoot = options.rejectDestinationSymlinks
+    ? await realpath(destinationRoot)
+    : null;
+  const destinationRootStat = options.rejectDestinationSymlinks
+    ? await lstat(destinationRoot)
+    : null;
+  if (
+    options.rejectDestinationSymlinks &&
+    (canonicalDestinationRoot !== path.resolve(destinationRoot) ||
+      !destinationRootStat?.isDirectory() ||
+      destinationRootStat.isSymbolicLink())
+  ) {
+    throw new UnsafeExecutionWorkspaceError(
+      "Verified artifact destination root must be a stable real directory",
+    );
+  }
   const budget: TreeCopyBudget = { files: 0, bytes: 0 };
 
   const copyDirectory = async (
@@ -277,6 +295,24 @@ async function copyValidatedProjectTree(
     if (!beforeDirectory.isDirectory() || beforeDirectory.isSymbolicLink()) {
       throw new UnsafeExecutionWorkspaceError("Workspace contains a non-directory path component");
     }
+    const destinationBefore = options.rejectDestinationSymlinks
+      ? await lstat(destinationDirectory)
+      : null;
+    const canonicalDestination = options.rejectDestinationSymlinks
+      ? await realpath(destinationDirectory)
+      : null;
+    if (
+      options.rejectDestinationSymlinks &&
+      (!destinationBefore?.isDirectory() ||
+        destinationBefore.isSymbolicLink() ||
+        !canonicalDestinationRoot ||
+        (canonicalDestination !== canonicalDestinationRoot &&
+          !isInside(canonicalDestinationRoot, canonicalDestination!)))
+    ) {
+      throw new UnsafeExecutionWorkspaceError(
+        "Verified artifact destination directory escaped its managed root",
+      );
+    }
     const entries = (await readdir(sourceDirectory)).sort();
     let copiedEntries = 0;
     for (const name of entries) {
@@ -291,6 +327,7 @@ async function copyValidatedProjectTree(
       const sourcePath = path.join(sourceDirectory, name);
       const destinationPath = path.join(destinationDirectory, name);
       const entryStat = await lstat(sourcePath);
+      if (options.excludePath?.(projectPath, entryStat.isDirectory())) continue;
       if (
         options.skipRootGitMetadata &&
         !options.allowResultManifest &&
@@ -312,6 +349,15 @@ async function copyValidatedProjectTree(
         if (options.replaceExisting) {
           try {
             const destinationStat = await lstat(destinationPath);
+            if (
+              options.rejectDestinationSymlinks &&
+              destinationStat.isSymbolicLink()
+            ) {
+              throw new UnsafeExecutionWorkspaceError(
+                "Verified artifact destination contains a symbolic link: " +
+                  projectPath,
+              );
+            }
             if (!destinationStat.isDirectory() || destinationStat.isSymbolicLink()) {
               await rm(destinationPath, { recursive: true, force: true });
               await mkdir(destinationPath, { mode: 0o700 });
@@ -351,6 +397,19 @@ async function copyValidatedProjectTree(
         throw new UnsafeExecutionWorkspaceError("Workspace exceeds the trusted import limits");
       }
       if (options.replaceExisting) {
+        if (options.rejectDestinationSymlinks) {
+          try {
+            const destinationStat = await lstat(destinationPath);
+            if (destinationStat.isSymbolicLink()) {
+              throw new UnsafeExecutionWorkspaceError(
+                "Verified artifact destination contains a symbolic link: " +
+                  projectPath,
+              );
+            }
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+          }
+        }
         await rm(destinationPath, { recursive: true, force: true });
       }
       await copyRegularFileSafely(sourcePath, destinationPath, entryStat, options.readOnly);
@@ -365,11 +424,92 @@ async function copyValidatedProjectTree(
     ) {
       throw new UnsafeExecutionWorkspaceError("Workspace directory changed while it was copied");
     }
+    if (options.rejectDestinationSymlinks && destinationBefore) {
+      const destinationAfter = await lstat(destinationDirectory);
+      if (
+        !destinationAfter.isDirectory() ||
+        destinationAfter.isSymbolicLink() ||
+        destinationAfter.dev !== destinationBefore.dev ||
+        destinationAfter.ino !== destinationBefore.ino ||
+        (await realpath(destinationDirectory)) !== canonicalDestination
+      ) {
+        throw new UnsafeExecutionWorkspaceError(
+          "Verified artifact destination changed while it was synchronized",
+        );
+      }
+    }
     return copiedEntries;
   };
 
   await copyDirectory(sourceRoot, destinationRoot, "");
+  if (options.rejectDestinationSymlinks && destinationRootStat) {
+    const finalDestinationRootStat = await lstat(destinationRoot);
+    if (
+      finalDestinationRootStat.dev !== destinationRootStat.dev ||
+      finalDestinationRootStat.ino !== destinationRootStat.ino ||
+      (await realpath(destinationRoot)) !== canonicalDestinationRoot
+    ) {
+      throw new UnsafeExecutionWorkspaceError(
+        "Verified artifact destination root identity changed during synchronization",
+      );
+    }
+  }
   await chmod(destinationRoot, options.readOnly ? 0o500 : 0o700);
+}
+
+function snapshotExcludedPath(projectPath: string): boolean {
+  const segments = projectPath.split("/");
+  const basename = segments.at(-1)?.toLocaleLowerCase("en-US") ?? "";
+  return (
+    isControlPlanePath(projectPath) ||
+    isAlwaysProtectedPath(projectPath) ||
+    segments.some((segment) =>
+      [".codex", "node_modules", "dist"].includes(
+        segment.toLocaleLowerCase("en-US"),
+      ),
+    ) ||
+    basename.endsWith(".log")
+  );
+}
+
+/** Copies only bounded, non-secret Agent files into a new trusted project root. */
+export async function copyAgentWorkspaceSnapshot(
+  sourceRoot: string,
+  destinationRoot: string,
+): Promise<void> {
+  await copyValidatedProjectTree(sourceRoot, destinationRoot, {
+    allowResultManifest: false,
+    skipRootGitMetadata: true,
+    readOnly: false,
+    excludePath: (projectPath) => snapshotExcludedPath(projectPath),
+  });
+}
+
+/** Synchronizes only independently verified declared artifacts back to an Agent. */
+export async function synchronizeVerifiedArtifacts(
+  sourceRoot: string,
+  destinationRoot: string,
+  artifactPaths: readonly string[],
+): Promise<void> {
+  const artifacts = [...new Set(artifactPaths.map(assertSafeProjectPath))].sort();
+  if (artifacts.length < 1 || artifacts.length > 8) {
+    throw new UnsafeExecutionWorkspaceError(
+      "Verified artifact synchronization requires 1 to 8 paths",
+    );
+  }
+  const directoryNeeded = (projectPath: string): boolean =>
+    artifacts.some((artifact) => artifact.startsWith(projectPath + "/"));
+  await copyValidatedProjectTree(sourceRoot, destinationRoot, {
+    allowResultManifest: false,
+    skipRootGitMetadata: true,
+    readOnly: false,
+    replaceExisting: true,
+    rejectDestinationSymlinks: true,
+    includeFile: (projectPath) => artifacts.includes(projectPath),
+    excludePath: (projectPath, directory) =>
+      snapshotExcludedPath(projectPath) ||
+      (directory ? !directoryNeeded(projectPath) : !artifacts.includes(projectPath)),
+  });
 }
 
 export function isControlPlanePath(projectPath: string): boolean {
