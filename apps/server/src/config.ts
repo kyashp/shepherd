@@ -265,34 +265,15 @@ export function resolveContainerStateMount(input: {
   return { root, volume };
 }
 
-function isLoopbackHost(host: string): boolean {
-  const normalized = host.toLowerCase().replace(/^\[|\]$/gu, "");
-  if (normalized === "localhost" || normalized === "::1") return true;
-  const octets = normalized.split(".");
-  return (
-    octets.length === 4 &&
-    octets[0] === "127" &&
-    octets.every((octet) => /^\d{1,3}$/u.test(octet) && Number(octet) <= 255)
-  );
-}
-
-function isStrongNonPlaceholderToken(token: string): boolean {
-  if (token.length < 24) return false;
-  return !/^(?:replace|change[-_.]?me|placeholder|your[-_.]|example[-_.])/iu.test(
-    token,
-  );
-}
-
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
   const env = envSchema.parse(environment);
+  // `APP_AUTH_TOKEN` is optional everywhere. An empty token disables the bearer
+  // check outright, so the server starts with no configuration on any bind. Set a
+  // token to require one; the request hook then enforces it on every `/api/`
+  // route. Setting one is still strongly advised for any non-loopback deployment.
   const authToken = env.APP_AUTH_TOKEN?.trim() ?? "";
   const arkApiKey = env.ARK_API_KEY?.trim() ?? "";
   const arkModel = env.ARK_MODEL?.trim() ?? "";
-  if (!isLoopbackHost(env.HOST) && !isStrongNonPlaceholderToken(authToken)) {
-    throw new Error(
-      "APP_AUTH_TOKEN must be a non-placeholder token of at least 24 characters for a non-loopback server",
-    );
-  }
   const defaultContainerUser =
     typeof process.getuid === "function" && typeof process.getgid === "function"
       ? process.getuid() + ":" + process.getgid()

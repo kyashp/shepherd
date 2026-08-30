@@ -270,7 +270,7 @@ Real secrets belong only in ignored `.env`.
 | `ARK_MODEL` | Coding Agent model. |
 | `SHEPHERD_MODEL` | Bounded planning/advisory-review model; defaults to `ARK_MODEL` when empty. When its configuration passes the adapter-aligned readiness gate, Mission orchestration injects one advisory review after verified Contract integration. |
 | `ARK_BASE_URL` | Responses-compatible API root. |
-| `APP_AUTH_TOKEN` | Shared local-demo bearer boundary; mandatory and non-placeholder whenever the server binds beyond loopback. |
+| `APP_AUTH_TOKEN` | Optional shared bearer boundary. Empty, the default, disables the check and the server starts on any bind; any configured token is enforced on every `/api/` route. Set one whenever the server is reachable beyond the local machine. |
 | `RUNTIME_PROVIDER` | Starter Agent runtime (`local-process` or `container`); Shepherd verification always uses its independent container boundary. |
 | `SHEPHERD_ROOT` | Sentinel-guarded managed fixture repositories and Plane worktrees; defaults below `APP_DATA_DIR`. |
 | `SHEPHERD_CODEX_HOME_ROOT` | Sentinel-guarded parent for one private, ephemeral live-Plane `CODEX_HOME` per execution; must be inside `APP_DATA_DIR` and separate from shared Agent and managed Shepherd roots. |

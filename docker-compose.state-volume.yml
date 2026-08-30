@@ -11,10 +11,10 @@
 # invoking this file. Every security gate is unchanged: non-root, no new
 # privileges, all capabilities dropped, and no danger-full-access fallback.
 #
-# HOST is 0.0.0.0 because the server must be reachable through the published port,
-# so APP_AUTH_TOKEN must be a real non-placeholder token, exactly as the ECS
-# profile in docker-compose.yml already requires. The port is published to
-# loopback only.
+# HOST is 0.0.0.0 because the server must be reachable through the published port.
+# The port is published to loopback only. APP_AUTH_TOKEN is optional and empty by
+# default; set one to require a bearer credential on every API route, which is
+# strongly advised for any deployment reachable beyond this machine.
 services:
   launchpad:
     build:
@@ -48,8 +48,9 @@ services:
       CODEX_SANDBOX_MODE: ${CODEX_SANDBOX_MODE:-workspace-write}
       RUNTIME_INSTANCE_ID: ${RUNTIME_INSTANCE_ID:-default}
       # Pinned from the caller's resolved value, not re-read from env_file, so the
-      # token the launcher validated is exactly the token the server receives.
-      APP_AUTH_TOKEN: ${APP_AUTH_TOKEN:?APP_AUTH_TOKEN must be set}
+      # launcher and the server always agree on the token. Optional: empty means
+      # the server requires no bearer credential.
+      APP_AUTH_TOKEN: ${APP_AUTH_TOKEN:-}
       # The image's `node` user, which owns the volume. Disposable Runtime
       # containers run as the same non-root identity so the control plane can
       # still reconcile and remove what they wrote.

@@ -120,20 +120,13 @@ if [[ "$state_mode" == "container-volume" ]]; then
     log "CONTAINER_STATE_VOLUME must be a valid container volume name."
     exit 2
   fi
-  # The control plane binds every interface inside its container so the published
-  # port reaches it, so it is not a loopback server and the server refuses to
-  # start without a real token. Say so here rather than after a long image build.
-  auth_token="${APP_AUTH_TOKEN:-}"
-  if [[ ${#auth_token} -lt 24 ]] \
-    || [[ "$auth_token" =~ ^([Rr]eplace|[Cc]hange[-_.]?[Mm]e|[Pp]laceholder|[Yy]our[-_.]|[Ee]xample[-_.]) ]]; then
-    log "LOCAL_POC_STATE_MODE=container-volume needs a real APP_AUTH_TOKEN of at"
-    log "least 24 characters, because the control plane is not a loopback server."
-    exit 2
+  # APP_AUTH_TOKEN is optional. Handed to the control plane explicitly so the
+  # value seen here is the value the server receives, rather than a different one
+  # re-read from the env file. Empty means no bearer check, which is the default.
+  export APP_AUTH_TOKEN="${APP_AUTH_TOKEN:-}"
+  if [[ -z "$APP_AUTH_TOKEN" ]]; then
+    log "No APP_AUTH_TOKEN is set, so the control plane will not require one."
   fi
-  unset auth_token
-  # Handed to the control plane explicitly so the validated token is the one the
-  # server receives, rather than a different value re-read from the env file.
-  export APP_AUTH_TOKEN
 
   log "Preparing the $state_volume state volume for the Agent Runtime."
   "$engine" volume create "$state_volume" >/dev/null

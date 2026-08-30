@@ -56,9 +56,6 @@ LOCAL_POC_STATE_MODE=container-volume ./scripts/start-local-poc.sh
 This builds and starts the control plane inside the engine using
 `docker-compose.state-volume.yml`, so it also needs:
 
-- A real `APP_AUTH_TOKEN` of at least 24 characters. The control plane is no
-  longer a loopback server, so an unauthenticated bind is refused. The port is
-  still published to `127.0.0.1` only.
 - Access to the engine socket, which the control plane joins as a supplementary
   group while remaining non-root. See [`DEVIATIONS.md`](DEVIATIONS.md).
 
@@ -84,10 +81,13 @@ set:
 
 ```dotenv
 HOST=127.0.0.1
-APP_AUTH_TOKEN=replace-with-at-least-24-random-characters
 SHEPHERD_EXECUTION_MODE=deterministic
 SHEPHERD_DEMO_MODE=true
 ```
+
+`APP_AUTH_TOKEN` is optional and empty by default; the server starts and serves
+without one. Set it only if you want the browser unlock screen and a bearer
+credential on every API route.
 
 The launcher parses `.env` as data; never source, print, screenshot, or commit it.
 The deterministic Mission does not call Ark. `ARK_API_KEY` and `ARK_MODEL` are used
@@ -96,8 +96,8 @@ only by the optional live Agent/Shepherd paths.
 ## Manual hackathon flow
 
 Use a fresh disposable data root for rehearsal. Start with
-`./scripts/start-local-poc.sh`, wait for the loopback URL, and enter your own
-`APP_AUTH_TOKEN` if the browser displays the unlock screen.
+`./scripts/start-local-poc.sh`, and wait for the loopback URL. The unlock screen
+appears only if you set an `APP_AUTH_TOKEN`; enter that same token if so.
 
 ### 1. Positive Shepherd Mission
 

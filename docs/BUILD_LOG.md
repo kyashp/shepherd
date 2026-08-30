@@ -7,6 +7,48 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — APP_AUTH_TOKEN requirement removed, capability retained
+
+Same branch and host as the entry below. Requested scope was the requirement, not
+the feature: the bearer boundary stays in the product and stays enforced whenever
+a token is configured.
+
+- The request originally read as deleting the token entirely. Survey first: the
+  request hook at `apps/server/src/app.ts:843` already returns early when the
+  token is empty, so every route is open and `/api/auth` reports
+  `required:false`. Exactly one line forced a value — the non-loopback guard in
+  `loadConfig`. Removing the whole feature would have touched 18 non-test source
+  references and 26 test references and left `deploy/volcengine/main.tf` serving
+  an unauthenticated Agent-execution API on a public interface, so the narrower
+  correction was agreed instead.
+- Removed the guard and its two now-unused helpers. Removed the matching guard
+  from `scripts/start-local-poc.sh` and the required interpolation in
+  `docker-compose.state-volume.yml`. The schema still rejects a token that cannot
+  be sent as a bearer credential — non-URL-safe characters, or over 128.
+- Replaced rather than deleted the affected assertions. The former
+  "requires a strong non-placeholder token for every non-loopback bind" now proves
+  the new contract: `0.0.0.0`, `192.0.2.10`, `127.0.0.1` and `::` all start with an
+  empty token across all three `NODE_ENV` values, and a short or placeholder value
+  is carried verbatim instead of refused. A second case keeps the bearer-shape
+  rejections. The reviewer-clone test keeps its non-mutation assertions without the
+  removed throw.
+- Verified on the affected host with **no token set at all**. The launcher logged
+  `No APP_AUTH_TOKEN is set, so the control plane will not require one`, the
+  control plane started, `/api/auth` returned `{"required":false}`, and
+  `GET /api/system` with no `Authorization` header returned `200`. Resolved
+  configuration inside the container was `executionMode: "live"`,
+  `authTokenLength: 0`, `host: 0.0.0.0` — so the Codex Runtime preflight still
+  passes with the boundary disabled. The smoke volume was removed afterwards.
+- Enforcement with a token configured is unchanged: `config.test.ts` and
+  `app.test.ts` passed 52/52, including the 401 paths.
+- Documentation updated to describe the token as optional in `README.md`,
+  `.env.example`, `docs/LOCAL_POC.md`, `docs/SHEPHERD.md` and
+  `docker-compose.state-volume.yml`. `SECURITY.md` now states plainly that a
+  server started without a token serves every route to anyone who can reach the
+  port, and that a token must be set before exposing it beyond the local machine,
+  including ECS. Prior log entries are left as written; they remain true for the
+  commits they name.
+
 ## 2026-08-30 — OPS-06 affected-host cause reproduced and corrected
 
 Branch `fix/47-ops-06-container-state-volume`, PR #56, on the affected host
