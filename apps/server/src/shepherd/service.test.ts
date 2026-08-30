@@ -1138,6 +1138,146 @@ describe("Shepherd deterministic walking skeleton", () => {
     expect(result.mission.state).toBe("completed");
   }, 30_000);
 
+  it("pairs idempotent private Agent-chat prompts into one verified Mission", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const agentWorkspaceRoot = path.join(caseRoot, "agent-workspaces");
+    const workspaces = new WorkspaceManager(agentWorkspaceRoot);
+    await workspaces.initialize();
+    const createdAt = "2026-08-30T00:00:00.000Z";
+    const frontendAgent: Agent = {
+      id: "31111111-1111-4111-8111-111111111111",
+      name: "Frontend Auth Agent",
+      description: "User-created frontend specialist",
+      instructions: "Implement only assigned frontend contracts.",
+      status: "ready",
+      workspacePath: workspaces.workspacePath("31111111-1111-4111-8111-111111111111"),
+      codexThreadId: null,
+      lastError: null,
+      role: "Frontend",
+      authority: {
+        readable: ["**"],
+        writable: ["src/frontend/**"],
+        forbidden: [".git/**", ".shepherd/**", "checks/**", "policy.json"],
+      },
+      createdAt,
+      updatedAt: createdAt,
+    };
+    const backendAgent: Agent = {
+      ...frontendAgent,
+      id: "32222222-2222-4222-8222-222222222222",
+      name: "Backend Auth Agent",
+      role: "Backend",
+      workspacePath: workspaces.workspacePath("32222222-2222-4222-8222-222222222222"),
+      authority: {
+        readable: ["**"],
+        writable: ["src/backend/**"],
+        forbidden: [".git/**", ".shepherd/**", "checks/**", "policy.json"],
+      },
+    };
+    await workspaces.create(frontendAgent);
+    await workspaces.create(backendAgent);
+    await store.mutate((database) => database.agents.push(frontendAgent, backendAgent));
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot,
+      verifier: new HostTrustedFixtureVerifier(),
+    });
+    const frontendPrompt =
+      "Implement the frontend authentication client using an HttpOnly session cookie.";
+    const backendPrompt =
+      "Implement the backend authentication service using a bearer JWT.";
+
+    await expect(service.submitPrivateContractPrompt({
+      agentId: frontendAgent.id,
+      clientMessageId: "frontend-private-prompt",
+      content: "Use both an HttpOnly cookie and a bearer JWT.",
+    })).rejects.toMatchObject({ code: "invalid_input" });
+    expect(store.snapshot().shepherd.projects).toHaveLength(0);
+
+    const first = await service.submitPrivateContractPrompt({
+      agentId: frontendAgent.id,
+      clientMessageId: "frontend-private-prompt",
+      content: frontendPrompt,
+    });
+    expect(first).toMatchObject({
+      status: "awaiting_peer",
+      missionId: null,
+      contractId: null,
+      message: {
+        targetAgentId: frontendAgent.id,
+        contractAssignment: {
+          role: "Frontend",
+          transport: COOKIE_TRANSPORT,
+        },
+      },
+    });
+    expect(store.snapshot().shepherd.missions).toHaveLength(0);
+
+    await expect(service.submitPrivateContractPrompt({
+      agentId: backendAgent.id,
+      clientMessageId: "same-transport-prompt",
+      content: "Implement backend authentication with an HttpOnly cookie.",
+    })).rejects.toMatchObject({ code: "invalid_input" });
+    expect(store.snapshot().shepherd.groupMessages).toHaveLength(1);
+    expect(store.snapshot().shepherd.missions).toHaveLength(0);
+
+    const recoveredService = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot,
+      verifier: new HostTrustedFixtureVerifier(),
+    });
+    const backendInput = {
+      agentId: backendAgent.id,
+      clientMessageId: "backend-private-prompt",
+      content: backendPrompt,
+    };
+    const [started, duplicate] = await Promise.all([
+      recoveredService.submitPrivateContractPrompt(backendInput),
+      recoveredService.submitPrivateContractPrompt(backendInput),
+    ]);
+    expect(started.status).toBe("accepted");
+    expect(duplicate).toMatchObject({
+      status: "accepted",
+      missionId: started.missionId,
+      contractId: started.contractId,
+    });
+    expect(started.missionId).not.toBeNull();
+    backgroundTestMissions.push({ service: recoveredService, missionId: started.missionId! });
+    await waitForTerminalMission(recoveredService, started.missionId!);
+
+    const detail = recoveredService.missionDetail(started.missionId!);
+    expect(detail?.mission.state).toBe("completed");
+    expect(detail?.contracts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        agentId: frontendAgent.id,
+        objective: frontendPrompt,
+        state: "verified",
+      }),
+      expect.objectContaining({
+        agentId: backendAgent.id,
+        objective: backendPrompt,
+        state: "verified",
+      }),
+    ]));
+    const promptMessages = store.snapshot().shepherd.groupMessages.filter(
+      (message) => message.contractAssignment?.preset === "auth-demo-contract",
+    );
+    expect(promptMessages).toHaveLength(2);
+    expect(promptMessages.every(
+      (message) =>
+        message.missionId === started.missionId &&
+        message.contractId !== null &&
+        /^[a-f0-9]{64}$/u.test(message.requestFingerprint ?? ""),
+    )).toBe(true);
+    expect(detail?.collisions).toEqual([
+      expect.objectContaining({ key: "auth.transport" }),
+    ]);
+  }, 30_000);
+
   it("cleans a case root containing a read-only trusted verification snapshot", async () => {
     const caseRoot = await makeCaseRoot();
     const snapshotPath = path.join(

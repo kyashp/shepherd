@@ -27,15 +27,33 @@ export function AgentPage({
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [shepherdMode, setShepherdMode] = useState(false);
+  const [shepherdSubmitting, setShepherdSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(true);
   const pollingRuns = useRef(new Set<string>());
   const messageEnd = useRef<HTMLDivElement>(null);
-  const { state: shepherdState } = useShepherdPolling(Boolean(agent?.currentContractId));
+  const shepherdEligible = agent?.role === "Frontend" || agent?.role === "Backend";
+  const {
+    state: shepherdState,
+    refresh: refreshShepherd,
+  } = useShepherdPolling(Boolean(agent && (agent.currentContractId || shepherdEligible)));
 
-  const contract = useMemo(() => agent?.currentContractId
-    ? shepherdState?.contracts.find((item) => item.id === agent.currentContractId) ?? null
-    : null, [agent?.currentContractId, shepherdState?.contracts]);
+  const privateContractPrompt = useMemo(() => {
+    if (!agent) return null;
+    return [...(shepherdState?.groupMessages ?? [])]
+      .reverse()
+      .find(
+        (message) =>
+          message.targetAgentId === agent.id &&
+          message.contractAssignment?.preset === "auth-demo-contract",
+      ) ?? null;
+  }, [agent, shepherdState?.groupMessages]);
+
+  const visibleContractId = agent?.currentContractId ?? privateContractPrompt?.contractId ?? null;
+  const contract = useMemo(() => visibleContractId
+    ? shepherdState?.contracts.find((item) => item.id === visibleContractId) ?? null
+    : null, [visibleContractId, shepherdState?.contracts]);
   const plane = contract?.planeId
     ? shepherdState?.planes.find((item) => item.id === contract.planeId) ?? null
     : null;
@@ -88,7 +106,7 @@ export function AgentPage({
 
   useEffect(() => {
     messageEnd.current?.scrollIntoView({ block: "nearest" });
-  }, [messages, activeRun]);
+  }, [messages, activeRun, privateContractPrompt, contract?.state]);
 
   const toggle = async () => {
     if (!agent) return;
@@ -124,8 +142,22 @@ export function AgentPage({
     event.preventDefault();
     if (!agent || !prompt.trim()) return;
     const content = prompt.trim();
-    setPrompt("");
     setError(null);
+    if (shepherdMode) {
+      setShepherdSubmitting(true);
+      try {
+        await api.submitPrivateContractPrompt(agent.id, content);
+        setPrompt("");
+        await Promise.all([onAgentsChanged(), refreshShepherd()]);
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : "Shepherd Contract could not be created");
+        await onAgentsChanged();
+      } finally {
+        setShepherdSubmitting(false);
+      }
+      return;
+    }
+    setPrompt("");
     try {
       const result = await api.sendMessage(agent.id, content);
       if (!mounted.current) return;
@@ -144,7 +176,16 @@ export function AgentPage({
   if (!agent) return <ErrorState message="Agent not found." />;
 
   const runActive = Boolean(activeRun && activeStatuses.has(activeRun.status));
-  const composerDisabled = agent.status === "stopped" || agent.status === "busy" || runActive;
+  const legacyComposerDisabled = agent.status === "stopped" || agent.status === "busy" || runActive;
+  const shepherdComposerDisabled =
+    !shepherdEligible ||
+    agent.status === "stopped" ||
+    agent.status === "busy" ||
+    Boolean(privateContractPrompt) ||
+    shepherdSubmitting;
+  const composerDisabled = shepherdMode
+    ? shepherdComposerDisabled
+    : legacyComposerDisabled;
 
   return (
     <div className="page agent-page">
@@ -179,11 +220,11 @@ export function AgentPage({
       <section className="playground" aria-label={`${agent.name} Playground`}>
         <div className="playground-topbar">
           <div><span className="eyebrow">Legacy Playground</span><h2>Build something with your Agent</h2></div>
-          <span className="connection-status connected"><span />{agent.status === "stopped" ? "Agent stopped" : "Playground ready"}</span>
+          <span className="connection-status connected"><span />{agent.status === "stopped" ? "Agent stopped" : shepherdMode ? "Shepherd route ready" : "Playground ready"}</span>
         </div>
         <div className="messages" aria-live="polite">
           {loading ? <LoadingPanel label="Loading conversation…" /> : null}
-          {!loading && messages.length === 0 && !runActive ? (
+          {!loading && messages.length === 0 && !runActive && !privateContractPrompt ? (
             <EmptyState
               icon="activity"
               title={`What should ${agent.name} build?`}
@@ -201,6 +242,22 @@ export function AgentPage({
               <div>{message.content}</div>
             </article>
           ))}
+          {privateContractPrompt ? (
+            <>
+              <article className="message message-user" key={privateContractPrompt.id}>
+                <header><strong>You · Shepherd Contract</strong><time dateTime={privateContractPrompt.createdAt}>{formatTime(privateContractPrompt.createdAt)}</time></header>
+                <div>{privateContractPrompt.content}</div>
+              </article>
+              <article className="message message-assistant shepherd-contract-status">
+                <header><strong>Shepherd</strong><span>{contract?.state ?? "collecting"}</span></header>
+                <div>
+                  {contract
+                    ? <>Contract <Link href="/shepherd">{shortId(contract.id, 16)}</Link> is {contract.state.replaceAll("_", " ")}. Open Shepherd for its Plane, independent evidence, collision, and resolution.</>
+                    : <>Prompt captured and validated as <strong>{privateContractPrompt.contractAssignment?.transport}</strong>. Prompt the {agent.role === "Frontend" ? "Backend" : "Frontend"} Agent in its private chat to start the Mission.</>}
+                </div>
+              </article>
+            </>
+          ) : null}
           {runActive ? (
             <article className="message message-assistant thinking">
               <header><strong>{agent.name}</strong><span>working</span></header>
@@ -222,12 +279,32 @@ export function AgentPage({
                 event.currentTarget.form?.requestSubmit();
               }
             }}
-            placeholder={agent.status === "stopped" ? "Start this Agent to continue…" : "Describe what you want the Agent to do…"}
+            placeholder={agent.status === "stopped"
+              ? "Start this Agent to continue…"
+              : shepherdMode
+                ? "Describe this authentication Contract and name HttpOnly cookie or bearer JWT…"
+                : "Describe what you want the Agent to do…"}
             disabled={composerDisabled}
             rows={2}
-            maxLength={50_000}
+            maxLength={shepherdMode ? 2_000 : 50_000}
           />
-          <div><span>Enter to send · Shift + Enter for newline · {system?.codexSandboxMode ?? "sandbox checking"}</span><button className="send-button" aria-label="Send message" disabled={!prompt.trim() || composerDisabled}><Icon name="send" /></button></div>
+          <div>
+            {shepherdEligible ? (
+              <label className="contract-route-choice">
+                <input
+                  type="checkbox"
+                  checked={shepherdMode}
+                  onChange={(event) => setShepherdMode(event.target.checked)}
+                  disabled={Boolean(privateContractPrompt) || agent.status === "busy"}
+                />
+                <span>Route through Shepherd</span>
+              </label>
+            ) : null}
+            <span>{shepherdMode ? "Creates a verified Contract · " : "Enter to send · "}Shift + Enter for newline · {system?.codexSandboxMode ?? "sandbox checking"}</span>
+            <button className="send-button" aria-label={shepherdMode ? "Send Shepherd Contract" : "Send message"} disabled={!prompt.trim() || composerDisabled}>
+              {shepherdSubmitting ? <Spinner label="Creating Contract" /> : <Icon name="send" />}
+            </button>
+          </div>
         </form>
       </section>
     </div>

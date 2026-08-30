@@ -62,31 +62,51 @@ test.afterEach(async () => {
 
 test("user-created Agents receive visible typed contracts and produce competing resolution Planes", async ({ page, request }, testInfo) => {
   test.setTimeout(45_000);
+  const viewport = testInfo.project.use.viewport;
+  const screenshotDirectory = path.join(repositoryRoot, ".tmp", "demo-agent-contract-flow");
+  await mkdir(screenshotDirectory, { recursive: true });
   await unlock(page);
   await createAgent(page, "My Frontend Agent", "Frontend");
   await createAgent(page, "My Backend Agent", "Backend");
-  await page.getByRole("link", { name: /^Shepherd/u }).click();
 
-  const assignments = page.getByRole("group", { name: "Execution contract assignments" });
-  await expect(assignments).toContainText("My Frontend Agent");
-  await expect(assignments).toContainText("My Backend Agent");
-  const frontendAgentSelect = page.getByLabel("Frontend Agent", { exact: true });
-  await frontendAgentSelect.focus();
-  await expect(frontendAgentSelect).toBeFocused();
-  await frontendAgentSelect.selectOption({ label: "My Frontend Agent" });
-  await expect(frontendAgentSelect.locator("option:checked")).toHaveText("My Frontend Agent");
-  await expect(page.getByLabel("Frontend authentication transport")).toHaveValue("http-only-session-cookie");
-  await expect(page.getByLabel("Backend authentication transport")).toHaveValue("bearer-jwt");
-
-  const composer = page.getByLabel("Message Shepherd");
-  await composer.fill("Integrate the Frontend and Backend authentication contracts and resolve any semantic collision.");
-  const acceptedResponse = page.waitForResponse((response) =>
-    response.request().method() === "POST" && response.url().endsWith("/api/shepherd/messages"),
+  await page.getByRole("link", { name: /My Frontend Agent/u }).click();
+  const frontendRoute = page.getByLabel("Route through Shepherd");
+  await frontendRoute.focus();
+  await expect(frontendRoute).toBeFocused();
+  await frontendRoute.check();
+  const frontendPrompt =
+    "Implement the frontend authentication client using an HttpOnly session cookie.";
+  await page.getByLabel("Message My Frontend Agent").fill(frontendPrompt);
+  const waitingResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST" && /\/api\/shepherd\/agents\/[^/]+\/contracts$/u.test(response.url()),
   );
-  await composer.press("Enter");
+  await page.getByLabel("Message My Frontend Agent").press("Enter");
+  expect((await waitingResponse).status()).toBe(201);
+  await expect(page.getByText(/Prompt captured and validated as http-only-session-cookie/u)).toBeVisible();
+  await assertNoDocumentOverflow(page);
+  await page.screenshot({
+    path: path.join(
+      screenshotDirectory,
+      `private-chat-${viewport.width}x${viewport.height}.png`,
+    ),
+    fullPage: false,
+  });
+
+  await page.getByRole("link", { name: /My Backend Agent/u }).click();
+  await page.getByLabel("Route through Shepherd").check();
+  const backendPrompt =
+    "Implement the backend authentication service using a bearer JWT.";
+  await page.getByLabel("Message My Backend Agent").fill(backendPrompt);
+  const acceptedResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST" && /\/api\/shepherd\/agents\/[^/]+\/contracts$/u.test(response.url()),
+  );
+  await page.getByLabel("Message My Backend Agent").press("Enter");
   expect((await acceptedResponse).status()).toBe(202);
   const finalState = await waitForCompleted(request);
+  await page.getByRole("link", { name: /^Shepherd/u }).click();
   await expect(page.locator(".timeline-panel .state-pill")).toContainText("Completed");
+  await expect(page.getByLabel("Frontend Agent", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Frontend authentication transport")).toHaveCount(0);
   const mission = finalState.missions.at(-1);
   const contracts = finalState.contracts.filter((contract) => contract.missionId === mission.id);
   const agentsResponse = await request.get(`${app.baseURL}/api/agents`, { headers: headers() });
@@ -94,8 +114,8 @@ test("user-created Agents receive visible typed contracts and produce competing 
   const frontend = agents.find((agent) => agent.name === "My Frontend Agent");
   const backend = agents.find((agent) => agent.name === "My Backend Agent");
   expect(contracts).toEqual(expect.arrayContaining([
-    expect.objectContaining({ agentId: frontend.id, objective: expect.stringContaining("http-only-session-cookie") }),
-    expect.objectContaining({ agentId: backend.id, objective: expect.stringContaining("bearer-jwt") }),
+    expect.objectContaining({ agentId: frontend.id, objective: frontendPrompt }),
+    expect.objectContaining({ agentId: backend.id, objective: backendPrompt }),
   ]));
   expect(finalState.candidates.filter((candidate) => candidate.missionId === mission.id)).toEqual(expect.arrayContaining([
     expect.objectContaining({ targetValue: "http-only-session-cookie", selectionState: "selected", promotionState: "promoted" }),
@@ -109,7 +129,7 @@ test("user-created Agents receive visible typed contracts and produce competing 
   const visibleContract = frontendCard.getByLabel("Agent execution contract");
   for (const text of [
     "My Frontend Agent",
-    "http-only-session-cookie",
+    "HttpOnly session cookie",
     "auth.transport",
     "src/frontend/**",
     "src/frontend/auth.json",
@@ -125,9 +145,6 @@ test("user-created Agents receive visible typed contracts and produce competing 
   await expect(page.locator("button.tree-node").filter({ hasText: "bearer-jwt" })).toBeVisible();
   await expect(page.locator("button.tree-node").filter({ hasText: "http-only-session-cookie" })).toBeVisible();
   await assertNoDocumentOverflow(page);
-  const viewport = testInfo.project.use.viewport;
-  const screenshotDirectory = path.join(repositoryRoot, ".tmp", "demo-agent-contract-flow");
-  await mkdir(screenshotDirectory, { recursive: true });
   await page.screenshot({
     path: path.join(screenshotDirectory, `${viewport.width}x${viewport.height}.png`),
     fullPage: false,

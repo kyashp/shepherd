@@ -63,6 +63,16 @@ export interface ShepherdHttpService {
     frontendTransport?: "bearer-jwt" | "http-only-session-cookie";
     backendTransport?: "bearer-jwt" | "http-only-session-cookie";
   }): Promise<{ missionId: string; message: ProjectGroupMessage }>;
+  submitPrivateContractPrompt(input: {
+    agentId: string;
+    clientMessageId: string;
+    content: string;
+  }): Promise<{
+    status: "awaiting_peer" | "accepted";
+    missionId: string | null;
+    contractId: string | null;
+    message: ProjectGroupMessage;
+  }>;
   projectGroupMessages(projectId: string, limit?: number): ProjectGroupMessage[];
   sendProjectGroupMessage(
     projectId: string,
@@ -695,6 +705,13 @@ const resolveUpdateAgentInput = (
 const messageBody = z
   .object({ content: z.string().trim().min(1).max(50_000) })
   .strict();
+const privateContractPromptBody = z
+  .object({
+    clientMessageId: safeIdSchema,
+    content: z.string().trim().min(1).max(2_000),
+    preset: z.literal("auth-demo-contract"),
+  })
+  .strict();
 const decimalInteger = (name: string, minimum: number, maximum: number) =>
   z
     .string()
@@ -950,6 +967,23 @@ export async function createApp(
     app.get("/api/shepherd/state", async () => ({
       state: toPublicShepherdState(shepherdService.state(), publicSecrets),
     }));
+
+    app.post("/api/shepherd/agents/:id/contracts", async (request, reply) => {
+      const { id } = agentIdParams.parse(request.params);
+      const body = privateContractPromptBody.parse(request.body);
+      const accepted = await shepherdService.submitPrivateContractPrompt({
+        agentId: id,
+        clientMessageId: body.clientMessageId,
+        content: body.content,
+      });
+      return reply.code(accepted.status === "accepted" ? 202 : 201).send({
+        status: accepted.status,
+        missionId: accepted.missionId,
+        contractId: accepted.contractId,
+        message: toPublicGroupMessage(accepted.message, publicSecrets),
+        executionMode: config.shepherdExecutionMode,
+      });
+    });
 
     app.get("/api/shepherd/missions/:id", async (request) => {
       const { id } = missionIdParams.parse(request.params);
