@@ -12,6 +12,7 @@ import type {
   SemanticCollision,
   ShepherdEvent,
   ShepherdMissionDetail,
+  ShepherdProject,
   ShepherdSettings,
   ShepherdState,
   SystemInfo,
@@ -135,9 +136,10 @@ export const api = {
     }),
   submitPrivateContractPrompt: (id: string, content: string) =>
     request<{
-      status: "awaiting_peer" | "accepted";
+      status: "clarification_required" | "awaiting_peer" | "accepted";
       missionId: string | null;
       contractId: string | null;
+      clarification: string | null;
       message: ProjectGroupMessage;
       executionMode: "live" | "deterministic";
     }>(`/api/shepherd/agents/${idPath(id)}/contracts`, {
@@ -145,12 +147,17 @@ export const api = {
       body: JSON.stringify({
         clientMessageId: crypto.randomUUID(),
         content,
-        preset: "auth-demo-contract",
+        preset: "managed-contract",
       }),
     }),
   run: (id: string) => request<{ run: AgentRun }>(`/api/runs/${idPath(id)}`),
 
   shepherdState: () => request<{ state: ShepherdState }>("/api/shepherd/state"),
+  initializeProjectGroup: () =>
+    request<{ project: ShepherdProject }>(
+      "/api/shepherd/projects/auth-demo/group-initialization",
+      { method: "POST", body: "{}" },
+    ),
   mission: (id: string) =>
     request<ShepherdMissionDetail>(`/api/shepherd/missions/${idPath(id)}`),
   events: (cursor: number, limit = 200) =>

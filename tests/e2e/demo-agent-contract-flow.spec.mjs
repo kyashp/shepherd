@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import path from "node:path";
-import { mkdir } from "node:fs/promises";
+import { access, mkdir, readFile } from "node:fs/promises";
 import { AUTH_TOKEN, repositoryRoot, startTestApp } from "./support/test-app.mjs";
 
 let app;
@@ -65,7 +65,7 @@ async function assertShepherdShellContained(page) {
 }
 
 test.beforeEach(async () => {
-  app = await startTestApp();
+  app = await startTestApp({ agentRuntimeConfigured: true });
 });
 
 test.afterEach(async () => {
@@ -86,14 +86,34 @@ test("user-created Agents receive visible typed contracts and produce competing 
   const frontendRoute = page.getByLabel("Route through Shepherd");
   await frontendRoute.focus();
   await expect(frontendRoute).toBeFocused();
-  await frontendRoute.check();
+  await expect(frontendRoute).toBeChecked();
   await page.getByRole("link", { name: /My Generalist Agent/u }).click();
-  await expect(page.getByLabel("Route through Shepherd")).toHaveCount(0);
+  await expect(page.getByLabel("Route through Shepherd")).toBeChecked();
+  await page.getByLabel("Route through Shepherd").uncheck();
   await expect(page.getByText("Playground ready", { exact: true })).toBeVisible();
-  await expect(page.getByLabel("Message My Generalist Agent")).toBeEnabled();
+  const directComposer = page.getByLabel("Message My Generalist Agent");
+  await expect(directComposer).toBeEnabled();
+  let managedRequests = 0;
+  const observeManagedRequest = (request) => {
+    if (
+      request.method() === "POST" &&
+      /\/api\/shepherd\/agents\/[^/]+\/contracts$/u.test(request.url())
+    ) {
+      managedRequests += 1;
+    }
+  };
+  page.on("request", observeManagedRequest);
+  await directComposer.fill("Reply directly without creating a Shepherd Contract.");
+  const directResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST" &&
+    /\/api\/agents\/[^/]+\/messages$/u.test(response.url()),
+  );
+  await directComposer.press("Enter");
+  expect((await directResponse).status()).toBe(202);
+  expect(managedRequests).toBe(0);
+  page.off("request", observeManagedRequest);
   await page.getByRole("link", { name: /My Frontend Agent/u }).click();
-  await expect(page.getByLabel("Route through Shepherd")).not.toBeChecked();
-  await page.getByLabel("Route through Shepherd").check();
+  await expect(page.getByLabel("Route through Shepherd")).toBeChecked();
   const frontendPrompt =
     "Implement the frontend authentication client using an HttpOnly session cookie.";
   await page.getByLabel("Message My Frontend Agent").fill(frontendPrompt);
@@ -114,8 +134,7 @@ test("user-created Agents receive visible typed contracts and produce competing 
 
   await page.getByRole("link", { name: /My Backend Agent/u }).click();
   const backendRoute = page.getByLabel("Route through Shepherd");
-  await expect(backendRoute).not.toBeChecked();
-  await backendRoute.check();
+  await expect(backendRoute).toBeChecked();
   const backendPrompt =
     "Implement the backend authentication service using a bearer JWT.";
   await page.getByLabel("Message My Backend Agent").fill(backendPrompt);
@@ -125,7 +144,7 @@ test("user-created Agents receive visible typed contracts and produce competing 
   await page.getByLabel("Message My Backend Agent").press("Enter");
   expect((await acceptedResponse).status()).toBe(202);
   const finalState = await waitForCompleted(request);
-  await expect(page.locator(".shepherd-contract-status")).toContainText("is verified");
+  await expect(page.locator(".shepherd-contract-status").last()).toContainText("is verified");
   await page.getByRole("link", { name: /^Shepherd/u }).click();
   await expect(page.locator(".timeline-panel .state-pill")).toContainText("Completed");
   await expect(page.getByLabel("Frontend Agent", { exact: true })).toHaveCount(0);
@@ -173,6 +192,141 @@ test("user-created Agents receive visible typed contracts and produce competing 
     path: path.join(screenshotDirectory, `${viewport.width}x${viewport.height}.png`),
     fullPage: false,
   });
+});
+
+test("general Agent chat clarifies missing Contract details before verified execution", async ({ page, request }, testInfo) => {
+  test.setTimeout(45_000);
+  const screenshotDirectory = path.join(repositoryRoot, ".tmp", "demo-agent-contract-flow");
+  await mkdir(screenshotDirectory, { recursive: true });
+  await unlock(page);
+  await createAgent(page, "General Delivery Agent", "Generalist");
+  await expect(page.getByLabel("Route through Shepherd")).toBeChecked();
+  await expect(page.getByText("Shepherd route ready", { exact: true })).toBeVisible();
+
+  const composer = page.getByLabel("Message General Delivery Agent");
+  await composer.fill("Build a greeting feature.");
+  const clarificationResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST" && /\/api\/shepherd\/agents\/[^/]+\/contracts$/u.test(response.url()),
+  );
+  await composer.press("Enter");
+  expect((await clarificationResponse).status()).toBe(201);
+  await expect(page.getByText(/Before I create the Execution Contract/u)).toBeVisible();
+  await expect(composer).toBeEnabled();
+  expect((await state(request)).contracts).toHaveLength(0);
+
+  await composer.fill(
+    'Create `scripts/hello.txt`. Acceptance: the file exists and contains "Hello from Shepherd".',
+  );
+  const acceptedResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST" && /\/api\/shepherd\/agents\/[^/]+\/contracts$/u.test(response.url()),
+  );
+  await composer.press("Enter");
+  expect((await acceptedResponse).status()).toBe(202);
+  const finalState = await waitForCompleted(request);
+  const mission = finalState.missions.at(-1);
+  const contract = finalState.contracts.find((item) => item.missionId === mission.id);
+  expect(contract).toMatchObject({
+    state: "verified",
+    expectedArtifacts: [expect.objectContaining({ path: "scripts/hello.txt" })],
+  });
+  await expect(page.locator(".shepherd-contract-status").last()).toContainText("is verified");
+  await expect(page.locator(".page-header .state-pill").first()).toContainText("Ready");
+  await assertNoDocumentOverflow(page);
+  const agentsResponse = await request.get(`${app.baseURL}/api/agents`, { headers: headers() });
+  const agent = (await agentsResponse.json()).agents.find(
+    (item) => item.name === "General Delivery Agent",
+  );
+  expect(
+    await readFile(path.join(app.runRoot, "workspaces", agent.id, "scripts", "hello.txt"), "utf8"),
+  ).toBe("Hello from Shepherd\n");
+  await page.screenshot({
+    path: path.join(
+      screenshotDirectory,
+      `general-${testInfo.project.use.viewport.width}x${testInfo.project.use.viewport.height}.png`,
+    ),
+    fullPage: false,
+  });
+});
+
+test("clarification-only Shepherd drafts do not trap an Agent lifecycle", async ({ page, request }, testInfo) => {
+  const viewport = testInfo.project.use.viewport;
+  const screenshotDirectory = path.join(repositoryRoot, ".tmp", "agent-delete-clarification");
+  await mkdir(screenshotDirectory, { recursive: true });
+  await unlock(page);
+  await createAgent(page, "Disposable Draft Agent", "Generalist");
+
+  const agentsResponse = await request.get(`${app.baseURL}/api/agents`, {
+    headers: headers(),
+  });
+  expect(agentsResponse.status()).toBe(200);
+  const agent = (await agentsResponse.json()).agents.find(
+    (item) => item.name === "Disposable Draft Agent",
+  );
+  expect(agent).toBeDefined();
+
+  const composer = page.getByLabel("Message Disposable Draft Agent");
+  for (const prompt of [
+    "Create a greeting script.",
+    "Create scripts/hello.txt containing a greeting.",
+  ]) {
+    await composer.fill(prompt);
+    const clarificationResponse = page.waitForResponse((response) =>
+      response.request().method() === "POST" &&
+      /\/api\/shepherd\/agents\/[^/]+\/contracts$/u.test(response.url()),
+    );
+    await composer.press("Enter");
+    expect((await clarificationResponse).status()).toBe(201);
+  }
+  await expect(page.getByText(/Before I create the Execution Contract/u)).toHaveCount(2);
+  const pendingState = await state(request);
+  expect(pendingState.contracts).toHaveLength(0);
+  expect(pendingState.missions).toHaveLength(0);
+  await assertNoDocumentOverflow(page);
+  await page.screenshot({
+    path: path.join(
+      screenshotDirectory,
+      `clarification-${viewport.width}x${viewport.height}.png`,
+    ),
+    fullPage: false,
+  });
+
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await expect(page.getByText("Agent stopped", { exact: true })).toBeVisible();
+  const deletionResponse = page.waitForResponse((response) =>
+    response.request().method() === "DELETE" &&
+    response.url().endsWith(`/api/agents/${agent.id}`),
+  );
+  const confirmation = page.waitForEvent("dialog");
+  const deleteClick = page.getByRole("button", { name: "Delete", exact: true }).click();
+  const dialog = await confirmation;
+  expect(dialog.type()).toBe("confirm");
+  expect(dialog.message()).toBe(
+    "Delete Disposable Draft Agent? Its workspace will be safely archived by the control plane.",
+  );
+  await dialog.accept();
+  await deleteClick;
+  expect((await deletionResponse).status()).toBe(200);
+  await expect(page.getByRole("heading", { name: "Your Agents", exact: true })).toBeVisible();
+  await expect(page.getByText("No Agents yet", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Disposable Draft Agent/u })).toHaveCount(0);
+  expect((await state(request)).projects).toHaveLength(0);
+  await assertNoDocumentOverflow(page);
+  await page.screenshot({
+    path: path.join(
+      screenshotDirectory,
+      `deleted-${viewport.width}x${viewport.height}.png`,
+    ),
+    fullPage: false,
+  });
+
+  for (const target of [
+    path.join(app.runRoot, "workspaces", agent.id),
+    path.join(app.runRoot, "shepherd", "repositories", `agent-${agent.id}`),
+    path.join(app.runRoot, "shepherd", "planes", `agent-${agent.id}`),
+    path.join(app.runRoot, "shepherd", "projects", `agent-${agent.id}.json`),
+  ]) {
+    await expect(access(target)).rejects.toMatchObject({ code: "ENOENT" });
+  }
 });
 
 test("unresolved promotion creates a visible durable human-review reference", async ({ page, request }) => {

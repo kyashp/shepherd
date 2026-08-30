@@ -299,6 +299,14 @@ const acceptanceCheckSchema = z
   })
   .strict();
 
+const expectedArtifactSchema = z
+  .object({
+    path: projectPathSchema,
+    description: nonEmptyString(2_000),
+    required: z.boolean(),
+  })
+  .strict();
+
 const contractSchema = z
   .object({
     id: idSchema,
@@ -320,16 +328,7 @@ const contractSchema = z
     semanticScopes: boundedArray(nonEmptyString(1_000), 256),
     declaredClaimKeys: boundedArray(nonEmptyString(200), 256),
     authority: authoritySchema,
-    expectedArtifacts: boundedArray(
-      z
-        .object({
-          path: projectPathSchema,
-          description: nonEmptyString(2_000),
-          required: z.boolean(),
-        })
-        .strict(),
-      256,
-    ),
+    expectedArtifacts: boundedArray(expectedArtifactSchema, 256),
     acceptance: z
       .object({
         checks: boundedArray(acceptanceCheckSchema, 32),
@@ -403,6 +402,10 @@ const planeSchema = z
     changedFiles: boundedArray(projectPathSchema, MAX_COLLECTION_ITEMS),
     diffSummary: shortTextSchema,
     verificationEvidenceIds: boundedArray(idSchema, 256),
+    generalPromotionState: z
+      .enum(["not_started", "reverifying", "promoting", "promoted", "failed"])
+      .optional(),
+    generalPromotionEvidence: verificationEvidenceSchema.nullable().optional(),
     createdAt: timestampSchema,
     updatedAt: timestampSchema,
     destroyedAt: nullableTimestampSchema,
@@ -558,12 +561,35 @@ const groupMessageSchema = z
     targetAgentId: nullableIdSchema,
     contractId: nullableIdSchema,
     contractAssignment: z
-      .object({
-        preset: z.literal("auth-demo-contract"),
-        role: z.enum(["Frontend", "Backend"]),
-        transport: z.enum(["bearer-jwt", "http-only-session-cookie"]),
-      })
-      .strict()
+      .discriminatedUnion("preset", [
+        z
+          .object({
+            preset: z.literal("auth-demo-contract"),
+            role: z.enum(["Frontend", "Backend"]),
+            transport: z.enum(["bearer-jwt", "http-only-session-cookie"]),
+          })
+          .strict(),
+        z
+          .object({
+            preset: z.literal("general-contract"),
+            role: z.enum(["Frontend", "Backend", "Verification", "Generalist"]),
+            draftId: idSchema,
+            status: z.enum(["clarification_required", "accepted"]),
+            missingFields: boundedArray(
+              z.enum([
+                "objective",
+                "expected_artifact",
+                "acceptance_evidence",
+                "authority",
+              ]),
+              4,
+            ),
+            expectedArtifacts: boundedArray(expectedArtifactSchema, 8),
+            acceptanceSummary: safeString(500).nullable(),
+            requiredContent: safeString(200).nullable(),
+          })
+          .strict(),
+      ])
       .optional(),
     requestFingerprint: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
     createdAt: timestampSchema,
@@ -1242,6 +1268,33 @@ function hasValidReferences(database: DatabaseV2): boolean {
       return false;
     }
     if (!unique(plane.verificationEvidenceIds)) return false;
+    if (
+      (plane.generalPromotionState !== undefined ||
+        plane.generalPromotionEvidence !== undefined) &&
+      plane.kind !== "integration"
+    ) {
+      return false;
+    }
+    if (plane.generalPromotionState !== undefined) {
+      const promotionEvidence = plane.generalPromotionEvidence ?? null;
+      if (
+        ((plane.generalPromotionState === "not_started" ||
+          plane.generalPromotionState === "reverifying") &&
+          promotionEvidence !== null) ||
+        ((plane.generalPromotionState === "promoting" ||
+          plane.generalPromotionState === "promoted") &&
+          (!promotionEvidence?.passed ||
+            promotionEvidence.targetType !== "promotion" ||
+            promotionEvidence.targetId !== plane.id ||
+            !plane.verificationEvidenceIds.includes(promotionEvidence.id))) ||
+        (plane.generalPromotionState === "promoted" && plane.state !== "verified")
+      ) {
+        return false;
+      }
+      if (promotionEvidence) evidenceIds.push(promotionEvidence.id);
+    } else if (plane.generalPromotionEvidence !== undefined) {
+      return false;
+    }
     if (plane.kind === "contract") {
       const contract = plane.contractId ? contracts.get(plane.contractId) : undefined;
       if (!contract || contract.missionId !== plane.missionId || plane.candidateId !== null) {
@@ -1375,13 +1428,19 @@ function hasValidReferences(database: DatabaseV2): boolean {
     }
   }
   for (const plane of shepherd.planes) {
+    if (plane.generalPromotionEvidence) {
+      evidenceById.set(plane.generalPromotionEvidence.id, plane.generalPromotionEvidence);
+    }
+  }
+  for (const plane of shepherd.planes) {
     for (const evidenceId of plane.verificationEvidenceIds) {
       const evidence = evidenceById.get(evidenceId);
       if (!evidence) return false;
       if (
         (plane.kind === "contract" &&
           (evidence.targetType !== "contract" || evidence.targetId !== plane.contractId)) ||
-        (plane.kind === "integration") ||
+        (plane.kind === "integration" &&
+          (evidence.targetType !== "promotion" || evidence.targetId !== plane.id)) ||
         (plane.kind === "resolution" &&
           (evidence.targetId !== plane.candidateId ||
             (evidence.targetType !== "candidate" &&
@@ -1420,8 +1479,19 @@ function hasValidReferences(database: DatabaseV2): boolean {
       return false;
     }
     if (message.targetAgentId && !agents.has(message.targetAgentId)) return false;
-    if (message.senderType === "agent" && (!message.senderId || !agents.has(message.senderId))) {
-      return false;
+    if (message.senderType === "agent") {
+      if (
+        !message.senderId ||
+        !agents.has(message.senderId) ||
+        !contract ||
+        contract.agentId !== message.senderId ||
+        message.targetAgentId !== message.senderId ||
+        contract.state !== "verified" ||
+        !contract.manifest ||
+        message.content !== contract.manifest.summary
+      ) {
+        return false;
+      }
     }
     if (message.contractAssignment) {
       const targetAgent = message.targetAgentId

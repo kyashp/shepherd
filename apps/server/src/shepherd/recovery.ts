@@ -185,6 +185,7 @@ const interruptedPlaneStates: ReadonlySet<PlaneState> = new Set([
 export type StartupHeadClassification =
   | "unchanged"
   | "selected_candidate_post_cas"
+  | "general_contract_post_cas"
   | "protected_branch_moved"
   | "protected_worktree_mismatch"
   | "inspection_failed";
@@ -278,6 +279,33 @@ function selectedPromotionCandidate(
   return selected.length === 1 ? (selected[0] ?? null) : null;
 }
 
+function generalPromotionPlane(database: Database, mission: Mission) {
+  if (mission.state !== "verifying" || mission.contractIds.length !== 1) return null;
+  const contract = database.shepherd.contracts.find(
+    (item) => item.id === mission.contractIds[0] && item.state === "verified",
+  );
+  if (!contract) return null;
+  const matches = database.shepherd.planes.filter((plane) => {
+    const evidence = plane.generalPromotionEvidence;
+    return (
+      plane.missionId === mission.id &&
+      plane.kind === "integration" &&
+      plane.generalPromotionState === "promoting" &&
+      plane.headCommit !== null &&
+      evidence?.passed === true &&
+      evidence.targetType === "promotion" &&
+      evidence.targetId === plane.id &&
+      evidence.checks.some(
+        (check) => check.mandatory && check.passed && check.status === "passed",
+      ) &&
+      evidence.changedFiles.length === plane.changedFiles.length &&
+      evidence.changedFiles.every((file) => plane.changedFiles.includes(file)) &&
+      plane.verificationEvidenceIds.includes(evidence.id)
+    );
+  });
+  return matches.length === 1 ? (matches[0] ?? null) : null;
+}
+
 export function classifyStartupProtectedHead(
   database: Database,
   project: ShepherdProject,
@@ -286,6 +314,8 @@ export function classifyStartupProtectedHead(
   protectedWorktreeSynchronized = protectedWorktreeHead === observedHead,
   selectedCandidateIsFastForward = false,
   selectedPlaneIsCorroborated = false,
+  generalPlaneIsFastForward = false,
+  generalPlaneIsCorroborated = false,
 ): Pick<ProjectObservation, "classification" | "selectedCandidateId"> {
   if (!protectedWorktreeSynchronized) {
     return {
@@ -315,6 +345,17 @@ export function classifyStartupProtectedHead(
       selectedCandidateId: selected.id,
     };
   }
+  const generalPlane = mission ? generalPromotionPlane(database, mission) : null;
+  if (
+    generalPlane?.headCommit === observedHead &&
+    generalPlaneIsFastForward &&
+    generalPlaneIsCorroborated
+  ) {
+    return {
+      classification: "general_contract_post_cas",
+      selectedCandidateId: null,
+    };
+  }
   return { classification: "protected_branch_moved", selectedCandidateId: null };
 }
 
@@ -342,6 +383,8 @@ function interruptionFailure(
     message:
       observation.classification === "selected_candidate_post_cas"
         ? "Server stopped after the selected candidate advanced the protected branch but before completion was durably recorded"
+        : observation.classification === "general_contract_post_cas"
+          ? "Server stopped after the verified general Contract advanced the protected branch but before workspace materialization was durably recorded"
         : observation.inspectionError
           ? "Server stopped during the Mission and protected state could not be fully inspected"
           : "Server stopped while the Mission was in flight",
@@ -403,6 +446,9 @@ async function observeProject(
     const selectedPlane = selected
       ? database.shepherd.planes.find((plane) => plane.id === selected.planeId)
       : null;
+    const generalPlane = activeMission
+      ? generalPromotionPlane(database, activeMission)
+      : null;
     const expectedSelectedPath = selectedPlane
       ? path.join(identity.planesRoot, `resolution-${selectedPlane.id}`)
       : null;
@@ -437,8 +483,41 @@ async function observeProject(
           (await manager.git.uncommittedFiles(expectedSelectedPath)).length === 0,
       );
     }
+    const expectedGeneralPath = generalPlane
+      ? path.join(identity.planesRoot, `integration-${generalPlane.id}`)
+      : null;
+    const expectedGeneralBranch = generalPlane
+      ? `shepherd/integration/${generalPlane.id}`
+      : null;
+    let generalPlaneIsCorroborated = false;
+    if (
+      generalPlane &&
+      expectedGeneralPath &&
+      expectedGeneralBranch &&
+      generalPlane.projectId === project.id &&
+      path.resolve(generalPlane.worktreePath) === expectedGeneralPath &&
+      generalPlane.branch === expectedGeneralBranch &&
+      generalPlane.headCommit === observedHead
+    ) {
+      const registration = (await manager.git.listWorktrees()).find(
+        (worktree) => path.resolve(worktree.path) === expectedGeneralPath,
+      );
+      generalPlaneIsCorroborated = Boolean(
+        registration &&
+          registration.branch === `refs/heads/${expectedGeneralBranch}` &&
+          registration.head === observedHead &&
+          !registration.detached &&
+          !registration.prunable &&
+          (await realpath(expectedGeneralPath)) === expectedGeneralPath &&
+          (await manager.git.currentHead(expectedGeneralPath)) === observedHead &&
+          (await manager.git.uncommittedFiles(expectedGeneralPath)).length === 0,
+      );
+    }
     const selectedCandidateIsFastForward =
       selectedPlane?.headCommit === observedHead &&
+      (await manager.git.isAncestor(project.protectedHeadCommit, observedHead));
+    const generalPlaneIsFastForward =
+      generalPlane?.headCommit === observedHead &&
       (await manager.git.isAncestor(project.protectedHeadCommit, observedHead));
     const classification = classifyStartupProtectedHead(
       database,
@@ -448,6 +527,8 @@ async function observeProject(
       protectedInspection.synchronized,
       selectedCandidateIsFastForward,
       selectedPlaneIsCorroborated,
+      generalPlaneIsFastForward,
+      generalPlaneIsCorroborated,
     );
     const removed = await manager.reconcileInterruptedArtifacts();
     return {
@@ -567,6 +648,24 @@ export async function reconcileShepherdStartup(options: {
       for (const plane of database.shepherd.planes) {
         if (
           plane.missionId === mission.id &&
+          (plane.generalPromotionState === "reverifying" ||
+            plane.generalPromotionState === "promoting")
+        ) {
+          if (
+            observation.classification === "general_contract_post_cas" &&
+            plane.headCommit === observation.observedHead &&
+            plane.generalPromotionEvidence?.passed
+          ) {
+            plane.generalPromotionState = "promoted";
+            plane.state = "verified";
+            plane.error = null;
+          } else {
+            plane.generalPromotionState = "failed";
+          }
+          plane.updatedAt = timestamp;
+        }
+        if (
+          plane.missionId === mission.id &&
           interruptedPlaneStates.has(plane.state)
         ) {
           plane.state = "interrupted";
@@ -612,7 +711,8 @@ export async function reconcileShepherdStartup(options: {
       );
       if (
         project &&
-        observation.classification === "selected_candidate_post_cas" &&
+        (observation.classification === "selected_candidate_post_cas" ||
+          observation.classification === "general_contract_post_cas") &&
         observation.observedHead
       ) {
         project.protectedHeadCommit = observation.observedHead;

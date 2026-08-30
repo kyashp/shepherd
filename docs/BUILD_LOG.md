@@ -7,6 +7,130 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — issue #41 audited Project Group journey candidate
+
+Branch `feat/41-project-group-journey`, draft PR #64. This is candidate evidence;
+protected-main integration is not claimed.
+
+- An explicit Project Group initialization creates the fixed idle auth-demo
+  Project without starting a Mission, Contract, Plane, executor, shell or model.
+  Unmentioned bounded messages persist with a bounded Shepherd reply. A leading
+  ready Frontend/Backend mention captures one fixed authentication transport; a
+  complementary opposite-role request enters the existing deterministic
+  two-Contract Mission with server-authored objectives and authority.
+- Agent-authored Group messages are derived only from verified persisted manifest
+  summaries and remain bound to the exact sender, target, Contract and Mission.
+  Hostile V2 checks cover non-verified and missing-manifest states from valid
+  nonterminal controls, plus wrong sender, target, Contract and summary. The
+  pre-Agent-summary V2 shape remains compatible.
+- Audit correction made Project Group routing atomic across ordinary and Contract
+  idempotency namespaces. The causal regression failed with two accepted requests
+  before the correction and passes with exactly one accepted message afterward.
+  Private-chat and Project Group pending prompts cannot pair across intake
+  provenance, and Mission-preparation failure rolls back only the new prompt.
+- Literal `npm run check` passed: launcher 3/3, Server 795 passed with three
+  explicit skips, Web 19/19, all production/test-source typechecks and both builds.
+  The focused Database plus Shepherd suite passed 136/136; the final independent
+  re-review passed its 3 targeted tests and `git diff --check` with no remaining
+  finding.
+- Authenticated focused Chromium passed 2/2 at `1280x800` and `1440x900` from the
+  real mention button through verified Contract evidence; the adjacent Shepherd
+  hero journey also passed 2/2. The broader direct Playwright run passed 18/20;
+  the two failures were unchanged legacy harness issues outside #41: a 0.09375px
+  starter-kit viewport rounding assertion and a separate response timeout. Harness
+  unit tests passed 6/7; the one unchanged macOS fixture compares canonical
+  `/private/var/...` and non-canonical `/var/...` temporary paths.
+- `npm audit` reported zero vulnerabilities. No live/model request ran, no secret
+  or raw prompt/output was persisted in evidence, and the accepted UI design was
+  not redesigned.
+
+## 2026-08-30 — CRUD-01 clarification-only Agent deletion candidate
+
+- **Branch/review:** `fix/66-crud-01-clarification-draft-delete`, issue #66,
+  draft PR #67. No Web or CSS source changed.
+- **RED:** a stopped Agent with only unbound `general-contract`
+  `clarification_required` messages, zero Contracts/Missions/Planes/events, and an
+  inactive managed Project failed deletion with `Cannot delete an Agent referenced
+  by durable Shepherd history`.
+- **Correction:** deletion classifies only exact human-authored, unbound general
+  clarification messages as discardable. All durable or ambiguous references keep
+  the 409. Before deleting the exact managed Project, the server validates the
+  managed-root sentinel, metadata identity, main-only Git worktree state, absence of
+  Shepherd branches and empty private Plane roots. Fixed-schema, fsynced workspace
+  intent and Project deletion journals are written before database publication and
+  reconciled from on-disk durable Agent/Project state after restart. General Project
+  creation/policy journaling now begins inside the serialized Store mutation after
+  Agent revalidation, so a racing follow-up cannot strand a journal.
+- **Observed checks:** production/test typechecks; focused Agent lifecycle/general
+  Project 29/29, including injected pre-publication and post-rename persistence
+  faults, exact follow-up/delete and direct-run/delete barriers, active-run join,
+  and clean restarts; adjacent API/Shepherd 77/77; literal `npm run check` with
+  launcher 3/3, Server 791 passed
+  plus two explicit opt-in skips, Web 18/18, and both
+  production builds. Authenticated deterministic Chromium passed 2/2 at 1280x800
+  and 1440x900, including two clarification turns, exact 200 deletion, empty Agent
+  UI/state, exact filesystem absence and no document/body overflow. All four
+  screenshots were inspected. Independent UI review found no High/Medium issue;
+  it confirmed the frozen theme/layout and keyboard-operable native lifecycle
+  controls. Final independent security re-review at `171089b` passed with no High
+  or Medium finding after the direct-run race was also reserved, cancelled and
+  joined causally. Protected-main integration remains pending. The same-OS-user
+  recursive-path swap and Project-journal sudden-power-loss ordering are retained as
+  Low residuals under the existing single-owner local PoC threat/availability model.
+## 2026-08-30 — OPS-06 `A` and `S` gates, and a corrected reconciliation
+
+Protected `main` advanced to `f900656` (PR #71) while this reconciliation branch was
+open; hosted exact-head gate run `33305530655` passed on it. The entry below remains
+true for `b80af11`, the head it names. No live or model call ran.
+
+- **`A` gate (PR #68).** Four guards introduced or relied on by the container state
+  volume appeared only in source and in no test, so each could be deleted with a
+  green suite. Eight causal tests were added for the verifier fail-closed branch,
+  the three executor state-root guards, the `index.ts` verifier composition and the
+  launcher probe/fallback selection. Each was proven by mutating its guard and
+  observing the test fail; all source was restored afterwards. Two of the tests
+  initially passed for the wrong reason — one assertion was satisfied by the
+  following guard's message, since both end in `escaped CONTAINER_STATE_ROOT`, and
+  the launcher assertions read `stdout` while the launcher logs to `stderr`. Both
+  were corrected.
+- **`S` gate (PR #69).** An independent read-only review of the merged range
+  returned **FAIL**: one High and two Medium findings, all against `e6a5878`, which
+  removed the non-loopback `APP_AUTH_TOKEN` requirement inside the same merge with
+  `gh pr view 56 --json reviews` returning `[]`. The container state volume itself
+  passed: the mount construction was attacked directly and no escape was found.
+- **Adversarial re-review of both branches then found three defects in the first
+  corrections, each reproduced rather than argued.** The new deploy guard was
+  defeated by a whitespace-only token and by a CRLF environment file, because the
+  shell tested only for the empty string while the server trims before validating,
+  so both shapes reached the container as an empty token and disabled the bearer
+  boundary — the original finding verbatim. The guard now strips CR and surrounding
+  whitespace as the schema does and applies the same 24-character non-placeholder
+  floor as `config.ts` and `deploy/volcengine/variables.tf`. Separately, that
+  guard's only regression test was executed by no gate: the root `test` script names
+  a single file under `scripts/` and is not a glob, so `npm run check` would have
+  stayed green with the guard deleted; it is now named in that script, and deleting
+  the guard fails the gate. Finally, `index.composition.test.ts` could pass on the
+  exact regression it exists to catch, because its `indexOf("});")` end anchor
+  overshoots when the call is closed in the expanded argument style; the anchor is
+  now a close at column zero, comments are stripped from the window, and the
+  reproduction now fails both assertions.
+- **The High finding is only partly closed.** The guarded deploy script is one of
+  three documented compose entry points; `README` still documents
+  `docker compose up --build` and `docker compose --env-file .env.production up -d`
+  against the same unguarded `docker-compose.yml`, which binds `0.0.0.0` and
+  publishes its port with no address prefix. Pinning that file to loopback was
+  rejected because the profile is meant to be reachable behind a security group and
+  the same file serves the local Docker path. The remainder is carried into
+  `SEC-REVIEW`. This merge must not be recorded as closing it.
+- **Corrections to this branch's own earlier entry.** The `CHAT-01` row was left
+  internally contradictory: a guarded replacement silently matched nothing, so the
+  row still opened `REVIEWED CANDIDATE` while its body already said integration was
+  done. It now reads `INTEGRATED` at `cd82ec4`. An earlier local suite run reported
+  here was discarded rather than recorded, because it spanned a branch switch and
+  observed a mixed tree: it counted 32 test files where `main` has 29.
+- **`TST-25` is resolved** at `e06357c` (PR #71, issue #70) by canonicalizing the
+  test's own temporary root before `mkdtemp`, leaving the fixture assertion intact.
+
 ## 2026-08-30 — post-merge reconciliation at integrated `b80af11`
 
 Protected `main` at `b80af11` (merge of PR #56). That head also carries PR #57
@@ -234,7 +358,45 @@ Branch `fix/47-ops-06-container-state-volume`, PR #56, on the affected host
   `Live Shepherd Runtime preflight failed (stage=container_start
   reason=sandbox_probe_failed)`. The smoke volume was removed afterwards.
 - No live or model call ran; no Mission was started.
+## 2026-08-30 — default general Agent Contract-intake candidate
 
+- Ownership: issue #58, branch `feat/58-general-contract-intake`, stacked draft
+  PR #59 on private-chat PR #57. No protected-main integration is claimed.
+- Shepherd-managed routing is now the default in every Agent chat; the existing
+  toggle remains a direct-Playground escape hatch. The fixed Frontend/Backend auth
+  prompts retain their two-Contract collision path.
+- Other prompts enter a constrained deterministic planner. It accepts 1–8 bounded
+  messages, requires a concrete change, writable project-relative artifact(s), and
+  explicit `Acceptance:` evidence. Missing or authority-incompatible fields produce
+  a durable in-chat clarification and create no Mission, Contract, or Plane.
+- A confirmed draft creates one authority-intersected Contract in a sentinel-bound
+  managed project seeded from a secret-filtered Agent snapshot. The existing
+  Git-free executor/import path, strict manifest ingestion and exact-diff authority
+  check run unchanged. A registry-owned static check independently verifies the
+  declared artifacts; the verified Contract is merged into an integration Plane,
+  independently re-verified, promoted by expected-head compare-and-swap, and only
+  its declared artifacts are synchronized back to the Agent workspace.
+- Causal tests cover planner bounds/normalization/authority, secret-filtered project
+  initialization, verifier policy, symlink-safe artifact sync, deterministic output,
+  clarification idempotency/conflict, absence of premature executable state, final
+  verified lifecycle, promotion and workspace output. Security regressions additionally
+  reject negated/compound Acceptance criteria, retain post-CAS evidence across a
+  one-shot final persistence fault/restart, and roll back an exact journaled policy
+  commit when its Project head was not persisted. The literal `npm run check` passed:
+  launcher 3/3, Server 771 passed plus two opt-in skips, Web 18/18, strict
+  production/test type checks and both builds.
+- Authenticated Playwright passed 6/6 across exact `1280x800` and `1440x900`:
+  unchanged user-created auth collision, default route plus direct opt-out, general
+  clarification and follow-up, verified promotion/workspace output, human-review
+  fallback, stale-Agent-status reconciliation and no document overflow. A first
+  focused E2E run correctly exposed that the fake verifier allowlist lacked the new
+  registry-owned check; adding that exact static check made every rerun pass.
+- No live/model request was made. Independent UI and security re-reviews returned
+  ready with no High/Medium finding; integration against protected `main` remains
+  pending. The final deterministic browser rerun
+  passed 6/6 after the direct-Playground fixture was explicitly configured with its
+  bounded fake Agent Runtime; the direct request returned 202 and emitted no managed
+  Contract request.
 ## 2026-08-30 — private Agent-chat Contract candidate
 
 - Ownership: issue #55, branch `feat/55-private-chat-contracts`, draft PR #57;

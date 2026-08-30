@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { parseProjectGroupMessage } from "../../../server/src/shepherd/group-routing.js";
-import { ProjectGroupMentionButton } from "./ProjectGroupPage.js";
+import { InitializeProjectGroupButton, ProjectGroupMentionButton } from "./ProjectGroupPage.js";
 import {
   MAX_PROJECT_GROUP_MESSAGE_LENGTH,
   formatProjectGroupMention,
@@ -101,5 +101,20 @@ describe("ProjectGroupMentionButton", () => {
 
     expect(markup).toContain('disabled=""');
     expect(markup).toContain("@Frontend Agent");
+  });
+});
+
+describe("InitializeProjectGroupButton", () => {
+  it("offers the explicit safe initialization action without implying Mission execution", () => {
+    const markup = renderToStaticMarkup(
+      createElement(InitializeProjectGroupButton, {
+        initializing: false,
+        onInitialize: () => undefined,
+      }),
+    );
+
+    expect(markup).toContain("Initialize Project Group");
+    expect(markup).not.toContain("Start Mission");
+    expect(markup).not.toContain("disabled");
   });
 });

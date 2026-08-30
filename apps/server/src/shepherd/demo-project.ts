@@ -7,14 +7,20 @@ import {
   open,
   realpath,
   readdir,
+  rm,
+  unlink,
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
 import { writeAuthCollisionFixture } from "./auth-fixture.js";
 import { assertFullObjectId, assertSafeGitBranch } from "./git-client.js";
+import { copyAgentWorkspaceSnapshot, PlaneManager } from "./plane-manager.js";
 
 const ROOT_SENTINEL = ".shepherd-demo-root.json";
 const SAFE_PROJECT_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/u;
+const GENERAL_CREATION_PREFIX = ".creating-general-";
+const GENERAL_DELETION_PREFIX = ".deleting-general-";
+const GENERAL_POLICY_UPDATE_PREFIX = ".updating-general-";
 
 interface ManagedRootSentinel {
   schemaVersion: 1;
@@ -33,6 +39,47 @@ interface ManagedProjectMetadata {
   allowClientReadableCredential: boolean;
 }
 
+interface GeneralProjectCreationJournal {
+  schemaVersion: 1;
+  marker: "shepherd-general-project-creation";
+  projectId: string;
+}
+
+interface GeneralProjectDeletionJournal {
+  schemaVersion: 1;
+  marker: "shepherd-general-project-deletion";
+  projectId: string;
+}
+
+interface GeneralProjectPolicyUpdateJournal {
+  schemaVersion: 1;
+  marker: "shepherd-general-project-policy-update";
+  projectId: string;
+  beforeHead: string;
+  afterHead: string | null;
+}
+
+function generalCreationJournalPath(root: string, projectId: string): string {
+  if (!SAFE_PROJECT_ID.test(projectId) || !projectId.startsWith("agent-")) {
+    throw new Error("Unsafe general Agent project ID");
+  }
+  return path.join(root, "projects", `${GENERAL_CREATION_PREFIX}${projectId}.json`);
+}
+
+function generalPolicyUpdateJournalPath(root: string, projectId: string): string {
+  if (!SAFE_PROJECT_ID.test(projectId) || !projectId.startsWith("agent-")) {
+    throw new Error("Unsafe general Agent project ID");
+  }
+  return path.join(root, "projects", `${GENERAL_POLICY_UPDATE_PREFIX}${projectId}.json`);
+}
+
+function generalDeletionJournalPath(root: string, projectId: string): string {
+  if (!SAFE_PROJECT_ID.test(projectId) || !projectId.startsWith("agent-")) {
+    throw new Error("Unsafe general Agent project ID");
+  }
+  return path.join(root, "projects", `${GENERAL_DELETION_PREFIX}${projectId}.json`);
+}
+
 export interface InitializeAuthDemoProjectOptions {
   managedRoot: string;
   projectId?: string;
@@ -49,6 +96,27 @@ export interface ManagedAuthDemoProject {
   /** Immutable root fixture commit used only by the guarded demo reset. */
   initialCommit: string;
   allowClientReadableCredential: boolean;
+  created: boolean;
+}
+
+export interface InitializeGeneralAgentProjectOptions {
+  managedRoot: string;
+  projectId: string;
+  agentWorkspacePath: string;
+  expectedArtifacts: readonly string[];
+  acceptanceSummary: string;
+  requiredContent: string | null;
+  /** Durable head expected before refreshing the trusted verification policy. */
+  expectedHead?: string;
+  protectedBranch?: string;
+}
+
+export interface ManagedGeneralAgentProject {
+  projectId: string;
+  repositoryPath: string;
+  planesRoot: string;
+  protectedBranch: string;
+  headCommit: string;
   created: boolean;
 }
 
@@ -262,6 +330,521 @@ export async function initializeShepherdManagedRoot(
     throw new Error("Managed demo root identity does not match its sentinel");
   }
   return canonical;
+}
+
+function parseGeneralCreationJournal(raw: string): GeneralProjectCreationJournal {
+  const value = JSON.parse(raw) as Partial<GeneralProjectCreationJournal>;
+  if (
+    value.schemaVersion !== 1 ||
+    value.marker !== "shepherd-general-project-creation" ||
+    typeof value.projectId !== "string" ||
+    !SAFE_PROJECT_ID.test(value.projectId) ||
+    !value.projectId.startsWith("agent-")
+  ) {
+    throw new Error("General project creation journal is malformed");
+  }
+  return value as GeneralProjectCreationJournal;
+}
+
+function parseGeneralDeletionJournal(raw: string): GeneralProjectDeletionJournal {
+  const value = JSON.parse(raw) as Partial<GeneralProjectDeletionJournal>;
+  if (
+    value.schemaVersion !== 1 ||
+    value.marker !== "shepherd-general-project-deletion" ||
+    typeof value.projectId !== "string" ||
+    !SAFE_PROJECT_ID.test(value.projectId) ||
+    !value.projectId.startsWith("agent-")
+  ) {
+    throw new Error("General project deletion journal is malformed");
+  }
+  return value as GeneralProjectDeletionJournal;
+}
+
+/** Journals the filesystem-before-database boundary for a new general project. */
+export async function beginGeneralProjectCreation(
+  managedRoot: string,
+  projectId: string,
+): Promise<string> {
+  const root = await initializeShepherdManagedRoot(managedRoot);
+  await ensureContainedDirectory(root, path.join(root, "projects"));
+  const journalPath = generalCreationJournalPath(root, projectId);
+  const journal: GeneralProjectCreationJournal = {
+    schemaVersion: 1,
+    marker: "shepherd-general-project-creation",
+    projectId,
+  };
+  try {
+    await writeFile(journalPath, JSON.stringify(journal, null, 2) + "\n", {
+      encoding: "utf8",
+      mode: 0o600,
+      flag: "wx",
+    });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    const existing = parseGeneralCreationJournal(
+      await readTrustedRegularFile(journalPath, "General project creation journal"),
+    );
+    if (existing.projectId !== projectId) {
+      throw new Error("General project creation journal identity mismatch");
+    }
+  }
+  return journalPath;
+}
+
+export async function completeGeneralProjectCreation(
+  managedRoot: string,
+  projectId: string,
+): Promise<void> {
+  const root = await validateShepherdManagedRoot(managedRoot);
+  const journalPath = generalCreationJournalPath(root, projectId);
+  await unlink(journalPath).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== "ENOENT") throw error;
+  });
+}
+
+/** Removes only journal-proven orphan roots or clears a committed journal. */
+export async function reconcileGeneralProjectCreations(
+  managedRoot: string,
+  durableProjectIds: ReadonlySet<string>,
+): Promise<void> {
+  const resolved = path.resolve(managedRoot);
+  try {
+    await lstat(resolved);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  if (!(await assertRegularFileIfPresent(path.join(resolved, ROOT_SENTINEL)))) {
+    return;
+  }
+  const root = await validateShepherdManagedRoot(resolved);
+  const projectsDirectory = path.join(root, "projects");
+  let entries: string[];
+  try {
+    entries = await readdir(projectsDirectory);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  for (const name of entries.sort()) {
+    if (!name.startsWith(GENERAL_CREATION_PREFIX) || !name.endsWith(".json")) {
+      continue;
+    }
+    const journalPath = path.join(projectsDirectory, name);
+    const journal = parseGeneralCreationJournal(
+      await readTrustedRegularFile(journalPath, "General project creation journal"),
+    );
+    if (journalPath !== generalCreationJournalPath(root, journal.projectId)) {
+      throw new Error("General project creation journal filename mismatch");
+    }
+    if (!durableProjectIds.has(journal.projectId)) {
+      for (const target of [
+        path.join(root, "repositories", journal.projectId),
+        path.join(root, "planes", journal.projectId),
+        path.join(root, "projects", journal.projectId + ".json"),
+      ]) {
+        if (!isInside(root, target)) {
+          throw new Error("General project creation cleanup escaped its managed root");
+        }
+        await rm(target, { recursive: true, force: true });
+      }
+    }
+    await unlink(journalPath);
+  }
+}
+
+async function removeJournaledGeneralProject(
+  root: string,
+  projectId: string,
+): Promise<void> {
+  for (const target of [
+    path.join(root, "repositories", projectId),
+    path.join(root, "planes", projectId),
+    path.join(root, "projects", projectId + ".json"),
+  ]) {
+    if (!isInside(root, target)) {
+      throw new Error("General project deletion escaped its managed root");
+    }
+    await rm(target, { recursive: true, force: true });
+  }
+}
+
+async function assertGeneralProjectHasNoPlaneArtifacts(
+  repositoryPath: string,
+  planesRoot: string,
+): Promise<void> {
+  const expectedPlaneEntries = new Set([
+    ".execution-workspaces",
+    ".shepherd-plane-root.json",
+    ".trusted-materialization",
+    ".trusted-verification",
+  ]);
+  const planeEntries = await readdir(planesRoot);
+  if (
+    planeEntries.length !== expectedPlaneEntries.size ||
+    planeEntries.some((entry) => !expectedPlaneEntries.has(entry))
+  ) {
+    throw new Error("General project deletion found unexpected Plane artifacts");
+  }
+  for (const directory of [
+    ".execution-workspaces",
+    ".trusted-materialization",
+    ".trusted-verification",
+  ]) {
+    const target = path.join(planesRoot, directory);
+    const entry = await lstat(target);
+    if (
+      entry.isSymbolicLink() ||
+      !entry.isDirectory() ||
+      (await readdir(target)).length > 0
+    ) {
+      throw new Error("General project deletion requires empty private Plane roots");
+    }
+  }
+  const registeredWorktrees = (
+    await runGit(repositoryPath, ["worktree", "list", "--porcelain"])
+  )
+    .split(/\r?\n/u)
+    .filter((line) => line.startsWith("worktree "))
+    .map((line) => path.resolve(line.slice("worktree ".length)));
+  if (
+    registeredWorktrees.length !== 1 ||
+    registeredWorktrees[0] !== repositoryPath
+  ) {
+    throw new Error("General project deletion found registered Plane worktrees");
+  }
+  if (
+    await runGit(repositoryPath, [
+      "for-each-ref",
+      "--format=%(refname)",
+      "refs/heads/shepherd/",
+    ])
+  ) {
+    throw new Error("General project deletion found retained Plane branches");
+  }
+}
+
+/**
+ * Journals deletion of one verified, inactive general-Agent project. The caller
+ * must still atomically remove its durable clarification-only state.
+ */
+export async function beginGeneralProjectDeletion(
+  managedRoot: string,
+  projectId: string,
+): Promise<void> {
+  const root = await validateShepherdManagedRoot(managedRoot);
+  const repositoryPath = path.join(root, "repositories", projectId);
+  const planesRoot = path.join(root, "planes", projectId);
+  const metadataPath = path.join(root, "projects", projectId + ".json");
+  const metadata = parseProjectMetadata(
+    await readTrustedRegularFile(metadataPath, "Managed project metadata"),
+  );
+  if (
+    metadata.projectId !== projectId ||
+    metadata.repositoryPath !== repositoryPath ||
+    metadata.planesRoot !== planesRoot
+  ) {
+    throw new Error("General project deletion identity does not match its metadata");
+  }
+  await validateExistingProject(root, metadata, metadata);
+  await assertGeneralProjectHasNoPlaneArtifacts(repositoryPath, planesRoot);
+  for (const pending of [
+    generalCreationJournalPath(root, projectId),
+    generalPolicyUpdateJournalPath(root, projectId),
+  ]) {
+    if (await assertRegularFileIfPresent(pending)) {
+      throw new Error("General project deletion conflicts with pending project work");
+    }
+  }
+  const journal: GeneralProjectDeletionJournal = {
+    schemaVersion: 1,
+    marker: "shepherd-general-project-deletion",
+    projectId,
+  };
+  await writeFile(
+    generalDeletionJournalPath(root, projectId),
+    JSON.stringify(journal, null, 2) + "\n",
+    { encoding: "utf8", mode: 0o600, flag: "wx" },
+  );
+}
+
+/** Completes an already journaled general-project deletion. */
+export async function completeGeneralProjectDeletion(
+  managedRoot: string,
+  projectId: string,
+): Promise<void> {
+  const root = await validateShepherdManagedRoot(managedRoot);
+  const journalPath = generalDeletionJournalPath(root, projectId);
+  const journal = parseGeneralDeletionJournal(
+    await readTrustedRegularFile(journalPath, "General project deletion journal"),
+  );
+  if (journal.projectId !== projectId) {
+    throw new Error("General project deletion journal identity mismatch");
+  }
+  await removeJournaledGeneralProject(root, projectId);
+  await unlink(journalPath);
+}
+
+/** Reconciles a deletion journal against the authoritative durable Project set. */
+export async function reconcileGeneralProjectDeletions(
+  managedRoot: string,
+  durableProjectIds: ReadonlySet<string>,
+): Promise<void> {
+  const resolved = path.resolve(managedRoot);
+  try {
+    await lstat(resolved);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  if (!(await assertRegularFileIfPresent(path.join(resolved, ROOT_SENTINEL)))) return;
+  const root = await validateShepherdManagedRoot(resolved);
+  const projectsDirectory = path.join(root, "projects");
+  let entries: string[];
+  try {
+    entries = await readdir(projectsDirectory);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  for (const name of entries.sort()) {
+    if (!name.startsWith(GENERAL_DELETION_PREFIX) || !name.endsWith(".json")) {
+      continue;
+    }
+    const journalPath = path.join(projectsDirectory, name);
+    const journal = parseGeneralDeletionJournal(
+      await readTrustedRegularFile(journalPath, "General project deletion journal"),
+    );
+    if (journalPath !== generalDeletionJournalPath(root, journal.projectId)) {
+      throw new Error("General project deletion journal filename mismatch");
+    }
+    if (!durableProjectIds.has(journal.projectId)) {
+      await removeJournaledGeneralProject(root, journal.projectId);
+    }
+    await unlink(journalPath);
+  }
+}
+
+function parseGeneralPolicyUpdateJournal(
+  raw: string,
+): GeneralProjectPolicyUpdateJournal {
+  const value = JSON.parse(raw) as Partial<GeneralProjectPolicyUpdateJournal>;
+  if (
+    value.schemaVersion !== 1 ||
+    value.marker !== "shepherd-general-project-policy-update" ||
+    typeof value.projectId !== "string" ||
+    !SAFE_PROJECT_ID.test(value.projectId) ||
+    !value.projectId.startsWith("agent-") ||
+    typeof value.beforeHead !== "string" ||
+    (value.afterHead !== null && typeof value.afterHead !== "string")
+  ) {
+    throw new Error("General project policy-update journal is malformed");
+  }
+  assertFullObjectId(value.beforeHead);
+  if (value.afterHead !== null) assertFullObjectId(value.afterHead);
+  return value as GeneralProjectPolicyUpdateJournal;
+}
+
+/** Records the durable head that must remain authoritative during a policy refresh. */
+export async function beginGeneralProjectPolicyUpdate(
+  managedRoot: string,
+  projectId: string,
+  beforeHead: string,
+): Promise<void> {
+  const root = await validateShepherdManagedRoot(managedRoot);
+  const journalPath = generalPolicyUpdateJournalPath(root, projectId);
+  const journal: GeneralProjectPolicyUpdateJournal = {
+    schemaVersion: 1,
+    marker: "shepherd-general-project-policy-update",
+    projectId,
+    beforeHead: assertFullObjectId(beforeHead),
+    afterHead: null,
+  };
+  await writeFile(journalPath, JSON.stringify(journal, null, 2) + "\n", {
+    encoding: "utf8",
+    mode: 0o600,
+    flag: "wx",
+  });
+}
+
+/** Binds the exact filesystem commit produced by the guarded policy refresh. */
+export async function recordGeneralProjectPolicyUpdate(
+  managedRoot: string,
+  projectId: string,
+  beforeHead: string,
+  afterHead: string,
+): Promise<void> {
+  const root = await validateShepherdManagedRoot(managedRoot);
+  const journalPath = generalPolicyUpdateJournalPath(root, projectId);
+  const existing = parseGeneralPolicyUpdateJournal(
+    await readTrustedRegularFile(journalPath, "General project policy-update journal"),
+  );
+  if (existing.projectId !== projectId || existing.beforeHead !== beforeHead) {
+    throw new Error("General project policy-update journal identity mismatch");
+  }
+  const journal: GeneralProjectPolicyUpdateJournal = {
+    ...existing,
+    afterHead: assertFullObjectId(afterHead),
+  };
+  await writeFile(journalPath, JSON.stringify(journal, null, 2) + "\n", {
+    encoding: "utf8",
+    mode: 0o600,
+  });
+}
+
+export async function completeGeneralProjectPolicyUpdate(
+  managedRoot: string,
+  projectId: string,
+): Promise<void> {
+  const root = await validateShepherdManagedRoot(managedRoot);
+  await unlink(generalPolicyUpdateJournalPath(root, projectId)).catch(
+    (error: NodeJS.ErrnoException) => {
+      if (error.code !== "ENOENT") throw error;
+    },
+  );
+}
+
+async function assertPolicyOnlyCommit(
+  repositoryPath: string,
+  beforeHead: string,
+  afterHead: string,
+): Promise<void> {
+  const parent = assertFullObjectId(
+    await runGit(repositoryPath, ["rev-parse", "--verify", `${afterHead}^`]),
+  );
+  const changed = (await runGit(repositoryPath, [
+    "diff",
+    "--name-only",
+    beforeHead,
+    afterHead,
+    "--",
+  ])).split(/\r?\n/u).filter(Boolean);
+  if (
+    parent !== beforeHead ||
+    changed.length < 1 ||
+    changed.some(
+      (name) => name !== "policy.json" && name !== "checks/general-contract.cjs",
+    )
+  ) {
+    throw new Error("General project policy-update journal does not prove the repository change");
+  }
+}
+
+/** Reconciles only an exact, journal-bound policy commit against the durable Project head. */
+export async function reconcileGeneralProjectPolicyUpdates(
+  managedRoot: string,
+  durableProjectHeads: ReadonlyMap<string, string>,
+): Promise<void> {
+  const resolved = path.resolve(managedRoot);
+  try {
+    await lstat(resolved);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  if (!(await assertRegularFileIfPresent(path.join(resolved, ROOT_SENTINEL)))) return;
+  const root = await validateShepherdManagedRoot(resolved);
+  const projectsDirectory = path.join(root, "projects");
+  const entries = await readdir(projectsDirectory).catch(
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return [] as string[];
+      throw error;
+    },
+  );
+  for (const name of entries.sort()) {
+    if (!name.startsWith(GENERAL_POLICY_UPDATE_PREFIX) || !name.endsWith(".json")) {
+      continue;
+    }
+    const journalPath = path.join(projectsDirectory, name);
+    const journal = parseGeneralPolicyUpdateJournal(
+      await readTrustedRegularFile(journalPath, "General project policy-update journal"),
+    );
+    if (journalPath !== generalPolicyUpdateJournalPath(root, journal.projectId)) {
+      throw new Error("General project policy-update journal filename mismatch");
+    }
+    const durableHead = durableProjectHeads.get(journal.projectId);
+    if (!durableHead) {
+      throw new Error("General project policy-update journal has no durable Project");
+    }
+    const metadataPath = path.join(projectsDirectory, journal.projectId + ".json");
+    const metadata = parseProjectMetadata(
+      await readTrustedRegularFile(metadataPath, "Managed project metadata"),
+    );
+    const expectedRepositoryPath = path.join(root, "repositories", journal.projectId);
+    const expectedPlanesRoot = path.join(root, "planes", journal.projectId);
+    if (
+      metadata.projectId !== journal.projectId ||
+      metadata.repositoryPath !== expectedRepositoryPath ||
+      metadata.planesRoot !== expectedPlanesRoot
+    ) {
+      throw new Error("General project policy-update metadata identity mismatch");
+    }
+    await ensureContainedDirectory(root, metadata.repositoryPath);
+    await ensureContainedDirectory(root, metadata.planesRoot);
+    const protectedBranch = assertSafeGitBranch(metadata.protectedBranch);
+    if (
+      (await runGit(metadata.repositoryPath, [
+        "symbolic-ref",
+        "--quiet",
+        "--short",
+        "HEAD",
+      ])) !== protectedBranch
+    ) {
+      throw new Error("General project policy-update left its protected branch");
+    }
+    const currentHead = assertFullObjectId(
+      await runGit(metadata.repositoryPath, ["rev-parse", "--verify", "HEAD^{commit}"]),
+    );
+    const recordedAfter = journal.afterHead;
+    if (durableHead === journal.beforeHead) {
+      if (currentHead === journal.beforeHead) {
+        const status = await runGit(metadata.repositoryPath, [
+          "status",
+          "--porcelain=v1",
+          "--untracked-files=all",
+        ]);
+        if (status) {
+          const unexpected = status
+            .split(/\r?\n/u)
+            .filter(Boolean)
+            .some(
+              (line) =>
+                !line.endsWith(" policy.json") &&
+                !line.endsWith(" checks/general-contract.cjs"),
+            );
+          if (unexpected) {
+            throw new Error("General project policy-update left an untrusted dirty path");
+          }
+          await runGit(metadata.repositoryPath, ["reset", "--hard", journal.beforeHead]);
+        }
+      } else {
+        if (recordedAfter !== null && currentHead !== recordedAfter) {
+          throw new Error("General project policy-update head is ambiguous");
+        }
+        await assertPolicyOnlyCommit(metadata.repositoryPath, journal.beforeHead, currentHead);
+        await runGit(metadata.repositoryPath, ["reset", "--hard", journal.beforeHead]);
+      }
+      if (
+        await runGit(metadata.repositoryPath, [
+          "status",
+          "--porcelain=v1",
+          "--untracked-files=all",
+        ])
+      ) {
+        throw new Error("General project policy-update rollback remained dirty");
+      }
+    } else if (
+      recordedAfter === null ||
+      durableHead !== recordedAfter ||
+      currentHead !== recordedAfter
+    ) {
+      throw new Error("General project policy-update differs from durable state");
+    }
+    if ((await validateExistingProject(root, metadata, metadata)) !== durableHead) {
+      throw new Error("General project policy-update reconciliation head mismatch");
+    }
+    await unlink(journalPath);
+  }
 }
 
 /** Proves that an empty database cannot silently orphan/adopt managed project state. */
@@ -576,6 +1159,187 @@ export async function initializeAuthDemoProject(
     flag: "wx",
   });
   return { ...expectedMetadata, headCommit, initialCommit, created: true };
+}
+
+const GENERAL_CONTRACT_CHECK = [
+  '"use strict";',
+  'const fs = require("node:fs");',
+  'const path = require("node:path");',
+  'const root = process.cwd();',
+  'const policyPath = path.join(root, "policy.json");',
+  'const policyStat = fs.lstatSync(policyPath);',
+  'if (!policyStat.isFile() || policyStat.isSymbolicLink()) throw new Error("policy must be a regular file");',
+  'const policy = JSON.parse(fs.readFileSync(policyPath, "utf8"));',
+  'const general = policy.generalContract;',
+  'if (!general || !Array.isArray(general.expectedArtifacts) || general.expectedArtifacts.length < 1 || general.expectedArtifacts.length > 8) throw new Error("general Contract policy is invalid");',
+  'let requiredContentFound = general.requiredContent === null;',
+  'for (const relative of general.expectedArtifacts) {',
+  '  if (typeof relative !== "string" || relative.length < 1 || relative.length > 256 || relative.includes("\\0") || path.isAbsolute(relative) || relative.split(/[\\\\/]/).includes("..")) throw new Error("artifact path is invalid");',
+  '  const candidate = path.resolve(root, relative);',
+  '  if (candidate === root || !candidate.startsWith(root + path.sep)) throw new Error("artifact escaped project");',
+  '  const stat = fs.lstatSync(candidate);',
+  '  if (!stat.isFile() || stat.isSymbolicLink() || stat.size < 1 || stat.size > 268435456) throw new Error("artifact must be a bounded non-empty regular file");',
+  '  if (!requiredContentFound) {',
+  '    if (stat.size > 16777216) throw new Error("artifact is too large for content acceptance");',
+  '    if (fs.readFileSync(candidate, "utf8").includes(general.requiredContent)) requiredContentFound = true;',
+  '  }',
+  '}',
+  'if (!requiredContentFound) throw new Error("required acceptance content was not found");',
+  'process.stdout.write("verified general Contract artifacts\\n");',
+  '',
+].join("\n");
+
+/** Creates or refreshes one sentinel-bound project seeded from a safe Agent snapshot. */
+export async function initializeGeneralAgentProject(
+  options: InitializeGeneralAgentProjectOptions,
+): Promise<ManagedGeneralAgentProject> {
+  const root = await initializeShepherdManagedRoot(options.managedRoot);
+  if (!SAFE_PROJECT_ID.test(options.projectId) || !options.projectId.startsWith("agent-")) {
+    throw new Error("Unsafe general Agent project ID");
+  }
+  const protectedBranch = assertSafeGitBranch(options.protectedBranch ?? "main");
+  const repositoryPath = path.join(root, "repositories", options.projectId);
+  const planesRoot = path.join(root, "planes", options.projectId);
+  const metadataDirectory = path.join(root, "projects");
+  const metadataPath = path.join(metadataDirectory, options.projectId + ".json");
+  for (const target of [repositoryPath, planesRoot, metadataPath]) {
+    if (!isInside(root, target)) throw new Error("General project path escaped its sentinel root");
+  }
+  if (
+    options.expectedArtifacts.length < 1 ||
+    options.expectedArtifacts.length > 8 ||
+    options.acceptanceSummary.length < 1 ||
+    options.acceptanceSummary.length > 500 ||
+    (options.requiredContent !== null && options.requiredContent.length > 200)
+  ) {
+    throw new Error("General Contract verification policy is invalid");
+  }
+  const expectedMetadata: ManagedProjectMetadata = {
+    schemaVersion: 1,
+    marker: "shepherd-managed-demo-project",
+    projectId: options.projectId,
+    repositoryPath,
+    planesRoot,
+    protectedBranch,
+    allowClientReadableCredential: false,
+  };
+  await ensureContainedDirectory(root, path.join(root, "repositories"));
+  await ensureContainedDirectory(root, path.join(root, "planes"));
+  await ensureContainedDirectory(root, metadataDirectory);
+  const metadataExists = await assertRegularFileIfPresent(metadataPath);
+  let created = false;
+  if (metadataExists) {
+    const metadata = parseProjectMetadata(
+      await readTrustedRegularFile(metadataPath, "Managed project metadata"),
+    );
+    await ensureContainedDirectory(root, repositoryPath);
+    await ensureContainedDirectory(root, planesRoot);
+    const currentHead = await validateExistingProject(root, metadata, expectedMetadata);
+    if (options.expectedHead !== undefined && currentHead !== options.expectedHead) {
+      throw new Error("Managed general project differs from its durable trusted head");
+    }
+    if (
+      await runGit(repositoryPath, [
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
+      ])
+    ) {
+      throw new Error("Managed general project must be clean before Contract planning");
+    }
+  } else {
+    const repository = await ensureContainedDirectory(root, repositoryPath);
+    await ensureContainedDirectory(root, planesRoot);
+    if (repository.existed && (await readdir(repositoryPath)).length > 0) {
+      throw new Error("Refusing to adopt a non-empty general repository");
+    }
+    await copyAgentWorkspaceSnapshot(options.agentWorkspacePath, repositoryPath);
+    created = true;
+  }
+  await mkdir(path.join(repositoryPath, "checks"), { recursive: true, mode: 0o700 });
+  await writeFile(
+    path.join(repositoryPath, "checks", "general-contract.cjs"),
+    GENERAL_CONTRACT_CHECK,
+    { encoding: "utf8", mode: 0o600 },
+  );
+  await writeFile(
+    path.join(repositoryPath, "policy.json"),
+    JSON.stringify(
+      {
+        allowClientReadableCredential: false,
+        generalContract: {
+          expectedArtifacts: [...options.expectedArtifacts],
+          acceptanceSummary: options.acceptanceSummary,
+          requiredContent: options.requiredContent,
+        },
+      },
+      null,
+      2,
+    ) + "\n",
+    { encoding: "utf8", mode: 0o600 },
+  );
+  if (created) {
+    await runGit(repositoryPath, ["init", "--initial-branch=" + protectedBranch, "."]);
+    await runGit(repositoryPath, ["add", "--all", "--", "."]);
+    await runGit(repositoryPath, [
+      "commit",
+      "--no-gpg-sign",
+      "--no-verify",
+      "-m",
+      "Initialize general Shepherd Agent project",
+    ]);
+    await writeFile(metadataPath, JSON.stringify(expectedMetadata, null, 2) + "\n", {
+      encoding: "utf8",
+      mode: 0o600,
+      flag: "wx",
+    });
+  } else {
+    const status = await runGit(repositoryPath, [
+      "status",
+      "--porcelain=v1",
+      "--untracked-files=all",
+    ]);
+    if (status) {
+      const unexpected = status
+        .split(/\r?\n/u)
+        .filter(Boolean)
+        .some((line) =>
+          !line.endsWith(" policy.json") &&
+          !line.endsWith(" checks/general-contract.cjs"),
+        );
+      if (unexpected) throw new Error("Managed general project changed outside its trusted policy");
+      await runGit(repositoryPath, [
+        "add",
+        "--",
+        "policy.json",
+        "checks/general-contract.cjs",
+      ]);
+      await runGit(repositoryPath, [
+        "commit",
+        "--no-gpg-sign",
+        "--no-verify",
+        "-m",
+        "Update general Contract verification policy",
+      ]);
+    }
+  }
+  const headCommit = assertFullObjectId(
+    await runGit(repositoryPath, ["rev-parse", "--verify", "HEAD^{commit}"]),
+  );
+  const planeManager = new PlaneManager({
+    repositoryPath,
+    planesRoot,
+    protectedBranch,
+  });
+  await planeManager.initialize();
+  return {
+    projectId: options.projectId,
+    repositoryPath,
+    planesRoot,
+    protectedBranch,
+    headCommit,
+    created,
+  };
 }
 
 /** Opens an existing sentinel-bound auth demo without accepting path input. */

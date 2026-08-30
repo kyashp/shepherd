@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import {
   createApp,
+  toPublicShepherdState,
   type ShepherdHttpService,
   type ShepherdMissionDetail,
 } from "./app.js";
@@ -409,6 +410,11 @@ const createShepherdService = (
   overrides: Partial<ShepherdHttpService> = {},
 ): ShepherdHttpService => ({
   state: createShepherdState,
+  initializeProjectGroup: async () => ({
+    ...createShepherdState().projects[0]!,
+    id: "auth-demo",
+    activeMissionId: null,
+  }),
   missionDetail: (id) => (id === missionId ? missionDetail : null),
   eventsAfter: () => [event],
   startDeterministicDemo: async () => ({ missionId }),
@@ -417,6 +423,7 @@ const createShepherdService = (
     status: "accepted",
     missionId,
     contractId: contract.id,
+    clarification: null,
     message: groupMessage,
   }),
   projectGroupMessages: () => [groupMessage],
@@ -455,6 +462,45 @@ const createShepherdService = (
 });
 
 describe("HTTP boundary", () => {
+  it("redacts derived general Contract fields and Plane promotion evidence independently", () => {
+    const state = createShepherdState();
+    state.groupMessages = [
+      {
+        ...groupMessage,
+        targetAgentId: "agent-1",
+        content: `Create output without ${plantedSecret}`,
+        contractAssignment: {
+          preset: "general-contract",
+          role: "Generalist",
+          draftId: "draft-public-redaction",
+          status: "clarification_required",
+          missingFields: ["acceptance_evidence"],
+          expectedArtifacts: [],
+          acceptanceSummary: `contains ${plantedSecret}`,
+          requiredContent: plantedSecret,
+        },
+        requestFingerprint: "f".repeat(64),
+      },
+    ];
+    state.planes[0] = {
+      ...state.planes[0]!,
+      generalPromotionState: "promoting",
+      generalPromotionEvidence: {
+        ...evidence,
+        id: "promotion-evidence-public",
+        targetType: "promotion",
+        targetId: state.planes[0]!.id,
+      },
+    };
+    const publicState = toPublicShepherdState(state, [plantedSecret]);
+    const serialized = JSON.stringify(publicState);
+    expect(serialized).not.toContain(plantedSecret);
+    expect(publicState.groupMessages[0]?.requestFingerprint).toBeUndefined();
+    expect(
+      publicState.planes[0]?.generalPromotionEvidence?.checks[0],
+    ).not.toHaveProperty("stdout");
+  });
+
   it("never exposes Agent workspace paths from lifecycle or conversation routes", async () => {
     const app = await createApp(
       loadConfig({ NODE_ENV: "test" }),
@@ -864,6 +910,11 @@ describe("HTTP boundary", () => {
       },
       {
         method: "POST",
+        url: "/api/shepherd/projects/auth-demo/group-initialization",
+        payload: {},
+      },
+      {
+        method: "POST",
         url: "/api/shepherd/projects/project-1/group-messages",
         payload: { clientMessageId: "client-1", content: "Status?" },
       },
@@ -911,6 +962,7 @@ describe("HTTP boundary", () => {
       status: "awaiting_peer" as const,
       missionId: null,
       contractId: null,
+      clarification: null,
       message: {
         ...groupMessage,
         missionId: null,
@@ -974,13 +1026,23 @@ describe("HTTP boundary", () => {
       clientMessageId: "mission-client-1",
     });
 
+    const initializedGroup = await app.inject({
+      method: "POST",
+      url: "/api/shepherd/projects/auth-demo/group-initialization",
+      payload: {},
+    });
+    expect(initializedGroup.statusCode).toBe(200);
+    expect(initializedGroup.json()).toMatchObject({
+      project: { id: "auth-demo", activeMissionId: null },
+    });
+
     const privatePrompt = await app.inject({
       method: "POST",
       url: `/api/shepherd/agents/${agentId}/contracts`,
       payload: {
         clientMessageId: "private-contract-client-1",
         content: "Implement frontend auth with an HttpOnly session cookie.",
-        preset: "auth-demo-contract",
+        preset: "managed-contract",
       },
     });
     expect(privatePrompt.statusCode).toBe(201);
