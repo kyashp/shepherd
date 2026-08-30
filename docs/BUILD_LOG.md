@@ -27,7 +27,9 @@ not claimed.
   Mission/events API, absence of `promotion_completed`, stored protected-head
   immutability and the repository's actual Git HEAD.
 - **Adjacent evidence:** database, service, Git promotion and recovery passed
-  181/181. Server production and test-source TypeScript checks passed.
+  181/181. Server production and test-source TypeScript checks passed. The root
+  production build completed for both Web and Server, and `npm audit` reported
+  zero vulnerabilities across 251 dependencies.
 - **Literal gate:** the pre-push hook reached Server 806 passed plus three explicit
   skips, with two failures in the pre-existing parallel-only interrupted-policy
   cleanup rows in `general-project.test.ts`. The same failures were observed before
