@@ -7,6 +7,45 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — TST-22 Fixer candidate: crash-safe managed-temp state machine
+
+The correction replaces post-failure temp registration with pre-registration:
+before either database or recovery-journal sensitive temp is opened, a small fixed
+schema containing only kind, strict temp basename and publication UUID is written,
+file-synced, atomically published and directory-synced. All markers and sensitive
+temps live in an adjacent fixed-name private directory validated as a current-owner
+regular directory with mode `0700` and no symlink. Database/journal rename remains
+on the same filesystem; the target parent and private directory are synced at their
+respective transitions.
+
+One idempotent cleanup path handles marker+temp and marker+missing-temp states,
+preserves the primary database/journal failure with bounded `cleanupPending`, and
+consumes any prior marker before another same-instance write can publish. Marker
+publication files are opened no-follow and validated through the same handle;
+schema-bound UUID provenance is required before deletion. General-parent
+lookalikes, malformed foreign files, hostile directory/marker/publication symlinks
+and outside canaries remain untouched.
+
+Observed focused evidence: strict test typecheck passed; Store passed 70/70; the
+selected Store/recovery/service slice passed 134/134 before the private-directory
+hardening and Store returned 70/70 after it. The matrix includes 12 publication
+checkpoints, eight removal checkpoints, primary/journal double faults,
+same-instance retry, two fresh restarts, missing-temp idempotence and repeated-write
+no-accumulation. Independent final security review found 0 High / 0 Medium; the
+documented Low residual is a same-UID parent-directory swap race because Node lacks
+portable `openat`-style anchored operations, and such an actor already controls the
+database parent.
+
+The post-hardening adjacent run exposed a separate deterministic test-quiescence
+defect in the TST-17 cleanup-double-fault row: 138/138 assertions passed but Vitest
+reported a late unhandled Store rejection; isolated stress failed on repetition 2.
+The row observes in-memory `attention_required` then starts a second `JsonStore`
+before the original Store queue is quiescent. The private marker correctly fails
+closed during that overlap. This is not hidden as TST-22 success; a test-owned Store
+queue sentinel is required before reload/teardown. The first post-hardening literal
+gate likewise stopped at Server tests (735 passed, two opt-in skips, one teardown
+failure). Auditor integration/hosted evidence remains pending.
+
 ## 2026-08-30 — F-06/TST-21 correction blocked by TST-22 marker lifecycle
 
 Auditor fast-forwarded exact corrected candidate

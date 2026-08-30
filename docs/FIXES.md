@@ -56,7 +56,18 @@ that limitation is explicit.
   secret/path/errno reaches startup/log/store/API surfaces; repeated fault/restart
   creates no accumulation. Re-run TST-21/F-06, Plane-unwind stress, adjacent/full/
   security and hosted gates.
-- **Status:** **OPEN / Fixer READY.** Corrected candidate remains unintegrated.
+- **Status:** **FIXER CHECKPOINT / blocked by adjacent TST-17 test quiescence.** The correction pre-registers
+  every sensitive temp through an fsynced fixed-schema marker inside an adjacent
+  owner-validated `0700` private directory. The same marker authority handles
+  temp-present and temp-missing removal prefixes, same-instance retry and two
+  restarts without overwriting an earlier intent. The 70-test Store suite covers
+  12 publication checkpoints, eight removal checkpoints, double faults, repeated
+  same-instance writes, strict-schema/UUID ownership, hostile directory/marker/
+  publication symlinks and unrelated files. Full/security evidence is recorded in
+  `BUILD_LOG.md`. Store/security scope is green, but the adjacent TST-17 row starts
+  a reload before its original Store queue is quiescent and failed isolated on
+  repetition 2; the full gate is therefore not claimed. Auditor reproduction and a
+  separately owned test-only correction remain pending.
 
 ### `TST-21` — Recovery-journal reads and temp cleanup are not closed boundaries
 

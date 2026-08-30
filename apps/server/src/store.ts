@@ -33,7 +33,15 @@ export type PersistenceFaultStage =
   | "journal_rename"
   | "journal_directory_sync"
   | "journal_temp_unlink"
-  | "journal_cleanup_marker"
+  | "journal_marker_temp_open"
+  | "journal_marker_write"
+  | "journal_marker_file_sync"
+  | "journal_marker_close"
+  | "journal_marker_rename"
+  | "journal_marker_directory_sync"
+  | "journal_temp_directory_sync"
+  | "journal_marker_unlink"
+  | "journal_marker_unlink_directory_sync"
   | "primary_temp_open"
   | "primary_write"
   | "primary_file_sync"
@@ -41,7 +49,15 @@ export type PersistenceFaultStage =
   | "primary_rename"
   | "primary_directory_sync"
   | "primary_temp_unlink"
-  | "primary_cleanup_marker"
+  | "primary_marker_temp_open"
+  | "primary_marker_write"
+  | "primary_marker_file_sync"
+  | "primary_marker_close"
+  | "primary_marker_rename"
+  | "primary_marker_directory_sync"
+  | "primary_temp_directory_sync"
+  | "primary_marker_unlink"
+  | "primary_marker_unlink_directory_sync"
   | "journal_remove"
   | "journal_remove_directory_sync";
 
@@ -82,7 +98,17 @@ export const MAX_DATABASE_BYTES = 64 * 1024 * 1024;
 const MAX_INTENT_BYTES = 8 * 1024;
 const SAFE_INTENT_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$/u;
 const SHA256 = /^[a-f0-9]{64}$/u;
-const TEMP_CLEANUP_MARKER = "shepherd-pending-temp-cleanup-v1\n";
+type ManagedTemporaryKind = "primary" | "journal";
+interface ManagedTemporaryIntent {
+  version: 1;
+  marker: "shepherd-managed-temporary-v1";
+  publicationId: string;
+  kind: ManagedTemporaryKind;
+  temporaryName: string;
+}
+
+const UUID_SUFFIX = "[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 
 const serializeDatabase = (database: Database): string =>
   JSON.stringify(database, null, 2) + "\n";
@@ -194,7 +220,6 @@ export class JsonStore {
   private readonly maximumDatabaseBytes: number;
   private readonly persistenceFaultCheckpoint?: JsonStoreOptions["persistenceFaultCheckpoint"];
   private pendingIntent: PersistenceRecoveryIntent | null = null;
-  private readonly pendingTemporaryPaths = new Set<string>();
 
   constructor(
     private readonly filePath: string,
@@ -217,6 +242,7 @@ export class JsonStore {
 
   async initialize(): Promise<void> {
     await mkdir(path.dirname(this.filePath), { recursive: true });
+    await this.ensureManagedTemporaryDirectory();
     await this.cleanupManagedTemporaryFiles();
     try {
       const raw = await readDatabaseFile(this.filePath, this.maximumDatabaseBytes);
@@ -362,15 +388,18 @@ export class JsonStore {
     if (Buffer.byteLength(serialized, "utf8") > this.maximumDatabaseBytes) {
       throw new Error("Database state exceeds the maximum supported size");
     }
-    const temporaryPath = `${this.filePath}.${randomUUID()}.tmp`;
+    const temporaryPath = path.join(
+      this.managedTemporaryDirectoryPath(),
+      `${path.basename(this.filePath)}.${randomUUID()}.tmp`,
+    );
     let temporaryCreated = false;
     let primaryFailed = false;
     let primaryFailure: PersistenceBoundaryError | null = null;
+    await this.publishManagedTemporary("primary", temporaryPath);
     try {
       await this.checkpoint("primary_temp_open");
       const handle = await open(temporaryPath, "wx", 0o600);
       temporaryCreated = true;
-      this.pendingTemporaryPaths.add(temporaryPath);
       try {
         await this.checkpoint("primary_write");
         await handle.writeFile(serialized, "utf8");
@@ -383,32 +412,21 @@ export class JsonStore {
       await this.checkpoint("primary_rename");
       await rename(temporaryPath, this.filePath);
       temporaryCreated = false;
-      this.pendingTemporaryPaths.delete(temporaryPath);
       await this.checkpoint("primary_directory_sync");
       await this.syncParentDirectory();
+      await this.cleanupManagedTemporaryIntent();
       return sanitized;
     } catch {
       primaryFailed = true;
       primaryFailure = new PersistenceBoundaryError("primary", "durability_unknown");
       throw primaryFailure;
     } finally {
-      if (temporaryCreated) {
+      if (primaryFailed || temporaryCreated) {
         try {
-          await this.checkpoint("primary_temp_unlink");
-          await unlink(temporaryPath);
-          this.pendingTemporaryPaths.delete(temporaryPath);
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-            try {
-              await this.recordPendingTemporaryCleanup(temporaryPath);
-            } catch {
-              if (!primaryFailed) {
-                throw new PersistenceBoundaryError("cleanup", "cleanup_pending");
-              }
-              if (primaryFailure) primaryFailure.cleanupPending = true;
-            }
-            if (!primaryFailed) throw new PersistenceBoundaryError("cleanup", "cleanup_pending");
-          }
+          await this.cleanupManagedTemporaryIntent();
+        } catch {
+          if (primaryFailure) primaryFailure.cleanupPending = true;
+          else throw new PersistenceBoundaryError("cleanup", "cleanup_pending");
         }
       }
     }
@@ -423,8 +441,12 @@ export class JsonStore {
   }
 
   private async syncParentDirectory(): Promise<void> {
+    await this.syncDirectory(path.dirname(this.filePath));
+  }
+
+  private async syncDirectory(directory: string): Promise<void> {
     if (process.platform === "win32") return;
-    const handle = await open(path.dirname(this.filePath), constants.O_RDONLY);
+    const handle = await open(directory, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
       await handle.sync();
     } finally {
@@ -438,15 +460,18 @@ export class JsonStore {
       throw new Error("Persistence recovery journal escaped the database directory");
     }
     const serialized = JSON.stringify(intent) + "\n";
-    const temporaryPath = `${journalPath}.${randomUUID()}.tmp`;
+    const temporaryPath = path.join(
+      this.managedTemporaryDirectoryPath(),
+      `${path.basename(journalPath)}.${randomUUID()}.tmp`,
+    );
     let temporaryCreated = false;
     let journalFailed = false;
     let journalFailure: PersistenceBoundaryError | null = null;
+    await this.publishManagedTemporary("journal", temporaryPath);
     try {
       await this.checkpoint("journal_temp_open");
       const handle = await open(temporaryPath, "wx", 0o600);
       temporaryCreated = true;
-      this.pendingTemporaryPaths.add(temporaryPath);
       try {
         await this.checkpoint("journal_write");
         await handle.writeFile(serialized, "utf8");
@@ -459,31 +484,20 @@ export class JsonStore {
       await this.checkpoint("journal_rename");
       await rename(temporaryPath, journalPath);
       temporaryCreated = false;
-      this.pendingTemporaryPaths.delete(temporaryPath);
       await this.checkpoint("journal_directory_sync");
       await this.syncParentDirectory();
+      await this.cleanupManagedTemporaryIntent();
     } catch {
       journalFailed = true;
       journalFailure = new PersistenceBoundaryError("journal", "unavailable");
       throw journalFailure;
     } finally {
-      if (temporaryCreated) {
+      if (journalFailed || temporaryCreated) {
         try {
-          await this.checkpoint("journal_temp_unlink");
-          await unlink(temporaryPath);
-          this.pendingTemporaryPaths.delete(temporaryPath);
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-            try {
-              await this.recordPendingTemporaryCleanup(temporaryPath);
-            } catch {
-              if (!journalFailed) {
-                throw new PersistenceBoundaryError("cleanup", "cleanup_pending");
-              }
-              if (journalFailure) journalFailure.cleanupPending = true;
-            }
-            if (!journalFailed) throw new PersistenceBoundaryError("cleanup", "cleanup_pending");
-          }
+          await this.cleanupManagedTemporaryIntent();
+        } catch {
+          if (journalFailure) journalFailure.cleanupPending = true;
+          else throw new PersistenceBoundaryError("cleanup", "cleanup_pending");
         }
       }
     }
@@ -547,95 +561,161 @@ export class JsonStore {
   }
 
   private async cleanupManagedTemporaryFiles(): Promise<void> {
-    const directory = path.dirname(this.filePath);
-    const databaseName = path.basename(this.filePath).replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-    const pattern = new RegExp(
-      `^${databaseName}(?:\\.persistence-intent\\.json)?\\.[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\.tmp\\.cleanup-pending$`,
-      "iu",
-    );
-    const temporaryPattern = new RegExp(
-      `^${databaseName}(?:\\.persistence-intent\\.json)?\\.[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\.tmp$`,
-      "iu",
-    );
+    const directory = this.managedTemporaryDirectoryPath();
+    const markerName = path.basename(this.managedTemporaryMarkerPath());
+    const markerTempPattern = new RegExp(`^${escapeRegExp(markerName)}\\.(${UUID_SUFFIX})\\.tmp$`, "iu");
     try {
-      for (const temporaryPath of [...this.pendingTemporaryPaths]) {
-        if (
-          path.dirname(temporaryPath) !== directory ||
-          !temporaryPattern.test(path.basename(temporaryPath))
-        ) throw new PersistenceBoundaryError("cleanup", "cleanup_pending");
-        const entry = await lstat(temporaryPath);
-        const maximumTemporaryBytes = temporaryPath.includes(".persistence-intent.json.")
-          ? MAX_INTENT_BYTES
-          : this.maximumDatabaseBytes;
-        if (
-          !entry.isFile() || entry.isSymbolicLink() || entry.size > maximumTemporaryBytes ||
-          (process.platform !== "win32" && (entry.mode & 0o077) !== 0) ||
-          (typeof process.getuid === "function" && entry.uid !== process.getuid())
-        ) throw new PersistenceBoundaryError("cleanup", "cleanup_pending");
-        await unlink(temporaryPath);
-        this.pendingTemporaryPaths.delete(temporaryPath);
-      }
       for (const name of await readdir(directory)) {
-        if (!pattern.test(name)) continue;
-        const markerPath = path.join(directory, name);
-        const markerEntry = await lstat(markerPath);
-        if (
-          !markerEntry.isFile() || markerEntry.isSymbolicLink() ||
-          markerEntry.size !== Buffer.byteLength(TEMP_CLEANUP_MARKER) ||
-          (process.platform !== "win32" && (markerEntry.mode & 0o077) !== 0) ||
-          (typeof process.getuid === "function" && markerEntry.uid !== process.getuid())
-        ) throw new PersistenceBoundaryError("cleanup", "cleanup_pending");
-        const markerHandle = await open(markerPath, constants.O_RDONLY | constants.O_NOFOLLOW);
-        let markerContent: string;
+        const match = markerTempPattern.exec(name);
+        if (!match) continue;
+        const entryPath = path.join(directory, name);
+        let handle;
         try {
-          markerContent = await markerHandle.readFile({ encoding: "utf8" });
+          handle = await open(entryPath, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+          const entry = await handle.stat();
+          if (!entry.isFile() || entry.size > 512 ||
+              (process.platform !== "win32" && (entry.mode & 0o077) !== 0) ||
+              (typeof process.getuid === "function" && entry.uid !== process.getuid())) {
+            throw new PersistenceBoundaryError("cleanup", "cleanup_pending");
+          }
         } finally {
-          await markerHandle.close();
+          await handle?.close();
         }
-        if (markerContent !== TEMP_CLEANUP_MARKER) {
-          throw new PersistenceBoundaryError("cleanup", "cleanup_pending");
-        }
-        const temporaryPath = markerPath.slice(0, -".cleanup-pending".length);
-        const entry = await lstat(temporaryPath);
-        const maximumTemporaryBytes = name.includes(".persistence-intent.json.")
-          ? MAX_INTENT_BYTES
-          : this.maximumDatabaseBytes;
-        if (
-          !entry.isFile() ||
-          entry.isSymbolicLink() ||
-          entry.size > maximumTemporaryBytes ||
-          (process.platform !== "win32" && (entry.mode & 0o077) !== 0) ||
-          (typeof process.getuid === "function" && entry.uid !== process.getuid())
-        ) {
-          throw new PersistenceBoundaryError("cleanup", "cleanup_pending");
-        }
-        await unlink(temporaryPath);
-        await unlink(markerPath);
-        this.pendingTemporaryPaths.delete(temporaryPath);
+        await unlink(entryPath);
       }
-      await this.syncParentDirectory();
+      await this.syncDirectory(directory);
+      await this.cleanupManagedTemporaryIntent();
     } catch (error) {
       if (error instanceof PersistenceBoundaryError) throw error;
       throw new PersistenceBoundaryError("cleanup", "cleanup_pending");
     }
   }
 
-  private async recordPendingTemporaryCleanup(temporaryPath: string): Promise<void> {
-    const markerPath = temporaryPath + ".cleanup-pending";
+  private managedTemporaryMarkerPath(): string {
+    return path.join(this.managedTemporaryDirectoryPath(), "managed-temporary.json");
+  }
+
+  private managedTemporaryDirectoryPath(): string {
+    return path.join(path.dirname(this.filePath), `.${path.basename(this.filePath)}.managed-temporaries`);
+  }
+
+  private async ensureManagedTemporaryDirectory(): Promise<void> {
+    const directory = this.managedTemporaryDirectoryPath();
     try {
-      await this.checkpoint(
-        temporaryPath.includes(".persistence-intent.json.")
-          ? "journal_cleanup_marker"
-          : "primary_cleanup_marker",
-      );
-      const handle = await open(markerPath, "wx", 0o600);
+      await mkdir(directory, { mode: 0o700 });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+        throw new PersistenceBoundaryError("cleanup", "cleanup_pending");
+      }
+    }
+    try {
+      const entry = await lstat(directory);
+      if (!entry.isDirectory() || entry.isSymbolicLink() ||
+          (process.platform !== "win32" && (entry.mode & 0o077) !== 0) ||
+          (typeof process.getuid === "function" && entry.uid !== process.getuid())) {
+        throw new Error("invalid managed directory");
+      }
+    } catch {
+      throw new PersistenceBoundaryError("cleanup", "cleanup_pending");
+    }
+  }
+
+  private async publishManagedTemporary(kind: ManagedTemporaryKind, temporaryPath: string): Promise<void> {
+    // A prior failed operation may have left an authoritative marker. Consume it
+    // before publishing another one so a rename can never orphan the old temp.
+    await this.cleanupManagedTemporaryIntent();
+    const markerPath = this.managedTemporaryMarkerPath();
+    const publicationId = randomUUID();
+    const markerTemp = markerPath + "." + publicationId + ".tmp";
+    const intent: ManagedTemporaryIntent = {
+      version: 1,
+      marker: "shepherd-managed-temporary-v1",
+      publicationId,
+      kind,
+      temporaryName: path.basename(temporaryPath),
+    };
+    const serialized = JSON.stringify(intent) + "\n";
+    try {
+      await this.checkpoint(`${kind}_marker_temp_open` as PersistenceFaultStage);
+      const handle = await open(markerTemp, "wx", 0o600);
       try {
-        await handle.writeFile(TEMP_CLEANUP_MARKER, "utf8");
+        await this.checkpoint(`${kind}_marker_write` as PersistenceFaultStage);
+        await handle.writeFile(serialized, "utf8");
+        await this.checkpoint(`${kind}_marker_file_sync` as PersistenceFaultStage);
         await handle.sync();
       } finally {
         await handle.close();
+        await this.checkpoint(`${kind}_marker_close` as PersistenceFaultStage);
       }
-      await this.syncParentDirectory();
+      await this.checkpoint(`${kind}_marker_rename` as PersistenceFaultStage);
+      await rename(markerTemp, markerPath);
+      await this.checkpoint(`${kind}_marker_directory_sync` as PersistenceFaultStage);
+      await this.syncDirectory(this.managedTemporaryDirectoryPath());
+    } catch {
+      try {
+        await unlink(markerTemp);
+        await this.syncDirectory(this.managedTemporaryDirectoryPath());
+      } catch (cleanupError) {
+        if ((cleanupError as NodeJS.ErrnoException).code !== "ENOENT") {
+          throw new PersistenceBoundaryError("cleanup", "cleanup_pending");
+        }
+      }
+      throw new PersistenceBoundaryError("cleanup", "cleanup_pending");
+    }
+  }
+
+  private async cleanupManagedTemporaryIntent(): Promise<void> {
+    const markerPath = this.managedTemporaryMarkerPath();
+    try {
+      let handle;
+      try {
+        handle = await open(markerPath, constants.O_RDONLY | constants.O_NOFOLLOW);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+        throw error;
+      }
+      let raw: string;
+      try {
+        const entry = await handle.stat();
+        if (!entry.isFile() || entry.size > 512 || (process.platform !== "win32" && (entry.mode & 0o077) !== 0) ||
+            (typeof process.getuid === "function" && entry.uid !== process.getuid())) {
+          throw new Error("invalid marker");
+        }
+        raw = await handle.readFile({ encoding: "utf8" });
+      } finally {
+        await handle.close();
+      }
+      const parsed = JSON.parse(raw) as Partial<ManagedTemporaryIntent>;
+      const keys = Object.keys(parsed).sort();
+      if (JSON.stringify(keys) !== JSON.stringify(["kind", "marker", "publicationId", "temporaryName", "version"]) ||
+          parsed.version !== 1 || parsed.marker !== "shepherd-managed-temporary-v1" ||
+          typeof parsed.publicationId !== "string" || !new RegExp(`^${UUID_SUFFIX}$`, "iu").test(parsed.publicationId) ||
+          (parsed.kind !== "primary" && parsed.kind !== "journal") || typeof parsed.temporaryName !== "string") {
+        throw new Error("invalid marker");
+      }
+      const expectedBase = path.basename(parsed.kind === "primary" ? this.filePath : this.recoveryIntentPath());
+      const temporaryPattern = new RegExp(`^${escapeRegExp(expectedBase)}\\.${UUID_SUFFIX}\\.tmp$`, "iu");
+      if (!temporaryPattern.test(parsed.temporaryName)) {
+        throw new Error("invalid marker");
+      }
+      const temporaryPath = path.join(this.managedTemporaryDirectoryPath(), parsed.temporaryName);
+      try {
+        const tempEntry = await lstat(temporaryPath);
+        const maximum = parsed.kind === "primary" ? this.maximumDatabaseBytes : MAX_INTENT_BYTES;
+        if (!tempEntry.isFile() || tempEntry.isSymbolicLink() || tempEntry.size > maximum ||
+            (process.platform !== "win32" && (tempEntry.mode & 0o077) !== 0) ||
+            (typeof process.getuid === "function" && tempEntry.uid !== process.getuid())) throw new Error("invalid temp");
+        await this.checkpoint(`${parsed.kind}_temp_unlink` as PersistenceFaultStage);
+        await unlink(temporaryPath);
+        await this.checkpoint(`${parsed.kind}_temp_directory_sync` as PersistenceFaultStage);
+        await this.syncDirectory(this.managedTemporaryDirectoryPath());
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      await this.checkpoint(`${parsed.kind}_marker_unlink` as PersistenceFaultStage);
+      await unlink(markerPath);
+      await this.checkpoint(`${parsed.kind}_marker_unlink_directory_sync` as PersistenceFaultStage);
+      await this.syncDirectory(this.managedTemporaryDirectoryPath());
     } catch {
       throw new PersistenceBoundaryError("cleanup", "cleanup_pending");
     }
