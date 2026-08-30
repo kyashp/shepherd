@@ -7,6 +7,327 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — issue #43 integrated verification
+
+PR #75 merged to protected `main` as
+`fbc937fed21ad4441e24ab301f591fe5aa03a025`; issue #43 closed and GitHub
+removed the remote feature branch. The required integrated verification ran in
+the clean issue worktree detached at that exact SHA before the docs-only
+closeout branch was created.
+
+- `git diff` found no tree difference between reviewed candidate `66e0c0e` and
+  merge `fbc937f`, so the independent security/UI audit and re-review apply to
+  the integrated bytes with no remaining Critical, Important or Minor finding.
+- Fresh literal `npm run check` passed: launcher 3/3, Server 808 passed plus
+  three explicit skips, Web 20/20, all production/test-source typechecks and
+  both builds. The PR's `Required checks` and `Node 22 / npm run check` hosted
+  jobs also completed successfully before merge.
+- Fresh integrated Chromium passed the real-service unauthorized-diff journey
+  2/2 at `1280x800` and `1440x900`, including durable reload, typed visible
+  denial, unchanged stored and actual protected heads, zero Candidates,
+  integration Planes or promotion, keyboard focus/activation, bounded public
+  evidence and no document/body overflow.
+- The four reviewed E2E-04 screenshot hashes remain unchanged. No live Runtime,
+  model call, credential, product, CSS, schema, dependency or protected-branch
+  mutation ran during closeout. Candidate-time unrelated harness limitations
+  remain recorded in the preceding entry rather than being reclassified.
+
+## 2026-08-30 — FM-01 integrated verification and event-evidence follow-up
+
+PR #72 merged to `main` as `2e4058107311170ab12cadc6a6d283aeaefef895`.
+Issue #42 closed and the feature branch was removed. The required integrated
+verification ran from a clean detached worktree at that exact SHA.
+
+- **Integrated evidence:** the FM-01 plus database/service/Git-promotion/recovery
+  slice passed 187/187. Literal `npm run check` passed launcher 3/3, Server
+  808/808 with three explicit skips, Web 19/19, all production/test typechecks and
+  both builds. A lock-backed clean install and `npm audit` reported zero
+  vulnerabilities; the merged feature files matched the reviewed branch bytes.
+- **Independent audit finding:** the final re-verification row asserted
+  `promotion_started` and no completion, but not the resulting
+  `resolving -> attention_required` event. The event had a bounded reason but not
+  the matching failure code/stage, so event removal or misclassification could
+  remain false-green. No schema-widening, protected-promotion, authorization,
+  secret-exposure or data-loss blocker was found.
+- **Causal follow-up:** branch `test/42-fm-01-final-event-evidence`, implementation
+  `471f5e8`, draft PR #74. RED passed 5/6 and failed only because the causal event
+  lacked `failureCode` and `stage`. The existing atomic transition now carries
+  those two fixed fields, and the matrix asserts its exact summary,
+  `resolving -> attention_required`, reason, code and stage through both durable
+  service state and the public events API.
+- **Follow-up evidence:** matrix 6/6, adjacent 187/187, Server production/test
+  types, and a fresh literal gate with the same fully green counts passed. The
+  same read-only Auditor returned PASS with no remaining blocker.
+  `git diff --check` passed. No UI, dependency, schema, promotion-gate, live
+  Runtime or model change ran.
+- `T,A,C` are complete. `I` remains pending until PR #74 is integrated and the
+  corrected focused flow is rerun on updated `origin/main`.
+
+## 2026-08-30 — issue #43 unauthorized-diff denial candidate
+
+Branch `fix/43-ui-01-unauthorized-denial`, initially based on protected `main`
+`2e4058107311170ab12cadc6a6d283aeaefef895` and rebased onto current `main`
+`18daa3a`. This is reviewed candidate evidence for issue #43; protected-main
+integration is not claimed.
+
+- **RED/correction:** an ordinary failed Mission rendered only a generic Failed
+  timeline pill even though its denied Contract retained
+  `unauthorized_file_change` at `contract_authority`. The existing attention
+  panel now uses that precise Contract cause for failed Missions, labels the
+  safety stop and no-promotion outcome, and keeps the shortened Contract ID
+  traceable through its full-value title. The focused presentation regression
+  failed for each missing behavior before its correction and passes 6/6.
+- **Causal browser proof:** a test-only executor wrapper uses the real compiled
+  service, store and host-trusted verifier to modify `policy.json` outside a
+  delegated `src/frontend/**` scope. The real authority boundary rejects it,
+  durable state reloads through the production server, and authenticated
+  Chromium proves the typed Contract denial, failed Mission, unchanged stored
+  and actual protected heads, zero Candidates, zero integration or promotion,
+  keyboard/focus evidence expansion, bounded public evidence and no page
+  overflow at `1280x800` and `1440x900`. The focused journey passed 2/2; all
+  four committed screenshots were inspected under `docs/ui-review/e2e-04/`.
+- **Checks observed:** Web passed 20/20, the exact real-service authority test
+  passed, both production builds passed, harness unit passed 7/7, strict syntax
+  checks and `git diff --check` passed, and literal `npm run check` passed with
+  launcher 3/3, Server 808 passed plus three explicit skips, Web 20/20, strict
+  production/test-source types and both builds. `npm audit` reported zero
+  vulnerabilities across 251 dependencies.
+- The subsequent pre-push hook reproduced the existing parallel interrupted-policy
+  cleanup race: Server 806 passed plus three skips while two
+  `general-project.test.ts` cases failed. That file then passed 8/8 alone. The
+  hook-created staged `policy.json` artifact was cleared, and only the documented
+  hook was bypassed for the branch update; no test or assertion was changed.
+- The full browser harness passed 22/24. Both failures are unchanged
+  `starter-kit.spec.mjs` behavior outside the owned surface and reproduce in
+  that spec alone: a 0.09375px legacy viewport-boundary assertion at 1280 and a
+  30-second legacy follow-up response timeout at 1440. No assertion, retry,
+  timeout, starter UI or unrelated source was changed to conceal them.
+- Independent read-only audit and re-review found no remaining Critical,
+  Important or Minor issue in #43 scope and returned Pass for security and UI.
+  No production backend/schema, CSS, dependency, live Runtime or model path
+  changed; the accepted UI design remains frozen. Protected-main integration
+  and its rerun remain pending.
+
+## 2026-08-30 — FM-01 deterministic failure matrix candidate
+
+Branch `feat/42-fm-01-failure-matrix`, implementation `051b32a`, draft PR #72.
+This is candidate evidence for issue #42; protected-main integration and audit are
+not claimed.
+
+- **RED:** the first six-case run passed only the existing objective-tie path. Four
+  missing/malformed/omitted-key/acceptance cases persisted `unknown` at Mission
+  level, and failed final re-verification omitted its promotion evidence.
+- **Correction:** known Contract-boundary failures now retain the exact fixed code
+  and stage on Mission, Contract, Plane and bounded event details. Final failed
+  promotion evidence is retained on the selected Candidate and linked from its
+  Plane; the database admits this only for a promotion-stage
+  `final_reverification_failure` while retaining target, diff, mandatory-profile
+  and Plane-link invariants.
+- **Causal evidence:** `failure-matrix.test.ts` passed 6/6 without sleeps, retries,
+  network or model calls. Each case verifies service state, durable reload, public
+  Mission/events API, absence of `promotion_completed`, stored protected-head
+  immutability and the repository's actual Git HEAD.
+- **Adjacent evidence:** database, service, Git promotion and recovery passed
+  181/181. Server production and test-source TypeScript checks passed. The root
+  production build completed for both Web and Server, and `npm audit` reported
+  zero vulnerabilities across 251 dependencies.
+- **Literal gate:** the pre-push hook reached Server 806 passed plus three explicit
+  skips, with two failures in the pre-existing parallel-only interrupted-policy
+  cleanup rows in `general-project.test.ts`. The same failures were observed before
+  FM-01 edits; the file passes 8/8 in isolation. The hook-created staged
+  `policy.json` artifact was cleared, and only the documented hook was skipped for
+  the branch push. `C` remains pending rather than inferred.
+- No UI, dependency, live Runtime, model, credential or protected-branch change
+  ran. UI evidence remains assigned to the dependent E2E rows.
+
+## 2026-08-30 — issue #41 audited Project Group journey candidate
+
+Branch `feat/41-project-group-journey`, draft PR #64. This is candidate evidence;
+protected-main integration is not claimed.
+
+- An explicit Project Group initialization creates the fixed idle auth-demo
+  Project without starting a Mission, Contract, Plane, executor, shell or model.
+  Unmentioned bounded messages persist with a bounded Shepherd reply. A leading
+  ready Frontend/Backend mention captures one fixed authentication transport; a
+  complementary opposite-role request enters the existing deterministic
+  two-Contract Mission with server-authored objectives and authority.
+- Agent-authored Group messages are derived only from verified persisted manifest
+  summaries and remain bound to the exact sender, target, Contract and Mission.
+  Hostile V2 checks cover non-verified and missing-manifest states from valid
+  nonterminal controls, plus wrong sender, target, Contract and summary. The
+  pre-Agent-summary V2 shape remains compatible.
+- Audit correction made Project Group routing atomic across ordinary and Contract
+  idempotency namespaces. The causal regression failed with two accepted requests
+  before the correction and passes with exactly one accepted message afterward.
+  Private-chat and Project Group pending prompts cannot pair across intake
+  provenance, and Mission-preparation failure rolls back only the new prompt.
+- Literal `npm run check` passed: launcher 3/3, Server 795 passed with three
+  explicit skips, Web 19/19, all production/test-source typechecks and both builds.
+  The focused Database plus Shepherd suite passed 136/136; the final independent
+  re-review passed its 3 targeted tests and `git diff --check` with no remaining
+  finding.
+- Authenticated focused Chromium passed 2/2 at `1280x800` and `1440x900` from the
+  real mention button through verified Contract evidence; the adjacent Shepherd
+  hero journey also passed 2/2. The broader direct Playwright run passed 18/20;
+  the two failures were unchanged legacy harness issues outside #41: a 0.09375px
+  starter-kit viewport rounding assertion and a separate response timeout. Harness
+  unit tests passed 6/7; the one unchanged macOS fixture compares canonical
+  `/private/var/...` and non-canonical `/var/...` temporary paths.
+- `npm audit` reported zero vulnerabilities. No live/model request ran, no secret
+  or raw prompt/output was persisted in evidence, and the accepted UI design was
+  not redesigned.
+
+## 2026-08-30 — CRUD-01 clarification-only Agent deletion candidate
+
+- **Branch/review:** `fix/66-crud-01-clarification-draft-delete`, issue #66,
+  draft PR #67. No Web or CSS source changed.
+- **RED:** a stopped Agent with only unbound `general-contract`
+  `clarification_required` messages, zero Contracts/Missions/Planes/events, and an
+  inactive managed Project failed deletion with `Cannot delete an Agent referenced
+  by durable Shepherd history`.
+- **Correction:** deletion classifies only exact human-authored, unbound general
+  clarification messages as discardable. All durable or ambiguous references keep
+  the 409. Before deleting the exact managed Project, the server validates the
+  managed-root sentinel, metadata identity, main-only Git worktree state, absence of
+  Shepherd branches and empty private Plane roots. Fixed-schema, fsynced workspace
+  intent and Project deletion journals are written before database publication and
+  reconciled from on-disk durable Agent/Project state after restart. General Project
+  creation/policy journaling now begins inside the serialized Store mutation after
+  Agent revalidation, so a racing follow-up cannot strand a journal.
+- **Observed checks:** production/test typechecks; focused Agent lifecycle/general
+  Project 29/29, including injected pre-publication and post-rename persistence
+  faults, exact follow-up/delete and direct-run/delete barriers, active-run join,
+  and clean restarts; adjacent API/Shepherd 77/77; literal `npm run check` with
+  launcher 3/3, Server 791 passed
+  plus two explicit opt-in skips, Web 18/18, and both
+  production builds. Authenticated deterministic Chromium passed 2/2 at 1280x800
+  and 1440x900, including two clarification turns, exact 200 deletion, empty Agent
+  UI/state, exact filesystem absence and no document/body overflow. All four
+  screenshots were inspected. Independent UI review found no High/Medium issue;
+  it confirmed the frozen theme/layout and keyboard-operable native lifecycle
+  controls. Final independent security re-review at `171089b` passed with no High
+  or Medium finding after the direct-run race was also reserved, cancelled and
+  joined causally. Protected-main integration remains pending. The same-OS-user
+  recursive-path swap and Project-journal sudden-power-loss ordering are retained as
+  Low residuals under the existing single-owner local PoC threat/availability model.
+## 2026-08-30 — OPS-06 `A` and `S` gates, and a corrected reconciliation
+
+Protected `main` advanced to `f900656` (PR #71) while this reconciliation branch was
+open; hosted exact-head gate run `33305530655` passed on it. The entry below remains
+true for `b80af11`, the head it names. No live or model call ran.
+
+- **`A` gate (PR #68).** Four guards introduced or relied on by the container state
+  volume appeared only in source and in no test, so each could be deleted with a
+  green suite. Eight causal tests were added for the verifier fail-closed branch,
+  the three executor state-root guards, the `index.ts` verifier composition and the
+  launcher probe/fallback selection. Each was proven by mutating its guard and
+  observing the test fail; all source was restored afterwards. Two of the tests
+  initially passed for the wrong reason — one assertion was satisfied by the
+  following guard's message, since both end in `escaped CONTAINER_STATE_ROOT`, and
+  the launcher assertions read `stdout` while the launcher logs to `stderr`. Both
+  were corrected.
+- **`S` gate (PR #69).** An independent read-only review of the merged range
+  returned **FAIL**: one High and two Medium findings, all against `e6a5878`, which
+  removed the non-loopback `APP_AUTH_TOKEN` requirement inside the same merge with
+  `gh pr view 56 --json reviews` returning `[]`. The container state volume itself
+  passed: the mount construction was attacked directly and no escape was found.
+- **Adversarial re-review of both branches then found three defects in the first
+  corrections, each reproduced rather than argued.** The new deploy guard was
+  defeated by a whitespace-only token and by a CRLF environment file, because the
+  shell tested only for the empty string while the server trims before validating,
+  so both shapes reached the container as an empty token and disabled the bearer
+  boundary — the original finding verbatim. The guard now strips CR and surrounding
+  whitespace as the schema does and applies the same 24-character non-placeholder
+  floor as `config.ts` and `deploy/volcengine/variables.tf`. Separately, that
+  guard's only regression test was executed by no gate: the root `test` script names
+  a single file under `scripts/` and is not a glob, so `npm run check` would have
+  stayed green with the guard deleted; it is now named in that script, and deleting
+  the guard fails the gate. Finally, `index.composition.test.ts` could pass on the
+  exact regression it exists to catch, because its `indexOf("});")` end anchor
+  overshoots when the call is closed in the expanded argument style; the anchor is
+  now a close at column zero, comments are stripped from the window, and the
+  reproduction now fails both assertions.
+- **The High finding is only partly closed.** The guarded deploy script is one of
+  three documented compose entry points; `README` still documents
+  `docker compose up --build` and `docker compose --env-file .env.production up -d`
+  against the same unguarded `docker-compose.yml`, which binds `0.0.0.0` and
+  publishes its port with no address prefix. Pinning that file to loopback was
+  rejected because the profile is meant to be reachable behind a security group and
+  the same file serves the local Docker path. The remainder is carried into
+  `SEC-REVIEW`. This merge must not be recorded as closing it.
+- **Corrections to this branch's own earlier entry.** The `CHAT-01` row was left
+  internally contradictory: a guarded replacement silently matched nothing, so the
+  row still opened `REVIEWED CANDIDATE` while its body already said integration was
+  done. It now reads `INTEGRATED` at `cd82ec4`. An earlier local suite run reported
+  here was discarded rather than recorded, because it spanned a branch switch and
+  observed a mixed tree: it counted 32 test files where `main` has 29.
+- **`TST-25` is resolved** at `e06357c` (PR #71, issue #70) by canonicalizing the
+  test's own temporary root before `mkdtemp`, leaving the fixture assertion intact.
+
+## 2026-08-30 — post-merge reconciliation at integrated `b80af11`
+
+Protected `main` at `b80af11` (merge of PR #56). That head also carries PR #57
+merge `cd82ec4` and PR #60 merge `39cd800`. Same affected host as the entries
+below. No live or model call ran; no Mission was started.
+
+- **Hosted exact-head gate.** Run `33300759535`, event `push`, head branch `main`,
+  head SHA `b80af11`, job `Node 22 / npm run check` on `ubuntu-latest`: success,
+  every step green, 08:06:09Z to 08:08:43Z. This is the green Linux full gate that
+  the `OPS-06` row previously listed as outstanding.
+- **Local rerun on the same SHA.** `npm run typecheck` passed; launcher tests 3/3;
+  web 18/18; both production builds passed. The server suite run serially
+  (`--no-file-parallelism --maxWorkers=1`) reported **745 passed, 6 failed, 6
+  skipped**. The six failures are the recorded affected-host timing condition, not
+  regressions: five in `recovery.process.test.ts` (`Timed out waiting for
+  recovered` with empty child stderr — the forked `--import tsx` child never
+  crashed, it simply exceeded the 25s budget), plus the previously recorded
+  `expected 'resolving' to be 'attention_required'` flake in `service.test.ts`.
+  An earlier attempt to run the suite from the repository root is not evidence:
+  that invocation left `process.cwd()` outside the workspace, so the executor's
+  source-inventory test raised `ENOENT` and the Playwright specs were globbed into
+  the Vitest run.
+- **`npm run test:e2e:harness:unit` on `b80af11`: 6 passed, 1 failed.** The failure
+  is `fake Codex fixture implements bounded deterministic version, run, and
+  resume`, with `fake-codex: workspace identity must be canonical`. This is a real
+  test-only defect, not an environment quirk: `tests/e2e/harness.test.mjs:38`
+  builds its workspace with `mkdtemp(path.join(os.tmpdir(), …))`, and on macOS
+  `os.tmpdir()` is a symlink, so the deliberate `realpath` identity assertion at
+  `tests/e2e/fixtures/fake-codex.mjs:69` correctly rejects it. The repository's own
+  idiom is already `tests/e2e/support/test-app.mjs:93`. This target is not part of
+  `npm run check`, so no hosted run covers it. Recorded as a new defect; the
+  fixture's assertion must not be weakened.
+- **`LIVE-01` cannot run on this host, and the attempt was deliberately not
+  spent.** `live-runtime.integration.test.ts:182-185` pins
+  `CONTAINER_STATE_ROOT` and `CONTAINER_STATE_VOLUME` to `undefined`, so the gate
+  bind-mounts `.tmp/shepherd-live-gate/…` — a host share on this machine — and the
+  OPS-06 container-volume correction cannot apply to it. Two zero-spend probes
+  against the Runtime image confirmed the split on the exact gate path: a plain
+  write to a host-share bind mount inside the container succeeded (exit 0), while
+  the identical write under `codex sandbox linux --full-auto` was denied
+  (`cannot create /workspace/.p: Permission denied`, exit 2). A named-volume
+  control was inconclusive because a freshly created volume is root-owned, so the
+  denial there was ownership rather than Landlock; the bind-mount pair above is the
+  discriminating evidence. Running the gate here would therefore fail at
+  `stage=container_start reason=sandbox_probe_failed` and consume the no-retry
+  allowance for no evidence. `LIVE-01` needs a Linux host, or a change making the
+  gate volume-aware, which is outside an `L` run.
+- **Ledger reconciliation.** The header pointer, the baseline hosted-gate and
+  server-suite rows, the presentation-host caveat, and the `OPS-06`, `CHAT-01` and
+  `LIVE-01` rows described merged work as unmerged candidates and cited hosted runs
+  that were not on the exact head. Corrected from the evidence above.
+  `docs/FIXES.md` carried the same stale `CANDIDATE PENDING AFFECTED-HOST GATE`
+  wording for `OPS-06` and was corrected with it.
+- **Issue split.** `#47` bundled `OPS-06` and `LIVE-01`, which need different
+  hosts, so neither could close. `LIVE-01` moved to issue `#65` with the probe
+  evidence above; `#47` is re-scoped to `OPS-06` only and remains closeable on this
+  host once `A` and `S` land. `main` has since advanced to `a1f1fcc` (PR #62); the
+  evidence in this entry is scoped to `b80af11` and is not restated for that head.
+- **Not claimed.** The `A` and `S` gates for `OPS-06` remain open. `A` is missing
+  the verifier composition at `apps/server/src/index.ts:77-78`, the launcher
+  probe/fallback selection, and the verifier fail-closed branch. `S` is unmet and
+  must also cover `e6a5878`, which removed the non-loopback `APP_AUTH_TOKEN`
+  requirement inside the same merge and carries no recorded independent review.
+
 ## 2026-08-30 — the launcher selects its own state layout
 
 Same branch and host. `LOCAL_POC_STATE_MODE` defaulted to `host-bind`, so the

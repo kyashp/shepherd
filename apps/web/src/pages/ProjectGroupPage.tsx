@@ -31,6 +31,20 @@ export function ProjectGroupMentionButton({
   );
 }
 
+export function InitializeProjectGroupButton({
+  initializing,
+  onInitialize,
+}: {
+  initializing: boolean;
+  onInitialize: () => void;
+}) {
+  return (
+    <button className="button button-primary" type="button" onClick={onInitialize} disabled={initializing}>
+      {initializing ? "Initializing Project Group…" : "Initialize Project Group"}
+    </button>
+  );
+}
+
 export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
   const { state, loading, error: stateError, connected, refresh: refreshState } = useShepherdPolling();
   const project = state?.projects[0] ?? null;
@@ -40,6 +54,7 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
   const [content, setContent] = useState("");
   const [composerError, setComposerError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [initializing, setInitializing] = useState(false);
   const messageEnd = useRef<HTMLDivElement>(null);
   const messageComposer = useRef<HTMLTextAreaElement>(null);
   const inFlight = useRef(false);
@@ -90,6 +105,20 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
   useEffect(() => {
     messageEnd.current?.scrollIntoView({ block: "nearest" });
   }, [messages]);
+
+  const initializeGroup = async () => {
+    if (initializing) return;
+    setInitializing(true);
+    setMessageError(null);
+    try {
+      await api.initializeProjectGroup();
+      await refreshState();
+    } catch (reason) {
+      setMessageError(reason instanceof Error ? reason.message : "Project Group could not be initialized");
+    } finally {
+      setInitializing(false);
+    }
+  };
 
   const sortedMessages = useMemo(() => [...messages].sort((a, b) =>
     new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
@@ -148,7 +177,13 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
             <EmptyState
               icon="group"
               title={project ? "The Project Group is quiet" : "No Shepherd project yet"}
-              description={project ? "Unmentioned messages go to Shepherd. Start with @AgentName to create a targeted contract." : "Start a Mission in Shepherd to initialize the managed demo project and its group conversation."}
+              description={project ? "Unmentioned messages go to Shepherd. Start with @AgentName to create a targeted contract." : "Initialize the fixed Project Group to begin its conversation without starting a Mission."}
+              action={!project ? (
+                <InitializeProjectGroupButton
+                  initializing={initializing}
+                  onInitialize={() => void initializeGroup()}
+                />
+              ) : undefined}
             />
           ) : null}
           {sortedMessages.map((message) => {

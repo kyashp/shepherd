@@ -456,11 +456,43 @@ const fullMissionDatabase = (): Database => {
     missionId: "mission-1",
     senderType: "agent",
     senderId: "agent-1",
-    content: "Authentication resolution completed",
-    targetAgentId: null,
+    content: "Implemented authentication",
+    targetAgentId: "agent-1",
     contractId: "contract-left",
     createdAt: completedTimestamp,
   });
+  return database;
+};
+
+const activeContractDatabase = (withManifest: boolean): Database => {
+  const database = fullMissionDatabase();
+  const project = database.shepherd.projects[0]!;
+  const mission = database.shepherd.missions[0]!;
+  const contract = database.shepherd.contracts[0]!;
+  const plane = database.shepherd.planes.find((item) => item.id === contract.planeId)!;
+
+  project.activeMissionId = mission.id;
+  mission.contractIds = [contract.id];
+  mission.collisionIds = [];
+  mission.resolutionIds = [];
+  mission.state = "running";
+  mission.completedAt = null;
+  contract.state = "verifying";
+  contract.verifiedAt = null;
+  contract.completedAt = null;
+  contract.verificationEvidence = [];
+  if (!withManifest) contract.manifest = null;
+  plane.state = "inspecting";
+  plane.verificationEvidenceIds = [];
+  database.shepherd.contracts = [contract];
+  database.shepherd.planes = [plane];
+  database.shepherd.claims = [];
+  database.shepherd.collisions = [];
+  database.shepherd.candidates = [];
+  database.shepherd.events = database.shepherd.events.filter(
+    (event) => event.type === "mission_created",
+  );
+  database.shepherd.groupMessages = [];
   return database;
 };
 
@@ -655,6 +687,15 @@ describe("Database V2", () => {
     expect(JSON.parse(await readFile(databasePath, "utf8"))).toEqual(database);
   });
 
+  it("keeps server-producible pre-Agent-summary V2 Project Group state compatible", () => {
+    const database = fullMissionDatabase();
+    const legacyMessage = database.shepherd.groupMessages[0]!;
+    legacyMessage.senderType = "shepherd";
+    legacyMessage.senderId = null;
+
+    expect(loadDatabase(database)).toEqual({ database, migrated: false });
+  });
+
   it.each([
     ["unsafe identifier", (database: Database) => (database.shepherd.projects[0]!.id = "../secret")],
     ["invalid timestamp", (database: Database) => (database.shepherd.missions[0]!.updatedAt = "yesterday")],
@@ -691,6 +732,34 @@ describe("Database V2", () => {
     ["too-low Plane concurrency", (database: Database) => ((database.shepherd.settings as { maxConcurrentPlanes: number }).maxConcurrentPlanes = 1)],
     ["too-high Plane concurrency", (database: Database) => ((database.shepherd.settings as { maxConcurrentPlanes: number }).maxConcurrentPlanes = 17)],
     ["malformed event details", (database: Database) => ((database.shepherd.events[0]!.details as Record<string, unknown>).nested = { secret: true })],
+    ["agent summary uses the wrong sender", (database: Database) => {
+      database.agents.push({
+        ...database.agents[0]!,
+        id: "agent-2",
+        workspacePath: "/managed/agents/agent-2",
+      });
+      database.shepherd.groupMessages[0]!.senderId = "agent-2";
+    }],
+    ["agent summary targets the wrong Agent", (database: Database) => {
+      database.agents.push({
+        ...database.agents[0]!,
+        id: "agent-2",
+        workspacePath: "/managed/agents/agent-2",
+      });
+      database.shepherd.groupMessages[0]!.targetAgentId = "agent-2";
+    }],
+    ["agent summary references the wrong Contract", (database: Database) => {
+      database.agents.push({
+        ...database.agents[0]!,
+        id: "agent-2",
+        workspacePath: "/managed/agents/agent-2",
+      });
+      database.shepherd.contracts[1]!.agentId = "agent-2";
+      database.shepherd.groupMessages[0]!.contractId = "contract-right";
+    }],
+    ["agent summary differs from verified manifest", (database: Database) => {
+      database.shepherd.groupMessages[0]!.content = "Unverified runtime output";
+    }],
     ["unexpected nested field", (database: Database) => ((database.shepherd.settings as unknown as Record<string, unknown>).credential = "DATABASE_CANARY_7f3a")],
     ["orphan legacy Run", (database: Database) => (database.runs[0]!.agentId = "missing-agent")],
     ["message linked to another Agent's Run", (database: Database) => {
@@ -714,6 +783,31 @@ describe("Database V2", () => {
       expect(String(error)).not.toContain("DATABASE_CANARY_7f3a");
       expect(String(error).length).toBeLessThan(100);
     }
+  });
+
+  it.each([
+    ["unverified Contract with a manifest", true],
+    ["unverified Contract without a manifest", false],
+  ] as const)("rejects an Agent summary for an %s", (_name, withManifest) => {
+    const database = activeContractDatabase(withManifest);
+    expect(loadDatabase(database)).toEqual({ database, migrated: false });
+
+    const contract = database.shepherd.contracts[0]!;
+    database.shepherd.groupMessages.push({
+      id: "forged-agent-summary",
+      projectId: "project-1",
+      missionId: "mission-1",
+      senderType: "agent",
+      senderId: contract.agentId,
+      content: contract.manifest?.summary ?? "Forged summary without a manifest",
+      targetAgentId: contract.agentId,
+      contractId: contract.id,
+      createdAt: completedTimestamp,
+    });
+
+    expect(() => loadDatabase(database)).toThrow(
+      "Unsupported database format: invalid version 2 state",
+    );
   });
 
   it.each([

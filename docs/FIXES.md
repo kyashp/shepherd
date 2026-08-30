@@ -31,6 +31,36 @@ that limitation is explicit.
 
 ## Immediate queue
 
+### `CRUD-01` — Clarification drafts permanently block Agent deletion
+
+- **Evidence class:** reproduced on `origin/main` and preserved as a causal service
+  RED. A ready or stopped Agent with no Contract, Mission, Plane, event, or run still
+  returned 409 after one or more Shepherd `clarification_required` prompts.
+- **Failure contract:** deletion treated every Project Group message as durable
+  Shepherd history. General intake persists incomplete prompts as unbound human
+  messages under an inactive `agent-<id>` Project, so an abandoned draft trapped
+  both the Agent and its workspace even though no execution/evidence existed.
+- **Minimal correction:** discard only exact unbound `general-contract`
+  clarification messages plus their exact inactive managed Project. Keep the 409
+  for every Contract, event, Mission, Plane, other message, malformed Project, or
+  orphaned state. Validate the sentinel, metadata identity, Git worktrees/branches,
+  and empty private Plane roots before deletion. Journal both managed Project and
+  workspace intent before database publication; reconcile against on-disk durable
+  state after restart, and serialize general-project journaling with deletion.
+  Preserve all UI/CSS.
+- **Acceptance:** two clarification turns delete from the existing stopped-Agent UI;
+  the Agent workspace, exact managed repository/Plane root/metadata and database
+  draft state disappear; restart is clean. Durable history remains intact with the
+  specific conflict message. Run targeted/adjacent/full gates, authenticated
+  Playwright at both viewports, security and UI review, then integrate/recheck main.
+- **Status:** **REVIEWED CANDIDATE** on PR #67 / issue #66. Causal lifecycle/project
+  tests pass 29/29, adjacent API/Shepherd 77/77, literal `npm run check` passes
+  launcher 3/3, Server 791 plus two opt-in skips, Web 18/18 and both builds, and the
+  browser journey passes 2/2 with no overflow. UI review reports no High/Medium;
+  final security review reports PASS/no High or Medium after four causal
+  persistence/race corrections. Same-OS-user pathname swap and sudden-power-loss
+  ordering for the Project journal remain Low. Protected-main integration remains.
+
 ### `TST-24` — Persistence-recovery attention is visible before reconciliation quiesces
 
 - **Evidence class:** exact contention RED on corrected chain
@@ -1069,17 +1099,26 @@ operator-cleanup availability residual; cross-process automatic retry is not cla
   `SHEPHERD_RUNTIME_PREFLIGHT_OK`, and a containerized non-root control plane
   creates its workspace, starts the sibling Runtime and reads back what the
   sandboxed Agent wrote.
-- **Owner/status:** Fixer / `CANDIDATE PENDING AFFECTED-HOST GATE`; cause
-  reproduced and corrected on the affected host, PR #56. Causal tests cover
+- **Owner/status:** Fixer / `RESOLVED, INTEGRATED at b80af11` (PR #56); `A` and `S`
+  still open. Cause reproduced and corrected on the affected host. Causal tests cover
   volume-mode mount construction, fail-closed containment, the previously
   unvalidated shared Agent home, preflight shape, configuration resolution,
-  verifier translation and the executor canonicality assertion. Full startup smoke,
-  E2E harness and Auditor `I` remain pending; no live/model call has run.
+  verifier translation and the executor canonicality assertion. The
+  `container-volume` startup smoke and the hosted Linux full gate (run
+  `33300759535` on exact head `b80af11`) are both recorded. No live/model call has
+  run. Adjacent `A` coverage is supplied by PR #68 and the independent `S` review
+  by PR #69; that review returned FAIL against `e6a5878`, which removed the
+  non-loopback `APP_AUTH_TOKEN` requirement in the same merge with no recorded
+  review. Its High finding is only partly closed — the guarded deploy script is one
+  of three documented compose entry points — and the remainder is carried into
+  `SEC-REVIEW`.
 
 ## Confirmed defect inventory
 
 | ID | Evidence class and current failure contract | Minimal-fix boundary | Owner/status |
 |---|---|---|---|
+| `CRUD-01` | Reproduced: clarification-only human drafts created no Contract/Mission/Plane but caused the delete API to return the durable-history 409. Review also reproduced pre-/post-publication cleanup splits, a follow-up policy-journal race, and a direct-run/delete race. | Remove only exact unbound general clarification state; journal Project/workspace cleanup across database publication, reconcile from on-disk truth, serialize project operations, reserve direct-run lifecycle, and retain durable-history denial/accepted UI. | **REVIEWED CANDIDATE** at `171089b` on PR #67; final security PASS, `I` pending |
+| `TST-25` | Reproduced on macOS at `b80af11`: `npm run test:e2e:harness:unit` fails 1 of 7 with `fake-codex: workspace identity must be canonical`. `tests/e2e/harness.test.mjs:38` builds its workspace via `mkdtemp(path.join(os.tmpdir(), "shepherd-fake-codex-"))`; on macOS `os.tmpdir()` returns a symlinked `/var/folders/...` path, so the deliberate `realpath` identity assertion at `tests/e2e/fixtures/fake-codex.mjs:69` correctly rejects it. Host-dependent, not intermittent: it passes where `os.tmpdir()` is already canonical, which is why no hosted run catches it — this target is not part of `npm run check`. No safety or data impact; it is a false failure on the presentation host. | Canonicalize the test's own temporary root before `mkdtemp`, matching the existing idiom at `tests/e2e/support/test-app.mjs:93`. Do **not** weaken or remove the fixture assertion: it is the `TST-06` canonical-ancestor hardening. Causal test: assert the harness still rejects a non-canonical workspace while the canonicalized fixture run passes. | **RESOLVED** at `e06357c` (PR #71, issue #70); discovered during `OPS-06` post-merge reconciliation at `b80af11`. The fix canonicalizes the test's own temporary root with `realpath` before `mkdtemp`; the fixture assertion is unchanged. |
 | `F-01` | Source-evidenced: Contract timeout may surface as failure code `unknown` instead of `agent_timeout`. | Typed timeout propagated through Contract/Plane/Agent/Mission/event/API/UI; no message-regex classification. | **RESOLVED + AUDITED** at `83cc1d0`; `T,A,C,S,I` 5/5; 100% scoped |
 | `F-02` | Source-evidenced: Contract runtime errors can become generic `unknown`. | Shared typed stage error only; preserve candidate-specific handling. | **RESOLVED + AUDITED** at `83cc1d0`; `T,A,C,S,I` 5/5; 100% scoped |
 | `F-04` | Source-evidenced: initial Plane creation can fail before durable stage evidence; later mapper is too late. | Evidence on owning Contract/Mission without inventing a successful Plane. | **AUDITED** at `2cef988`; TST-17 closed |
