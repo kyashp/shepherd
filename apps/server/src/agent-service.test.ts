@@ -237,6 +237,7 @@ describe("Agent lifecycle", () => {
 
     await expect(service.deleteAgent(agent.id)).rejects.toMatchObject({
       statusCode: 409,
+      message: "Cannot delete an Agent referenced by durable Shepherd history",
     });
     expect(archive).not.toHaveBeenCalled();
     expect(service.getAgent(agent.id)).toMatchObject({ id: agent.id, status: "ready" });
@@ -247,6 +248,87 @@ describe("Agent lifecycle", () => {
     ).toBeDefined();
     await expect(readFile(path.join(agent.workspacePath, "AGENTS.md"), "utf8"))
       .resolves.toContain("Pending frontend owner");
+  });
+
+  it("deletes an Agent whose only Shepherd references are unbound clarification drafts", async () => {
+    const service = await makeService();
+    const agent = await service.createAgent({
+      name: "Clarification-only owner",
+      role: "Frontend",
+    });
+    const internals = service as unknown as {
+      store: JsonStore;
+      workspaces: WorkspaceManager;
+    };
+    const caseRoot = path.dirname(path.dirname(agent.workspacePath));
+    const managedRoot = path.join(caseRoot, "data", "shepherd");
+    const shepherd = new ShepherdService({
+      store: internals.store,
+      managedRoot,
+      agentWorkspaceRoot: path.dirname(agent.workspacePath),
+      verifier: {
+        verify: async () => {
+          throw new Error("Clarification-only intake must not invoke verification");
+        },
+      },
+    });
+    await shepherd.initialize();
+    await expect(
+      shepherd.submitPrivateContractPrompt({
+        agentId: agent.id,
+        clientMessageId: "clarification-only-prompt",
+        content: "Create a greeting script.",
+      }),
+    ).resolves.toMatchObject({
+      status: "clarification_required",
+      missionId: null,
+      contractId: null,
+    });
+    await expect(
+      shepherd.submitPrivateContractPrompt({
+        agentId: agent.id,
+        clientMessageId: "clarification-only-follow-up",
+        content: "Create src/hello.py that prints a greeting.",
+      }),
+    ).resolves.toMatchObject({
+      status: "clarification_required",
+      missionId: null,
+      contractId: null,
+    });
+    expect(internals.store.snapshot().shepherd).toMatchObject({
+      projects: [{ id: `agent-${agent.id}`, activeMissionId: null }],
+      missions: [],
+      contracts: [],
+      planes: [],
+      events: [],
+    });
+    expect(internals.store.snapshot().shepherd.groupMessages).toHaveLength(2);
+
+    await expect(service.deleteAgent(agent.id)).resolves.toEqual({ deleted: true });
+
+    const deleted = internals.store.snapshot();
+    expect(deleted.agents).toHaveLength(0);
+    expect(deleted.shepherd.projects).toHaveLength(0);
+    expect(deleted.shepherd.groupMessages).toHaveLength(0);
+    await expect(lstat(agent.workspacePath)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(lstat(path.join(managedRoot, "repositories", `agent-${agent.id}`)))
+      .rejects.toMatchObject({ code: "ENOENT" });
+    await expect(lstat(path.join(managedRoot, "planes", `agent-${agent.id}`)))
+      .rejects.toMatchObject({ code: "ENOENT" });
+    await expect(lstat(path.join(managedRoot, "projects", `agent-${agent.id}.json`)))
+      .rejects.toMatchObject({ code: "ENOENT" });
+
+    const recovered = new ShepherdService({
+      store: internals.store,
+      managedRoot,
+      agentWorkspaceRoot: path.dirname(agent.workspacePath),
+      verifier: {
+        verify: async () => {
+          throw new Error("Recovery must not invoke verification");
+        },
+      },
+    });
+    await expect(recovered.initialize()).resolves.toBeUndefined();
   });
 
   it("serializes Agent archive against a racing private Contract prompt", async () => {

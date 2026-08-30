@@ -40,6 +40,7 @@ import {
   initializeShepherdManagedRoot,
   openAuthDemoProject,
   reconcileGeneralProjectCreations,
+  reconcileGeneralProjectDeletions,
   reconcileGeneralProjectPolicyUpdates,
   recordGeneralProjectPolicyUpdate,
   resetAuthDemoProject,
@@ -975,6 +976,7 @@ export class ShepherdService {
       ]),
     );
     const durableProjectIds = new Set(durableProjectHeads.keys());
+    await reconcileGeneralProjectDeletions(this.managedRoot, durableProjectIds);
     await reconcileGeneralProjectCreations(this.managedRoot, durableProjectIds);
     await reconcileGeneralProjectPolicyUpdates(this.managedRoot, durableProjectHeads);
     if (durableProjectIds.size > 0) {

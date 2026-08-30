@@ -19,6 +19,7 @@ import { copyAgentWorkspaceSnapshot, PlaneManager } from "./plane-manager.js";
 const ROOT_SENTINEL = ".shepherd-demo-root.json";
 const SAFE_PROJECT_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/u;
 const GENERAL_CREATION_PREFIX = ".creating-general-";
+const GENERAL_DELETION_PREFIX = ".deleting-general-";
 const GENERAL_POLICY_UPDATE_PREFIX = ".updating-general-";
 
 interface ManagedRootSentinel {
@@ -44,6 +45,12 @@ interface GeneralProjectCreationJournal {
   projectId: string;
 }
 
+interface GeneralProjectDeletionJournal {
+  schemaVersion: 1;
+  marker: "shepherd-general-project-deletion";
+  projectId: string;
+}
+
 interface GeneralProjectPolicyUpdateJournal {
   schemaVersion: 1;
   marker: "shepherd-general-project-policy-update";
@@ -64,6 +71,13 @@ function generalPolicyUpdateJournalPath(root: string, projectId: string): string
     throw new Error("Unsafe general Agent project ID");
   }
   return path.join(root, "projects", `${GENERAL_POLICY_UPDATE_PREFIX}${projectId}.json`);
+}
+
+function generalDeletionJournalPath(root: string, projectId: string): string {
+  if (!SAFE_PROJECT_ID.test(projectId) || !projectId.startsWith("agent-")) {
+    throw new Error("Unsafe general Agent project ID");
+  }
+  return path.join(root, "projects", `${GENERAL_DELETION_PREFIX}${projectId}.json`);
 }
 
 export interface InitializeAuthDemoProjectOptions {
@@ -332,6 +346,20 @@ function parseGeneralCreationJournal(raw: string): GeneralProjectCreationJournal
   return value as GeneralProjectCreationJournal;
 }
 
+function parseGeneralDeletionJournal(raw: string): GeneralProjectDeletionJournal {
+  const value = JSON.parse(raw) as Partial<GeneralProjectDeletionJournal>;
+  if (
+    value.schemaVersion !== 1 ||
+    value.marker !== "shepherd-general-project-deletion" ||
+    typeof value.projectId !== "string" ||
+    !SAFE_PROJECT_ID.test(value.projectId) ||
+    !value.projectId.startsWith("agent-")
+  ) {
+    throw new Error("General project deletion journal is malformed");
+  }
+  return value as GeneralProjectDeletionJournal;
+}
+
 /** Journals the filesystem-before-database boundary for a new general project. */
 export async function beginGeneralProjectCreation(
   managedRoot: string,
@@ -420,6 +448,178 @@ export async function reconcileGeneralProjectCreations(
         }
         await rm(target, { recursive: true, force: true });
       }
+    }
+    await unlink(journalPath);
+  }
+}
+
+async function removeJournaledGeneralProject(
+  root: string,
+  projectId: string,
+): Promise<void> {
+  for (const target of [
+    path.join(root, "repositories", projectId),
+    path.join(root, "planes", projectId),
+    path.join(root, "projects", projectId + ".json"),
+  ]) {
+    if (!isInside(root, target)) {
+      throw new Error("General project deletion escaped its managed root");
+    }
+    await rm(target, { recursive: true, force: true });
+  }
+}
+
+async function assertGeneralProjectHasNoPlaneArtifacts(
+  repositoryPath: string,
+  planesRoot: string,
+): Promise<void> {
+  const expectedPlaneEntries = new Set([
+    ".execution-workspaces",
+    ".shepherd-plane-root.json",
+    ".trusted-materialization",
+    ".trusted-verification",
+  ]);
+  const planeEntries = await readdir(planesRoot);
+  if (
+    planeEntries.length !== expectedPlaneEntries.size ||
+    planeEntries.some((entry) => !expectedPlaneEntries.has(entry))
+  ) {
+    throw new Error("General project deletion found unexpected Plane artifacts");
+  }
+  for (const directory of [
+    ".execution-workspaces",
+    ".trusted-materialization",
+    ".trusted-verification",
+  ]) {
+    const target = path.join(planesRoot, directory);
+    const entry = await lstat(target);
+    if (
+      entry.isSymbolicLink() ||
+      !entry.isDirectory() ||
+      (await readdir(target)).length > 0
+    ) {
+      throw new Error("General project deletion requires empty private Plane roots");
+    }
+  }
+  const registeredWorktrees = (
+    await runGit(repositoryPath, ["worktree", "list", "--porcelain"])
+  )
+    .split(/\r?\n/u)
+    .filter((line) => line.startsWith("worktree "))
+    .map((line) => path.resolve(line.slice("worktree ".length)));
+  if (
+    registeredWorktrees.length !== 1 ||
+    registeredWorktrees[0] !== repositoryPath
+  ) {
+    throw new Error("General project deletion found registered Plane worktrees");
+  }
+  if (
+    await runGit(repositoryPath, [
+      "for-each-ref",
+      "--format=%(refname)",
+      "refs/heads/shepherd/",
+    ])
+  ) {
+    throw new Error("General project deletion found retained Plane branches");
+  }
+}
+
+/**
+ * Journals deletion of one verified, inactive general-Agent project. The caller
+ * must still atomically remove its durable clarification-only state.
+ */
+export async function beginGeneralProjectDeletion(
+  managedRoot: string,
+  projectId: string,
+): Promise<void> {
+  const root = await validateShepherdManagedRoot(managedRoot);
+  const repositoryPath = path.join(root, "repositories", projectId);
+  const planesRoot = path.join(root, "planes", projectId);
+  const metadataPath = path.join(root, "projects", projectId + ".json");
+  const metadata = parseProjectMetadata(
+    await readTrustedRegularFile(metadataPath, "Managed project metadata"),
+  );
+  if (
+    metadata.projectId !== projectId ||
+    metadata.repositoryPath !== repositoryPath ||
+    metadata.planesRoot !== planesRoot
+  ) {
+    throw new Error("General project deletion identity does not match its metadata");
+  }
+  await validateExistingProject(root, metadata, metadata);
+  await assertGeneralProjectHasNoPlaneArtifacts(repositoryPath, planesRoot);
+  for (const pending of [
+    generalCreationJournalPath(root, projectId),
+    generalPolicyUpdateJournalPath(root, projectId),
+  ]) {
+    if (await assertRegularFileIfPresent(pending)) {
+      throw new Error("General project deletion conflicts with pending project work");
+    }
+  }
+  const journal: GeneralProjectDeletionJournal = {
+    schemaVersion: 1,
+    marker: "shepherd-general-project-deletion",
+    projectId,
+  };
+  await writeFile(
+    generalDeletionJournalPath(root, projectId),
+    JSON.stringify(journal, null, 2) + "\n",
+    { encoding: "utf8", mode: 0o600, flag: "wx" },
+  );
+}
+
+/** Completes an already journaled general-project deletion. */
+export async function completeGeneralProjectDeletion(
+  managedRoot: string,
+  projectId: string,
+): Promise<void> {
+  const root = await validateShepherdManagedRoot(managedRoot);
+  const journalPath = generalDeletionJournalPath(root, projectId);
+  const journal = parseGeneralDeletionJournal(
+    await readTrustedRegularFile(journalPath, "General project deletion journal"),
+  );
+  if (journal.projectId !== projectId) {
+    throw new Error("General project deletion journal identity mismatch");
+  }
+  await removeJournaledGeneralProject(root, projectId);
+  await unlink(journalPath);
+}
+
+/** Reconciles a deletion journal against the authoritative durable Project set. */
+export async function reconcileGeneralProjectDeletions(
+  managedRoot: string,
+  durableProjectIds: ReadonlySet<string>,
+): Promise<void> {
+  const resolved = path.resolve(managedRoot);
+  try {
+    await lstat(resolved);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  if (!(await assertRegularFileIfPresent(path.join(resolved, ROOT_SENTINEL)))) return;
+  const root = await validateShepherdManagedRoot(resolved);
+  const projectsDirectory = path.join(root, "projects");
+  let entries: string[];
+  try {
+    entries = await readdir(projectsDirectory);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  for (const name of entries.sort()) {
+    if (!name.startsWith(GENERAL_DELETION_PREFIX) || !name.endsWith(".json")) {
+      continue;
+    }
+    const journalPath = path.join(projectsDirectory, name);
+    const journal = parseGeneralDeletionJournal(
+      await readTrustedRegularFile(journalPath, "General project deletion journal"),
+    );
+    if (journalPath !== generalDeletionJournalPath(root, journal.projectId)) {
+      throw new Error("General project deletion journal filename mismatch");
+    }
+    if (!durableProjectIds.has(journal.projectId)) {
+      await removeJournaledGeneralProject(root, journal.projectId);
     }
     await unlink(journalPath);
   }

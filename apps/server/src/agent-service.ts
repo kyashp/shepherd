@@ -4,6 +4,11 @@ import { isArkConfigured, isShepherdModelReviewConfigured } from "./config.js";
 import { HttpError, RunCancelledError } from "./errors.js";
 import { JsonStore } from "./store.js";
 import { normalizeScopedAuthority } from "./shepherd/authority.js";
+import {
+  beginGeneralProjectDeletion,
+  completeGeneralProjectDeletion,
+  reconcileGeneralProjectDeletions,
+} from "./shepherd/demo-project.js";
 import type {
   Agent,
   AgentRole,
@@ -19,15 +24,62 @@ import { WorkspaceManager } from "./workspace.js";
 
 const now = () => new Date().toISOString();
 
-const agentHasShepherdReferences = (
+interface AgentDeletionAssessment {
+  blockingReference: boolean;
+  clarificationMessageIds: Set<string>;
+  clarificationProjectId: string | null;
+}
+
+const assessAgentDeletion = (
   shepherd: Database["shepherd"],
   agentId: string,
-): boolean =>
-  shepherd.contracts.some((contract) => contract.agentId === agentId) ||
-  shepherd.events.some((event) => event.agentId === agentId) ||
-  shepherd.groupMessages.some(
+): AgentDeletionAssessment => {
+  const clarificationProjectId = `agent-${agentId}`;
+  const referencedMessages = shepherd.groupMessages.filter(
     (message) => message.targetAgentId === agentId || message.senderId === agentId,
   );
+  const clarificationMessages = referencedMessages.filter(
+    (message) =>
+      message.projectId === clarificationProjectId &&
+      message.missionId === null &&
+      message.contractId === null &&
+      message.senderType === "human" &&
+      message.senderId === null &&
+      message.targetAgentId === agentId &&
+      message.contractAssignment?.preset === "general-contract" &&
+      message.contractAssignment.status === "clarification_required",
+  );
+  const clarificationMessageIds = new Set(
+    clarificationMessages.map((message) => message.id),
+  );
+  const project = shepherd.projects.find((item) => item.id === clarificationProjectId);
+  const hasProjectExecutionHistory =
+    shepherd.missions.some((mission) => mission.projectId === clarificationProjectId) ||
+    shepherd.planes.some((plane) => plane.projectId === clarificationProjectId) ||
+    shepherd.groupMessages.some(
+      (message) =>
+        message.projectId === clarificationProjectId &&
+        !clarificationMessageIds.has(message.id),
+    );
+  const hasDirectHistory =
+    shepherd.contracts.some((contract) => contract.agentId === agentId) ||
+    shepherd.events.some((event) => event.agentId === agentId) ||
+    referencedMessages.some((message) => !clarificationMessageIds.has(message.id));
+  const hasClarificationState = clarificationMessageIds.size > 0;
+  const invalidClarificationProject =
+    hasClarificationState &&
+    (!project || project.activeMissionId !== null || hasProjectExecutionHistory);
+  const orphanedAgentProject = !hasClarificationState && project !== undefined;
+  return {
+    blockingReference:
+      hasDirectHistory || invalidClarificationProject || orphanedAgentProject,
+    clarificationMessageIds,
+    clarificationProjectId:
+      hasClarificationState && !invalidClarificationProject
+        ? clarificationProjectId
+        : null,
+  };
+};
 
 export type AgentAuthorityPresetId =
   | "frontend"
@@ -246,31 +298,88 @@ export class AgentService {
 
   async deleteAgent(id: string): Promise<{ deleted: true }> {
     const agent = this.getAgent(id);
-    const shepherd = this.store.snapshot().shepherd;
-    if (agentHasShepherdReferences(shepherd, id)) {
+    const initialAssessment = assessAgentDeletion(this.store.snapshot().shepherd, id);
+    if (initialAssessment.blockingReference) {
       throw new HttpError(
         409,
         "Cannot delete an Agent referenced by durable Shepherd history",
       );
     }
     await this.cancelExecution(id);
-    return await this.store.mutate(async (database) => {
-      const currentAgent = database.agents.find((item) => item.id === id);
-      if (!currentAgent) {
-        throw new HttpError(404, "Agent not found");
+    let journaledProjectId: string | null = null;
+    try {
+      const deletion = await this.store.mutate(async (database) => {
+        const currentAgent = database.agents.find((item) => item.id === id);
+        if (!currentAgent) {
+          throw new HttpError(404, "Agent not found");
+        }
+        const assessment = assessAgentDeletion(database.shepherd, id);
+        if (assessment.blockingReference) {
+          throw new HttpError(
+            409,
+            "Cannot delete an Agent referenced by durable Shepherd history",
+          );
+        }
+        if (assessment.clarificationProjectId) {
+          await beginGeneralProjectDeletion(
+            this.config.shepherdRoot,
+            assessment.clarificationProjectId,
+          );
+          journaledProjectId = assessment.clarificationProjectId;
+        }
+        await this.workspaces.archive(currentAgent);
+        database.agents = database.agents.filter((item) => item.id !== id);
+        database.messages = database.messages.filter((item) => item.agentId !== id);
+        database.runs = database.runs.filter((item) => item.agentId !== id);
+        if (assessment.clarificationProjectId) {
+          database.shepherd.groupMessages = database.shepherd.groupMessages.filter(
+            (message) => !assessment.clarificationMessageIds.has(message.id),
+          );
+          database.shepherd.projects = database.shepherd.projects.filter(
+            (project) => project.id !== assessment.clarificationProjectId,
+          );
+        }
+        return {
+          deleted: true as const,
+          clarificationProjectId: assessment.clarificationProjectId,
+        };
+      });
+      if (deletion.clarificationProjectId) {
+        try {
+          await completeGeneralProjectDeletion(
+            this.config.shepherdRoot,
+            deletion.clarificationProjectId,
+          );
+        } catch {
+          const durableProjectIds = new Set(
+            this.store.snapshot().shepherd.projects.map((project) => project.id),
+          );
+          try {
+            await reconcileGeneralProjectDeletions(
+              this.config.shepherdRoot,
+              durableProjectIds,
+            );
+          } catch {
+            throw new HttpError(
+              500,
+              "Agent was archived; managed clarification cleanup requires restart",
+            );
+          }
+        }
       }
-      if (agentHasShepherdReferences(database.shepherd, id)) {
-        throw new HttpError(
-          409,
-          "Cannot delete an Agent referenced by durable Shepherd history",
+      return { deleted: true };
+    } catch (error) {
+      if (journaledProjectId) {
+        const durableProjectIds = new Set(
+          this.store.snapshot().shepherd.projects.map((project) => project.id),
         );
+        await reconcileGeneralProjectDeletions(
+          this.config.shepherdRoot,
+          durableProjectIds,
+        ).catch(() => undefined);
       }
-      await this.workspaces.archive(currentAgent);
-      database.agents = database.agents.filter((item) => item.id !== id);
-      database.messages = database.messages.filter((item) => item.agentId !== id);
-      database.runs = database.runs.filter((item) => item.agentId !== id);
-      return { deleted: true as const };
-    });
+      throw error;
+    }
   }
 
   async startAgent(id: string): Promise<Agent> {
