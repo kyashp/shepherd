@@ -1,60 +1,83 @@
 # Shepherd Agent Instructions
 
-Start with [`docs/TASKS.md`](docs/TASKS.md), then read the linked PRD sections and
-affected code/tests. The PRD defines required behavior; `TASKS.md` defines current
-status, ownership, evidence, defects, and the hackathon completion cut. Use
-[`docs/LOCAL_POC.md`](docs/LOCAL_POC.md) for the runbook.
+## Entry point and codebase navigation
+
+`docs/HANDOVER.md` was intentionally removed. Do not recreate or reference it.
+
+Read in this order before editing:
+
+1. [`docs/TASKS.md`](docs/TASKS.md) — current hackathon cut, remaining work,
+   dependencies, acceptance gates, and evidence status.
+2. The GitHub issue for the selected TASKS ID — current owner and branch/PR status.
+3. The linked sections of [`docs/PRD.md`](docs/PRD.md) — required behavior.
+4. [`docs/SHEPHERD.md`](docs/SHEPHERD.md) — as-built architecture, trust
+   boundaries, implemented features, limitations, and rubric snapshot.
+5. [`docs/LOCAL_POC.md`](docs/LOCAL_POC.md) — startup and manual demo runbook.
+6. [`docs/TECHJAM.md`](docs/TECHJAM.md) — Track 1 rules and judging rubric.
+7. [`docs/FIXES.md`](docs/FIXES.md) and [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md)
+   when diagnosing a defect or updating verified evidence.
+
+Primary code areas are indexed in `docs/TASKS.md` under **Requirement and code
+navigation**. The PRD defines required behavior; TASKS records the current state.
 
 ## Claim work before editing
 
-1. Fetch and prune remote refs. Check the task's GitHub issue, open PRs, and remote
-   branches; choose different work if it already has an active owner.
-2. Assign the issue and move it to `In Progress` when project access is available.
-3. During the completion campaign, branch from current `origin/mock-main`, or from
-   the documented parent for a true stack. Use
-   `feat/`, `fix/`, `test/`, `audit/`, `refactor/`, or `docs/` plus the issue/task ID.
-4. **Push the new branch to `origin` immediately, before implementation edits.**
-   This is the early ownership signal other agents must check.
-5. Open a linked draft PR as soon as the branch has a comparable commit. State the
-   TASKS ID, PRD references, owned files, parent/base, acceptance criteria, and
-   test plan. Keep the issue and PR current.
+1. Fetch and prune remote refs. Inspect the issue, open PRs, remote branches, and
+   worktrees; choose different work if an active owner already exists.
+2. **Claim the GitHub issue immediately.** Assign it to yourself when permitted and
+   leave a visible ownership comment naming the intended branch and primary files.
+   Do not wait until implementation is complete.
+3. Branch from current `origin/main`, or from the explicitly documented parent for
+   a true dependency stack. Use `feat/`, `fix/`, `test/`, `audit/`, `refactor/`, or
+   `docs/` plus the issue/TASKS ID.
+4. **Push the new branch to `origin` before implementation edits.** This is the
+   second ownership signal other agents must check.
+5. Open a linked draft PR after the first comparable commit. State the issue/TASKS
+   ID, PRD references, owned files, exclusions, base/parent, acceptance criteria,
+   and test plan. Keep the issue and PR current.
 
-Never push directly to `main` or `mock-main`. Keep each branch narrowly scoped, do
-not edit files owned by another active task, and merge stacks bottom-up through
-reviewed PRs into `mock-main`. Only the repository integrator promotes the completed
-campaign from `mock-main` to protected `main`.
+Never push directly to protected `main`. Keep each branch narrow. Agents do not
+merge their own PRs; the integrator reviews overlap, combined gates, stack order,
+and protected-branch integration.
 
-## Concurrent agent isolation
+## Concurrent-agent isolation
 
 - Use one GitHub issue, branch, and isolated Git worktree per implementation owner.
-  An agent must work only from its assigned worktree and must not check out, commit
-  to, rebase, merge, reset, or delete another agent's branch or worktree.
-- Parallel branches target current `mock-main` independently unless a real code
-  dependency is recorded in both issues and PRs. Do not create a stack merely to
-  coordinate agents; the integrator explicitly assigns every stack parent and merge
-  order.
+- Work only in the assigned worktree. Do not check out, commit to, rebase, merge,
+  reset, delete, or force-push another agent's branch or worktree.
+- Parallel branches normally target current `main`. Create a stack only for a real
+  code dependency documented in both issues/PRs with an explicit merge order.
 - Record primary owned files/modules and excluded adjacent work before editing.
-  Shared central modules have one active owner at a time. If an unexpected required
-  edit overlaps another active task, stop and coordinate instead of expanding scope.
-- At the start of every work session, fetch/prune remote metadata and verify the
-  current worktree path, branch, issue assignment, open PRs, and clean status. Push
-  commits only to the branch assigned to that worktree.
-- Agents do not merge their own PRs or integrate sibling branches. The integrator
-  reviews overlap, runs combined gates, controls rebases/retargeting, and merges
-  through the protected workflow.
+  Shared central modules have one active owner at a time. Stop and coordinate if an
+  unexpected required edit overlaps active ownership.
+
+## UI freeze and minimal-change contract
+
+- **The accepted UI design is frozen.** Do not redesign, restyle, re-theme, change
+  layout, or perform visual cleanup. Functionalities, backend features, tests,
+  reviews, evidence, and documentation are the active work.
+- Touch UI code only when indispensable to expose required functional data, restore
+  broken interaction, accessibility, or truthful state. Reuse existing components,
+  spacing, typography, colors, and interaction patterns from `docs/UI.jpeg`.
+- A minimal fix means the smallest coherent change that fully preserves intended
+  behavior. It must not remove, disable, hide, stub, weaken, or narrow existing or
+  required functionality merely to reduce the diff or make tests pass.
+- Any unavoidable material UI correction requires browser verification at
+  `1280x800` and `1440x900`, no document-level X/Y overflow, and read-only UI review.
 
 ## Change and evidence rules
 
-- Make the smallest coherent fix; avoid unrelated refactors, formatting, renames,
-  dependency churn, or weakened assertions.
-- Preserve security boundaries, public contracts, deterministic behavior, and the
-  existing Launchpad UI. UI changes must remain faithful to `docs/UI.jpeg` and be
-  browser-checked at `1280x800` and `1440x900`.
+- Preserve security boundaries, public contracts, deterministic behavior, baseline
+  Agent CRUD/lifecycle/Playground behavior, and existing test assertions.
+- Avoid unrelated refactors, formatting, renames, dependency churn, sleeps, retry
+  inflation, suppression, or weakened assertions.
 - Add causal regression coverage. Run targeted/adjacent checks and `npm run check`;
-  run the task's browser, live, security, or post-merge gates when applicable.
+  run browser, live, security, stability, or post-merge gates when the issue requires
+  them.
 - Report only checks actually observed. Update `docs/BUILD_LOG.md` and the relevant
   `docs/TASKS.md` evidence when behavior or status changes.
-- Never print or commit `.env`, credentials, private paths, raw model prompts, or
-  unbounded logs. Default tests should remain network/model-free.
-- After merge, verify the scoped flow on updated `mock-main`, update the issue/ledger,
-  and delete the merged remote and local branch.
+- Never print or commit `.env`, credentials, private paths, raw model prompts or
+  output, session identifiers, or unbounded logs. Default tests remain network- and
+  model-free.
+- After integration, the integrator verifies the scoped flow on updated `main`,
+  updates the issue/ledger, and deletes only the merged feature branch when safe.

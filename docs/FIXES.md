@@ -1,6 +1,7 @@
 # Shepherd Defect Queue
 
-**Assessed branch/SHA:** `mock-main` / `de3e631361763a91272f044e94bbf7a50f1a7d98`
+**Current integration branch:** protected `main`. Historical entries retain the
+branch/SHA on which their evidence was observed.
 
 **Audited:** 2026-08-29, Asia/Singapore
 
@@ -20,9 +21,11 @@ that limitation is explicit.
    contracts unless the supported root cause requires it.
 3. Add the causal regression, run targeted and adjacent tests, then literal
    `npm run check`. The auditor independently reruns the relevant PRD flow on the
-   integrated `mock-main` SHA.
-4. Preserve the accepted UI exactly as directed in `TASKS.md`. UI changes are only
-   for required clarity/data or causal bugs, at both required viewports.
+   integrated `main` SHA.
+4. Preserve the accepted UI exactly as directed in `TASKS.md`. UI design is frozen;
+   edits are allowed only for indispensable functional clarity/data, causal bugs, or
+   accessibility, at both required viewports. Minimal fixes must not remove or
+   weaken intended functionality.
 5. Update the defect row with before/after evidence, exact tests, confidence, commit,
    and audit status. Anything below scoped 100% remains review-required.
 
@@ -1040,8 +1043,8 @@ operator-cleanup availability residual; cross-process automatic retry is not cla
 
 | ID | Evidence class and current failure contract | Minimal-fix boundary | Owner/status |
 |---|---|---|---|
-| `F-01` | Source-evidenced: Contract timeout may surface as failure code `unknown` instead of `agent_timeout`. | Typed timeout propagated through Contract/Plane/Agent/Mission/event/API/UI; no message-regex classification. | **WORKER VERIFIED** candidate on `work/mock-main`; 95% pending Auditor |
-| `F-02` | Source-evidenced: Contract runtime errors can become generic `unknown`. | Shared typed stage error only; preserve candidate-specific handling. | **WORKER VERIFIED** candidate on `work/mock-main`; 95% pending Auditor |
+| `F-01` | Source-evidenced: Contract timeout may surface as failure code `unknown` instead of `agent_timeout`. | Typed timeout propagated through Contract/Plane/Agent/Mission/event/API/UI; no message-regex classification. | **RESOLVED + AUDITED** at `83cc1d0`; `T,A,C,S,I` 5/5; 100% scoped |
+| `F-02` | Source-evidenced: Contract runtime errors can become generic `unknown`. | Shared typed stage error only; preserve candidate-specific handling. | **RESOLVED + AUDITED** at `83cc1d0`; `T,A,C,S,I` 5/5; 100% scoped |
 | `F-04` | Source-evidenced: initial Plane creation can fail before durable stage evidence; later mapper is too late. | Evidence on owning Contract/Mission without inventing a successful Plane. | **AUDITED** at `2cef988`; TST-17 closed |
 | `F-05` | Preserved RED proved a real textual conflict became `unknown/background_demo`. | Typed bounded Mission/integration Plane/event mapping; retain clean conflict Plane for inspection and remove it on reset. | **AUDITED** at `f8d7f71`; TST-18/19 closed |
 | `F-06` | Preserved RED proved atomic rollback alone cannot leave recovery-visible evidence of the failed transition. | Exact-byte digest + bounded sidecar intent at the representative pre-integration transition; reconcile once without claiming an uncommitted mutation persisted. | **RESOLVED + AUDITED** at `7d51ec6`; TST-21–24 closed |
@@ -1049,7 +1052,7 @@ operator-cleanup availability residual; cross-process automatic retry is not cla
 | `F-08` | Source-evidenced: most non-authority candidate exceptions are retryable; second-failure coverage absent. | Retry only typed transient failures, once, from the immutable base. | Worker / ready |
 | `GC-01` | Earlier reproduction proved buttons inserted bare `@Name With Spaces`, while the parser requires JSON quoting. | Resolved with parser-safe mention formatting, exact Agent-ID fallback, draft-preservation and two-viewport browser coverage; no parser weakening. | **RESOLVED + AUDITED** at `de3e631`; hosted run `33266624301` |
 | `GC-02` | Current service/UI evidence: unmentioned message persists, but no bounded Shepherd action/reply occurs despite UI copy. | Use an existing schema-bounded Shepherd action; no free-form host/model authority. | Worker / ready |
-| `GC-03` | Current service path only links an assignment to an already-created active Contract. | Add schema-validated targeted Contract creation under existing authority. | Worker / blocked by GC-01/02 |
+| `GC-03` | Current service path only links an assignment to an already-created active Contract. | Add schema-validated targeted Contract creation under existing authority. | Worker / blocked by GC-02/05 |
 | `GC-04` | Earlier reproduction: assignment returns conflict after the fast Mission finishes. | Remove the narrow timing dependency while keeping one mutation owner. | Worker / blocked by GC-03 |
 | `GC-05` | Current UI source disables textarea when no project exists; earlier browser observation confirmed it. | Safe read-model initialization or explicit in-panel Mission-start action; preserve composer design. | Worker / ready with GC-02 |
 | `GC-06` | Current lifecycle summaries use Shepherd sender; verified manifest-derived Agent summaries are absent. | Server-authored bounded summary only after verification, attributed to the real Agent ID. | Worker / blocked by targeted lifecycle |
