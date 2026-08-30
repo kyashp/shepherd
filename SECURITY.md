@@ -29,9 +29,13 @@ credentials, personal data, or exploit details in an issue.
 ## Safe use
 
 - Use a dedicated development machine or disposable ECS instance.
-- Use a scoped, revocable Ark key and a unique `APP_AUTH_TOKEN`.
+- Use a scoped, revocable Ark key.
+- `APP_AUTH_TOKEN` is optional and empty by default, so a server started without
+  one serves every API route to anyone who can reach the port. That is acceptable
+  on loopback. Set a unique token before exposing the server beyond the local
+  machine, including any ECS deployment.
 - Keep local use on loopback and restrict ECS Web and SSH CIDRs.
-- Add HTTPS before sending the shared token over an untrusted network.
+- Add HTTPS before sending a shared token over an untrusted network.
 - Never mount production data or provide Volcengine account AK/SK to Agents.
 - Stop the POC, destroy test resources, and revoke keys after the event.
 

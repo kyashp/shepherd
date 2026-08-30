@@ -156,8 +156,11 @@ Required values in `.env`:
 ```dotenv
 ARK_API_KEY=your-ark-api-key
 ARK_MODEL=ep-your-endpoint-id
-APP_AUTH_TOKEN=replace-with-at-least-24-random-characters
 ```
+
+`APP_AUTH_TOKEN` is optional and empty by default, so nothing else is needed to
+start. Set 24+ random URL-safe characters to require a bearer credential on every
+API route; do that for any deployment reachable beyond your own machine.
 
 Start the application:
 
@@ -297,7 +300,7 @@ disk, and Agent workspaces—back up required code and data first.
 | `ARK_API_KEY` | Required | Ark model API key. |
 | `ARK_MODEL` | Required | Responses-capable endpoint or model ID. |
 | `ARK_BASE_URL` | Beijing v3 endpoint | Ark OpenAI-compatible API URL. |
-| `APP_AUTH_TOKEN` | Empty on loopback | Shared demo token; use 24+ random characters remotely. |
+| `APP_AUTH_TOKEN` | Empty | Optional shared demo token. Empty requires no credential; use 24+ random characters remotely. |
 | `RUNTIME_PROVIDER` | `local-process` | `container` for disposable local Runtime containers. |
 | `CODEX_SANDBOX_MODE` | `workspace-write` | Codex inner sandbox mode. |
 | `CODEX_TIMEOUT_MS` | `600000` | Maximum duration of one turn. |

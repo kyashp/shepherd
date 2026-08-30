@@ -486,6 +486,30 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
       canonicalShepherdRoot,
       "the canonical managed Shepherd root",
     );
+    // In state-volume mode the Runtime addresses each source as a subpath of the
+    // volume, derived lexically from the absolute path. That derivation is only
+    // sound while the canonical path agrees with the lexical one, so assert it
+    // here rather than letting a symlink silently mount a different directory.
+    const stateRoot = this.config.containerStateRoot;
+    if (stateRoot) {
+      const canonicalStateRoot = await boundedFilesystemOperation(
+        "private_root_preparation",
+        async () => await realpath(stateRoot),
+      );
+      if (canonicalStateRoot !== stateRoot) {
+        throw new Error("CONTAINER_STATE_ROOT must be a canonical directory");
+      }
+      if (!isStrictChild(stateRoot, canonicalPrivateRoot)) {
+        throw new Error(
+          "Canonical Shepherd private CODEX_HOME root escaped CONTAINER_STATE_ROOT",
+        );
+      }
+      if (!isStrictChild(stateRoot, canonicalShepherdRoot)) {
+        throw new Error(
+          "Canonical managed Shepherd root escaped CONTAINER_STATE_ROOT",
+        );
+      }
+    }
     if (workspacePath) {
       const canonicalWorkspace = await boundedFilesystemOperation(
         "private_root_preparation",
@@ -496,6 +520,11 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
         canonicalWorkspace,
         "the canonical execution workspace",
       );
+      if (stateRoot && canonicalWorkspace !== path.resolve(workspacePath)) {
+        throw new Error(
+          "Execution workspace must be canonical under CONTAINER_STATE_ROOT",
+        );
+      }
     }
     return canonicalPrivateRoot;
   }

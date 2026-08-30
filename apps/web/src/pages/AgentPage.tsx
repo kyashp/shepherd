@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { api } from "../api";
 import { Link, navigate } from "../router";
 import { useShepherdPolling } from "../shepherd-hooks";
@@ -27,33 +27,34 @@ export function AgentPage({
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [shepherdMode, setShepherdMode] = useState(false);
+  const [shepherdMode, setShepherdMode] = useState(true);
   const [shepherdSubmitting, setShepherdSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(true);
   const pollingRuns = useRef(new Set<string>());
   const messageEnd = useRef<HTMLDivElement>(null);
-  const shepherdEligible = agent?.role === "Frontend" || agent?.role === "Backend";
+  const shepherdEligible = Boolean(agent);
   const {
     state: shepherdState,
     refresh: refreshShepherd,
-  } = useShepherdPolling(Boolean(agent && (agent.currentContractId || shepherdEligible)));
+  } = useShepherdPolling(Boolean(agent));
 
-  const privateContractPrompt = useMemo(() => {
-    if (!agent) return null;
-    return [...(shepherdState?.groupMessages ?? [])]
-      .reverse()
-      .find(
-        (message) =>
-          message.targetAgentId === agent.id &&
-          message.contractAssignment?.preset === "auth-demo-contract",
-      ) ?? null;
+  const privateContractMessages = useMemo(() => {
+    if (!agent) return [];
+    return (shepherdState?.groupMessages ?? []).filter(
+      (message) =>
+        message.targetAgentId === agent.id && Boolean(message.contractAssignment),
+    );
   }, [agent, shepherdState?.groupMessages]);
+  const privateContractPrompt = privateContractMessages.at(-1) ?? null;
 
   const visibleContractId = agent?.currentContractId ?? privateContractPrompt?.contractId ?? null;
   const contract = useMemo(() => visibleContractId
     ? shepherdState?.contracts.find((item) => item.id === visibleContractId) ?? null
     : null, [visibleContractId, shepherdState?.contracts]);
+  const visibleMission = privateContractPrompt?.missionId
+    ? shepherdState?.missions.find((item) => item.id === privateContractPrompt.missionId) ?? null
+    : null;
   const plane = contract?.planeId
     ? shepherdState?.planes.find((item) => item.id === contract.planeId) ?? null
     : null;
@@ -84,7 +85,7 @@ export function AgentPage({
 
   useEffect(() => {
     mounted.current = true;
-    setShepherdMode(false);
+    setShepherdMode(true);
     if (!agent) {
       setLoading(false);
       return;
@@ -108,6 +109,18 @@ export function AgentPage({
   useEffect(() => {
     messageEnd.current?.scrollIntoView({ block: "nearest" });
   }, [messages, activeRun, privateContractPrompt, contract?.state]);
+
+  useEffect(() => {
+    if (
+      agent?.status === "busy" &&
+      visibleMission &&
+      ["completed", "failed", "cancelled", "attention_required"].includes(
+        visibleMission.state,
+      )
+    ) {
+      void onAgentsChanged();
+    }
+  }, [agent?.status, onAgentsChanged, visibleMission?.state]);
 
   const toggle = async () => {
     if (!agent) return;
@@ -178,11 +191,20 @@ export function AgentPage({
 
   const runActive = Boolean(activeRun && activeStatuses.has(activeRun.status));
   const legacyComposerDisabled = agent.status === "stopped" || agent.status === "busy" || runActive;
+  const awaitingAuthPeer =
+    privateContractPrompt?.contractAssignment?.preset === "auth-demo-contract" &&
+    privateContractPrompt.missionId === null;
+  const generalContractActive =
+    privateContractPrompt?.contractAssignment?.preset === "general-contract" &&
+    privateContractPrompt.contractAssignment.status === "accepted" &&
+    visibleMission !== null &&
+    !["completed", "failed", "cancelled", "attention_required"].includes(visibleMission.state);
   const shepherdComposerDisabled =
     !shepherdEligible ||
     agent.status === "stopped" ||
     agent.status === "busy" ||
-    Boolean(privateContractPrompt) ||
+    awaitingAuthPeer ||
+    generalContractActive ||
     shepherdSubmitting;
   const composerDisabled = shepherdMode
     ? shepherdComposerDisabled
@@ -220,7 +242,7 @@ export function AgentPage({
 
       <section className="playground" aria-label={`${agent.name} Playground`}>
         <div className="playground-topbar">
-          <div><span className="eyebrow">Legacy Playground</span><h2>Build something with your Agent</h2></div>
+          <div><span className="eyebrow">{shepherdMode ? "Shepherd managed" : "Direct Playground"}</span><h2>Build something with your Agent</h2></div>
           <span className="connection-status connected"><span />{agent.status === "stopped" ? "Agent stopped" : shepherdMode ? "Shepherd route ready" : "Playground ready"}</span>
         </div>
         <div className="messages" aria-live="polite">
@@ -243,22 +265,36 @@ export function AgentPage({
               <div>{message.content}</div>
             </article>
           ))}
-          {privateContractPrompt ? (
-            <>
-              <article className="message message-user" key={privateContractPrompt.id}>
-                <header><strong>You · Shepherd Contract</strong><time dateTime={privateContractPrompt.createdAt}>{formatTime(privateContractPrompt.createdAt)}</time></header>
-                <div>{privateContractPrompt.content}</div>
-              </article>
-              <article className="message message-assistant shepherd-contract-status">
-                <header><strong>Shepherd</strong><span>{contract?.state ?? "collecting"}</span></header>
-                <div>
-                  {contract
-                    ? <>Contract <Link href="/shepherd">{shortId(contract.id, 16)}</Link> is {contract.state.replaceAll("_", " ")}. Open Shepherd for its Plane, independent evidence, collision, and resolution.</>
-                    : <>Prompt captured and validated as <strong>{privateContractPrompt.contractAssignment?.transport}</strong>. Prompt the {agent.role === "Frontend" ? "Backend" : "Frontend"} Agent in its private chat to start the Mission.</>}
-                </div>
-              </article>
-            </>
-          ) : null}
+          {privateContractMessages.map((message) => {
+            const assignment = message.contractAssignment;
+            if (!assignment) return null;
+            const isLatest = message.id === privateContractPrompt?.id;
+            const showsClarification =
+              assignment.preset === "general-contract" &&
+              assignment.status === "clarification_required";
+            return (
+              <Fragment key={message.id}>
+                <article className="message message-user">
+                  <header><strong>You · Shepherd Contract</strong><time dateTime={message.createdAt}>{formatTime(message.createdAt)}</time></header>
+                  <div>{message.content}</div>
+                </article>
+                {isLatest || showsClarification ? (
+                  <article className="message message-assistant shepherd-contract-status">
+                    <header><strong>Shepherd</strong><span>{(showsClarification ? assignment.status : contract?.state ?? (assignment.preset === "general-contract" ? assignment.status : "collecting")).replaceAll("_", " ")}</span></header>
+                    <div>
+                      {showsClarification
+                        ? <>Before I create the Execution Contract, please provide {assignment.missingFields.map((field) => field.replaceAll("_", " ")).join(", ")}. Include at least one writable project-relative file and an explicit <strong>Acceptance:</strong> statement.</>
+                        : contract
+                        ? <>Contract <Link href="/shepherd">{shortId(contract.id, 16)}</Link> is {contract.state.replaceAll("_", " ")}. Open Shepherd for its Plane, independent evidence, and protected promotion.</>
+                        : assignment.preset === "auth-demo-contract"
+                          ? <>Prompt captured and validated as <strong>{assignment.transport}</strong>. Prompt the {agent.role === "Frontend" ? "Backend" : "Frontend"} Agent in its private chat to start the Mission.</>
+                          : <>The Contract draft is confirmed and queued for isolated execution.</>}
+                    </div>
+                  </article>
+                ) : null}
+              </Fragment>
+            );
+          })}
           {runActive ? (
             <article className="message message-assistant thinking">
               <header><strong>{agent.name}</strong><span>working</span></header>
@@ -283,7 +319,7 @@ export function AgentPage({
             placeholder={agent.status === "stopped"
               ? "Start this Agent to continue…"
               : shepherdMode
-                ? "Describe this authentication Contract and name HttpOnly cookie or bearer JWT…"
+                ? "Describe the change, project-relative files, and Acceptance: evidence…"
                 : "Describe what you want the Agent to do…"}
             disabled={composerDisabled}
             rows={2}
@@ -296,7 +332,7 @@ export function AgentPage({
                   type="checkbox"
                   checked={shepherdMode}
                   onChange={(event) => setShepherdMode(event.target.checked)}
-                  disabled={Boolean(privateContractPrompt) || agent.status === "busy"}
+                  disabled={agent.status === "busy" || shepherdSubmitting}
                 />
                 <span>Route through Shepherd</span>
               </label>

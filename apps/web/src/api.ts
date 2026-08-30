@@ -136,9 +136,10 @@ export const api = {
     }),
   submitPrivateContractPrompt: (id: string, content: string) =>
     request<{
-      status: "awaiting_peer" | "accepted";
+      status: "clarification_required" | "awaiting_peer" | "accepted";
       missionId: string | null;
       contractId: string | null;
+      clarification: string | null;
       message: ProjectGroupMessage;
       executionMode: "live" | "deterministic";
     }>(`/api/shepherd/agents/${idPath(id)}/contracts`, {
@@ -146,7 +147,7 @@ export const api = {
       body: JSON.stringify({
         clientMessageId: crypto.randomUUID(),
         content,
-        preset: "auth-demo-contract",
+        preset: "managed-contract",
       }),
     }),
   run: (id: string) => request<{ run: AgentRun }>(`/api/runs/${idPath(id)}`),

@@ -144,6 +144,7 @@ async function removeManagedRunRoot(harnessRoot, runRoot) {
 }
 
 export async function startTestApp({
+  agentRuntimeConfigured = false,
   legacyRuntime = false,
   liveLegacyConfig,
   modelReviewConfigured = false,
@@ -208,10 +209,10 @@ export async function startTestApp({
     CONTAINER_RUNTIME_IMAGE: "fixture.invalid/shepherd:deterministic",
     RUNTIME_INSTANCE_ID: "playwright-harness",
     APP_AUTH_TOKEN: AUTH_TOKEN,
-    ARK_API_KEY: liveLegacyConfig?.arkApiKey ?? (legacyRuntime
+    ARK_API_KEY: liveLegacyConfig?.arkApiKey ?? (legacyRuntime || agentRuntimeConfigured
       ? LEGACY_ARK_KEY
       : modelReviewConfigured ? "fixture-review-key-never-send" : ""),
-    ARK_MODEL: liveLegacyConfig?.arkModel ?? (legacyRuntime
+    ARK_MODEL: liveLegacyConfig?.arkModel ?? (legacyRuntime || agentRuntimeConfigured
       ? "fixture-legacy-model"
       : modelReviewConfigured ? "fixture-agent-model" : ""),
     SHEPHERD_MODEL: legacyRuntime && !liveLegacyConfig

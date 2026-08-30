@@ -19,6 +19,7 @@ export const VERIFIER_INSTALLATION_MARKER_FILE =
 
 const verifierInstallationNoncePattern = /^[a-f0-9]{32}$/u;
 const runtimeInstanceIdPattern = /^[a-zA-Z0-9_.-]{1,48}$/u;
+const containerVolumeNamePattern = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$/u;
 
 const booleanEnvironmentValue = z
   .enum(["true", "false"])
@@ -47,6 +48,8 @@ const envSchema = z.object({
     .default("2g"),
   CONTAINER_PIDS_LIMIT: z.coerce.number().int().positive().default(256),
   CONTAINER_USER: z.string().optional(),
+  CONTAINER_STATE_ROOT: z.string().optional(),
+  CONTAINER_STATE_VOLUME: z.string().optional(),
   RUNTIME_INSTANCE_ID: z
     .string()
     .trim()
@@ -196,45 +199,117 @@ export function resolveShepherdExecutionMode(input: {
   return input.requested;
 }
 
-function isLoopbackHost(host: string): boolean {
-  const normalized = host.toLowerCase().replace(/^\[|\]$/gu, "");
-  if (normalized === "localhost" || normalized === "::1") return true;
-  const octets = normalized.split(".");
-  return (
-    octets.length === 4 &&
-    octets[0] === "127" &&
-    octets.every((octet) => /^\d{1,3}$/u.test(octet) && Number(octet) <= 255)
-  );
+/**
+ * Returns the state-volume-relative subpath for a mount source, or `null` when the
+ * source is not strictly inside `root`. Boundary aware on purpose: a sibling such as
+ * `/app/state-evil` is not inside `/app/state`, and the root itself has no subpath
+ * because an empty `volume-subpath` is not a valid mount. A comma would inject
+ * further mount options into the engine's comma-separated mount specification.
+ */
+export function containerStateSubpath(
+  root: string,
+  source: string,
+): string | null {
+  const relative = path.relative(root, source);
+  if (
+    relative.length === 0 ||
+    relative === ".." ||
+    relative.startsWith(".." + path.sep) ||
+    path.isAbsolute(relative) ||
+    /[,\r\n\u0000]/u.test(relative)
+  ) {
+    return null;
+  }
+  return relative;
 }
 
-function isStrongNonPlaceholderToken(token: string): boolean {
-  if (token.length < 24) return false;
-  return !/^(?:replace|change[-_.]?me|placeholder|your[-_.]|example[-_.])/iu.test(
-    token,
-  );
+/**
+ * Resolves the optional container state volume. Host bind mounts remain the
+ * default. Both settings are required together: a half-configured deployment must
+ * fail at startup rather than degrade silently back to the bind path, because on
+ * some hosts that path cannot carry the Agent sandbox's per-file access rights.
+ */
+export function resolveContainerStateMount(input: {
+  root: string | undefined;
+  volume: string | undefined;
+  mountRoots: readonly { label: string; path: string }[];
+}): { root: string; volume: string } | null {
+  const root = input.root?.trim() ?? "";
+  const volume = input.volume?.trim() ?? "";
+  if (!root && !volume) return null;
+  if (!root || !volume) {
+    throw new Error(
+      "CONTAINER_STATE_ROOT and CONTAINER_STATE_VOLUME must be set together",
+    );
+  }
+  if (
+    !path.isAbsolute(root) ||
+    path.resolve(root) !== root ||
+    root === path.parse(root).root ||
+    /[,\r\n\u0000]/u.test(root)
+  ) {
+    throw new Error(
+      "CONTAINER_STATE_ROOT must be an absolute canonical path below the filesystem root",
+    );
+  }
+  if (!containerVolumeNamePattern.test(volume)) {
+    throw new Error(
+      "CONTAINER_STATE_VOLUME must be a valid container volume name",
+    );
+  }
+  for (const entry of input.mountRoots) {
+    if (containerStateSubpath(root, entry.path) === null) {
+      throw new Error(entry.label + " must be inside CONTAINER_STATE_ROOT");
+    }
+  }
+  return { root, volume };
 }
 
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
   const env = envSchema.parse(environment);
+  // `APP_AUTH_TOKEN` is optional everywhere. An empty token disables the bearer
+  // check outright, so the server starts with no configuration on any bind. Set a
+  // token to require one; the request hook then enforces it on every `/api/`
+  // route. Setting one is still strongly advised for any non-loopback deployment.
   const authToken = env.APP_AUTH_TOKEN?.trim() ?? "";
   const arkApiKey = env.ARK_API_KEY?.trim() ?? "";
   const arkModel = env.ARK_MODEL?.trim() ?? "";
-  if (!isLoopbackHost(env.HOST) && !isStrongNonPlaceholderToken(authToken)) {
-    throw new Error(
-      "APP_AUTH_TOKEN must be a non-placeholder token of at least 24 characters for a non-loopback server",
-    );
-  }
   const defaultContainerUser =
     typeof process.getuid === "function" && typeof process.getgid === "function"
       ? process.getuid() + ":" + process.getgid()
       : "1000:1000";
+  const dataDirectory = path.resolve(env.APP_DATA_DIR);
+  const workspaceRoot = path.resolve(env.AGENT_WORKSPACE_ROOT);
+  const codexHome = path.resolve(env.CODEX_HOME);
+  const shepherdRoot = path.resolve(
+    env.SHEPHERD_ROOT ?? path.join(env.APP_DATA_DIR, "shepherd"),
+  );
+  const shepherdCodexHomeRoot = path.resolve(
+    env.SHEPHERD_CODEX_HOME_ROOT ??
+      path.join(env.APP_DATA_DIR, "shepherd-codex-homes"),
+  );
+  // Every root the Runtime mounts must sit on the state volume, or the container
+  // engine cannot resolve it. `dataDirectory` is included because the installation
+  // nonce behind the owner label lives there: off the volume, each restart mints a
+  // new owner and the owner-scoped container reconciliation stops matching.
+  const containerState = resolveContainerStateMount({
+    root: env.CONTAINER_STATE_ROOT,
+    volume: env.CONTAINER_STATE_VOLUME,
+    mountRoots: [
+      { label: "APP_DATA_DIR", path: dataDirectory },
+      { label: "AGENT_WORKSPACE_ROOT", path: workspaceRoot },
+      { label: "CODEX_HOME", path: codexHome },
+      { label: "SHEPHERD_ROOT", path: shepherdRoot },
+      { label: "SHEPHERD_CODEX_HOME_ROOT", path: shepherdCodexHomeRoot },
+    ],
+  });
   return {
     host: env.HOST,
     port: env.PORT,
     logLevel: env.LOG_LEVEL,
-    dataDirectory: path.resolve(env.APP_DATA_DIR),
-    workspaceRoot: path.resolve(env.AGENT_WORKSPACE_ROOT),
-    codexHome: path.resolve(env.CODEX_HOME),
+    dataDirectory,
+    workspaceRoot,
+    codexHome,
     codexBin: env.CODEX_BIN,
     codexSandboxMode: env.CODEX_SANDBOX_MODE,
     codexTimeoutMs: env.CODEX_TIMEOUT_MS,
@@ -246,19 +321,16 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
     containerMemoryLimit: env.CONTAINER_MEMORY_LIMIT,
     containerPidsLimit: env.CONTAINER_PIDS_LIMIT,
     containerUser: env.CONTAINER_USER?.trim() || defaultContainerUser,
+    containerStateRoot: containerState?.root ?? null,
+    containerStateVolume: containerState?.volume ?? null,
     runtimeInstanceId: env.RUNTIME_INSTANCE_ID,
     authToken,
     arkApiKey,
     arkModel,
     shepherdModel: env.SHEPHERD_MODEL?.trim() || arkModel,
     arkBaseUrl: env.ARK_BASE_URL.replace(/\/+$/, ""),
-    shepherdRoot: path.resolve(
-      env.SHEPHERD_ROOT ?? path.join(env.APP_DATA_DIR, "shepherd"),
-    ),
-    shepherdCodexHomeRoot: path.resolve(
-      env.SHEPHERD_CODEX_HOME_ROOT ??
-        path.join(env.APP_DATA_DIR, "shepherd-codex-homes"),
-    ),
+    shepherdRoot,
+    shepherdCodexHomeRoot,
     shepherdExecutionModeSetting: env.SHEPHERD_EXECUTION_MODE,
     shepherdExecutionMode: resolveShepherdExecutionMode({
       requested: env.SHEPHERD_EXECUTION_MODE,

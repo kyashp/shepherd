@@ -39,33 +39,103 @@ afterEach(async () => {
   );
 });
 
+/** A coherent state-volume layout: every mounted root under one state root. */
+const stateLayout = {
+  CONTAINER_STATE_ROOT: "/app/state",
+  CONTAINER_STATE_VOLUME: "launchpad-state",
+  APP_DATA_DIR: "/app/state/data",
+  AGENT_WORKSPACE_ROOT: "/app/state/workspaces",
+  CODEX_HOME: "/app/state/codex-home",
+  SHEPHERD_ROOT: "/app/state/data/shepherd",
+  SHEPHERD_CODEX_HOME_ROOT: "/app/state/data/shepherd-codex-homes",
+} as const;
+
 describe("Shepherd configuration", () => {
   it("binds to loopback by default", () => {
     expect(loadConfig({}).host).toBe("127.0.0.1");
   });
 
-  it("requires a strong non-placeholder token for every non-loopback bind", () => {
-    for (const environment of ["development", "test", "production"] as const) {
-      expect(() =>
-        loadConfig({ HOST: "0.0.0.0", NODE_ENV: environment }),
-      ).toThrow(/APP_AUTH_TOKEN/);
-    }
+  it("keeps host bind mounts when the state volume is unconfigured", () => {
+    const config = loadConfig({});
+    expect(config.containerStateRoot).toBeNull();
+    expect(config.containerStateVolume).toBeNull();
+  });
 
+  it("requires the state root and volume together", () => {
+    expect(() => loadConfig({ CONTAINER_STATE_ROOT: "/app/state" })).toThrow(
+      /CONTAINER_STATE_ROOT and CONTAINER_STATE_VOLUME/u,
+    );
+    expect(() => loadConfig({ CONTAINER_STATE_VOLUME: "launchpad-state" })).toThrow(
+      /CONTAINER_STATE_ROOT and CONTAINER_STATE_VOLUME/u,
+    );
+  });
+
+  it("rejects unsafe state roots and volume names", () => {
+    for (const root of ["state", "/", "/app/state,evil", "/app/state/../state"]) {
+      expect(() =>
+        loadConfig({ ...stateLayout, CONTAINER_STATE_ROOT: root }),
+      ).toThrow(/CONTAINER_STATE_ROOT must be an absolute canonical path/u);
+    }
+    for (const volume of ["bad,name", "-leading", "a".repeat(65), "has space"]) {
+      expect(() =>
+        loadConfig({ ...stateLayout, CONTAINER_STATE_VOLUME: volume }),
+      ).toThrow(/CONTAINER_STATE_VOLUME must be a valid container volume name/u);
+    }
+  });
+
+  it("requires every mounted root inside the state root", () => {
     expect(() =>
       loadConfig({
-        HOST: "192.0.2.10",
-        NODE_ENV: "development",
-        APP_AUTH_TOKEN: "replace-with-a-long-token-value",
+        CONTAINER_STATE_ROOT: "/app/state",
+        CONTAINER_STATE_VOLUME: "launchpad-state",
       }),
-    ).toThrow(/APP_AUTH_TOKEN/);
+    ).toThrow(/must be inside CONTAINER_STATE_ROOT/u);
+    // A sibling that merely shares a prefix is not inside the root.
+    expect(() =>
+      loadConfig({ ...stateLayout, CONTAINER_STATE_ROOT: "/app/state-evil" }),
+    ).toThrow(/must be inside CONTAINER_STATE_ROOT/u);
+    expect(() =>
+      loadConfig({ ...stateLayout, AGENT_WORKSPACE_ROOT: "/elsewhere/workspaces" }),
+    ).toThrow(/AGENT_WORKSPACE_ROOT must be inside CONTAINER_STATE_ROOT/u);
+  });
 
+  it("resolves a coherent state layout", () => {
+    const config = loadConfig({ ...stateLayout });
+    expect(config.containerStateRoot).toBe("/app/state");
+    expect(config.containerStateVolume).toBe("launchpad-state");
+    expect(config.shepherdRoot).toBe("/app/state/data/shepherd");
+  });
+
+  it("starts on any bind without a token and still carries one when configured", () => {
+    // The token is optional everywhere: an empty token disables the bearer check,
+    // so no bind requires configuration before the server will start.
+    for (const environment of ["development", "test", "production"] as const) {
+      for (const host of ["0.0.0.0", "192.0.2.10", "127.0.0.1", "::"]) {
+        const config = loadConfig({ HOST: host, NODE_ENV: environment });
+        expect(config.host).toBe(host);
+        expect(config.authToken).toBe("");
+      }
+    }
+
+    // A short or previously rejected placeholder value is now carried verbatim
+    // rather than refused, and any configured token is still enforced downstream.
     expect(
       loadConfig({
         HOST: "0.0.0.0",
-        NODE_ENV: "development",
-        APP_AUTH_TOKEN: "test-token-0123456789-strong",
-      }).host,
-    ).toBe("0.0.0.0");
+        NODE_ENV: "production",
+        APP_AUTH_TOKEN: "replace-with-a-long-token-value",
+      }).authToken,
+    ).toBe("replace-with-a-long-token-value");
+    expect(
+      loadConfig({ HOST: "0.0.0.0", APP_AUTH_TOKEN: "short" }).authToken,
+    ).toBe("short");
+  });
+
+  it("still rejects a token that cannot be sent as a bearer credential", () => {
+    expect(() => loadConfig({ APP_AUTH_TOKEN: "has spaces and/slashes" })).toThrow(
+      /URL-safe/u,
+    );
+    expect(() => loadConfig({ APP_AUTH_TOKEN: "a".repeat(129) })).toThrow();
   });
 
   it("uses the Agent model for Shepherd when no override is configured", () => {
@@ -339,7 +409,6 @@ describe("Shepherd advisory model review configuration", () => {
       ARK_BASE_URL: "https://ark.example.test/api/v3",
     };
 
-    expect(() => loadConfig(sourceEnvironment)).toThrow(/APP_AUTH_TOKEN/u);
     const reviewerEnvironment = {
       ...sourceEnvironment,
       HOST: "127.0.0.1",

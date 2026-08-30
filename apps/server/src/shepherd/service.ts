@@ -9,6 +9,7 @@ import { RuntimeExecutionError } from "../errors.js";
 import { JsonStore } from "../store.js";
 import type { Agent, Database } from "../types.js";
 import { WorkspaceManager } from "../workspace.js";
+import { agentAuthorityPreset } from "../agent-service.js";
 import {
   AUTH_CLAIM_KEY,
   AUTH_FRONTEND_CHECK_ID,
@@ -30,13 +31,22 @@ import {
 import { detectDeterministicCollisions } from "./collision.js";
 import {
   assertNoManagedProjectState,
+  beginGeneralProjectCreation,
+  beginGeneralProjectPolicyUpdate,
+  completeGeneralProjectCreation,
+  completeGeneralProjectPolicyUpdate,
   initializeAuthDemoProject,
+  initializeGeneralAgentProject,
   initializeShepherdManagedRoot,
   openAuthDemoProject,
+  reconcileGeneralProjectCreations,
+  reconcileGeneralProjectPolicyUpdates,
+  recordGeneralProjectPolicyUpdate,
   resetAuthDemoProject,
   resolveManagedProjectIdentity,
   validateShepherdManagedRoot,
   type ManagedAuthDemoProject,
+  type ManagedGeneralAgentProject,
 } from "./demo-project.js";
 import type {
   AcceptanceCheck,
@@ -71,6 +81,11 @@ import {
   type ModelReviewer,
 } from "./model-reviewer.js";
 import { parseProjectGroupMessage } from "./group-routing.js";
+import {
+  GeneralContractPlanError,
+  planGeneralContract,
+  type GeneralContractPlan,
+} from "./general-contract.js";
 import { GitClient, type GitClientOptions } from "./git-client.js";
 import {
   GitConflictCleanupError,
@@ -78,6 +93,7 @@ import {
   PlaneAuthorityViolationError,
   PlaneCreationError,
   PlaneManager,
+  synchronizeVerifiedArtifacts,
   type ExecutionWorkspace,
 } from "./plane-manager.js";
 import {
@@ -125,6 +141,8 @@ const MODEL_REVIEW_CANCELLATION_POLL_MS = 250;
  * but the service must stay bounded even when a caller injects one that does not.
  */
 const MODEL_REVIEW_SERVICE_DEADLINE_MS = 45_000;
+export const GENERAL_CONTRACT_PROFILE_ID = "general-contract";
+const GENERAL_CONTRACT_CHECK_ID = "general-contract-output";
 
 const MODEL_REVIEW_DEGRADED_REASONS: ReadonlySet<string> = new Set([
   "invalid_input",
@@ -215,6 +233,17 @@ function transportFromPrivatePrompt(content: string): AuthTransport {
     );
   }
   return requestsCookie ? COOKIE_TRANSPORT : BEARER_TRANSPORT;
+}
+
+function authTransportFromPrivatePrompt(content: string): AuthTransport | null {
+  try {
+    return transportFromPrivatePrompt(content);
+  } catch (error) {
+    if (error instanceof ShepherdControlError && error.code === "invalid_input") {
+      return null;
+    }
+    throw error;
+  }
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -378,6 +407,14 @@ const projectCheck = (): AcceptanceCheck => ({
   timeoutMs: 30_000,
 });
 
+const generalContractCheck = (): AcceptanceCheck => ({
+  id: GENERAL_CONTRACT_CHECK_ID,
+  name: "Confirmed general Contract artifacts",
+  profileId: GENERAL_CONTRACT_PROFILE_ID,
+  mandatory: true,
+  timeoutMs: 30_000,
+});
+
 const protectedPatterns = [
   ".git/**",
   ".shepherd/**",
@@ -428,7 +465,8 @@ export type ShepherdFaultCheckpoint =
   | "contract_verification_snapshot_ready"
   | "integration_merge_start"
   | "promotion_ready_for_cas"
-  | "promotion_cas_completed";
+  | "promotion_cas_completed"
+  | "general_completion_persistence";
 
 export interface ShepherdFaultCheckpointContext {
   missionId?: string;
@@ -575,9 +613,10 @@ export interface SubmitPrivateContractPromptInput {
 }
 
 export interface PrivateContractPromptResult {
-  status: "awaiting_peer" | "accepted";
+  status: "clarification_required" | "awaiting_peer" | "accepted";
   missionId: string | null;
   contractId: string | null;
+  clarification: string | null;
   message: ProjectGroupMessage;
 }
 
@@ -633,14 +672,26 @@ export interface DeterministicDemoResult {
   promotedHead: string;
 }
 
-interface PreparedMission {
-  project: ManagedAuthDemoProject;
+interface PreparedProjectMission {
+  project: ManagedAuthDemoProject | ManagedGeneralAgentProject;
   planeManager: PlaneManager;
   missionId: string;
+}
+
+interface PreparedMission extends PreparedProjectMission {
+  project: ManagedAuthDemoProject;
   frontendContractId: string;
   backendContractId: string;
   frontendTransport: AuthTransport;
   backendTransport: AuthTransport;
+}
+
+interface PreparedGeneralMission extends PreparedProjectMission {
+  project: ManagedGeneralAgentProject;
+  contractId: string;
+  agentId: string;
+  artifactPaths: string[];
+  requiredContent: string | null;
 }
 
 interface ContractPlaneInput {
@@ -843,7 +894,7 @@ export class ShepherdService {
   private readonly activeProjects = new Set<string>();
   private readonly backgroundRuns = new Map<
     string,
-    Promise<DeterministicDemoResult | null>
+    Promise<unknown | null>
   >();
   private readonly pendingMissionStarts = new Map<
     string,
@@ -916,7 +967,16 @@ export class ShepherdService {
 
   private async initializeOnce(): Promise<void> {
     await reconcilePersistenceRecoveryIntent({ store: this.store, now: this.now });
-    if (this.store.snapshot().shepherd.projects.length > 0) {
+    const durableProjectHeads = new Map(
+      this.store.snapshot().shepherd.projects.map((project) => [
+        project.id,
+        project.protectedHeadCommit,
+      ]),
+    );
+    const durableProjectIds = new Set(durableProjectHeads.keys());
+    await reconcileGeneralProjectCreations(this.managedRoot, durableProjectIds);
+    await reconcileGeneralProjectPolicyUpdates(this.managedRoot, durableProjectHeads);
+    if (durableProjectIds.size > 0) {
       await validateShepherdManagedRoot(this.managedRoot);
     } else {
       await assertNoManagedProjectState(this.managedRoot);
@@ -1056,6 +1116,7 @@ export class ShepherdService {
       ),
       ...(candidate?.verificationEvidence ? [candidate.verificationEvidence] : []),
       ...(candidate?.promotionEvidence ? [candidate.promotionEvidence] : []),
+      ...(plane.generalPromotionEvidence ? [plane.generalPromotionEvidence] : []),
     ];
     const evidenceById = new Map(evidence.map((item) => [item.id, item]));
     return {
@@ -1782,6 +1843,28 @@ export class ShepherdService {
   async submitPrivateContractPrompt(
     input: SubmitPrivateContractPromptInput,
   ): Promise<PrivateContractPromptResult> {
+    await this.initialize();
+    const content = normalizedPrivatePrompt(input.content);
+    const snapshot = this.store.snapshot();
+    const agent = snapshot.agents.find((item) => item.id === input.agentId);
+    if (!agent) throw new ShepherdControlError("not_found", "Agent was not found");
+    const authTransport = authTransportFromPrivatePrompt(content);
+    const mentionsAuthDemoTransport =
+      /\b(?:http[\s-]*only|cookie|bearer|jwt)\b/iu.test(content);
+    const isConciseAuthDemoPrompt =
+      (agent.role === "Frontend" || agent.role === "Backend") &&
+      (authTransport !== null || mentionsAuthDemoTransport) &&
+      !/\bacceptance\s*:/iu.test(content) &&
+      !content.includes("`");
+    if (isConciseAuthDemoPrompt) {
+      return await this.submitAuthPrivateContractPrompt(input);
+    }
+    return await this.submitGeneralPrivateContractPrompt({ ...input, content });
+  }
+
+  private async submitAuthPrivateContractPrompt(
+    input: SubmitPrivateContractPromptInput,
+  ): Promise<PrivateContractPromptResult> {
     return await this.serializePrivatePrompt(async () => {
       await this.initialize();
       if (!SAFE_ID.test(input.agentId) || !SAFE_ID.test(input.clientMessageId)) {
@@ -1838,6 +1921,7 @@ export class ShepherdService {
             status: "accepted",
             missionId: existing.missionId,
             contractId: existing.contractId,
+            clarification: null,
             message: structuredClone(existing),
           };
         }
@@ -1886,6 +1970,7 @@ export class ShepherdService {
             status: "awaiting_peer",
             missionId: null,
             contractId: null,
+            clarification: null,
             message: structuredClone(existing),
           };
         }
@@ -1938,10 +2023,15 @@ export class ShepherdService {
           status: "awaiting_peer",
           missionId: null,
           contractId: null,
+          clarification: null,
           message,
         };
       }
-      if (!peer.contractAssignment || !peer.targetAgentId || !peer.requestFingerprint) {
+      if (
+        peer.contractAssignment?.preset !== "auth-demo-contract" ||
+        !peer.targetAgentId ||
+        !peer.requestFingerprint
+      ) {
         throw new Error("Pending private Contract prompt is missing trusted metadata");
       }
       if (peer.contractAssignment.transport === transport) {
@@ -2059,6 +2149,293 @@ export class ShepherdService {
         status: "accepted",
         missionId: started.missionId,
         contractId: accepted.contractId,
+        clarification: null,
+        message: structuredClone(accepted),
+      };
+    });
+  }
+
+  private async submitGeneralPrivateContractPrompt(
+    input: SubmitPrivateContractPromptInput,
+  ): Promise<PrivateContractPromptResult> {
+    return await this.serializePrivatePrompt(async () => {
+      if (!SAFE_ID.test(input.agentId) || !SAFE_ID.test(input.clientMessageId)) {
+        throw new ShepherdControlError("invalid_input", "Contract prompt identity is invalid");
+      }
+      const content = normalizedPrivatePrompt(input.content);
+      const initial = this.store.snapshot();
+      const agent = initial.agents.find((item) => item.id === input.agentId);
+      if (!agent) throw new ShepherdControlError("not_found", "Agent was not found");
+      const role = agent.role ?? "Generalist";
+      const authority = agent.authority ?? agentAuthorityPreset("generalist").authority;
+      const projectId = `agent-${agent.id}`;
+      const messageId =
+        "group-private-" +
+        createHash("sha256")
+          .update(`general-contract\0${input.agentId}\0${input.clientMessageId}`, "utf8")
+          .digest("hex")
+          .slice(0, 40);
+      const fingerprint = createHash("sha256")
+        .update(JSON.stringify({ preset: "general-contract", agentId: agent.id, content }), "utf8")
+        .digest("hex");
+      const existing = initial.shepherd.groupMessages.find((item) => item.id === messageId);
+      if (existing) {
+        if (
+          existing.requestFingerprint !== fingerprint ||
+          existing.content !== content ||
+          existing.targetAgentId !== agent.id ||
+          existing.contractAssignment?.preset !== "general-contract"
+        ) {
+          throw new ShepherdControlError(
+            "idempotency_conflict",
+            "Client message ID was already used for a different Contract prompt",
+          );
+        }
+        await completeGeneralProjectCreation(this.managedRoot, projectId);
+        const existingDraftId = existing.contractAssignment.draftId;
+        const existingPlan = planGeneralContract(
+          initial.shepherd.groupMessages
+            .filter(
+              (item) =>
+                item.contractAssignment?.preset === "general-contract" &&
+                item.contractAssignment.draftId === existingDraftId,
+            )
+            .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+            .map((item) => item.content),
+          authority,
+        );
+        if (existing.missionId !== null) {
+          return {
+            status: "accepted",
+            missionId: existing.missionId,
+            contractId: existing.contractId,
+            clarification: null,
+            message: structuredClone(existing),
+          };
+        }
+        if (
+          existing.contractAssignment.status !== "accepted" ||
+          existingPlan.status !== "ready"
+        ) {
+          return {
+            status: "clarification_required",
+            missionId: null,
+            contractId: null,
+            clarification: existingPlan.clarification,
+            message: structuredClone(existing),
+          };
+        }
+        const persistedProject = initial.shepherd.projects.find(
+          (item) => item.id === projectId,
+        );
+        if (!persistedProject) {
+          throw new ShepherdControlError(
+            "conflict",
+            "Accepted Contract draft is missing its managed project",
+          );
+        }
+        const resumedProject = await initializeGeneralAgentProject({
+          managedRoot: this.managedRoot,
+          projectId,
+          agentWorkspacePath: agent.workspacePath,
+          expectedArtifacts: existingPlan.expectedArtifacts.map((artifact) => artifact.path),
+          acceptanceSummary: existingPlan.acceptanceSummary!,
+          requiredContent: existingPlan.requiredContent,
+          expectedHead: persistedProject.protectedHeadCommit,
+        });
+        const resumed = await this.startGeneralAgentMission({
+          agent,
+          project: resumedProject,
+          plan: existingPlan,
+          draftId: existingDraftId,
+        });
+        const bound = this.store
+          .snapshot()
+          .shepherd.groupMessages.find((item) => item.id === messageId);
+        if (!bound?.missionId || !bound.contractId) {
+          throw new Error("Resumed Contract draft was not bound to its Mission");
+        }
+        return {
+          status: "accepted",
+          missionId: resumed.missionId,
+          contractId: bound.contractId,
+          clarification: null,
+          message: structuredClone(bound),
+        };
+      }
+      if (agent.status !== "ready" || agent.currentContractId) {
+        throw new ShepherdControlError(
+          "conflict",
+          `${agent.name} must be ready before Shepherd collects its Contract prompt`,
+        );
+      }
+      const pending = initial.shepherd.groupMessages
+        .filter(
+          (item) =>
+            item.projectId === projectId &&
+            item.targetAgentId === agent.id &&
+            item.missionId === null &&
+            item.contractAssignment?.preset === "general-contract",
+        )
+        .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+      const lastPending = pending.at(-1);
+      const draftId =
+        lastPending?.contractAssignment?.preset === "general-contract"
+          ? lastPending.contractAssignment.draftId
+          : this.identifier("draft");
+      let plan: GeneralContractPlan;
+      try {
+        plan = planGeneralContract([...pending.map((item) => item.content), content], authority);
+      } catch (error) {
+        if (error instanceof GeneralContractPlanError) {
+          throw new ShepherdControlError("invalid_input", error.message);
+        }
+        throw error;
+      }
+      const createdAt = this.timestamp();
+      let project: ManagedGeneralAgentProject | null = null;
+      const durableProjectBefore = initial.shepherd.projects.find(
+        (item) => item.id === projectId,
+      );
+      const creationJournaled = !durableProjectBefore;
+      if (creationJournaled) {
+        await beginGeneralProjectCreation(this.managedRoot, projectId);
+      } else {
+        await beginGeneralProjectPolicyUpdate(
+          this.managedRoot,
+          projectId,
+          durableProjectBefore.protectedHeadCommit,
+        );
+      }
+      const message = await this.store.mutate(async (database) => {
+        const currentAgent = database.agents.find((item) => item.id === agent.id);
+        if (
+          !currentAgent ||
+          (currentAgent.role ?? "Generalist") !== role ||
+          currentAgent.status !== "ready" ||
+          currentAgent.currentContractId
+        ) {
+          throw new ShepherdControlError(
+            "conflict",
+            `${agent.name} availability changed before Contract intake`,
+          );
+        }
+        const currentPending = database.shepherd.groupMessages.filter(
+          (item) =>
+            item.projectId === projectId &&
+            item.targetAgentId === agent.id &&
+            item.missionId === null &&
+            item.contractAssignment?.preset === "general-contract",
+        );
+        if (currentPending.length !== pending.length) {
+          throw new ShepherdControlError("conflict", "Contract clarification changed concurrently");
+        }
+        const existingProject = database.shepherd.projects.find((item) => item.id === projectId);
+        project = await initializeGeneralAgentProject({
+          managedRoot: this.managedRoot,
+          projectId,
+          agentWorkspacePath: currentAgent.workspacePath,
+          expectedArtifacts:
+            plan.status === "ready"
+              ? plan.expectedArtifacts.map((artifact) => artifact.path)
+              : ["README.md"],
+          acceptanceSummary:
+            plan.status === "ready"
+              ? plan.acceptanceSummary!
+              : "Contract draft intake is pending human clarification",
+          requiredContent: plan.status === "ready" ? plan.requiredContent : null,
+          ...(existingProject?.protectedHeadCommit
+            ? { expectedHead: existingProject.protectedHeadCommit }
+            : {}),
+        });
+        if (durableProjectBefore) {
+          await recordGeneralProjectPolicyUpdate(
+            this.managedRoot,
+            projectId,
+            durableProjectBefore.protectedHeadCommit,
+            project.headCommit,
+          );
+        }
+        replaceById(database.shepherd.projects, {
+          id: projectId,
+          displayName: `${agent.name} managed project`,
+          repositoryPath: project.repositoryPath,
+          protectedBranch: project.protectedBranch,
+          protectedHeadCommit: project.headCommit,
+          activeMissionId: null,
+          createdAt: existingProject?.createdAt ?? createdAt,
+          updatedAt: createdAt,
+        });
+        return appendProjectGroupMessage(database, {
+          id: messageId,
+          projectId,
+          missionId: null,
+          senderType: "human",
+          senderId: null,
+          content,
+          targetAgentId: agent.id,
+          contractId: null,
+          contractAssignment: {
+            preset: "general-contract",
+            role,
+            draftId,
+            status:
+              plan.status === "ready" ? "accepted" : "clarification_required",
+            missingFields: [...plan.missingFields],
+            expectedArtifacts: structuredClone(plan.expectedArtifacts),
+            acceptanceSummary: plan.acceptanceSummary,
+            requiredContent: plan.requiredContent,
+          },
+          requestFingerprint: fingerprint,
+          createdAt,
+        });
+      });
+      if (creationJournaled) {
+        await completeGeneralProjectCreation(this.managedRoot, projectId);
+      } else {
+        await completeGeneralProjectPolicyUpdate(this.managedRoot, projectId);
+      }
+      if (plan.status === "clarification_required") {
+        return {
+          status: "clarification_required",
+          missionId: null,
+          contractId: null,
+          clarification: plan.clarification,
+          message,
+        };
+      }
+      if (!project) throw new Error("General managed project was not initialized");
+      let started: { missionId: string };
+      try {
+        started = await this.startGeneralAgentMission({
+          agent,
+          project,
+          plan,
+          draftId,
+        });
+      } catch (error) {
+        await this.store.mutate((database) => {
+          database.shepherd.groupMessages = database.shepherd.groupMessages.filter(
+            (item) =>
+              item.id !== messageId ||
+              item.missionId !== null ||
+              item.contractId !== null ||
+              item.requestFingerprint !== fingerprint,
+          );
+        });
+        throw error;
+      }
+      const accepted = this.store
+        .snapshot()
+        .shepherd.groupMessages.find((item) => item.id === messageId);
+      if (!accepted?.missionId || !accepted.contractId) {
+        throw new Error("General Contract prompt was not bound to its created Mission");
+      }
+      return {
+        status: "accepted",
+        missionId: started.missionId,
+        contractId: accepted.contractId,
+        clarification: null,
         message: structuredClone(accepted),
       };
     });
@@ -2245,6 +2622,9 @@ export class ShepherdService {
       if (
         missionCandidates.some(
           (candidate) => candidate.promotionState === "promoting",
+        ) ||
+        missionPlanes.some(
+          (plane) => plane.generalPromotionState === "promoting",
         )
       ) {
         throw new ShepherdControlError(
@@ -2266,6 +2646,9 @@ export class ShepherdService {
               candidate.promotionState === "reverifying",
           )
           .map((candidate) => candidate.id),
+        ...missionPlanes
+          .filter((plane) => plane.generalPromotionState === "reverifying")
+          .map((plane) => plane.id),
       ];
       for (const contract of missionContracts) {
         if (canTransitionContract(contract.state, "cancelled", "human")) {
@@ -2299,6 +2682,9 @@ export class ShepherdService {
         }
       }
       for (const plane of missionPlanes) {
+        if (plane.generalPromotionState === "reverifying") {
+          plane.generalPromotionState = "failed";
+        }
         if (
           plane.state === "creating" ||
           plane.state === "ready" ||
@@ -2767,6 +3153,206 @@ export class ShepherdService {
 
   eventsAfter(cursor: number, limit = 200): ShepherdEvent[] {
     return this.store.shepherdEventsAfter(cursor, limit);
+  }
+
+  private async startGeneralAgentMission(input: {
+    agent: Agent;
+    project: ManagedGeneralAgentProject;
+    plan: GeneralContractPlan;
+    draftId: string;
+  }): Promise<{ missionId: string }> {
+    if (input.plan.status !== "ready" || !input.plan.acceptanceSummary) {
+      throw new Error("A general Mission requires a confirmed Contract plan");
+    }
+    const acceptanceSummary = input.plan.acceptanceSummary;
+    this.claimProject(input.project.projectId);
+    let prepared: PreparedGeneralMission;
+    try {
+      const planeManager = new PlaneManager({
+        repositoryPath: input.project.repositoryPath,
+        planesRoot: input.project.planesRoot,
+        protectedBranch: input.project.protectedBranch,
+        git: new GitClient(input.project.repositoryPath, {
+          worktreeRoot: input.project.planesRoot,
+          protectedBranch: input.project.protectedBranch,
+          ...(this.gitPromotionFaults === undefined
+            ? {}
+            : { promotionFaults: this.gitPromotionFaults }),
+          ...(this.gitMergeFaults === undefined ? {} : { mergeFaults: this.gitMergeFaults }),
+        }),
+        now: this.now,
+      });
+      await planeManager.initialize();
+      const createdAt = this.timestamp();
+      const missionId = this.identifier("mission");
+      const contractId = this.identifier("contract");
+      const role = input.agent.role ?? "Generalist";
+      const currentAuthority =
+        input.agent.authority ?? agentAuthorityPreset("generalist").authority;
+      const requestedAuthority: ScopedAuthority = {
+        readable: ["**"],
+        writable: input.plan.expectedArtifacts.map((artifact) => artifact.path),
+        forbidden: [...protectedPatterns],
+      };
+      const contractAuthority = boundedContractAuthority(
+        currentAuthority,
+        requestedAuthority,
+      );
+      await this.store.mutate((database) => {
+        const agent = database.agents.find((item) => item.id === input.agent.id);
+        const project = database.shepherd.projects.find(
+          (item) => item.id === input.project.projectId,
+        );
+        const draftMessages = database.shepherd.groupMessages.filter(
+          (message) =>
+            message.contractAssignment?.preset === "general-contract" &&
+            message.contractAssignment.draftId === input.draftId &&
+            message.missionId === null &&
+            message.contractId === null,
+        );
+        if (
+          !agent ||
+          (agent.role ?? "Generalist") !== role ||
+          agent.status !== "ready" ||
+          agent.currentContractId ||
+          !project ||
+          project.activeMissionId !== null ||
+          project.protectedHeadCommit !== input.project.headCommit ||
+          draftMessages.length < 1 ||
+          !draftMessages.some(
+            (message) =>
+              message.contractAssignment?.preset === "general-contract" &&
+              message.contractAssignment.status === "accepted",
+          )
+        ) {
+          throw new ShepherdControlError(
+            "conflict",
+            "General Contract intake changed before Mission creation",
+          );
+        }
+        const currentAuthorityValue =
+          agent.authority ?? agentAuthorityPreset("generalist").authority;
+        if (
+          JSON.stringify(
+            boundedContractAuthority(currentAuthorityValue, requestedAuthority),
+          ) !== JSON.stringify(contractAuthority)
+        ) {
+          throw new ShepherdControlError(
+            "conflict",
+            "Agent authority changed before Contract assignment",
+          );
+        }
+        agent.status = "busy";
+        agent.currentContractId = contractId;
+        agent.lastError = null;
+        agent.updatedAt = createdAt;
+        project.activeMissionId = missionId;
+        project.updatedAt = createdAt;
+        const mission: Mission = {
+          id: missionId,
+          projectId: project.id,
+          originalIntent: input.plan.objective,
+          baseCommit: project.protectedHeadCommit,
+          contractIds: [contractId],
+          dependencyEdges: [],
+          collisionIds: [],
+          resolutionIds: [],
+          state: "planning",
+          attentionReason: null,
+          failure: null,
+          createdAt,
+          updatedAt: createdAt,
+          startedAt: null,
+          completedAt: null,
+        };
+        const contract: ExecutionContract = {
+          id: contractId,
+          missionId,
+          agentId: agent.id,
+          title: input.plan.title,
+          objective: input.plan.objective,
+          contextualInputs: [
+            {
+              name: "Confirmed acceptance",
+              value: acceptanceSummary,
+              sourceContractId: null,
+            },
+          ],
+          dependencyIds: [],
+          semanticScopes: [],
+          declaredClaimKeys: [],
+          authority: contractAuthority,
+          expectedArtifacts: structuredClone(input.plan.expectedArtifacts),
+          acceptance: { checks: [generalContractCheck()], objectiveTieBreakers: [] },
+          planeId: null,
+          resultManifestPath: ".shepherd/result.json",
+          manifest: null,
+          verificationEvidence: [],
+          state: "created",
+          failure: null,
+          createdAt,
+          updatedAt: createdAt,
+          startedAt: null,
+          agentCompletedAt: null,
+          verifiedAt: null,
+          completedAt: null,
+        };
+        database.shepherd.missions.push(mission);
+        database.shepherd.contracts.push(contract);
+        for (const message of draftMessages) {
+          message.missionId = missionId;
+          message.contractId = contractId;
+        }
+        this.recordEvent(database, {
+          type: "mission_created",
+          summary: "Created confirmed general Agent Mission",
+          missionId,
+          timestamp: createdAt,
+          details: { projectId: project.id },
+        });
+        this.recordEvent(database, {
+          type: "contract_created",
+          summary: `Created ${contract.title}`,
+          missionId,
+          contractId,
+          agentId: agent.id,
+          timestamp: createdAt,
+        });
+        transitionContractAndRecord(database, contractId, "queued", {
+          actor: "control_plane",
+          eventActor: SHEPHERD_ACTOR,
+          timestamp: createdAt,
+        });
+        transitionMissionAndRecord(database, missionId, "queued", {
+          actor: "control_plane",
+          eventActor: SHEPHERD_ACTOR,
+          timestamp: createdAt,
+        });
+      });
+      prepared = {
+        project: input.project,
+        planeManager,
+        missionId,
+        contractId,
+        agentId: input.agent.id,
+        artifactPaths: input.plan.expectedArtifacts.map((artifact) => artifact.path),
+        requiredContent: input.plan.requiredContent,
+      };
+    } catch (error) {
+      this.activeProjects.delete(input.project.projectId);
+      throw error;
+    }
+    const operation = this.executePreparedGeneralMission(prepared)
+      .catch(async (error: unknown) => {
+        await this.recordMissionFailure(prepared.missionId, error, "background_general_contract");
+        return null;
+      })
+      .finally(() => {
+        this.backgroundRuns.delete(prepared.missionId);
+        this.activeProjects.delete(prepared.project.projectId);
+      });
+    this.backgroundRuns.set(prepared.missionId, operation);
+    return { missionId: prepared.missionId };
   }
 
   async startDeterministicDemo(
@@ -3864,6 +4450,338 @@ export class ShepherdService {
     };
   }
 
+  private async executePreparedGeneralMission(
+    prepared: PreparedGeneralMission,
+  ): Promise<void> {
+    this.ensureMissionRunnable(prepared.missionId);
+    const startedAt = this.timestamp();
+    await this.store.mutate((database) => {
+      transitionMissionAndRecord(database, prepared.missionId, "running", {
+        actor: "control_plane",
+        eventActor: SHEPHERD_ACTOR,
+        timestamp: startedAt,
+      });
+    });
+    const contractPlane = await this.createContractPlane(
+      prepared,
+      prepared.contractId,
+    );
+    await this.executeContract(
+      prepared,
+      {
+        contractId: prepared.contractId,
+        operation: {
+          kind: "general_contract",
+          contractId: prepared.contractId,
+          artifactPaths: [...prepared.artifactPaths],
+          requiredContent: prepared.requiredContent,
+        },
+      },
+      contractPlane,
+      { retainAgentReservation: true },
+    );
+    this.ensureMissionRunnable(prepared.missionId);
+    const verifyingAt = this.timestamp();
+    await this.store.mutate((database) => {
+      transitionMissionAndRecord(database, prepared.missionId, "verifying", {
+        actor: "control_plane",
+        eventActor: SHEPHERD_ACTOR,
+        timestamp: verifyingAt,
+      });
+    });
+    const contract = this.store
+      .snapshot()
+      .shepherd.contracts.find((item) => item.id === prepared.contractId);
+    if (!contract) throw new Error("General Execution Contract disappeared");
+    const integration = await this.integrateContracts(prepared, {
+      expectedPlaneCount: 1,
+      authority: contract.authority,
+    });
+    if (!integration.headCommit) {
+      throw new Error("General integration Plane has no immutable head");
+    }
+    const changedFiles = await prepared.planeManager.git.changedFilesBetween(
+      prepared.project.headCommit,
+      integration.headCommit,
+      integration.worktreePath,
+    );
+    const authority = validateChangedPaths(changedFiles, contract.authority);
+    if (!authority.allowed || authority.manifestPaths.length > 0) {
+      throw new Error("General integration diff exceeds its confirmed Contract authority");
+    }
+    const promotionStartedAt = this.timestamp();
+    await this.store.mutate((database) => {
+      this.assertMissionRunnable(database, prepared.missionId);
+      const plane = database.shepherd.planes.find((item) => item.id === integration.id);
+      if (!plane || plane.kind !== "integration" || plane.headCommit !== integration.headCommit) {
+        throw new Error("General integration Plane changed before final verification");
+      }
+      plane.generalPromotionState = "reverifying";
+      plane.generalPromotionEvidence = null;
+      plane.updatedAt = promotionStartedAt;
+      this.recordEvent(database, {
+        type: "promotion_started",
+        summary: "Started final general Contract verification and promotion",
+        missionId: prepared.missionId,
+        contractId: prepared.contractId,
+        planeId: integration.id,
+        timestamp: promotionStartedAt,
+      });
+    });
+    const evidence = this.sanitizeEvidence(
+      await prepared.planeManager.withVerificationSnapshot(
+        integration.headCommit,
+        async (snapshot) =>
+          await this.verifier.verify({
+            targetType: "promotion",
+            targetId: integration.id,
+            planePath: snapshot.path,
+            checks: [generalContractCheck()],
+            changedFiles,
+          }),
+      ),
+    );
+    if (!evidence.passed) {
+      throw new Error("General Contract failed final independent re-verification");
+    }
+    const promotingAt = this.timestamp();
+    await this.store.mutate((database) => {
+      this.assertMissionRunnable(database, prepared.missionId);
+      const project = database.shepherd.projects.find(
+        (item) => item.id === prepared.project.projectId,
+      );
+      const plane = database.shepherd.planes.find((item) => item.id === integration.id);
+      const agent = database.agents.find((item) => item.id === prepared.agentId);
+      if (
+        !project ||
+        project.activeMissionId !== prepared.missionId ||
+        project.protectedHeadCommit !== prepared.project.headCommit ||
+        !plane ||
+        plane.generalPromotionState !== "reverifying" ||
+        plane.headCommit !== integration.headCommit ||
+        evidence.targetType !== "promotion" ||
+        evidence.targetId !== plane.id ||
+        !evidence.passed ||
+        evidence.changedFiles.length !== changedFiles.length ||
+        !evidence.changedFiles.every((file) => changedFiles.includes(file)) ||
+        !agent ||
+        agent.currentContractId !== prepared.contractId ||
+        agent.status !== "busy"
+      ) {
+        throw new Error("General promotion evidence no longer matches durable state");
+      }
+      plane.generalPromotionState = "promoting";
+      plane.generalPromotionEvidence = structuredClone(evidence);
+      if (!plane.verificationEvidenceIds.includes(evidence.id)) {
+        plane.verificationEvidenceIds.push(evidence.id);
+      }
+      plane.updatedAt = promotingAt;
+    });
+    await this.checkpoint("promotion_ready_for_cas", {
+      missionId: prepared.missionId,
+      planeId: integration.id,
+    });
+    await prepared.planeManager.git.compareAndSwapFastForward(
+      prepared.project.protectedBranch,
+      prepared.project.headCommit,
+      integration.headCommit,
+    );
+    try {
+      await this.checkpoint("promotion_cas_completed", {
+        missionId: prepared.missionId,
+        planeId: integration.id,
+      });
+      const promotedAgent = this.store
+        .snapshot()
+        .agents.find((item) => item.id === prepared.agentId);
+      if (
+        !promotedAgent ||
+        promotedAgent.status !== "busy" ||
+        promotedAgent.currentContractId !== prepared.contractId
+      ) {
+        throw new Error("General Contract Agent reservation disappeared after promotion");
+      }
+      await this.workspaceManager.assertManagedWorkspace(promotedAgent);
+      await synchronizeVerifiedArtifacts(
+        integration.worktreePath,
+        promotedAgent.workspacePath,
+        prepared.artifactPaths,
+      );
+      await this.workspaceManager.assertManagedWorkspace(promotedAgent);
+    } catch (error) {
+      await this.persistGeneralMaterializationFailure(prepared, integration, error);
+      return;
+    }
+    const completedAt = this.timestamp();
+    await this.checkpoint("general_completion_persistence", {
+      missionId: prepared.missionId,
+      contractId: prepared.contractId,
+      planeId: integration.id,
+    });
+    try {
+      await this.store.mutate((database) => {
+        const project = database.shepherd.projects.find(
+          (item) => item.id === prepared.project.projectId,
+        );
+        const plane = database.shepherd.planes.find((item) => item.id === integration.id);
+        const agent = database.agents.find((item) => item.id === prepared.agentId);
+        if (
+          !project ||
+          !plane ||
+          plane.generalPromotionState !== "promoting" ||
+          plane.generalPromotionEvidence?.id !== evidence.id ||
+          !agent ||
+          agent.currentContractId !== prepared.contractId
+        ) {
+          throw new Error("General promotion records disappeared before completion");
+        }
+        project.protectedHeadCommit = integration.headCommit!;
+        project.activeMissionId = null;
+        project.updatedAt = completedAt;
+        plane.state = "verified";
+        plane.generalPromotionState = "promoted";
+        plane.updatedAt = completedAt;
+        agent.status = "ready";
+        agent.currentContractId = null;
+        agent.lastError = null;
+        agent.updatedAt = completedAt;
+        this.recordEvent(database, {
+          type: "promotion_completed",
+          summary: "Promoted the independently verified general Contract",
+          missionId: prepared.missionId,
+          contractId: prepared.contractId,
+          planeId: integration.id,
+          timestamp: completedAt,
+          details: {
+            previousHead: prepared.project.headCommit,
+            promotedHead: integration.headCommit!,
+            verificationEvidenceId: evidence.id,
+            mandatoryChecksPassed: evidence.checks.filter(
+              (check) => check.mandatory && check.passed,
+            ).length,
+          },
+        });
+        const completion = transitionMissionAndRecord(
+          database,
+          prepared.missionId,
+          "completed",
+          {
+            actor: "control_plane",
+            eventActor: SHEPHERD_ACTOR,
+            timestamp: completedAt,
+          },
+        );
+        this.appendServerGroupMessage(database, {
+          sourceId: completion.id,
+          missionId: prepared.missionId,
+          contractId: prepared.contractId,
+          targetAgentId: prepared.agentId,
+          content:
+            "Mission completed after independent verification and protected promotion.",
+          timestamp: completedAt,
+        });
+      });
+    } catch (error) {
+      await this.persistGeneralMaterializationFailure(
+        prepared,
+        integration,
+        error,
+        true,
+      );
+    }
+  }
+
+  private async persistGeneralMaterializationFailure(
+    prepared: PreparedGeneralMission,
+    integration: Plane,
+    _cause: unknown,
+    workspaceMaterialized = false,
+  ): Promise<void> {
+    if (!integration.headCommit) {
+      throw new Error("Promoted general integration Plane has no immutable head");
+    }
+    const failedAt = this.timestamp();
+    const failure: FailureInfo = {
+      code: "persistence_error",
+      message: workspaceMaterialized
+        ? "The verified Contract was promoted and materialized, but durable completion needs human attention"
+        : "The verified Contract was promoted, but its Agent workspace could not be materialized",
+      stage: workspaceMaterialized
+        ? "general_completion_persistence"
+        : "agent_workspace_materialization",
+      at: failedAt,
+      retryable: true,
+    };
+    await this.store.mutate((database) => {
+      const mission = database.shepherd.missions.find(
+        (item) => item.id === prepared.missionId,
+      );
+      const project = database.shepherd.projects.find(
+        (item) => item.id === prepared.project.projectId,
+      );
+      const plane = database.shepherd.planes.find((item) => item.id === integration.id);
+      const agent = database.agents.find((item) => item.id === prepared.agentId);
+      if (
+        !mission ||
+        !project ||
+        !plane ||
+        plane.generalPromotionState !== "promoting" ||
+        !plane.generalPromotionEvidence?.passed
+      ) {
+        throw new Error("General promotion state disappeared during materialization recovery");
+      }
+      project.protectedHeadCommit = integration.headCommit!;
+      project.activeMissionId = mission.id;
+      project.updatedAt = failedAt;
+      plane.state = "verified";
+      plane.generalPromotionState = "promoted";
+      plane.error = null;
+      plane.updatedAt = failedAt;
+      if (agent) {
+        agent.status = "error";
+        agent.currentContractId = null;
+        agent.lastError = failure.message;
+        agent.updatedAt = failedAt;
+      }
+      this.recordEvent(database, {
+        type: "promotion_completed",
+        summary: "Promoted the independently verified general Contract",
+        missionId: mission.id,
+        contractId: prepared.contractId,
+        planeId: plane.id,
+        timestamp: failedAt,
+        details: {
+          previousHead: prepared.project.headCommit,
+          promotedHead: integration.headCommit!,
+          workspaceMaterialized,
+        },
+      });
+      const attention = transitionMissionAndRecord(
+        database,
+        mission.id,
+        "attention_required",
+        {
+          actor: "control_plane",
+          eventActor: SHEPHERD_ACTOR,
+          timestamp: failedAt,
+          attentionReason: failure.message,
+          failure,
+          summary: failure.message,
+          details: { failureCode: failure.code },
+        },
+      );
+      this.appendServerGroupMessage(database, {
+        sourceId: attention.id,
+        missionId: mission.id,
+        contractId: prepared.contractId,
+        targetAgentId: prepared.agentId,
+        content:
+          "The verified change is protected, but the Agent workspace needs human attention before further work.",
+        timestamp: failedAt,
+      });
+    });
+  }
+
   private async executePreparedMission(
     prepared: PreparedMission,
   ): Promise<DeterministicDemoResult> {
@@ -4185,7 +5103,7 @@ export class ShepherdService {
   }
 
   private async createContractPlane(
-    prepared: PreparedMission,
+    prepared: PreparedProjectMission,
     contractId: string,
   ): Promise<Plane> {
     this.ensureMissionRunnable(prepared.missionId);
@@ -4253,7 +5171,7 @@ export class ShepherdService {
   }
 
   private async unwindInitialContractPlanes(
-    prepared: PreparedMission,
+    prepared: PreparedProjectMission,
     planes: readonly Plane[],
     creationError: unknown,
   ): Promise<void> {
@@ -4391,9 +5309,10 @@ export class ShepherdService {
   }
 
   private async executeContract(
-    prepared: PreparedMission,
+    prepared: PreparedProjectMission,
     input: ContractPlaneInput,
     initialPlane: Plane,
+    options: { retainAgentReservation?: boolean } = {},
   ): Promise<void> {
     this.ensureMissionRunnable(prepared.missionId);
     const startedAt = this.timestamp();
@@ -4853,11 +5772,13 @@ export class ShepherdService {
     }
     const verifiedTransport = verifiedAuthTransportFact(evidence);
     const claimsCorroborated =
-      verifiedTransport !== null &&
-      ingestion.claims.every(
-        (claim) =>
-          claim.key !== AUTH_CLAIM_KEY || claim.value === verifiedTransport,
-      );
+      contract.declaredClaimKeys.length === 0
+        ? ingestion.claims.length === 0
+        : verifiedTransport !== null &&
+          ingestion.claims.every(
+            (claim) =>
+              claim.key !== AUTH_CLAIM_KEY || claim.value === verifiedTransport,
+          );
     if (!claimsCorroborated) {
       const failure: FailureInfo = {
         code: "invalid_semantic_evidence",
@@ -4931,7 +5852,7 @@ export class ShepherdService {
       const agent = database.agents.find(
         (item) => item.id === persistedContract?.agentId,
       );
-      if (agent) {
+      if (agent && !options.retainAgentReservation) {
         agent.status = "ready";
         agent.currentContractId = null;
         agent.updatedAt = verifiedAt;
@@ -5115,7 +6036,10 @@ export class ShepherdService {
     throw new ContractVerificationInfrastructureError();
   }
 
-  private async integrateContracts(prepared: PreparedMission): Promise<Plane> {
+  private async integrateContracts(
+    prepared: PreparedProjectMission,
+    options: { expectedPlaneCount?: number; authority?: ScopedAuthority } = {},
+  ): Promise<Plane> {
     this.ensureMissionRunnable(prepared.missionId);
     let integration = await prepared.planeManager.createIntegrationPlane({
       id: this.identifier("plane-integration"),
@@ -5124,7 +6048,7 @@ export class ShepherdService {
       baseCommit: prepared.project.headCommit,
       purpose: "Integrate independently verified Contract commits",
       executionIdentity: this.identifier("integration"),
-      authority: authorityFor("resolution"),
+      authority: options.authority ?? authorityFor("resolution"),
     });
     try {
       await this.store.mutate((database) => {
@@ -5145,8 +6069,11 @@ export class ShepherdService {
         (plane) => plane.missionId === prepared.missionId && plane.kind === "contract",
       )
       .sort((left, right) => left.id.localeCompare(right.id));
-    if (contractPlanes.length !== 2) {
-      throw new Error("Integration requires exactly two verified Contract Planes");
+    const expectedPlaneCount = options.expectedPlaneCount ?? 2;
+    if (contractPlanes.length !== expectedPlaneCount) {
+      throw new Error(
+        `Integration requires exactly ${expectedPlaneCount} verified Contract Plane${expectedPlaneCount === 1 ? "" : "s"}`,
+      );
     }
     for (const contractPlane of contractPlanes) {
       this.ensureMissionRunnable(prepared.missionId);
@@ -6360,6 +7287,30 @@ export class ShepherdService {
       if (project?.activeMissionId === missionId) {
         project.activeMissionId = null;
         project.updatedAt = failedAt;
+      }
+      for (const plane of database.shepherd.planes) {
+        if (
+          plane.missionId === missionId &&
+          (plane.generalPromotionState === "reverifying" ||
+            plane.generalPromotionState === "promoting")
+        ) {
+          plane.generalPromotionState = "failed";
+          if (plane.state !== "verified" && plane.state !== "destroyed") {
+            plane.state = "failed";
+            plane.error = failure;
+          }
+          plane.updatedAt = failedAt;
+        }
+      }
+      const contractIds = new Set(mission.contractIds);
+      for (const agent of database.agents) {
+        if (!agent.currentContractId || !contractIds.has(agent.currentContractId)) {
+          continue;
+        }
+        agent.status = "error";
+        agent.currentContractId = null;
+        agent.lastError = failure.message;
+        agent.updatedAt = failedAt;
       }
     });
   }

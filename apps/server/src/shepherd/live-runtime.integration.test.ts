@@ -179,6 +179,10 @@ function liveConfig(): AppConfig {
     CONTAINER_MEMORY_LIMIT: "1g",
     CONTAINER_PIDS_LIMIT: "128",
     CONTAINER_USER: `${uid}:${gid}`,
+    // This gate pins its own roots outside any state volume, so the state-volume
+    // settings a `.env` may carry must not reach it through the spread above.
+    CONTAINER_STATE_ROOT: undefined,
+    CONTAINER_STATE_VOLUME: undefined,
     NODE_ENV: "test",
   });
 }

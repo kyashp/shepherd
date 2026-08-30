@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import {
   createApp,
+  toPublicShepherdState,
   type ShepherdHttpService,
   type ShepherdMissionDetail,
 } from "./app.js";
@@ -422,6 +423,7 @@ const createShepherdService = (
     status: "accepted",
     missionId,
     contractId: contract.id,
+    clarification: null,
     message: groupMessage,
   }),
   projectGroupMessages: () => [groupMessage],
@@ -460,6 +462,45 @@ const createShepherdService = (
 });
 
 describe("HTTP boundary", () => {
+  it("redacts derived general Contract fields and Plane promotion evidence independently", () => {
+    const state = createShepherdState();
+    state.groupMessages = [
+      {
+        ...groupMessage,
+        targetAgentId: "agent-1",
+        content: `Create output without ${plantedSecret}`,
+        contractAssignment: {
+          preset: "general-contract",
+          role: "Generalist",
+          draftId: "draft-public-redaction",
+          status: "clarification_required",
+          missingFields: ["acceptance_evidence"],
+          expectedArtifacts: [],
+          acceptanceSummary: `contains ${plantedSecret}`,
+          requiredContent: plantedSecret,
+        },
+        requestFingerprint: "f".repeat(64),
+      },
+    ];
+    state.planes[0] = {
+      ...state.planes[0]!,
+      generalPromotionState: "promoting",
+      generalPromotionEvidence: {
+        ...evidence,
+        id: "promotion-evidence-public",
+        targetType: "promotion",
+        targetId: state.planes[0]!.id,
+      },
+    };
+    const publicState = toPublicShepherdState(state, [plantedSecret]);
+    const serialized = JSON.stringify(publicState);
+    expect(serialized).not.toContain(plantedSecret);
+    expect(publicState.groupMessages[0]?.requestFingerprint).toBeUndefined();
+    expect(
+      publicState.planes[0]?.generalPromotionEvidence?.checks[0],
+    ).not.toHaveProperty("stdout");
+  });
+
   it("never exposes Agent workspace paths from lifecycle or conversation routes", async () => {
     const app = await createApp(
       loadConfig({ NODE_ENV: "test" }),
@@ -916,6 +957,7 @@ describe("HTTP boundary", () => {
       status: "awaiting_peer" as const,
       missionId: null,
       contractId: null,
+      clarification: null,
       message: {
         ...groupMessage,
         missionId: null,
@@ -995,7 +1037,7 @@ describe("HTTP boundary", () => {
       payload: {
         clientMessageId: "private-contract-client-1",
         content: "Implement frontend auth with an HttpOnly session cookie.",
-        preset: "auth-demo-contract",
+        preset: "managed-contract",
       },
     });
     expect(privatePrompt.statusCode).toBe(201);

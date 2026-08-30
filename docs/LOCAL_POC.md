@@ -30,6 +30,38 @@ instance's remaining Runtime containers.
 Force an engine by setting `CONTAINER_ENGINE=docker` or
 `CONTAINER_ENGINE=podman` in `.env`. Colima uses the Docker CLI.
 
+### When the host filesystem reaches the engine through a virtual machine
+
+On a host where the container engine runs inside a virtual machine and shares the
+host filesystem into it, that share cannot carry the Codex sandbox's per-file
+access rights: directory operations succeed while every attempt to open a file
+for reading or writing is denied, so an Agent could not read or write the
+workspace it was given. Shepherd does not fall back to `danger-full-access`.
+
+**You do not need to configure anything for this.** The startup probes detect it
+and the script switches to the container state volume by itself:
+
+```
+[local-poc] The Codex sandbox cannot govern a workspace on /Users/you/.volc-agent-launchpad.
+[local-poc] Switching to the launchpad-state container state volume and retrying.
+```
+
+The volume is a native engine filesystem on every supported host. Set
+`LOCAL_POC_STATE_MODE` explicitly to pin one layout and disable the fallback:
+`host-bind` to fail loudly on a host that should work, or `container-volume` to
+skip the host attempt entirely.
+
+The fallback builds and starts the control plane inside the engine using
+`docker-compose.state-volume.yml`, so it also needs:
+
+- Access to the engine socket, which the control plane joins as a supplementary
+  group while remaining non-root. See [`DEVIATIONS.md`](DEVIATIONS.md).
+
+State lives in the `launchpad-state` volume rather than a host directory, so it
+is not browsable from the host file manager; use `docker volume` and
+`docker cp`. Switching modes does not migrate existing state: Plane worktrees
+record absolute paths, so start the volume empty.
+
 ## Preflight and deterministic demo configuration
 
 From the repository root:
@@ -47,10 +79,13 @@ set:
 
 ```dotenv
 HOST=127.0.0.1
-APP_AUTH_TOKEN=replace-with-at-least-24-random-characters
 SHEPHERD_EXECUTION_MODE=deterministic
 SHEPHERD_DEMO_MODE=true
 ```
+
+`APP_AUTH_TOKEN` is optional and empty by default; the server starts and serves
+without one. Set it only if you want the browser unlock screen and a bearer
+credential on every API route.
 
 The launcher parses `.env` as data; never source, print, screenshot, or commit it.
 The deterministic Mission does not call Ark. `ARK_API_KEY` and `ARK_MODEL` are used
@@ -59,8 +94,8 @@ only by the optional live Agent/Shepherd paths.
 ## Manual hackathon flow
 
 Use a fresh disposable data root for rehearsal. Start with
-`./scripts/start-local-poc.sh`, wait for the loopback URL, and enter your own
-`APP_AUTH_TOKEN` if the browser displays the unlock screen.
+`./scripts/start-local-poc.sh`, and wait for the loopback URL. The unlock screen
+appears only if you set an `APP_AUTH_TOKEN`; enter that same token if so.
 
 ### 1. Positive Shepherd Mission
 
@@ -169,7 +204,9 @@ Persistent state defaults to:
 - macOS: `~/.volc-agent-launchpad/`
 - Linux: `.local/`
 
-Set `LOCAL_POC_DATA_ROOT` to use another directory.
+Set `LOCAL_POC_DATA_ROOT` to use another directory, or
+`LOCAL_POC_STATE_MODE=container-volume` to force all state into the
+`launchpad-state` engine volume instead of on the host.
 
 Each turn mounts only the selected Agent workspace and Codex session directory.
 Default limits are 2 CPUs, 2 GiB memory, 256 processes, dropped capabilities,

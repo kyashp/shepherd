@@ -5,6 +5,7 @@ import {
   readdir,
   rm,
   stat,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
@@ -211,7 +212,7 @@ interface TestEnvironment {
 }
 
 async function environment(
-  overrides: NodeJS.ProcessEnv = {},
+  overrides: NodeJS.ProcessEnv | ((root: string) => NodeJS.ProcessEnv) = {},
 ): Promise<TestEnvironment> {
   const temporaryParent = path.resolve(process.cwd(), ".tmp", "codex-executor");
   await mkdir(temporaryParent, { recursive: true });
@@ -239,7 +240,7 @@ async function environment(
     ARK_MODEL: "agent-model",
     SHEPHERD_MODEL: "planner-model",
     CODEX_SANDBOX_MODE: "workspace-write",
-    ...overrides,
+    ...(typeof overrides === "function" ? overrides(root) : overrides),
   });
   return { root, config, workspace };
 }
@@ -345,6 +346,40 @@ afterEach(async () => {
 });
 
 describe("CodexShepherdExecutor", () => {
+  it("fails closed when the execution workspace is not canonical under the state volume", async () => {
+    // The Runtime derives each volume subpath lexically from the absolute path, so
+    // a workspace reached through a symlink would mount a different directory.
+    const test = await environment((root) => ({
+      CONTAINER_STATE_ROOT: root,
+      CONTAINER_STATE_VOLUME: "launchpad-state",
+    }));
+    const alias = path.join(test.root, "alias-workspace");
+    await symlink(test.workspace, alias);
+    const executor = new CodexShepherdExecutor(
+      test.config,
+      OWNER,
+      new FakeContainerRunner(),
+    );
+
+    await expect(executor.run(executionRequest(alias))).rejects.toThrow(
+      "Execution workspace must be canonical under CONTAINER_STATE_ROOT",
+    );
+  });
+
+  it("passes an unchanged runner request when the state volume is unconfigured", async () => {
+    const test = await environment();
+    const runner = new FakeContainerRunner();
+    const executor = new CodexShepherdExecutor(test.config, OWNER, runner);
+
+    await executor.run(executionRequest(test.workspace));
+
+    expect(test.config.containerStateRoot).toBeNull();
+    expect(runner.requests[0]).toMatchObject({
+      mode: "fresh-ephemeral",
+      workspacePath: test.workspace,
+    });
+  });
+
   it("creates a fresh private home, uses the Agent model, and cleans every run", async () => {
     const test = await environment();
     const runner = new FakeContainerRunner();
@@ -1590,7 +1625,8 @@ describe("CodexShepherdExecutor", () => {
       mkdtemp: 3,
       open: 2,
       readdir: 6,
-      realpath: 10,
+      // 11 since the state-volume canonicality assertion on CONTAINER_STATE_ROOT.
+      realpath: 11,
       rm: 4,
       unlink: 2,
       writeShepherdCodexConfig: 2,
