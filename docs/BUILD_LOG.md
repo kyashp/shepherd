@@ -5066,6 +5066,38 @@ Auditor, security and hosted integration evidence.
   Auditor/security/hosted evidence remains. No live/model/network/UI-design call
   ran.
 
+## 2026-08-30 — CHAT-03 unsafe and underspecified Contract intake
+
+- **Scope:** issue #81 strengthens the integrated general private-chat Contract
+  planner without changing the frozen UI theme. A request must end with one direct,
+  allowlisted action on a quoted authority-contained project artifact, the exact
+  bounded project-only `Safety:` statement, and one literal-content `Acceptance:`
+  predicate. Ambiguous, conditional, negated, approval-dependent, credential,
+  privileged, destructive, external/network and safeguard-bypass wording remains an
+  inert clarification and creates no Mission, Contract or Plane.
+- **Recovery:** unsafe intent is accumulated rather than erased by incremental
+  follow-ups. Exact `Replace prior request:` starts a clean bounded draft; a complete
+  follow-up replaces only earlier vague drafts that contained neither an artifact nor
+  unsafe intent. The Agent remains startable/stoppable/deletable after clarification.
+- **Runtime boundary:** the live preflight plants a fake parent credential canary and
+  scans `/proc/[0-9]*/environ` inside the actual Codex Linux sandbox. The unguarded
+  control could read the canary; the generated production preflight in the freshly
+  built Runtime image passed only after the sandboxed child could not recover it.
+  Visibility maps to fixed `credential_isolation_failed` evidence.
+- **Observed deterministic checks:** focused planner/service 27/27; literal
+  `npm run check` passed launcher 3/3, Server 824 passed + two explicit opt-in skips,
+  Web 20/20, strict production/test type checks and both builds. Authenticated
+  Chromium passed 8/8 across exact 1280×800 and 1440×900 projects, covering the auth
+  collision, clarification/correction, lifecycle recovery, durable human review and
+  no document overflow. `git diff --check` passed. Independent security and UI
+  reviews passed with no High/Medium finding.
+- **Live evidence and limitation:** the first broad command incorrectly discovered a
+  stale ignored recording worktree and is not counted. The corrected exact-source,
+  single-worker live command made the bounded provider attempt, reached Contract
+  execution, and failed after 35 seconds with `Contract result manifest is missing`.
+  No retry was made. This is separate Agent-output reliability work and means neither
+  this candidate nor `LIVE-01` claims an exact-head live Mission pass.
+
 ## 2026-08-30 — PERF-01 Worker candidate
 
 - **Scope and environment:** this candidate is based on protected-main `baa6b2f`.
@@ -5165,3 +5197,33 @@ Auditor, security and hosted integration evidence.
   deterministic evidence, not a live-model capacity measurement,
   package-download proof, or the three clean rehearsals owned by
   `DEMO-REHEARSAL`.
+
+## 2026-08-30 — CHAT-03 protected-main reconciliation
+
+- The issue #81 candidate was merged locally with protected `origin/main`
+  `9696c6d`. The only textual conflict was the append-only `BUILD_LOG.md`; both the
+  CHAT-03 and protected-main PERF-01 histories are retained. Startup-settings,
+  performance, architecture, fixtures and screenshots from main were accepted
+  byte-for-byte; product files merged automatically.
+- Focused intake/startup/composition coverage passed 33/33. Literal
+  `npm run check` passed all production/test type checks, launcher 5/5, Server 842
+  passed with two explicit live skips, Web 20/20, and both production builds.
+- Combined authenticated Chromium passed 10/10 at 1280×800 and 1440×900. The
+  issue #81 clarification, lifecycle and human-review journeys remained green;
+  the integrated performance journey completed in 2,343/2,388 ms with persisted
+  collision visibility in 157/101 ms.
+- `git diff --check` and conflict-marker checks passed. No live request was repeated;
+  the earlier exact live result-manifest failure remains an explicit `LIVE-01`
+  limitation rather than being hidden by the deterministic integration result.
+- Hosted `Pull request checks` run `33319816809` then preserved a causal RED: under
+  heavy suite contention, PERF-01 spent its three-second candidate-pair deadline on
+  earlier Mission setup and failed before both candidates arrived, while independent
+  hosted run `33319816797` passed the same repository head. The test-only correction
+  gives pre-candidate setup its own bounded 15-second allowance and starts the
+  unchanged three-second concurrency deadline only when the first real candidate
+  reaches the executor. Product scheduling, timeouts and retry behavior are
+  unchanged; a sequential scheduler still fails the pair deadline and releases the
+  existing gate through `finally`. The preserved row passed 10/10 consecutive
+  focused repetitions; the post-correction literal gate passed launcher 5/5,
+  Server 842 passed with two explicit live skips, Web 20/20, all strict typechecks
+  and both builds.

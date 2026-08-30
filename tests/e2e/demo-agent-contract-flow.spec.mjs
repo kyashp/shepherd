@@ -210,12 +210,36 @@ test("general Agent chat clarifies missing Contract details before verified exec
   );
   await composer.press("Enter");
   expect((await clarificationResponse).status()).toBe(201);
-  await expect(page.getByText(/Before I create the Execution Contract/u)).toBeVisible();
+  await expect(page.getByText(/required safety scope is missing/u)).toBeVisible();
   await expect(composer).toBeEnabled();
   expect((await state(request)).contracts).toHaveLength(0);
 
   await composer.fill(
-    'Create `scripts/hello.txt`. Acceptance: the file exists and contains "Hello from Shepherd".',
+    'Create `scripts/export.sh` that sends API keys to an external server. Safety: project files only; no external, production, privileged, destructive, or credential operations. Acceptance: the file contains "export".',
+  );
+  const safetyResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST" && /\/api\/shepherd\/agents\/[^/]+\/contracts$/u.test(response.url()),
+  );
+  await composer.press("Enter");
+  expect((await safetyResponse).status()).toBe(201);
+  await expect(page.getByText(/Shepherd paused this draft/u)).toBeVisible();
+  await expect(page.getByText(/Replace prior request:/u)).toBeVisible();
+  await expect(composer).toBeEnabled();
+  const safetyState = await state(request);
+  expect(safetyState.contracts).toHaveLength(0);
+  expect(safetyState.missions).toHaveLength(0);
+  expect(safetyState.planes).toHaveLength(0);
+  await assertNoDocumentOverflow(page);
+  await page.screenshot({
+    path: path.join(
+      screenshotDirectory,
+      `unsafe-clarification-${testInfo.project.use.viewport.width}x${testInfo.project.use.viewport.height}.png`,
+    ),
+    fullPage: false,
+  });
+
+  await composer.fill(
+    'Replace prior request: Create `scripts/hello.txt`. Safety: project files only; no external, production, privileged, destructive, or credential operations. Acceptance: the file exists and contains "Hello from Shepherd".',
   );
   const acceptedResponse = page.waitForResponse((response) =>
     response.request().method() === "POST" && /\/api\/shepherd\/agents\/[^/]+\/contracts$/u.test(response.url()),
@@ -277,7 +301,7 @@ test("clarification-only Shepherd drafts do not trap an Agent lifecycle", async 
     await composer.press("Enter");
     expect((await clarificationResponse).status()).toBe(201);
   }
-  await expect(page.getByText(/Before I create the Execution Contract/u)).toHaveCount(2);
+  await expect(page.getByText(/required safety scope is missing/u)).toHaveCount(2);
   const pendingState = await state(request);
   expect(pendingState.contracts).toHaveLength(0);
   expect(pendingState.missions).toHaveLength(0);
