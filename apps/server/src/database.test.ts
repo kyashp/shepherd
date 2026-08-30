@@ -456,8 +456,8 @@ const fullMissionDatabase = (): Database => {
     missionId: "mission-1",
     senderType: "agent",
     senderId: "agent-1",
-    content: "Authentication resolution completed",
-    targetAgentId: null,
+    content: "Implemented authentication",
+    targetAgentId: "agent-1",
     contractId: "contract-left",
     createdAt: completedTimestamp,
   });
@@ -691,6 +691,9 @@ describe("Database V2", () => {
     ["too-low Plane concurrency", (database: Database) => ((database.shepherd.settings as { maxConcurrentPlanes: number }).maxConcurrentPlanes = 1)],
     ["too-high Plane concurrency", (database: Database) => ((database.shepherd.settings as { maxConcurrentPlanes: number }).maxConcurrentPlanes = 17)],
     ["malformed event details", (database: Database) => ((database.shepherd.events[0]!.details as Record<string, unknown>).nested = { secret: true })],
+    ["agent summary differs from verified manifest", (database: Database) => {
+      database.shepherd.groupMessages[0]!.content = "Unverified runtime output";
+    }],
     ["unexpected nested field", (database: Database) => ((database.shepherd.settings as unknown as Record<string, unknown>).credential = "DATABASE_CANARY_7f3a")],
     ["orphan legacy Run", (database: Database) => (database.runs[0]!.agentId = "missing-agent")],
     ["message linked to another Agent's Run", (database: Database) => {

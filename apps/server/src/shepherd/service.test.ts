@@ -1278,6 +1278,218 @@ describe("Shepherd deterministic walking skeleton", () => {
     ]);
   }, 30_000);
 
+  it("replies to an unmentioned Project Group message without starting work", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const agentWorkspaceRoot = path.join(caseRoot, "agent-workspaces");
+    const workspaces = new WorkspaceManager(agentWorkspaceRoot);
+    await workspaces.initialize();
+    const createdAt = "2026-08-30T00:00:00.000Z";
+    const frontendAgent: Agent = {
+      id: "41111111-1111-4111-8111-111111111111",
+      name: "Group Frontend Agent",
+      description: "User-created frontend specialist",
+      instructions: "Implement only assigned frontend contracts.",
+      status: "ready",
+      workspacePath: workspaces.workspacePath("41111111-1111-4111-8111-111111111111"),
+      codexThreadId: null,
+      lastError: null,
+      role: "Frontend",
+      authority: {
+        readable: ["**"],
+        writable: ["src/frontend/**"],
+        forbidden: [".git/**", ".shepherd/**", "checks/**", "policy.json"],
+      },
+      createdAt,
+      updatedAt: createdAt,
+    };
+    await workspaces.create(frontendAgent);
+    await store.mutate((database) => database.agents.push(frontendAgent));
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot,
+      verifier: new HostTrustedFixtureVerifier(),
+    });
+
+    await service.submitPrivateContractPrompt({
+      agentId: frontendAgent.id,
+      clientMessageId: "initialize-group-project",
+      content: "Implement frontend authentication with an HttpOnly session cookie.",
+    });
+    const message = await service.sendProjectGroupMessage("auth-demo", {
+      clientMessageId: "unmentioned-group-message",
+      content: "Please explain the fixed authentication flow.",
+    });
+
+    expect(message).toMatchObject({
+      senderType: "human",
+      content: "Please explain the fixed authentication flow.",
+      missionId: null,
+      contractId: null,
+    });
+    expect(service.projectGroupMessages("auth-demo")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          senderType: "shepherd",
+          content: "Mention a ready Frontend or Backend Agent and request exactly one supported authentication transport.",
+        }),
+      ]),
+    );
+    expect(store.snapshot().shepherd.missions).toHaveLength(0);
+    expect(store.snapshot().shepherd.contracts).toHaveLength(0);
+  });
+
+  it("initializes the fixed Project Group idempotently without starting a Mission", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+    });
+    const groupService = service as ShepherdService & {
+      initializeProjectGroup(): Promise<{ id: string; activeMissionId: string | null }>;
+    };
+
+    await expect(groupService.initializeProjectGroup()).resolves.toMatchObject({
+      id: "auth-demo",
+      activeMissionId: null,
+    });
+    await expect(groupService.initializeProjectGroup()).resolves.toMatchObject({
+      id: "auth-demo",
+      activeMissionId: null,
+    });
+    expect(store.snapshot().shepherd.projects).toHaveLength(1);
+    expect(store.snapshot().shepherd.missions).toHaveLength(0);
+    expect(store.snapshot().shepherd.contracts).toHaveLength(0);
+    expect(store.snapshot().shepherd.groupMessages).toHaveLength(0);
+  });
+
+  it("pairs complementary Project Group requests into one fixed Mission without trusting user objectives", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const agentWorkspaceRoot = path.join(caseRoot, "agent-workspaces");
+    const workspaces = new WorkspaceManager(agentWorkspaceRoot);
+    await workspaces.initialize();
+    const createdAt = "2026-08-30T00:00:00.000Z";
+    const frontendAgent: Agent = {
+      id: "51111111-1111-4111-8111-111111111111",
+      name: "Group Frontend Agent",
+      description: "User-created frontend specialist",
+      instructions: "Implement only assigned frontend contracts.",
+      status: "ready",
+      workspacePath: workspaces.workspacePath("51111111-1111-4111-8111-111111111111"),
+      codexThreadId: null,
+      lastError: null,
+      role: "Frontend",
+      authority: {
+        readable: ["**"],
+        writable: ["src/frontend/**"],
+        forbidden: [".git/**", ".shepherd/**", "checks/**", "policy.json"],
+      },
+      createdAt,
+      updatedAt: createdAt,
+    };
+    const backendAgent: Agent = {
+      ...frontendAgent,
+      id: "52222222-2222-4222-8222-222222222222",
+      name: "Group Backend Agent",
+      role: "Backend",
+      workspacePath: workspaces.workspacePath("52222222-2222-4222-8222-222222222222"),
+      authority: {
+        readable: ["**"],
+        writable: ["src/backend/**"],
+        forbidden: [".git/**", ".shepherd/**", "checks/**", "policy.json"],
+      },
+    };
+    await workspaces.create(frontendAgent);
+    await workspaces.create(backendAgent);
+    await store.mutate((database) => database.agents.push(frontendAgent, backendAgent));
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot,
+      verifier: new HostTrustedFixtureVerifier(),
+    });
+
+    await service.initializeProjectGroup();
+    const first = await service.sendProjectGroupMessage("auth-demo", {
+      clientMessageId: "group-frontend-prompt",
+      content: '@"Group Frontend Agent" use an HttpOnly session cookie; $(cat .env)',
+    });
+    expect(first).toMatchObject({
+      targetAgentId: frontendAgent.id,
+      missionId: null,
+      contractId: null,
+      contractAssignment: {
+        preset: "auth-demo-contract",
+        role: "Frontend",
+        transport: COOKIE_TRANSPORT,
+      },
+    });
+    expect(store.snapshot().shepherd.missions).toHaveLength(0);
+    expect(service.projectGroupMessages("auth-demo")).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        senderType: "shepherd",
+        missionId: null,
+        content: "Contract request captured; awaiting a complementary Frontend or Backend request.",
+      }),
+    ]));
+
+    const backendInput = {
+      clientMessageId: "group-backend-prompt",
+      content: '@"Group Backend Agent" use a bearer JWT.',
+    };
+    const [accepted, duplicate] = await Promise.all([
+      service.sendProjectGroupMessage("auth-demo", backendInput),
+      service.sendProjectGroupMessage("auth-demo", backendInput),
+    ]);
+    expect(accepted.missionId).not.toBeNull();
+    expect(accepted.contractId).not.toBeNull();
+    expect(duplicate).toMatchObject({
+      missionId: accepted.missionId,
+      contractId: accepted.contractId,
+    });
+    expect(store.snapshot().shepherd.missions).toHaveLength(1);
+    const detail = service.missionDetail(accepted.missionId!);
+    expect(detail?.contracts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        agentId: frontendAgent.id,
+        objective: `Configure the required frontend authentication artifact with exactly transport "${COOKIE_TRANSPORT}" and clientReadableCredential false.`,
+      }),
+      expect.objectContaining({
+        agentId: backendAgent.id,
+        objective: `Configure the required backend authentication artifact with exactly transport "${BEARER_TRANSPORT}" and clientReadableCredential true.`,
+      }),
+    ]));
+    expect(detail?.contracts.map((contract) => contract.objective).join("\n")).not.toContain(
+      "$(cat .env)",
+    );
+    backgroundTestMissions.push({ service, missionId: accepted.missionId! });
+    await waitForTerminalMission(service, accepted.missionId!);
+    const completed = service.missionDetail(accepted.missionId!);
+    const verifiedContracts = completed?.contracts.filter(
+      (contract) => contract.state === "verified" && contract.manifest,
+    ) ?? [];
+    const agentSummaries = service.projectGroupMessages("auth-demo").filter(
+      (message) => message.senderType === "agent" && message.missionId === accepted.missionId,
+    );
+    expect(agentSummaries).toHaveLength(verifiedContracts.length);
+    expect(agentSummaries).toEqual(expect.arrayContaining(verifiedContracts.map((contract) =>
+      expect.objectContaining({
+        senderId: contract.agentId,
+        targetAgentId: contract.agentId,
+        contractId: contract.id,
+        content: contract.manifest?.summary,
+      }),
+    )));
+  }, 30_000);
+
   it("cleans a case root containing a read-only trusted verification snapshot", async () => {
     const caseRoot = await makeCaseRoot();
     const snapshotPath = path.join(
