@@ -1813,8 +1813,15 @@ describe("Shepherd deterministic walking skeleton", () => {
       expect(envelope.payload.contract.expectedArtifacts).toEqual([
         expect.objectContaining({ description: AUTH_ARTIFACT_INTERFACE_DESCRIPTION }),
       ]);
+      expect(envelope.payload.contract.expectedArtifacts[0].description).toContain(
+        "Use this required artifact path as the auth.transport semantic claim evidence path",
+      );
+      expect(envelope.resultManifest.schema.semanticClaims[0].evidence[0].path).toBe(
+        "corresponding changed expected artifact path",
+      );
       expect(envelope.executionRules).toEqual(expect.arrayContaining([
         expect.stringContaining("exact output interface"),
+        expect.stringContaining("evidence.path must be the corresponding changed expected artifact path"),
       ]));
     }
     const promptMessages = store.snapshot().shepherd.groupMessages.filter(

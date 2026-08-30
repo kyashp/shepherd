@@ -90,7 +90,15 @@ describe("Shepherd execution prompt envelopes", () => {
     expect(envelope.resultManifest).toMatchObject({
       path: ".shepherd/result.json",
       required: true,
-      schema: { schemaVersion: 1, contractId: expect.any(String) },
+      schema: {
+        schemaVersion: 1,
+        contractId: expect.any(String),
+        semanticClaims: [expect.objectContaining({
+          evidence: [expect.objectContaining({
+            path: "corresponding changed expected artifact path",
+          })],
+        })],
+      },
     });
     expect(envelope.executionRules.join(" ")).toContain("smallest coherent change");
     expect(envelope.executionRules.join(" ")).toContain(
@@ -98,6 +106,12 @@ describe("Shepherd execution prompt envelopes", () => {
     );
     expect(envelope.executionRules.join(" ")).toContain(
       "readable trusted acceptance check",
+    );
+    expect(envelope.executionRules.join(" ")).toContain(
+      "evidence.path must be the corresponding changed expected artifact path",
+    );
+    expect(envelope.executionRules.join(" ")).toContain(
+      "never invent an evidence-only path",
     );
     expect(envelope.executionRules.join(" ")).toContain("Do not claim success");
     expect(envelope.executionRules.join(" ")).toContain(".git/**");

@@ -18,7 +18,7 @@ export const AUTH_FRONTEND_CONTEXT_PATH =
 export const AUTH_BACKEND_CONTEXT_PATH =
   "context/backend-auth-conventions.json" as const;
 export const AUTH_ARTIFACT_INTERFACE_DESCRIPTION =
-  'JSON object with exactly two properties: "transport" (one of "bearer-jwt" or "http-only-session-cookie") and "clientReadableCredential" (boolean). The boolean must be true for "bearer-jwt" and false for "http-only-session-cookie". Infer the transport from the assigned role scoped context and repository conventions.' as const;
+  'JSON object with exactly two properties: "transport" (one of "bearer-jwt" or "http-only-session-cookie") and "clientReadableCredential" (boolean). The boolean must be true for "bearer-jwt" and false for "http-only-session-cookie". Infer the transport from the assigned role scoped context and repository conventions. Use this required artifact path as the auth.transport semantic claim evidence path.' as const;
 
 export type AuthTransport =
   | typeof BEARER_TRANSPORT

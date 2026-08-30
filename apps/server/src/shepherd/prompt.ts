@@ -76,7 +76,11 @@ const resultManifestRequirement = {
         value: "string",
         scope: "one predeclared canonical semantic scope",
         mode: "exclusive",
-        evidence: [{ path: "existing repo-relative path", description: "string", line: 1 }],
+        evidence: [{
+          path: "corresponding changed expected artifact path",
+          description: "how that changed artifact supports this claim",
+          line: 1,
+        }],
       },
     ],
     agentDeclaredTests: [{ name: "string", passed: false, summary: "informational only" }],
@@ -96,6 +100,7 @@ const commonExecutionRules = [
 
 const contractExecutionRules = [
   ...commonExecutionRules,
+  "For each semantic claim, evidence.path must be the corresponding changed expected artifact path; never invent an evidence-only path or cite context/control-plane files.",
   "The only permitted .shepherd/** write is the required .shepherd/result.json manifest.",
 ] as const;
 
