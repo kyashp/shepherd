@@ -1408,11 +1408,24 @@ export class ShepherdService {
     }
   }
 
-  private async ensurePrivatePromptProject(): Promise<void> {
+  private async ensurePrivatePromptProject(
+    database: Database,
+    timestamp: string,
+  ): Promise<void> {
     if (this.activeProjects.has("auth-demo")) {
       throw new ShepherdControlError(
         "conflict",
         "The authentication project already has an active Shepherd operation",
+      );
+    }
+    if (
+      database.shepherd.missions.some(
+        (mission) => mission.projectId === "auth-demo" && !terminalMission(mission.state),
+      )
+    ) {
+      throw new ShepherdControlError(
+        "conflict",
+        "Finish or reset the active Mission before collecting another Contract prompt",
       );
     }
     const project = await initializeAuthDemoProject({
@@ -1426,45 +1439,32 @@ export class ShepherdService {
       protectedBranch: project.protectedBranch,
     });
     await planeManager.initialize();
-    const timestamp = this.timestamp();
-    await this.store.mutate((database) => {
+    const existing = database.shepherd.projects.find(
+      (item) => item.id === project.projectId,
+    );
+    if (existing) {
       if (
-        database.shepherd.missions.some(
-          (mission) => mission.projectId === project.projectId && !terminalMission(mission.state),
-        )
+        existing.repositoryPath !== project.repositoryPath ||
+        existing.protectedBranch !== project.protectedBranch ||
+        existing.protectedHeadCommit !== project.headCommit ||
+        existing.activeMissionId !== null
       ) {
         throw new ShepherdControlError(
           "conflict",
-          "Finish or reset the active Mission before collecting another Contract prompt",
+          "The managed authentication project is not ready for Contract intake",
         );
       }
-      const existing = database.shepherd.projects.find(
-        (item) => item.id === project.projectId,
-      );
-      if (existing) {
-        if (
-          existing.repositoryPath !== project.repositoryPath ||
-          existing.protectedBranch !== project.protectedBranch ||
-          existing.protectedHeadCommit !== project.headCommit ||
-          existing.activeMissionId !== null
-        ) {
-          throw new ShepherdControlError(
-            "conflict",
-            "The managed authentication project is not ready for Contract intake",
-          );
-        }
-        return;
-      }
-      database.shepherd.projects.push({
-        id: project.projectId,
-        displayName: "Authentication collision demo",
-        repositoryPath: project.repositoryPath,
-        protectedBranch: project.protectedBranch,
-        protectedHeadCommit: project.headCommit,
-        activeMissionId: null,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      });
+      return;
+    }
+    database.shepherd.projects.push({
+      id: project.projectId,
+      displayName: "Authentication collision demo",
+      repositoryPath: project.repositoryPath,
+      protectedBranch: project.protectedBranch,
+      protectedHeadCommit: project.headCommit,
+      activeMissionId: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
     });
   }
 
@@ -1522,12 +1522,14 @@ export class ShepherdService {
             "Client message ID was already used for a different Contract prompt",
           );
         }
-        return {
-          status: existing.missionId ? "accepted" : "awaiting_peer",
-          missionId: existing.missionId,
-          contractId: existing.contractId,
-          message: structuredClone(existing),
-        };
+        if (existing.missionId) {
+          return {
+            status: "accepted",
+            missionId: existing.missionId,
+            contractId: existing.contractId,
+            message: structuredClone(existing),
+          };
+        }
       }
       if (agent.status !== "ready" || agent.currentContractId) {
         throw new ShepherdControlError(
@@ -1542,7 +1544,12 @@ export class ShepherdService {
           message.contractId === null &&
           message.contractAssignment?.preset === "auth-demo-contract",
       );
-      if (pending.some((message) => message.contractAssignment?.role === role)) {
+      if (
+        pending.some(
+          (message) =>
+            message.id !== messageId && message.contractAssignment?.role === role,
+        )
+      ) {
         throw new ShepherdControlError(
           "conflict",
           `A ${role} Contract prompt is already waiting; reset the demo to replace it`,
@@ -1552,7 +1559,7 @@ export class ShepherdService {
       const peer = pending.find(
         (message) => message.contractAssignment?.role === oppositeRole,
       );
-      const createdAt = this.timestamp();
+      const createdAt = existing?.createdAt ?? this.timestamp();
       const currentRecord: PrivateContractPromptRecord = {
         messageId,
         fingerprint,
@@ -1563,8 +1570,15 @@ export class ShepherdService {
         createdAt,
       };
       if (!peer) {
-        await this.ensurePrivatePromptProject();
-        const message = await this.store.mutate((database) => {
+        if (existing) {
+          return {
+            status: "awaiting_peer",
+            missionId: null,
+            contractId: null,
+            message: structuredClone(existing),
+          };
+        }
+        const message = await this.store.mutate(async (database) => {
           const currentAgent = database.agents.find((item) => item.id === input.agentId);
           if (
             !currentAgent ||
@@ -1590,6 +1604,7 @@ export class ShepherdService {
               `A ${role} Contract prompt is already waiting`,
             );
           }
+          await this.ensurePrivatePromptProject(database, createdAt);
           return appendProjectGroupMessage(database, {
             id: messageId,
             projectId: "auth-demo",
@@ -1647,20 +1662,82 @@ export class ShepherdService {
       };
       const frontend = role === "Frontend" ? currentRecord : peerRecord;
       const backend = role === "Backend" ? currentRecord : peerRecord;
-      const started = await this.startDeterministicDemo({
-        projectId: "auth-demo",
-        originalIntent:
-          "Integrate the independently prompted Frontend and Backend authentication Contracts and resolve any verified semantic collision.",
-        frontendAgentId: frontend.agentId,
-        backendAgentId: backend.agentId,
-        frontendTransport: frontend.transport,
-        backendTransport: backend.transport,
-        contractPrompts: {
-          frontend: frontend.content,
-          backend: backend.content,
-        },
-        privatePromptRecords: { frontend, backend },
-      });
+      if (!existing) {
+        await this.store.mutate((database) => {
+          const currentAgent = database.agents.find((item) => item.id === input.agentId);
+          if (
+            !currentAgent ||
+            currentAgent.role !== role ||
+            currentAgent.status !== "ready" ||
+            currentAgent.currentContractId
+          ) {
+            throw new ShepherdControlError(
+              "conflict",
+              `${agent.name} availability changed before Contract intake`,
+            );
+          }
+          if (
+            database.shepherd.groupMessages.some(
+              (item) =>
+                item.projectId === "auth-demo" &&
+                item.missionId === null &&
+                item.contractAssignment?.role === role,
+            )
+          ) {
+            throw new ShepherdControlError(
+              "conflict",
+              `A ${role} Contract prompt is already waiting`,
+            );
+          }
+          return appendProjectGroupMessage(database, {
+            id: messageId,
+            projectId: "auth-demo",
+            missionId: null,
+            senderType: "human",
+            senderId: null,
+            content,
+            targetAgentId: input.agentId,
+            contractId: null,
+            contractAssignment: {
+              preset: "auth-demo-contract",
+              role,
+              transport,
+            },
+            requestFingerprint: fingerprint,
+            createdAt,
+          });
+        });
+      }
+      let started: { missionId: string };
+      try {
+        started = await this.startDeterministicDemo({
+          projectId: "auth-demo",
+          originalIntent:
+            "Integrate the independently prompted Frontend and Backend authentication Contracts and resolve any verified semantic collision.",
+          frontendAgentId: frontend.agentId,
+          backendAgentId: backend.agentId,
+          frontendTransport: frontend.transport,
+          backendTransport: backend.transport,
+          contractPrompts: {
+            frontend: frontend.content,
+            backend: backend.content,
+          },
+          privatePromptRecords: { frontend, backend },
+        });
+      } catch (error) {
+        if (!existing) {
+          await this.store.mutate((database) => {
+            database.shepherd.groupMessages = database.shepherd.groupMessages.filter(
+              (message) =>
+                message.id !== messageId ||
+                message.missionId !== null ||
+                message.contractId !== null ||
+                message.requestFingerprint !== fingerprint,
+            );
+          });
+        }
+        throw error;
+      }
       const accepted = this.store
         .snapshot()
         .shepherd.groupMessages.find((message) => message.id === messageId);
@@ -3075,10 +3152,11 @@ export class ShepherdService {
           );
           return message ? [{ record, message }] : [];
         });
+        const expectedMessageIds = new Set(records.map((record) => record.messageId));
         if (
-          existingRecords.length !== 1 ||
-          pendingForProject.length !== 1 ||
-          pendingForProject[0]?.id !== existingRecords[0]?.message.id
+          existingRecords.length !== 2 ||
+          pendingForProject.length !== 2 ||
+          pendingForProject.some((message) => !expectedMessageIds.has(message.id))
         ) {
           throw new ShepherdControlError(
             "conflict",

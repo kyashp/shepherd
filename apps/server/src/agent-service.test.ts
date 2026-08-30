@@ -1,6 +1,7 @@
 import {
   mkdir,
   mkdtemp,
+  lstat,
   readFile,
   symlink,
   writeFile,
@@ -11,6 +12,7 @@ import { AgentService } from "./agent-service.js";
 import { loadConfig } from "./config.js";
 import { emptyDatabase } from "./database.js";
 import { JsonStore } from "./store.js";
+import { ShepherdService } from "./shepherd/service.js";
 import type { Agent, AgentRunner, Database, RunnerRequest, RunnerResult } from "./types.js";
 import { WorkspaceManager } from "./workspace.js";
 
@@ -190,6 +192,138 @@ describe("Agent lifecycle", () => {
     expect((await service.startAgent(agent.id)).status).toBe("ready");
     await expect(service.deleteAgent(agent.id)).resolves.toEqual({ deleted: true });
     expect(service.listAgents()).toHaveLength(0);
+  });
+
+  it("preserves an Agent and workspace while a private Contract prompt references it", async () => {
+    const service = await makeService();
+    const agent = await service.createAgent({
+      name: "Pending frontend owner",
+      role: "Frontend",
+    });
+    const internals = service as unknown as {
+      store: JsonStore;
+      workspaces: WorkspaceManager;
+    };
+    await internals.store.mutate((database) => {
+      database.shepherd.projects.push({
+        id: "auth-demo",
+        displayName: "Authentication collision demo",
+        repositoryPath: path.join(agent.workspacePath, "managed-project"),
+        protectedBranch: "main",
+        protectedHeadCommit: "a".repeat(40),
+        activeMissionId: null,
+        createdAt: agent.createdAt,
+        updatedAt: agent.createdAt,
+      });
+      database.shepherd.groupMessages.push({
+        id: "group-private-pending-frontend",
+        projectId: "auth-demo",
+        missionId: null,
+        senderType: "human",
+        senderId: null,
+        content: "Implement frontend auth with an HttpOnly session cookie.",
+        targetAgentId: agent.id,
+        contractId: null,
+        contractAssignment: {
+          preset: "auth-demo-contract",
+          role: "Frontend",
+          transport: "http-only-session-cookie",
+        },
+        requestFingerprint: "b".repeat(64),
+        createdAt: agent.createdAt,
+      });
+    });
+    const archive = vi.spyOn(internals.workspaces, "archive");
+
+    await expect(service.deleteAgent(agent.id)).rejects.toMatchObject({
+      statusCode: 409,
+    });
+    expect(archive).not.toHaveBeenCalled();
+    expect(service.getAgent(agent.id)).toMatchObject({ id: agent.id, status: "ready" });
+    expect(
+      internals.store.snapshot().shepherd.groupMessages.find(
+        (message) => message.targetAgentId === agent.id,
+      ),
+    ).toBeDefined();
+    await expect(readFile(path.join(agent.workspacePath, "AGENTS.md"), "utf8"))
+      .resolves.toContain("Pending frontend owner");
+  });
+
+  it("serializes Agent archive against a racing private Contract prompt", async () => {
+    const service = await makeService();
+    const agent = await service.createAgent({
+      name: "Racing frontend owner",
+      role: "Frontend",
+    });
+    const internals = service as unknown as {
+      store: JsonStore;
+      workspaces: WorkspaceManager;
+    };
+    const caseRoot = path.dirname(path.dirname(agent.workspacePath));
+    const managedRoot = path.join(caseRoot, "shepherd-managed");
+    const shepherd = new ShepherdService({
+      store: internals.store,
+      managedRoot,
+      agentWorkspaceRoot: path.dirname(agent.workspacePath),
+      verifier: {
+        verify: async () => {
+          throw new Error("The first private prompt must not invoke verification");
+        },
+      },
+    });
+    await shepherd.initialize();
+    const mutate = vi.spyOn(internals.store, "mutate");
+    const originalArchive = internals.workspaces.archive.bind(internals.workspaces);
+    let archiveStarted!: () => void;
+    const archiveObserved = new Promise<void>((resolve) => {
+      archiveStarted = resolve;
+    });
+    let releaseArchive!: () => void;
+    const archiveBarrier = new Promise<void>((resolve) => {
+      releaseArchive = resolve;
+    });
+    let archivedPath: string | null = null;
+    vi.spyOn(internals.workspaces, "archive").mockImplementationOnce(async (current) => {
+      archiveStarted();
+      await archiveBarrier;
+      archivedPath = await originalArchive(current);
+      return archivedPath;
+    });
+
+    const deletion = service.deleteAgent(agent.id);
+    await archiveObserved;
+    const racingPrompt = shepherd.submitPrivateContractPrompt({
+      agentId: agent.id,
+      clientMessageId: "racing-private-prompt",
+      content: "Implement frontend auth with an HttpOnly session cookie.",
+    });
+    const promptRejection = expect(racingPrompt).rejects.toMatchObject({
+      code: "conflict",
+    });
+    await vi.waitFor(() => expect(mutate).toHaveBeenCalledTimes(2));
+    releaseArchive();
+
+    await expect(deletion).resolves.toEqual({ deleted: true });
+    await promptRejection;
+    expect(internals.store.snapshot().shepherd.projects).toHaveLength(0);
+    expect(internals.store.snapshot().shepherd.groupMessages).toHaveLength(0);
+    expect(() => service.getAgent(agent.id)).toThrow("Agent not found");
+    await expect(lstat(agent.workspacePath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(archivedPath).not.toBeNull();
+    await expect(lstat(archivedPath!)).resolves.toMatchObject({ isDirectory: expect.any(Function) });
+    await expect(lstat(path.join(managedRoot, "projects", "auth-demo.json")))
+      .rejects.toMatchObject({ code: "ENOENT" });
+    const recovered = new ShepherdService({
+      store: internals.store,
+      managedRoot,
+      agentWorkspaceRoot: path.dirname(agent.workspacePath),
+      verifier: {
+        verify: async () => {
+          throw new Error("Recovery must not invoke verification");
+        },
+      },
+    });
+    await expect(recovered.initialize()).resolves.toBeUndefined();
   });
 
   it("does not stop an Agent reserved by Shepherd while cancellation is pending", async () => {

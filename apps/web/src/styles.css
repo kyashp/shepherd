@@ -510,6 +510,11 @@ a {
   background: #f2f1ed;
 }
 
+.shepherd-main {
+  display: flex;
+  flex-direction: column;
+}
+
 .page {
   width: 100%;
   max-width: 1400px;
@@ -877,7 +882,8 @@ label small {
 
 /* Shepherd mission control */
 .shepherd-page {
-  height: 100%;
+  flex: 1 1 auto;
+  height: auto;
   min-height: 0;
   display: flex;
   flex-direction: column;

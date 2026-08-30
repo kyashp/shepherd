@@ -52,6 +52,18 @@ async function assertNoDocumentOverflow(page) {
   }
 }
 
+async function assertShepherdShellContained(page) {
+  const geometry = await page.locator(".main-content").evaluate((element) => ({
+    scrollWidth: element.scrollWidth,
+    clientWidth: element.clientWidth,
+    scrollHeight: element.scrollHeight,
+    clientHeight: element.clientHeight,
+  }));
+  expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth);
+  expect(geometry.scrollHeight).toBeLessThanOrEqual(geometry.clientHeight);
+  await expect(page.getByLabel("Message Shepherd")).toBeInViewport();
+}
+
 test.beforeEach(async () => {
   app = await startTestApp();
 });
@@ -68,12 +80,20 @@ test("user-created Agents receive visible typed contracts and produce competing 
   await unlock(page);
   await createAgent(page, "My Frontend Agent", "Frontend");
   await createAgent(page, "My Backend Agent", "Backend");
+  await createAgent(page, "My Generalist Agent", "Generalist");
 
   await page.getByRole("link", { name: /My Frontend Agent/u }).click();
   const frontendRoute = page.getByLabel("Route through Shepherd");
   await frontendRoute.focus();
   await expect(frontendRoute).toBeFocused();
   await frontendRoute.check();
+  await page.getByRole("link", { name: /My Generalist Agent/u }).click();
+  await expect(page.getByLabel("Route through Shepherd")).toHaveCount(0);
+  await expect(page.getByText("Playground ready", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Message My Generalist Agent")).toBeEnabled();
+  await page.getByRole("link", { name: /My Frontend Agent/u }).click();
+  await expect(page.getByLabel("Route through Shepherd")).not.toBeChecked();
+  await page.getByLabel("Route through Shepherd").check();
   const frontendPrompt =
     "Implement the frontend authentication client using an HttpOnly session cookie.";
   await page.getByLabel("Message My Frontend Agent").fill(frontendPrompt);
@@ -93,7 +113,9 @@ test("user-created Agents receive visible typed contracts and produce competing 
   });
 
   await page.getByRole("link", { name: /My Backend Agent/u }).click();
-  await page.getByLabel("Route through Shepherd").check();
+  const backendRoute = page.getByLabel("Route through Shepherd");
+  await expect(backendRoute).not.toBeChecked();
+  await backendRoute.check();
   const backendPrompt =
     "Implement the backend authentication service using a bearer JWT.";
   await page.getByLabel("Message My Backend Agent").fill(backendPrompt);
@@ -103,6 +125,7 @@ test("user-created Agents receive visible typed contracts and produce competing 
   await page.getByLabel("Message My Backend Agent").press("Enter");
   expect((await acceptedResponse).status()).toBe(202);
   const finalState = await waitForCompleted(request);
+  await expect(page.locator(".shepherd-contract-status")).toContainText("is verified");
   await page.getByRole("link", { name: /^Shepherd/u }).click();
   await expect(page.locator(".timeline-panel .state-pill")).toContainText("Completed");
   await expect(page.getByLabel("Frontend Agent", { exact: true })).toHaveCount(0);
@@ -145,6 +168,7 @@ test("user-created Agents receive visible typed contracts and produce competing 
   await expect(page.locator("button.tree-node").filter({ hasText: "bearer-jwt" })).toBeVisible();
   await expect(page.locator("button.tree-node").filter({ hasText: "http-only-session-cookie" })).toBeVisible();
   await assertNoDocumentOverflow(page);
+  await assertShepherdShellContained(page);
   await page.screenshot({
     path: path.join(screenshotDirectory, `${viewport.width}x${viewport.height}.png`),
     fullPage: false,

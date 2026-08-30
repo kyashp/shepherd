@@ -84,6 +84,7 @@ export function AgentPage({
 
   useEffect(() => {
     mounted.current = true;
+    setShepherdMode(false);
     if (!agent) {
       setLoading(false);
       return;
