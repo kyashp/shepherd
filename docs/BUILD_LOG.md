@@ -38,6 +38,51 @@ verification ran from a clean detached worktree at that exact SHA.
 - `T,A,C` are complete. `I` remains pending until PR #74 is integrated and the
   corrected focused flow is rerun on updated `origin/main`.
 
+## 2026-08-30 — issue #43 unauthorized-diff denial candidate
+
+Branch `fix/43-ui-01-unauthorized-denial`, initially based on protected `main`
+`2e4058107311170ab12cadc6a6d283aeaefef895` and rebased onto current `main`
+`18daa3a`. This is reviewed candidate evidence for issue #43; protected-main
+integration is not claimed.
+
+- **RED/correction:** an ordinary failed Mission rendered only a generic Failed
+  timeline pill even though its denied Contract retained
+  `unauthorized_file_change` at `contract_authority`. The existing attention
+  panel now uses that precise Contract cause for failed Missions, labels the
+  safety stop and no-promotion outcome, and keeps the shortened Contract ID
+  traceable through its full-value title. The focused presentation regression
+  failed for each missing behavior before its correction and passes 6/6.
+- **Causal browser proof:** a test-only executor wrapper uses the real compiled
+  service, store and host-trusted verifier to modify `policy.json` outside a
+  delegated `src/frontend/**` scope. The real authority boundary rejects it,
+  durable state reloads through the production server, and authenticated
+  Chromium proves the typed Contract denial, failed Mission, unchanged stored
+  and actual protected heads, zero Candidates, zero integration or promotion,
+  keyboard/focus evidence expansion, bounded public evidence and no page
+  overflow at `1280x800` and `1440x900`. The focused journey passed 2/2; all
+  four committed screenshots were inspected under `docs/ui-review/e2e-04/`.
+- **Checks observed:** Web passed 20/20, the exact real-service authority test
+  passed, both production builds passed, harness unit passed 7/7, strict syntax
+  checks and `git diff --check` passed, and literal `npm run check` passed with
+  launcher 3/3, Server 808 passed plus three explicit skips, Web 20/20, strict
+  production/test-source types and both builds. `npm audit` reported zero
+  vulnerabilities across 251 dependencies.
+- The subsequent pre-push hook reproduced the existing parallel interrupted-policy
+  cleanup race: Server 806 passed plus three skips while two
+  `general-project.test.ts` cases failed. That file then passed 8/8 alone. The
+  hook-created staged `policy.json` artifact was cleared, and only the documented
+  hook was bypassed for the branch update; no test or assertion was changed.
+- The full browser harness passed 22/24. Both failures are unchanged
+  `starter-kit.spec.mjs` behavior outside the owned surface and reproduce in
+  that spec alone: a 0.09375px legacy viewport-boundary assertion at 1280 and a
+  30-second legacy follow-up response timeout at 1440. No assertion, retry,
+  timeout, starter UI or unrelated source was changed to conceal them.
+- Independent read-only audit and re-review found no remaining Critical,
+  Important or Minor issue in #43 scope and returned Pass for security and UI.
+  No production backend/schema, CSS, dependency, live Runtime or model path
+  changed; the accepted UI design remains frozen. Protected-main integration
+  and its rerun remain pending.
+
 ## 2026-08-30 — FM-01 deterministic failure matrix candidate
 
 Branch `feat/42-fm-01-failure-matrix`, implementation `051b32a`, draft PR #72.
