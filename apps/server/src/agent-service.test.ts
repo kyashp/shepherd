@@ -622,6 +622,91 @@ describe("Agent lifecycle", () => {
     await expect(recoveredShepherd.initialize()).resolves.toBeUndefined();
   });
 
+  it("rejects a direct run after Agent deletion reserves the lifecycle", async () => {
+    const run = vi.fn(async () => ({
+      output: "must not run",
+      threadId: "unexpected-thread",
+      usage: null,
+    }));
+    const cancel = vi.fn(async () => false);
+    const service = await makeService({
+      run,
+      cancel,
+      isAvailable: async () => true,
+    });
+    const agent = await service.createAgent({ name: "Delete-first direct Agent" });
+    const workspaces = (service as unknown as { workspaces: WorkspaceManager }).workspaces;
+    const originalBegin = workspaces.beginArchiveDeletion.bind(workspaces);
+    let deletionReserved!: () => void;
+    const reservationObserved = new Promise<void>((resolve) => {
+      deletionReserved = resolve;
+    });
+    let releaseDeletion!: () => void;
+    const deletionBarrier = new Promise<void>((resolve) => {
+      releaseDeletion = resolve;
+    });
+    vi.spyOn(workspaces, "beginArchiveDeletion").mockImplementationOnce(async (current) => {
+      deletionReserved();
+      await deletionBarrier;
+      await originalBegin(current);
+    });
+
+    const deletion = service.deleteAgent(agent.id);
+    await reservationObserved;
+    await expect(service.sendMessage(agent.id, "Run while deletion is reserved"))
+      .rejects.toMatchObject({
+        statusCode: 409,
+        message: "Agent deletion is in progress",
+      });
+    expect(run).not.toHaveBeenCalled();
+    releaseDeletion();
+    await expect(deletion).resolves.toEqual({ deleted: true });
+    expect(run).not.toHaveBeenCalled();
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("cancels and joins an active direct run before successful Agent deletion", async () => {
+    let runStarted!: () => void;
+    const runObserved = new Promise<void>((resolve) => {
+      runStarted = resolve;
+    });
+    let finishRun!: () => void;
+    const runBarrier = new Promise<void>((resolve) => {
+      finishRun = resolve;
+    });
+    const run = vi.fn(async () => {
+      runStarted();
+      await runBarrier;
+      return { output: "cancelled before deletion", threadId: "joined-thread", usage: null };
+    });
+    const cancel = vi.fn(async () => {
+      finishRun();
+      return true;
+    });
+    const service = await makeService({
+      run,
+      cancel,
+      isAvailable: async () => true,
+    });
+    const agent = await service.createAgent({ name: "Run-first direct Agent" });
+    await expect(service.sendMessage(agent.id, "Start before deletion"))
+      .resolves.toMatchObject({ run: { status: "queued" } });
+    await runObserved;
+
+    await expect(service.deleteAgent(agent.id)).resolves.toEqual({ deleted: true });
+    expect(run).toHaveBeenCalledOnce();
+    expect(cancel).toHaveBeenCalledOnce();
+    const internals = service as unknown as {
+      store: JsonStore;
+      activeExecutions: Map<string, Promise<void>>;
+    };
+    expect(internals.activeExecutions.has(agent.id)).toBe(false);
+    expect(internals.store.snapshot().agents).toEqual([]);
+    expect(internals.store.snapshot().runs).toEqual([]);
+    expect(internals.store.snapshot().messages).toEqual([]);
+    await expect(lstat(agent.workspacePath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("does not stop an Agent reserved by Shepherd while cancellation is pending", async () => {
     let cancellationStarted!: () => void;
     const cancellationObserved = new Promise<void>((resolve) => {

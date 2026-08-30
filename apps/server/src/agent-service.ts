@@ -193,6 +193,7 @@ function safeAuthority(
 export class AgentService {
   private readonly activeExecutions = new Map<string, Promise<void>>();
   private readonly cancellationRequests = new Set<string>();
+  private readonly deletionReservations = new Set<string>();
 
   constructor(
     private readonly config: AppConfig,
@@ -300,107 +301,122 @@ export class AgentService {
   }
 
   async deleteAgent(id: string): Promise<{ deleted: true }> {
-    const agent = this.getAgent(id);
-    const initialAssessment = assessAgentDeletion(this.store.snapshot().shepherd, id);
-    if (initialAssessment.blockingReference) {
-      throw new HttpError(
-        409,
-        "Cannot delete an Agent referenced by durable Shepherd history",
-      );
+    if (this.deletionReservations.has(id)) {
+      throw new HttpError(409, "Agent deletion is already in progress");
     }
-    await this.cancelExecution(id);
-    let journaledProjectId: string | null = null;
-    let workspaceJournaled = false;
+    this.deletionReservations.add(id);
+    let retainDeletionReservation = false;
     try {
-      await this.workspaces.beginArchiveDeletion(agent);
-      workspaceJournaled = true;
-      const deletion = await this.store.mutate(async (database) => {
-        const currentAgent = database.agents.find((item) => item.id === id);
-        if (!currentAgent) {
-          throw new HttpError(404, "Agent not found");
+      const agent = this.getAgent(id);
+      const initialAssessment = assessAgentDeletion(
+        this.store.snapshot().shepherd,
+        id,
+      );
+      if (initialAssessment.blockingReference) {
+        throw new HttpError(
+          409,
+          "Cannot delete an Agent referenced by durable Shepherd history",
+        );
+      }
+      await this.cancelExecution(id);
+      let journaledProjectId: string | null = null;
+      let workspaceJournaled = false;
+      try {
+        await this.workspaces.beginArchiveDeletion(agent);
+        workspaceJournaled = true;
+        const deletion = await this.store.mutate(async (database) => {
+          const currentAgent = database.agents.find((item) => item.id === id);
+          if (!currentAgent) {
+            throw new HttpError(404, "Agent not found");
+          }
+          const assessment = assessAgentDeletion(database.shepherd, id);
+          if (assessment.blockingReference) {
+            throw new HttpError(
+              409,
+              "Cannot delete an Agent referenced by durable Shepherd history",
+            );
+          }
+          if (assessment.clarificationProjectId) {
+            await beginGeneralProjectDeletion(
+              this.config.shepherdRoot,
+              assessment.clarificationProjectId,
+            );
+            journaledProjectId = assessment.clarificationProjectId;
+          }
+          database.agents = database.agents.filter((item) => item.id !== id);
+          database.messages = database.messages.filter((item) => item.agentId !== id);
+          database.runs = database.runs.filter((item) => item.agentId !== id);
+          if (assessment.clarificationProjectId) {
+            database.shepherd.groupMessages = database.shepherd.groupMessages.filter(
+              (message) => !assessment.clarificationMessageIds.has(message.id),
+            );
+            database.shepherd.projects = database.shepherd.projects.filter(
+              (project) => project.id !== assessment.clarificationProjectId,
+            );
+          }
+          return {
+            deleted: true as const,
+            clarificationProjectId: assessment.clarificationProjectId,
+          };
+        });
+        if (deletion.clarificationProjectId) {
+          try {
+            await completeGeneralProjectDeletion(
+              this.config.shepherdRoot,
+              deletion.clarificationProjectId,
+            );
+          } catch {
+            const durableProjectIds = new Set(
+              this.store.snapshot().shepherd.projects.map((project) => project.id),
+            );
+            try {
+              await reconcileGeneralProjectDeletions(
+                this.config.shepherdRoot,
+                durableProjectIds,
+              );
+            } catch {
+              throw new HttpError(
+                500,
+                "Agent was archived; managed clarification cleanup requires restart",
+              );
+            }
+          }
         }
-        const assessment = assessAgentDeletion(database.shepherd, id);
-        if (assessment.blockingReference) {
+        await this.workspaces.completeArchiveDeletion(id);
+        return { deleted: true };
+      } catch (error) {
+        if (error instanceof PersistenceBoundaryError) {
+          retainDeletionReservation = true;
           throw new HttpError(
-            409,
-            "Cannot delete an Agent referenced by durable Shepherd history",
+            500,
+            "Agent deletion persistence is uncertain; restart to reconcile safely",
           );
         }
-        if (assessment.clarificationProjectId) {
-          await beginGeneralProjectDeletion(
-            this.config.shepherdRoot,
-            assessment.clarificationProjectId,
+        if (workspaceJournaled || journaledProjectId) {
+          const durableAgentIds = new Set(
+            this.store.snapshot().agents.map((item) => item.id),
           );
-          journaledProjectId = assessment.clarificationProjectId;
-        }
-        database.agents = database.agents.filter((item) => item.id !== id);
-        database.messages = database.messages.filter((item) => item.agentId !== id);
-        database.runs = database.runs.filter((item) => item.agentId !== id);
-        if (assessment.clarificationProjectId) {
-          database.shepherd.groupMessages = database.shepherd.groupMessages.filter(
-            (message) => !assessment.clarificationMessageIds.has(message.id),
-          );
-          database.shepherd.projects = database.shepherd.projects.filter(
-            (project) => project.id !== assessment.clarificationProjectId,
-          );
-        }
-        return {
-          deleted: true as const,
-          clarificationProjectId: assessment.clarificationProjectId,
-        };
-      });
-      if (deletion.clarificationProjectId) {
-        try {
-          await completeGeneralProjectDeletion(
-            this.config.shepherdRoot,
-            deletion.clarificationProjectId,
-          );
-        } catch {
           const durableProjectIds = new Set(
             this.store.snapshot().shepherd.projects.map((project) => project.id),
           );
-          try {
-            await reconcileGeneralProjectDeletions(
-              this.config.shepherdRoot,
-              durableProjectIds,
-            );
-          } catch {
-            throw new HttpError(
-              500,
-              "Agent was archived; managed clarification cleanup requires restart",
-            );
-          }
+          await Promise.all([
+            workspaceJournaled
+              ? this.workspaces.reconcileArchiveDeletions(durableAgentIds)
+              : Promise.resolve(),
+            journaledProjectId
+              ? reconcileGeneralProjectDeletions(
+                  this.config.shepherdRoot,
+                  durableProjectIds,
+                )
+              : Promise.resolve(),
+          ]).catch(() => undefined);
         }
+        throw error;
       }
-      await this.workspaces.completeArchiveDeletion(id);
-      return { deleted: true };
-    } catch (error) {
-      if (error instanceof PersistenceBoundaryError) {
-        throw new HttpError(
-          500,
-          "Agent deletion persistence is uncertain; restart to reconcile safely",
-        );
+    } finally {
+      if (!retainDeletionReservation) {
+        this.deletionReservations.delete(id);
       }
-      if (workspaceJournaled || journaledProjectId) {
-        const durableAgentIds = new Set(
-          this.store.snapshot().agents.map((item) => item.id),
-        );
-        const durableProjectIds = new Set(
-          this.store.snapshot().shepherd.projects.map((project) => project.id),
-        );
-        await Promise.all([
-          workspaceJournaled
-            ? this.workspaces.reconcileArchiveDeletions(durableAgentIds)
-            : Promise.resolve(),
-          journaledProjectId
-            ? reconcileGeneralProjectDeletions(
-                this.config.shepherdRoot,
-                durableProjectIds,
-              )
-            : Promise.resolve(),
-        ]).catch(() => undefined);
-      }
-      throw error;
     }
   }
 
@@ -447,6 +463,9 @@ export class AgentService {
     agentId: string,
     prompt: string,
   ): Promise<{ run: AgentRun; message: Message }> {
+    if (this.deletionReservations.has(agentId)) {
+      throw new HttpError(409, "Agent deletion is in progress");
+    }
     if (!isArkConfigured(this.config)) {
       throw new HttpError(
         503,
@@ -476,6 +495,9 @@ export class AgentService {
       createdAt: timestamp,
     };
     const agentAtStart = await this.store.mutate((database) => {
+      if (this.deletionReservations.has(agentId)) {
+        throw new HttpError(409, "Agent deletion is in progress");
+      }
       const storedAgent = database.agents.find((item) => item.id === agentId);
       if (!storedAgent) {
         throw new HttpError(404, "Agent not found");
@@ -497,6 +519,18 @@ export class AgentService {
       storedAgent.updatedAt = timestamp;
       return snapshot;
     });
+    if (this.deletionReservations.has(agentId)) {
+      await this.store.mutate((database) => {
+        database.runs = database.runs.filter((item) => item.id !== run.id);
+        database.messages = database.messages.filter((item) => item.id !== message.id);
+        const storedAgent = database.agents.find((item) => item.id === agentId);
+        if (storedAgent?.status === "busy") {
+          storedAgent.status = "ready";
+          storedAgent.updatedAt = now();
+        }
+      });
+      throw new HttpError(409, "Agent deletion is in progress");
+    }
     const execution = this.executeRun(agentAtStart, run);
     this.activeExecutions.set(agentId, execution);
     void execution
