@@ -683,6 +683,7 @@ async function recordBrowserJourney(baseURL, authToken) {
   const chapter = chapterRecorder(startedAt);
   let missionId;
   let finalSnapshot;
+  let journeyCompleted = false;
   try {
     await page.goto(`${baseURL}/settings`, { waitUntil: "networkidle" });
     await waitForVisible(page.getByRole("heading", { name: "Settings", exact: true }));
@@ -824,14 +825,34 @@ async function recordBrowserJourney(baseURL, authToken) {
     await assertNoDocumentOverflow(page);
     chapter.mark("Expected-HEAD protected promotion and completed Mission", "Only the independently reverified future advances the protected branch; the complete causal evidence remains inspectable.");
     await pause(12_000);
+    journeyCompleted = true;
   } finally {
-    await context.close();
-    await browser.close();
+    if (journeyCompleted) {
+      await finalizeRecordedVideo(context, video, browser, videoPath);
+    } else {
+      await context.close().catch(() => undefined);
+      await browser.close().catch(() => undefined);
+    }
   }
-  await video.saveAs(videoPath);
   await rm(rawVideoRoot, { recursive: true, force: true });
   assert(missionId && finalSnapshot, "Live journey did not reach its acceptance boundary");
   return { missionId, finalSnapshot, chapters: chapter.chapters };
+}
+
+export async function finalizeRecordedVideo(context, video, browser, target) {
+  let failure;
+  try {
+    await context.close();
+    await video.saveAs(target);
+  } catch (error) {
+    failure = error;
+  }
+  try {
+    await browser.close();
+  } catch (error) {
+    failure ??= error;
+  }
+  if (failure) throw failure;
 }
 
 function assertLiveEvidence(state, missionId) {
@@ -917,7 +938,10 @@ async function sha256(target) {
 
 async function validateVideo(chapters) {
   const ffmpeg = await findBundledFfmpeg();
-  await runFfmpeg(ffmpeg, ["-v", "error", "-i", videoPath, "-f", "null", "-"]);
+  await runFfmpeg(ffmpeg, [
+    "-v", "error", "-i", videoPath,
+    "-c:v", "png", "-f", "image2", "-update", "1", "-y", "/dev/null",
+  ]);
   const probe = await runFfmpeg(ffmpeg, ["-hide_banner", "-i", videoPath], { allowFailure: true });
   const metadataText = `${probe.stdout}\n${probe.stderr}`;
   const durationMatch = metadataText.match(/Duration:\s*(\d+):(\d+):([\d.]+)/u);

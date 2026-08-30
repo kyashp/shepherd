@@ -10,6 +10,7 @@ import test from "node:test";
 import {
   consumeRecordingAuthorization,
   createRecordingAuthorization,
+  finalizeRecordedVideo,
   readLiveEnvironment,
   startLiveApplication,
 } from "./record-live-demo.mjs";
@@ -132,4 +133,30 @@ test("reviewed SHA authorization is exact and each run ID is consumed once", asy
     await rm(authorized, { force: true });
     await rm(consumed, { force: true });
   }
+});
+
+test("recording finalization saves video before closing the browser", async () => {
+  const order = [];
+  await finalizeRecordedVideo(
+    { close: async () => { order.push("context.close"); } },
+    { saveAs: async () => { order.push("video.saveAs"); } },
+    { close: async () => { order.push("browser.close"); } },
+    "/ignored/generated-video.webm",
+  );
+  assert.deepEqual(order, ["context.close", "video.saveAs", "browser.close"]);
+
+  const failingOrder = [];
+  await assert.rejects(
+    finalizeRecordedVideo(
+      { close: async () => { failingOrder.push("context.close"); } },
+      { saveAs: async () => {
+        failingOrder.push("video.saveAs");
+        throw new Error("save failed");
+      } },
+      { close: async () => { failingOrder.push("browser.close"); } },
+      "/ignored/generated-video.webm",
+    ),
+    /save failed/u,
+  );
+  assert.deepEqual(failingOrder, ["context.close", "video.saveAs", "browser.close"]);
 });
