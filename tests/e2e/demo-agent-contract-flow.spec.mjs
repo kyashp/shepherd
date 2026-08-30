@@ -292,12 +292,19 @@ test("clarification-only Shepherd drafts do not trap an Agent lifecycle", async 
 
   await page.getByRole("button", { name: "Stop", exact: true }).click();
   await expect(page.getByText("Agent stopped", { exact: true })).toBeVisible();
-  page.once("dialog", (dialog) => dialog.accept());
   const deletionResponse = page.waitForResponse((response) =>
     response.request().method() === "DELETE" &&
     response.url().endsWith(`/api/agents/${agent.id}`),
   );
-  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  const confirmation = page.waitForEvent("dialog");
+  const deleteClick = page.getByRole("button", { name: "Delete", exact: true }).click();
+  const dialog = await confirmation;
+  expect(dialog.type()).toBe("confirm");
+  expect(dialog.message()).toBe(
+    "Delete Disposable Draft Agent? Its workspace will be safely archived by the control plane.",
+  );
+  await dialog.accept();
+  await deleteClick;
   expect((await deletionResponse).status()).toBe(200);
   await expect(page.getByRole("heading", { name: "Your Agents", exact: true })).toBeVisible();
   await expect(page.getByText("No Agents yet", { exact: true })).toBeVisible();

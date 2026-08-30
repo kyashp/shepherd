@@ -44,6 +44,38 @@ protected-main integration is not claimed.
   or raw prompt/output was persisted in evidence, and the accepted UI design was
   not redesigned.
 
+## 2026-08-30 — CRUD-01 clarification-only Agent deletion candidate
+
+- **Branch/review:** `fix/66-crud-01-clarification-draft-delete`, issue #66,
+  draft PR #67. No Web or CSS source changed.
+- **RED:** a stopped Agent with only unbound `general-contract`
+  `clarification_required` messages, zero Contracts/Missions/Planes/events, and an
+  inactive managed Project failed deletion with `Cannot delete an Agent referenced
+  by durable Shepherd history`.
+- **Correction:** deletion classifies only exact human-authored, unbound general
+  clarification messages as discardable. All durable or ambiguous references keep
+  the 409. Before deleting the exact managed Project, the server validates the
+  managed-root sentinel, metadata identity, main-only Git worktree state, absence of
+  Shepherd branches and empty private Plane roots. Fixed-schema, fsynced workspace
+  intent and Project deletion journals are written before database publication and
+  reconciled from on-disk durable Agent/Project state after restart. General Project
+  creation/policy journaling now begins inside the serialized Store mutation after
+  Agent revalidation, so a racing follow-up cannot strand a journal.
+- **Observed checks:** production/test typechecks; focused Agent lifecycle/general
+  Project 27/27, including injected pre-publication and post-rename persistence
+  faults plus the exact follow-up/delete barrier and clean restarts; adjacent
+  API/Shepherd 77/77; literal `npm run check` with launcher 3/3, Server 789 passed
+  plus two explicit opt-in skips, Web 18/18, and both
+  production builds. Authenticated deterministic Chromium passed 2/2 at 1280x800
+  and 1440x900, including two clarification turns, exact 200 deletion, empty Agent
+  UI/state, exact filesystem absence and no document/body overflow. All four
+  screenshots were inspected. Independent UI review found no High/Medium issue;
+  it confirmed the frozen theme/layout and keyboard-operable native lifecycle
+  controls. The first security review's three Medium counterexamples are covered by
+  the corrected 27-test slice; independent re-review and protected-main integration
+  remain pending. The same-OS-user recursive-path swap is retained as a Low residual
+  under the existing single-owner managed-root threat model.
+
 ## 2026-08-30 — the launcher selects its own state layout
 
 Same branch and host. `LOCAL_POC_STATE_MODE` defaulted to `host-bind`, so the
