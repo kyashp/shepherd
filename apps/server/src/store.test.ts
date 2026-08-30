@@ -7,6 +7,7 @@ import {
   rm,
   symlink,
   truncate,
+  unlink,
   writeFile,
 } from "node:fs/promises";
 import { execFile } from "node:child_process";
@@ -15,10 +16,25 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { emptyDatabase } from "./database.js";
 import type { ShepherdEventInput } from "./database.js";
-import { JsonStore, MAX_DATABASE_BYTES } from "./store.js";
+import {
+  JsonStore,
+  MAX_DATABASE_BYTES,
+  type PersistenceRecoveryIntentInput,
+  type PersistenceFaultStage,
+} from "./store.js";
+import { reconcilePersistenceRecoveryIntent } from "./shepherd/recovery.js";
 
 const temporaryDirectories: string[] = [];
 const execFileAsync = promisify(execFile);
+
+const recoveryIntent = (): PersistenceRecoveryIntentInput => ({
+  operation: "mission_verification_transition",
+  missionId: "mission-test",
+  contractIds: ["contract-front", "contract-back"],
+  planeIds: ["plane-front", "plane-back"],
+  stage: "mission_verification_persistence",
+  timestamp: "2026-08-30T00:00:00.000Z",
+});
 
 async function makeTemporaryDirectory(): Promise<string> {
   const root = path.resolve(process.cwd(), ".tmp", "store-tests");
@@ -401,5 +417,249 @@ describe("JsonStore", () => {
     ).rejects.toThrow("contains an accessor");
     expect(invoked).toBe(false);
     expect(JSON.stringify(store.snapshot())).not.toContain("must never run");
+  });
+
+  it("retains a bounded recovery journal while rolling back a failed primary write", async () => {
+    const root = await makeTemporaryDirectory();
+    const databasePath = path.join(root, "db.json");
+    let inject = false;
+    const store = new JsonStore(databasePath, {
+      persistenceFaultCheckpoint: (stage) => {
+        if (inject && stage === "primary_write") throw new Error("opaque primary fault");
+      },
+    });
+    await store.initialize();
+    const before = await readFile(databasePath, "utf8");
+    inject = true;
+    await expect(store.mutateRecoverably(recoveryIntent(), (database) => {
+      database.shepherd.settings.modelReviewEnabled = false;
+    })).rejects.toThrow("Database persistence did not complete durably");
+    expect(store.snapshot().shepherd.settings.modelReviewEnabled).toBe(true);
+    expect(await readFile(databasePath, "utf8")).toBe(before);
+    expect(store.persistenceRecoveryIntent()).toMatchObject(recoveryIntent());
+    const journal = await readFile(databasePath + ".persistence-intent.json", "utf8");
+    expect(journal).not.toContain("opaque primary fault");
+    expect(journal.length).toBeLessThan(8_192);
+  });
+
+  it("distinguishes a committed rename from directory-sync ambiguity by digest", async () => {
+    const root = await makeTemporaryDirectory();
+    const databasePath = path.join(root, "db.json");
+    let inject = false;
+    const store = new JsonStore(databasePath, {
+      persistenceFaultCheckpoint: (stage) => {
+        if (inject && stage === "primary_directory_sync") {
+          throw new Error("opaque directory sync fault");
+        }
+      },
+    });
+    await store.initialize();
+    inject = true;
+    await expect(store.mutateRecoverably(recoveryIntent(), (database) => {
+      database.shepherd.settings.modelReviewEnabled = false;
+    })).rejects.toThrow("Database persistence did not complete durably");
+    const pending = store.persistenceRecoveryIntent();
+    expect(pending).not.toBeNull();
+
+    const restarted = new JsonStore(databasePath);
+    await restarted.initialize();
+    expect(restarted.snapshot().shepherd.settings.modelReviewEnabled).toBe(false);
+    expect(restarted.persistenceRecoveryIntent()).toEqual(pending);
+    expect(restarted.currentDigest()).not.toBe(pending?.beforeDigest);
+  });
+
+  it("blocks the primary mutation when recovery journal creation fails", async () => {
+    const root = await makeTemporaryDirectory();
+    const databasePath = path.join(root, "db.json");
+    let inject = false;
+    const store = new JsonStore(databasePath, {
+      persistenceFaultCheckpoint: (stage) => {
+        if (inject && stage === "journal_write") throw new Error("opaque journal fault");
+      },
+    });
+    await store.initialize();
+    const before = await readFile(databasePath, "utf8");
+    inject = true;
+    await expect(store.mutateRecoverably(recoveryIntent(), (database) => {
+      database.shepherd.settings.modelReviewEnabled = false;
+    })).rejects.toThrow("Persistence recovery journal is unavailable");
+    expect(store.snapshot().shepherd.settings.modelReviewEnabled).toBe(true);
+    expect(await readFile(databasePath, "utf8")).toBe(before);
+    expect(store.persistenceRecoveryIntent()).toBeNull();
+    await expect(readFile(databasePath + ".persistence-intent.json", "utf8"))
+      .rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it.each([
+    "journal_temp_open",
+    "journal_write",
+    "journal_file_sync",
+    "journal_close",
+    "journal_rename",
+    "journal_directory_sync",
+  ] satisfies PersistenceFaultStage[])("bounds %s journal faults without changing primary state", async (faultStage) => {
+    const root = await makeTemporaryDirectory();
+    const databasePath = path.join(root, "db.json");
+    const canary = `F06_SECRET ${faultStage} EACCES /Users/private/journal`;
+    let inject = false;
+    const store = new JsonStore(databasePath, {
+      persistenceFaultCheckpoint: (stage) => {
+        if (inject && stage === faultStage) throw new Error(canary);
+      },
+      sensitiveValues: ["F06_SECRET"],
+    });
+    await store.initialize();
+    const before = await readFile(databasePath, "utf8");
+    inject = true;
+    const error = await store.mutateRecoverably(recoveryIntent(), (database) => {
+      database.shepherd.settings.modelReviewEnabled = false;
+    }).then(() => null, (caught: unknown) => caught as Error);
+    expect(error).toMatchObject({
+      name: "PersistenceBoundaryError",
+      message: "Persistence recovery journal is unavailable",
+    });
+    expect(`${error?.message}\n${error?.stack}`).not.toContain(canary);
+    expect(await readFile(databasePath, "utf8")).toBe(before);
+    expect(store.snapshot().shepherd.settings.modelReviewEnabled).toBe(true);
+    expect(store.persistenceRecoveryIntent() !== null).toBe(
+      faultStage === "journal_directory_sync",
+    );
+  });
+
+  it.each([
+    "primary_temp_open",
+    "primary_write",
+    "primary_file_sync",
+    "primary_close",
+    "primary_rename",
+    "primary_directory_sync",
+  ] satisfies PersistenceFaultStage[])("retains recoverable evidence with bounded %s primary faults", async (faultStage) => {
+    const root = await makeTemporaryDirectory();
+    const databasePath = path.join(root, "db.json");
+    const canary = `F06_SECRET ${faultStage} EIO /home/private/state`;
+    let inject = false;
+    const store = new JsonStore(databasePath, {
+      persistenceFaultCheckpoint: (stage) => {
+        if (inject && stage === faultStage) throw new Error(canary);
+      },
+      sensitiveValues: ["F06_SECRET"],
+    });
+    await store.initialize();
+    inject = true;
+    const error = await store.mutateRecoverably(recoveryIntent(), (database) => {
+      database.shepherd.settings.modelReviewEnabled = false;
+    }).then(() => null, (caught: unknown) => caught as Error);
+    expect(error).toMatchObject({
+      name: "PersistenceBoundaryError",
+      message: "Database persistence did not complete durably",
+    });
+    expect(`${error?.message}\n${error?.stack}`).not.toContain(canary);
+    expect(store.persistenceRecoveryIntent()).toMatchObject(recoveryIntent());
+    const onDisk = JSON.parse(await readFile(databasePath, "utf8")) as ReturnType<typeof emptyDatabase>;
+    expect(onDisk.shepherd.settings.modelReviewEnabled).toBe(
+      faultStage === "primary_directory_sync" ? false : true,
+    );
+  });
+
+  it.each(["journal_remove", "journal_remove_directory_sync"] satisfies PersistenceFaultStage[])(
+    "leaves committed state and an idempotent journal on %s cleanup failure",
+    async (faultStage) => {
+      const root = await makeTemporaryDirectory();
+      const databasePath = path.join(root, "db.json");
+      let inject = false;
+      const store = new JsonStore(databasePath, {
+        persistenceFaultCheckpoint: (stage) => {
+          if (inject && stage === faultStage) throw new Error("F06_SECRET cleanup path");
+        },
+      });
+      await store.initialize();
+      inject = true;
+      await expect(store.mutateRecoverably(recoveryIntent(), (database) => {
+        database.shepherd.settings.modelReviewEnabled = false;
+      })).rejects.toThrow("Persistence recovery cleanup remains pending");
+      expect(JSON.parse(await readFile(databasePath, "utf8"))).toMatchObject({
+        shepherd: { settings: { modelReviewEnabled: false } },
+      });
+      expect(store.persistenceRecoveryIntent()).toMatchObject(recoveryIntent());
+    },
+  );
+
+  it("blocks ordinary mutations and event allocation while recovery is pending", async () => {
+    const root = await makeTemporaryDirectory();
+    const databasePath = path.join(root, "db.json");
+    let inject = false;
+    const store = new JsonStore(databasePath, {
+      persistenceFaultCheckpoint: (stage) => {
+        if (inject && stage === "primary_write") throw new Error("primary blocked");
+      },
+    });
+    await store.initialize();
+    inject = true;
+    await expect(store.mutateRecoverably(recoveryIntent(), (database) => {
+      database.shepherd.settings.modelReviewEnabled = false;
+    })).rejects.toThrow("Database persistence did not complete durably");
+    inject = false;
+    const before = await readFile(databasePath, "utf8");
+    await expect(store.mutate((database) => {
+      database.shepherd.settings.autoResolution = false;
+    })).rejects.toThrow("Persistence recovery reconciliation is pending");
+    await expect(store.appendShepherdEvent(eventInput("must not allocate")))
+      .rejects.toThrow("Persistence recovery reconciliation is pending");
+    expect(await readFile(databasePath, "utf8")).toBe(before);
+    expect(store.snapshot().shepherd.nextEventSequence).toBe(1);
+    expect(store.snapshot().shepherd.events).toEqual([]);
+  });
+
+  it.each(["malformed", "oversized", "symlink"] as const)(
+    "fails closed on a %s recovery journal",
+    async (variant) => {
+      const root = await makeTemporaryDirectory();
+      const databasePath = path.join(root, "db.json");
+      let inject = false;
+      const store = new JsonStore(databasePath, {
+        persistenceFaultCheckpoint: (stage) => {
+          if (inject && stage === "primary_write") throw new Error("seed pending");
+        },
+      });
+      await store.initialize();
+      inject = true;
+      await expect(store.mutateRecoverably(recoveryIntent(), (database) => {
+        database.shepherd.settings.modelReviewEnabled = false;
+      })).rejects.toThrow();
+      const journalPath = databasePath + ".persistence-intent.json";
+      if (variant === "malformed") {
+        await writeFile(journalPath, "{not-json}\n", { encoding: "utf8", mode: 0o600 });
+      } else if (variant === "oversized") {
+        await writeFile(journalPath, "x".repeat(8_193), { encoding: "utf8", mode: 0o600 });
+      } else {
+        const outside = path.join(root, "outside-journal.json");
+        await writeFile(outside, JSON.stringify(store.persistenceRecoveryIntent()), "utf8");
+        await unlink(journalPath);
+        await symlink(outside, journalPath);
+      }
+      const restarted = new JsonStore(databasePath);
+      const error = await restarted.initialize().then(() => null, (caught: unknown) => caught as Error);
+      expect(error?.message).toMatch(/Persistence recovery journal/u);
+      expect(`${error?.message}\n${error?.stack}`).not.toContain(root);
+    },
+  );
+
+  it("rejects a valid journal whose durable entity IDs are unknown", async () => {
+    const root = await makeTemporaryDirectory();
+    const databasePath = path.join(root, "db.json");
+    let inject = false;
+    const store = new JsonStore(databasePath, {
+      persistenceFaultCheckpoint: (stage) => {
+        if (inject && stage === "primary_write") throw new Error("seed pending");
+      },
+    });
+    await store.initialize();
+    inject = true;
+    await expect(store.mutateRecoverably(recoveryIntent(), () => undefined)).rejects.toThrow();
+    const restarted = new JsonStore(databasePath);
+    await restarted.initialize();
+    await expect(reconcilePersistenceRecoveryIntent({ store: restarted }))
+      .rejects.toThrow("Persistence recovery journal references unknown durable entities");
+    expect(restarted.persistenceRecoveryIntent()).not.toBeNull();
   });
 });

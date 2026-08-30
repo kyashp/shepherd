@@ -87,7 +87,10 @@ import {
 } from "./prompt.js";
 import { PromotionGate, type PromotionResult } from "./promotion-gate.js";
 import { redactText, redactValue } from "./redaction.js";
-import { reconcileShepherdStartup } from "./recovery.js";
+import {
+  reconcilePersistenceRecoveryIntent,
+  reconcileShepherdStartup,
+} from "./recovery.js";
 import {
   applyWinnerDecision,
   candidatePassesMandatoryVerification,
@@ -816,6 +819,7 @@ export class ShepherdService {
   }
 
   private async initializeOnce(): Promise<void> {
+    await reconcilePersistenceRecoveryIntent({ store: this.store, now: this.now });
     if (this.store.snapshot().shepherd.projects.length > 0) {
       await validateShepherdManagedRoot(this.managedRoot);
     } else {
@@ -2784,15 +2788,44 @@ export class ShepherdService {
     this.ensureMissionRunnable(prepared.missionId);
 
     const verificationAt = this.timestamp();
-    await this.store.mutate((database) => {
-      this.assertMissionRunnable(database, prepared.missionId);
-      transitionMissionAndRecord(database, prepared.missionId, "verifying", {
-        actor: "control_plane",
-        eventActor: SHEPHERD_ACTOR,
+    try {
+      await this.store.mutateRecoverably({
+        operation: "mission_verification_transition",
+        missionId: prepared.missionId,
+        contractIds: [prepared.frontendContractId, prepared.backendContractId],
+        planeIds: contractPlanes.map((plane) => plane.id),
+        stage: "mission_verification_persistence",
         timestamp: verificationAt,
+      }, (database) => {
+        this.assertMissionRunnable(database, prepared.missionId);
+        transitionMissionAndRecord(database, prepared.missionId, "verifying", {
+          actor: "control_plane",
+          eventActor: SHEPHERD_ACTOR,
+          timestamp: verificationAt,
+        });
       });
-    });
+    } catch (error) {
+      if (this.store.persistenceRecoveryIntent()) {
+        const outcome = await reconcilePersistenceRecoveryIntent({
+          store: this.store,
+          now: this.now,
+        });
+        if (outcome === "committed") {
+          return await this.continueAfterMissionVerificationPersistence(
+            prepared,
+            contractPlanes,
+          );
+        }
+      }
+      throw error;
+    }
+    return await this.continueAfterMissionVerificationPersistence(prepared, contractPlanes);
+  }
 
+  private async continueAfterMissionVerificationPersistence(
+    prepared: PreparedMission,
+    contractPlanes: Plane[],
+  ): Promise<DeterministicDemoResult> {
     const integrationPlane = await this.integrateContracts(prepared);
     const integrationCommit = integrationPlane.headCommit;
     if (!integrationCommit) throw new Error("Integration Plane has no immutable head");
@@ -5086,6 +5119,9 @@ export class ShepherdService {
     error: unknown,
     stage: string,
   ): Promise<void> {
+    if (this.store.persistenceRecoveryIntent()?.missionId === missionId) {
+      return;
+    }
     const failedAt = this.timestamp();
     await this.store.mutate((database) => {
       const mission = database.shepherd.missions.find(

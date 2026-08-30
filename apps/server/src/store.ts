@@ -1,6 +1,6 @@
 import { constants } from "node:fs";
 import { mkdir, open, rename, unlink } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import {
   appendShepherdEvent,
@@ -18,9 +18,103 @@ export interface JsonStoreOptions {
   sensitiveValues?: readonly string[];
   /** Tests may lower the ceiling; production callers cannot raise it. */
   maximumDatabaseBytes?: number;
+  persistenceFaultCheckpoint?: (stage: PersistenceFaultStage) => void | Promise<void>;
+}
+
+export type PersistenceFaultStage =
+  | "journal_temp_open"
+  | "journal_write"
+  | "journal_file_sync"
+  | "journal_close"
+  | "journal_rename"
+  | "journal_directory_sync"
+  | "primary_temp_open"
+  | "primary_write"
+  | "primary_file_sync"
+  | "primary_close"
+  | "primary_rename"
+  | "primary_directory_sync"
+  | "journal_remove"
+  | "journal_remove_directory_sync";
+
+export interface PersistenceRecoveryIntentInput {
+  operation: "mission_verification_transition";
+  missionId: string;
+  contractIds: readonly string[];
+  planeIds: readonly string[];
+  stage: "mission_verification_persistence";
+  timestamp: string;
+}
+
+export interface PersistenceRecoveryIntent extends PersistenceRecoveryIntentInput {
+  version: 1;
+  beforeDigest: string;
+}
+
+export class PersistenceBoundaryError extends Error {
+  constructor(
+    readonly stage: "journal" | "primary" | "cleanup",
+    readonly reason: "unavailable" | "durability_unknown" | "cleanup_pending" | "recovery_pending",
+  ) {
+    super(
+      reason === "recovery_pending"
+        ? "Persistence recovery reconciliation is pending"
+        : stage === "journal"
+          ? "Persistence recovery journal is unavailable"
+        : stage === "primary"
+          ? "Database persistence did not complete durably"
+          : "Persistence recovery cleanup remains pending",
+    );
+    this.name = "PersistenceBoundaryError";
+  }
 }
 
 export const MAX_DATABASE_BYTES = 64 * 1024 * 1024;
+const MAX_INTENT_BYTES = 8 * 1024;
+const SAFE_INTENT_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$/u;
+const SHA256 = /^[a-f0-9]{64}$/u;
+
+const serializeDatabase = (database: Database): string =>
+  JSON.stringify(database, null, 2) + "\n";
+
+const digestBytes = (serialized: string): string =>
+  createHash("sha256").update(serialized, "utf8").digest("hex");
+
+function parseRecoveryIntent(raw: string): PersistenceRecoveryIntent {
+  if (Buffer.byteLength(raw, "utf8") > MAX_INTENT_BYTES) {
+    throw new Error("Persistence recovery journal exceeds the supported size");
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    throw new Error("Persistence recovery journal is malformed");
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Persistence recovery journal is malformed");
+  }
+  const item = value as Record<string, unknown>;
+  const keys = Object.keys(item).sort();
+  const expectedKeys = [
+    "beforeDigest", "contractIds", "missionId", "operation", "planeIds",
+    "stage", "timestamp", "version",
+  ].sort();
+  const idsValid = (ids: unknown): ids is string[] =>
+    Array.isArray(ids) && ids.length === 2 && ids.every((id) => typeof id === "string" && SAFE_INTENT_ID.test(id));
+  if (
+    JSON.stringify(keys) !== JSON.stringify(expectedKeys) ||
+    item.version !== 1 ||
+    item.operation !== "mission_verification_transition" ||
+    typeof item.missionId !== "string" || !SAFE_INTENT_ID.test(item.missionId) ||
+    !idsValid(item.contractIds) || !idsValid(item.planeIds) ||
+    item.stage !== "mission_verification_persistence" ||
+    typeof item.timestamp !== "string" || !Number.isFinite(Date.parse(item.timestamp)) ||
+    typeof item.beforeDigest !== "string" || !SHA256.test(item.beforeDigest)
+  ) {
+    throw new Error("Persistence recovery journal is invalid");
+  }
+  return item as unknown as PersistenceRecoveryIntent;
+}
 
 const unboundedRedactText = (value: string, secrets: readonly string[]): string =>
   redactText(value, { secrets, maxStringLength: Number.MAX_SAFE_INTEGER });
@@ -88,6 +182,8 @@ export class JsonStore {
   private queue: Promise<void> = Promise.resolve();
   private readonly sensitiveValues: readonly string[];
   private readonly maximumDatabaseBytes: number;
+  private readonly persistenceFaultCheckpoint?: JsonStoreOptions["persistenceFaultCheckpoint"];
+  private pendingIntent: PersistenceRecoveryIntent | null = null;
 
   constructor(
     private readonly filePath: string,
@@ -105,6 +201,7 @@ export class JsonStore {
       throw new Error("Database byte ceiling must be a safe integer of at least 1024");
     }
     this.maximumDatabaseBytes = Math.min(requestedMaximum, MAX_DATABASE_BYTES);
+    this.persistenceFaultCheckpoint = options.persistenceFaultCheckpoint;
   }
 
   async initialize(): Promise<void> {
@@ -121,6 +218,7 @@ export class JsonStore {
       }
       this.data = await this.persist(this.data);
     }
+    this.pendingIntent = await this.readRecoveryIntent();
   }
 
   snapshot(): Database {
@@ -130,6 +228,9 @@ export class JsonStore {
   async mutate<T>(mutation: (database: Database) => T | Promise<T>): Promise<T> {
     let result!: T;
     const operation = this.queue.then(async () => {
+      if (this.pendingIntent) {
+        throw new PersistenceBoundaryError("journal", "recovery_pending");
+      }
       const next = sanitizeStrings(this.data, this.sensitiveValues);
       const mutationResult = await mutation(next);
       const sanitized = await this.persist(next);
@@ -139,6 +240,96 @@ export class JsonStore {
     this.queue = operation.catch(() => undefined);
     await operation;
     return result;
+  }
+
+  async mutateRecoverably<T>(
+    intent: PersistenceRecoveryIntentInput,
+    mutation: (database: Database) => T | Promise<T>,
+  ): Promise<T> {
+    let result!: T;
+    const operation = this.queue.then(async () => {
+      if (this.pendingIntent) {
+        throw new Error("A persistence recovery journal already requires reconciliation");
+      }
+      const next = sanitizeStrings(this.data, this.sensitiveValues);
+      const mutationResult = await mutation(next);
+      const journal: PersistenceRecoveryIntent = {
+        ...intent,
+        version: 1,
+        contractIds: [...intent.contractIds],
+        planeIds: [...intent.planeIds],
+        beforeDigest: digestBytes(serializeDatabase(this.data)),
+      };
+      parseRecoveryIntent(JSON.stringify(journal));
+      try {
+        await this.writeRecoveryIntent(journal);
+      } catch (error) {
+        this.pendingIntent = await this.readRecoveryIntent().catch(() => null);
+        throw error;
+      }
+      this.pendingIntent = journal;
+      const sanitized = await this.persist(next);
+      this.data = sanitized;
+      result = sanitizeStrings(mutationResult, this.sensitiveValues);
+      await this.clearPersistenceRecoveryIntent();
+    });
+    this.queue = operation.catch(() => undefined);
+    await operation;
+    return result;
+  }
+
+  async mutateForPersistenceReconciliation<T>(
+    intent: PersistenceRecoveryIntent,
+    mutation: (database: Database) => T | Promise<T>,
+  ): Promise<T> {
+    let result!: T;
+    const operation = this.queue.then(async () => {
+      if (
+        !this.pendingIntent ||
+        JSON.stringify(this.pendingIntent) !== JSON.stringify(intent)
+      ) {
+        throw new PersistenceBoundaryError("journal", "recovery_pending");
+      }
+      const next = sanitizeStrings(this.data, this.sensitiveValues);
+      const mutationResult = await mutation(next);
+      const sanitized = await this.persist(next);
+      this.data = sanitized;
+      result = sanitizeStrings(mutationResult, this.sensitiveValues);
+    });
+    this.queue = operation.catch(() => undefined);
+    await operation;
+    return result;
+  }
+
+  persistenceRecoveryIntent(): PersistenceRecoveryIntent | null {
+    return this.pendingIntent ? structuredClone(this.pendingIntent) : null;
+  }
+
+  currentDigest(): string {
+    return digestBytes(serializeDatabase(this.data));
+  }
+
+  async persistedDigest(): Promise<string> {
+    try {
+      return digestBytes(await readDatabaseFile(this.filePath, this.maximumDatabaseBytes));
+    } catch {
+      throw new PersistenceBoundaryError("primary", "unavailable");
+    }
+  }
+
+  async clearPersistenceRecoveryIntent(): Promise<void> {
+    const journalPath = this.recoveryIntentPath();
+    try {
+      await this.checkpoint("journal_remove");
+      await unlink(journalPath).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== "ENOENT") throw error;
+      });
+      await this.checkpoint("journal_remove_directory_sync");
+      await this.syncParentDirectory();
+      this.pendingIntent = null;
+    } catch {
+      throw new PersistenceBoundaryError("cleanup", "cleanup_pending");
+    }
   }
 
   /** Atomically allocates a cursor and persists the event. */
@@ -155,28 +346,136 @@ export class JsonStore {
     if (!isValidDatabaseV2(sanitized)) {
       throw new Error("Refusing to persist invalid database state");
     }
-    const serialized = JSON.stringify(sanitized, null, 2) + "\n";
+    const serialized = serializeDatabase(sanitized);
     if (Buffer.byteLength(serialized, "utf8") > this.maximumDatabaseBytes) {
       throw new Error("Database state exceeds the maximum supported size");
     }
     const temporaryPath = `${this.filePath}.${randomUUID()}.tmp`;
     let temporaryCreated = false;
+    let primaryFailed = false;
     try {
+      await this.checkpoint("primary_temp_open");
       const handle = await open(temporaryPath, "wx", 0o600);
       temporaryCreated = true;
       try {
+        await this.checkpoint("primary_write");
         await handle.writeFile(serialized, "utf8");
+        await this.checkpoint("primary_file_sync");
         await handle.sync();
       } finally {
         await handle.close();
+        await this.checkpoint("primary_close");
       }
+      await this.checkpoint("primary_rename");
       await rename(temporaryPath, this.filePath);
       temporaryCreated = false;
+      await this.checkpoint("primary_directory_sync");
+      await this.syncParentDirectory();
       return sanitized;
+    } catch {
+      primaryFailed = true;
+      throw new PersistenceBoundaryError("primary", "durability_unknown");
     } finally {
       if (temporaryCreated) {
-        await unlink(temporaryPath).catch((error: NodeJS.ErrnoException) => {
-          if (error.code !== "ENOENT") throw error;
+        try {
+          await unlink(temporaryPath);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT" && !primaryFailed) {
+            throw new PersistenceBoundaryError("cleanup", "cleanup_pending");
+          }
+        }
+      }
+    }
+  }
+
+  private recoveryIntentPath(): string {
+    return this.filePath + ".persistence-intent.json";
+  }
+
+  private async checkpoint(stage: PersistenceFaultStage): Promise<void> {
+    await this.persistenceFaultCheckpoint?.(stage);
+  }
+
+  private async syncParentDirectory(): Promise<void> {
+    if (process.platform === "win32") return;
+    const handle = await open(path.dirname(this.filePath), constants.O_RDONLY);
+    try {
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+  }
+
+  private async writeRecoveryIntent(intent: PersistenceRecoveryIntent): Promise<void> {
+    const journalPath = this.recoveryIntentPath();
+    if (path.dirname(journalPath) !== path.dirname(this.filePath)) {
+      throw new Error("Persistence recovery journal escaped the database directory");
+    }
+    const serialized = JSON.stringify(intent) + "\n";
+    const temporaryPath = `${journalPath}.${randomUUID()}.tmp`;
+    let temporaryCreated = false;
+    let journalFailed = false;
+    try {
+      await this.checkpoint("journal_temp_open");
+      const handle = await open(temporaryPath, "wx", 0o600);
+      temporaryCreated = true;
+      try {
+        await this.checkpoint("journal_write");
+        await handle.writeFile(serialized, "utf8");
+        await this.checkpoint("journal_file_sync");
+        await handle.sync();
+      } finally {
+        await handle.close();
+        await this.checkpoint("journal_close");
+      }
+      await this.checkpoint("journal_rename");
+      await rename(temporaryPath, journalPath);
+      temporaryCreated = false;
+      await this.checkpoint("journal_directory_sync");
+      await this.syncParentDirectory();
+    } catch {
+      journalFailed = true;
+      throw new PersistenceBoundaryError("journal", "unavailable");
+    } finally {
+      if (temporaryCreated) {
+        try {
+          await unlink(temporaryPath);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT" && !journalFailed) {
+            throw new PersistenceBoundaryError("cleanup", "cleanup_pending");
+          }
+        }
+      }
+    }
+  }
+
+  private async readRecoveryIntent(): Promise<PersistenceRecoveryIntent | null> {
+    const journalPath = this.recoveryIntentPath();
+    let handle;
+    try {
+      handle = await open(journalPath, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+      const entry = await handle.stat();
+      if (
+        !entry.isFile() ||
+        entry.size > MAX_INTENT_BYTES ||
+        (process.platform !== "win32" && (entry.mode & 0o077) !== 0)
+      ) {
+        throw new Error("Persistence recovery journal metadata is invalid");
+      }
+      if (typeof process.getuid === "function" && entry.uid !== process.getuid()) {
+        throw new Error("Persistence recovery journal ownership is invalid");
+      }
+      return parseRecoveryIntent(await handle.readFile({ encoding: "utf8" }));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      if ((error as NodeJS.ErrnoException).code === "ELOOP") {
+        throw new Error("Persistence recovery journal must not be a symbolic link");
+      }
+      throw error;
+    } finally {
+      if (handle) {
+        await handle.close().catch(() => {
+          throw new PersistenceBoundaryError("journal", "unavailable");
         });
       }
     }

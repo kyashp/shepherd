@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   access,
   chmod,
@@ -21,6 +22,7 @@ import { z } from "zod";
 import { toPublicMissionDetail } from "../app.js";
 import { RuntimeExecutionError } from "../errors.js";
 import { JsonStore } from "../store.js";
+import type { Database } from "../types.js";
 import { WorkspaceManager } from "../workspace.js";
 import {
   BEARER_TRANSPORT,
@@ -45,6 +47,7 @@ import {
 } from "./service.js";
 import { PlaneManager } from "./plane-manager.js";
 import { assertSafeProjectPath } from "./git-client.js";
+import { reconcilePersistenceRecoveryIntent } from "./recovery.js";
 import type { VerificationRequest } from "./verifier.js";
 
 const repositoryTestRoot = fileURLToPath(
@@ -2587,6 +2590,194 @@ describe("Shepherd deterministic walking skeleton", () => {
     }
     expect(assertSafeProjectPath("back\\slash")).toBe("back/slash");
   });
+
+  it("reconciles a transient Mission verification persistence failure without promotion", async () => {
+    const caseRoot = await makeCaseRoot();
+    const storePath = path.join(caseRoot, "state.json");
+    let store!: JsonStore;
+    let injected = false;
+    store = new JsonStore(storePath, {
+      persistenceFaultCheckpoint: (stage) => {
+        if (
+          !injected &&
+          stage === "primary_write" &&
+          store.persistenceRecoveryIntent()?.operation === "mission_verification_transition"
+        ) {
+          injected = true;
+          throw new Error("F06_SECRET EIO /Users/private/state.json");
+        }
+      },
+      sensitiveValues: ["F06_SECRET"],
+    });
+    await store.initialize();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      sensitiveValues: ["F06_SECRET"],
+    });
+    const { missionId } = await startTrackedTestMission(service);
+    await vi.waitFor(
+      () => expect(["attention_required", "failed"]).toContain(service.missionDetail(missionId)?.mission.state),
+      { timeout: 10_000 },
+    );
+    const detail = service.missionDetail(missionId);
+    if (!detail) throw new Error("Persistence failure Mission disappeared");
+    expect(injected).toBe(true);
+    expect(detail.mission).toMatchObject({
+      state: "attention_required",
+      attentionReason: "persistence_error",
+      failure: {
+        code: "persistence_error",
+        stage: "mission_verification_persistence",
+        message: "Mission persistence failed before integration and requires attention",
+      },
+    });
+    expect(detail.contracts.every((contract) => contract.state === "verified")).toBe(true);
+    expect(detail.planes.every((plane) => plane.kind === "contract" && plane.state === "verified")).toBe(true);
+    expect(detail.agents.every((agent) => agent.currentContractId === null && agent.status !== "busy")).toBe(true);
+    expect(detail.project.activeMissionId).toBe(missionId);
+    expect(detail.project.protectedHeadCommit).toBe(detail.mission.baseCommit);
+    expect(detail.collisions).toEqual([]);
+    expect(detail.candidates).toEqual([]);
+    expect(detail.events.filter((event) => event.details.failureCode === "persistence_error")).toHaveLength(1);
+    expect(store.persistenceRecoveryIntent()).toBeNull();
+    const surfaces = [
+      JSON.stringify(detail),
+      JSON.stringify(toPublicMissionDetail(detail, [])),
+      await readFile(storePath, "utf8"),
+    ].join("\n");
+    for (const canary of ["F06_SECRET", "EIO", "/Users/private/state.json"]) {
+      expect(surfaces).not.toContain(canary);
+    }
+    const retainedPaths = detail.planes.map((plane) => plane.worktreePath);
+    backgroundTestMissions.pop();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await service.cancelMission(missionId);
+    await service.resetDeterministicDemo();
+    await expect(access(storePath + ".persistence-intent.json"))
+      .rejects.toMatchObject({ code: "ENOENT" });
+    for (const retainedPath of retainedPaths) {
+      await expect(access(retainedPath)).rejects.toMatchObject({ code: "ENOENT" });
+    }
+  }, 30_000);
+
+  it("reconciles a retained persistence journal exactly once across two restarts", async () => {
+    const caseRoot = await makeCaseRoot();
+    const storePath = path.join(caseRoot, "state.json");
+    let store!: JsonStore;
+    let failures = 0;
+    store = new JsonStore(storePath, {
+      persistenceFaultCheckpoint: (stage) => {
+        if (
+          failures < 2 &&
+          stage === "primary_write" &&
+          store.persistenceRecoveryIntent()?.operation === "mission_verification_transition"
+        ) {
+          failures += 1;
+          throw new Error("F06_RESTART_SECRET ENOSPC /private/state");
+        }
+      },
+      sensitiveValues: ["F06_RESTART_SECRET"],
+    });
+    await store.initialize();
+    const firstService = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      sensitiveValues: ["F06_RESTART_SECRET"],
+    });
+    const { missionId } = await firstService.startDeterministicDemo();
+    await vi.waitFor(() => expect(failures).toBe(2), { timeout: 10_000 });
+    expect(firstService.missionDetail(missionId)?.mission.state).toBe("running");
+    expect(store.persistenceRecoveryIntent()).not.toBeNull();
+
+    const originalState = JSON.parse(await readFile(storePath, "utf8")) as Database;
+    const originalJournal = JSON.parse(
+      await readFile(storePath + ".persistence-intent.json", "utf8"),
+    ) as Record<string, unknown>;
+    const mismatchPath = path.join(caseRoot, "mismatch", "state.json");
+    await mkdir(path.dirname(mismatchPath), { recursive: true });
+    const mismatchedState = structuredClone(originalState);
+    mismatchedState.shepherd.settings.autoResolution = false;
+    await writeFile(mismatchPath, JSON.stringify(mismatchedState, null, 2) + "\n", "utf8");
+    await writeFile(
+      mismatchPath + ".persistence-intent.json",
+      JSON.stringify(originalJournal) + "\n",
+      { encoding: "utf8", mode: 0o600 },
+    );
+    const mismatchStore = new JsonStore(mismatchPath);
+    await mismatchStore.initialize();
+    await expect(reconcilePersistenceRecoveryIntent({ store: mismatchStore }))
+      .rejects.toThrow("Persistence recovery journal does not match durable Mission state");
+    expect(mismatchStore.persistenceRecoveryIntent()).not.toBeNull();
+
+    const stalePath = path.join(caseRoot, "stale", "state.json");
+    await mkdir(path.dirname(stalePath), { recursive: true });
+    const staleState = structuredClone(originalState);
+    const staleMission = staleState.shepherd.missions.find((mission) => mission.id === missionId);
+    if (!staleMission) throw new Error("Persistence stale fixture Mission disappeared");
+    staleMission.state = "queued";
+    const staleSerialized = JSON.stringify(staleState, null, 2) + "\n";
+    const staleJournal = {
+      ...originalJournal,
+      beforeDigest: createHash("sha256").update(staleSerialized, "utf8").digest("hex"),
+    };
+    await writeFile(stalePath, staleSerialized, "utf8");
+    await writeFile(
+      stalePath + ".persistence-intent.json",
+      JSON.stringify(staleJournal) + "\n",
+      { encoding: "utf8", mode: 0o600 },
+    );
+    const staleStore = new JsonStore(stalePath);
+    await staleStore.initialize();
+    await expect(reconcilePersistenceRecoveryIntent({ store: staleStore }))
+      .rejects.toThrow("Persistence recovery journal precondition is stale");
+    expect(staleStore.persistenceRecoveryIntent()).not.toBeNull();
+
+    const restartedStore = new JsonStore(storePath, {
+      sensitiveValues: ["F06_RESTART_SECRET"],
+    });
+    await restartedStore.initialize();
+    const restartedService = new ShepherdService({
+      store: restartedStore,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      sensitiveValues: ["F06_RESTART_SECRET"],
+    });
+    await restartedService.initialize();
+    const recovered = restartedService.missionDetail(missionId);
+    expect(recovered?.mission).toMatchObject({
+      state: "attention_required",
+      failure: { code: "persistence_error", stage: "mission_verification_persistence" },
+    });
+    expect(recovered?.events.filter((event) => event.details.failureCode === "persistence_error"))
+      .toHaveLength(1);
+    expect(restartedStore.persistenceRecoveryIntent()).toBeNull();
+
+    const secondStore = new JsonStore(storePath, {
+      sensitiveValues: ["F06_RESTART_SECRET"],
+    });
+    await secondStore.initialize();
+    const secondService = new ShepherdService({
+      store: secondStore,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      sensitiveValues: ["F06_RESTART_SECRET"],
+    });
+    await secondService.initialize();
+    const twiceRecovered = secondService.missionDetail(missionId);
+    expect(twiceRecovered?.events.filter((event) => event.details.failureCode === "persistence_error"))
+      .toHaveLength(1);
+    const surfaces = [JSON.stringify(twiceRecovered), await readFile(storePath, "utf8")].join("\n");
+    for (const canary of ["F06_RESTART_SECRET", "ENOSPC", "/private/state"]) {
+      expect(surfaces).not.toContain(canary);
+    }
+  }, 30_000);
 
   it("does not invoke a sibling verifier after infrastructure terminalization", async () => {
     const caseRoot = await makeCaseRoot();

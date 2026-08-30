@@ -4124,3 +4124,35 @@ passed 107/107; strict test types and two literal `npm run check` runs passed
 launcher 3/3, Server 663/663 with two opt-in skips, Web 17/17 and both builds. No
 live/model/network/UI/schema change ran. F-04 remains 95% pending independent
 Auditor, security and hosted integration evidence.
+
+## 2026-08-30 — F-06 Worker candidate
+
+- **Scope:** the representative Mission `running -> verifying` write after two
+  verified Contracts and before integration now uses `mutateRecoverably`. The
+  generic store primitive is not claimed as entity-aware recovery for arbitrary
+  mutations.
+- **Journal contract:** the adjacent version-1 sidecar contains only an allowlisted
+  operation, Mission/two Contract/two Plane IDs, fixed stage, timestamp and SHA-256
+  of the exact canonical sanitized bytes written by the shared serializer. It is
+  capped at 8 KiB, mode/owner checked where supported, opened no-follow, and uses
+  temp/write/file-sync/close/rename/parent-directory-sync. Unix/macOS directory
+  sync errors fail bounded; Windows retains file sync, atomic rename and digest
+  reconciliation but cannot claim the same sudden-power-loss directory guarantee.
+- **Recovery:** old digest means the transition did not commit and startup records
+  exactly one bounded `persistence_error` attention event; changed digest must
+  match the committed `verifying` state or a prior exact reconciliation. Pending
+  recovery blocks ordinary mutations and event allocation. Agents are released,
+  Contracts/Planes remain verified, project attention remains active, and no
+  integration/candidate/promotion/protected-head mutation occurs. Reset after
+  cancellation removes the journal and retained Planes.
+- **Fault evidence:** all six journal stages, six primary stages and two journal
+  removal stages are injected. Rename/directory-sync ambiguity, immediate recovery,
+  two restarts/no duplicate, concurrent mutation denial, corrupt/oversize/symlink,
+  unknown IDs, stale precondition and digest mismatch pass with bounded errors and
+  no secret/path/errno canary on public/store/Error/stack surfaces.
+- **Observed checks:** store 34/34; focused persistence/recovery 23/23; adjacent
+  store/service/recovery/API 116/116; first literal `npm run check` passed launcher
+  3/3, Server 700 passed + two opt-in skips, Web 17/17, strict types and both builds.
+  A second literal gate passed with the same counts. Independent
+  Auditor/security/hosted evidence remains. No live/model/network/UI-design call
+  ran.

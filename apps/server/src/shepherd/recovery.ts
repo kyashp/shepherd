@@ -33,6 +33,88 @@ const SYSTEM_ACTOR = {
   displayName: "Startup reconciliation",
 } as const;
 
+const PERSISTENCE_FAILURE_MESSAGE =
+  "Mission persistence failed before integration and requires attention";
+
+export async function reconcilePersistenceRecoveryIntent(options: {
+  store: JsonStore;
+  now?: () => Date;
+}): Promise<"none" | "committed" | "reconciled"> {
+  const intent = options.store.persistenceRecoveryIntent();
+  if (!intent) return "none";
+  const snapshot = options.store.snapshot();
+  const mission = snapshot.shepherd.missions.find(
+    (item) => item.id === intent.missionId,
+  );
+  const contracts = snapshot.shepherd.contracts.filter((item) =>
+    intent.contractIds.includes(item.id),
+  );
+  const planes = snapshot.shepherd.planes.filter((item) =>
+    intent.planeIds.includes(item.id),
+  );
+  if (
+    !mission || contracts.length !== 2 || planes.length !== 2 ||
+    contracts.some((item) => item.missionId !== mission.id) ||
+    planes.some((item) => item.missionId !== mission.id || item.kind !== "contract")
+  ) {
+    throw new Error("Persistence recovery journal references unknown durable entities");
+  }
+  const digestMatches = (await options.store.persistedDigest()) === intent.beforeDigest;
+  if (!digestMatches) {
+    const alreadyReconciled =
+      mission.state === "attention_required" &&
+      mission.failure?.code === "persistence_error" &&
+      mission.failure.stage === intent.stage;
+    if (mission.state !== "verifying" && !alreadyReconciled) {
+      throw new Error("Persistence recovery journal does not match durable Mission state");
+    }
+    await options.store.clearPersistenceRecoveryIntent();
+    return "committed";
+  }
+  if (
+    mission.state !== "running" ||
+    contracts.some((item) => item.state !== "verified") ||
+    planes.some((item) => item.state !== "verified")
+  ) {
+    throw new Error("Persistence recovery journal precondition is stale");
+  }
+  const timestamp = (options.now ?? (() => new Date()))().toISOString();
+  const failure: FailureInfo = {
+    code: "persistence_error",
+    message: PERSISTENCE_FAILURE_MESSAGE,
+    stage: intent.stage,
+    at: timestamp,
+    retryable: false,
+  };
+  await options.store.mutateForPersistenceReconciliation(intent, (database) => {
+    const persistedMission = database.shepherd.missions.find(
+      (item) => item.id === intent.missionId,
+    );
+    if (!persistedMission || persistedMission.state !== "running") {
+      throw new Error("Persistence recovery Mission changed before reconciliation");
+    }
+    transitionMissionAndRecord(database, persistedMission.id, "attention_required", {
+      actor: "system",
+      eventActor: SYSTEM_ACTOR,
+      timestamp,
+      attentionReason: "persistence_error",
+      failure,
+      summary: PERSISTENCE_FAILURE_MESSAGE,
+      details: { recovery: "persistence_journal", failureCode: failure.code },
+    });
+    const contractIds = new Set(intent.contractIds);
+    for (const agent of database.agents) {
+      if (!agent.currentContractId || !contractIds.has(agent.currentContractId)) continue;
+      agent.currentContractId = null;
+      if (agent.status === "busy") agent.status = "ready";
+      agent.lastError = failure.message;
+      agent.updatedAt = timestamp;
+    }
+  });
+  await options.store.clearPersistenceRecoveryIntent();
+  return "reconciled";
+}
+
 function isPhysicallyInside(root: string, candidate: string): boolean {
   const relative = path.relative(root, candidate);
   return (
