@@ -28,6 +28,31 @@ that limitation is explicit.
 
 ## Immediate queue
 
+### `TST-24` — Persistence-recovery attention is visible before reconciliation quiesces
+
+- **Evidence class:** exact contention RED on corrected chain
+  `7d8483a3ef5998002dab6331bd53532640f953ec`. The row passed once and another
+  18 consecutive invocations, then failed iteration 19 because the complete Mission
+  recovery intent remained present; a late queue operation also rejected with fixed
+  `recovery_pending`.
+- **Failure contract:** reconciliation persists visible `attention_required` inside
+  `mutateForPersistenceReconciliation`, then separately awaits journal unlink,
+  parent-directory sync and pending-intent clear. The test waits only for visible
+  Mission state, so its null assertion and subsequent durable/reload/cancel work can
+  race the owned continuation. This is fixture ordering, not permission to treat
+  partially reconciled recovery as complete.
+- **Minimal correction:** after attention becomes visible, wait for the exact intent
+  to become null and then await a test-owned no-op mutation sentinel on the original
+  Store before durable reads, reload, cancellation or teardown. This joins recovery
+  persistence, intent cleanup and queued background continuation. Use a direct owned
+  completion signal only if it proves the same ordering. No sleeps, retries, timeout
+  inflation, assertion weakening, suppression, cleanup catches or product changes.
+- **Acceptance:** preserve the RED; exact row passes at least 30/30 with intent null
+  and no late/unhandled work. Keep one attention event, verified Contracts/Planes,
+  released Agents, active project, no collision/candidate/promotion/head mutation
+  and secret/path scans. Run TST-23/TST-22/F-06, strict/full and hosted Node 22.
+- **Status:** **OPEN / Fixer READY.** Test-only; blocks F-06 integration.
+
 ### `TST-23` — Plane-unwind reload races the original Store persistence queue
 
 - **Evidence class:** exact isolated Auditor RED on TST-22 checkpoint

@@ -7,6 +7,23 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — TST-24 reconciliation-quiescence RED preserved
+
+Auditor tested exact corrected chain
+`7d8483a3ef5998002dab6331bd53532640f953ec`. The transient Mission verification
+persistence row passed once, then passed 18 contention repetitions before failing
+iteration 19. The Mission was visibly `attention_required`, but the complete
+recovery intent remained non-null; a late Store operation also rejected with fixed
+`recovery_pending`.
+
+Source ordering confirms `mutateForPersistenceReconciliation` publishes attention
+before `clearPersistenceRecoveryIntent` finishes journal unlink, parent-directory
+sync and in-memory intent clearing. The test must wait for that exact intent to clear
+and queue a test-owned no-op mutation sentinel on the original Store before durable/
+reload/cancel/teardown work. No sleep, retry, timeout, suppression, assertion
+weakening or product edit is authorized. No `mock-main`, hosted, live, model or UI
+action occurred.
+
 ## 2026-08-30 — TST-23 Fixer candidate
 
 The TST-17 Plane-unwind attention row now awaits one test-owned no-op
