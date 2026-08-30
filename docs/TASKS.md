@@ -2,12 +2,14 @@
 
 **Canonical implementation branch:** protected `main`.
 
-**Latest verified integration:** PR #71 merge `f900656` on protected `main`; hosted
-exact-head gate run `33305530655` passed. That head also carries PR #56 merge
-`b80af11` (OPS-06 compatibility), PR #57 merge `cd82ec4` (private-chat Contracts),
-PR #60 merge `39cd800`, PR #62 merge `a1f1fcc` (general Contract intake), PR #67
-merge `a41c214` and PR #71 merge `f900656` (`TST-25`). Each `I` claim below is
-scoped to the SHA it names. Exact post-integration evidence is in `BUILD_LOG.md`.
+**Latest verified integration:** PR #76 merge `baa6b2f` on protected `main`; hosted
+exact-head gate run `33309739989` passed. That head carries, among others, PR #56
+merge `b80af11` (OPS-06 compatibility), PR #57 merge `cd82ec4` (private-chat
+Contracts), PR #62 merge `a1f1fcc` (general Contract intake), PR #64 (issue #41
+Project Group), PR #71 merge `f900656` (`TST-25`) and PR #72/#75 (`FM-01`,
+`UI-01`/`E2E-04`). This ledger moves faster than any single reconciliation, so
+each `I` claim below is scoped to the SHA it names rather than to this line.
+Exact post-integration evidence is in `BUILD_LOG.md`.
 
 **Audited:** 2026-08-30, Asia/Singapore
 
