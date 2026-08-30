@@ -443,6 +443,16 @@ export interface DeterministicDemoOptions {
   allowClientReadableCredential?: boolean;
   /** Bounded human intent retained while the runnable plan stays the fixed demo. */
   originalIntent?: string;
+  /** Optional user-created Agents selected by the trusted auth-demo planner. */
+  frontendAgentId?: string;
+  backendAgentId?: string;
+  frontendTransport?: AuthTransport;
+  backendTransport?: AuthTransport;
+  /** Internal durable request binding used by the HTTP Mission command. */
+  requestRecord?: {
+    messageId: string;
+    fingerprint: string;
+  };
 }
 
 export interface ShepherdMissionDetail {
@@ -503,6 +513,10 @@ export interface StartMissionFromMessageInput {
   content: string;
   preset: "auth-demo";
   clientMessageId?: string;
+  frontendAgentId?: string;
+  backendAgentId?: string;
+  frontendTransport?: AuthTransport;
+  backendTransport?: AuthTransport;
 }
 
 export type ShepherdControlErrorCode =
@@ -553,6 +567,8 @@ interface PreparedMission {
   missionId: string;
   frontendContractId: string;
   backendContractId: string;
+  frontendTransport: AuthTransport;
+  backendTransport: AuthTransport;
 }
 
 interface ContractPlaneInput {
@@ -756,6 +772,13 @@ export class ShepherdService {
   private readonly backgroundRuns = new Map<
     string,
     Promise<DeterministicDemoResult | null>
+  >();
+  private readonly pendingMissionStarts = new Map<
+    string,
+    {
+      fingerprint: string;
+      operation: Promise<{ missionId: string; message: ProjectGroupMessage }>;
+    }
   >();
 
   constructor(options: ShepherdServiceOptions) {
@@ -1337,30 +1360,109 @@ export class ShepherdService {
         .update(`auth-demo\0${clientMessageId}`, "utf8")
         .digest("hex")
         .slice(0, 40);
-    const existing = this.store
-      .snapshot()
-      .shepherd.groupMessages.find((message) => message.id === messageId);
+    const expectedFrontendAgentId = input.frontendAgentId ??
+      deterministicDemoAgentId("auth-demo", "frontend");
+    const expectedBackendAgentId = input.backendAgentId ??
+      deterministicDemoAgentId("auth-demo", "backend");
+    const expectedFrontendTransport = input.frontendTransport ?? BEARER_TRANSPORT;
+    const expectedBackendTransport = input.backendTransport ?? COOKIE_TRANSPORT;
+    const requestFingerprint = createHash("sha256")
+      .update(JSON.stringify({
+        preset: input.preset,
+        content: route.content,
+        frontendAgentId: expectedFrontendAgentId,
+        backendAgentId: expectedBackendAgentId,
+        frontendTransport: expectedFrontendTransport,
+        backendTransport: expectedBackendTransport,
+      }), "utf8")
+      .digest("hex");
+    const snapshot = this.store.snapshot();
+    const existing = snapshot.shepherd.groupMessages.find(
+      (message) => message.id === messageId,
+    );
     if (existing) {
-      if (existing.content !== route.content || !existing.missionId) {
+      const contracts = existing.missionId
+        ? snapshot.shepherd.contracts.filter(
+            (contract) => contract.missionId === existing.missionId,
+          )
+        : [];
+      const frontend = contracts.find((contract) =>
+        contract.title.startsWith("Implement frontend"),
+      );
+      const backend = contracts.find((contract) =>
+        contract.title.startsWith("Implement backend"),
+      );
+      if (
+        (existing.requestFingerprint !== undefined
+          ? existing.requestFingerprint !== requestFingerprint
+          : existing.content !== route.content ||
+            frontend?.agentId !== expectedFrontendAgentId ||
+            backend?.agentId !== expectedBackendAgentId ||
+            !frontend?.objective.includes(`transport "${expectedFrontendTransport}"`) ||
+            !backend?.objective.includes(`transport "${expectedBackendTransport}"`)) ||
+        !existing.missionId ||
+        existing.content !== route.content
+      ) {
         throw new ShepherdControlError(
           "idempotency_conflict",
-          "Client message ID was already used for different content",
+          "Client message ID was already used for a different Mission assignment",
         );
       }
       return { missionId: existing.missionId, message: existing };
     }
-    const started = await this.startDeterministicDemo({
-      projectId: "auth-demo",
-      originalIntent: route.content,
-    });
-    const message = await this.sendProjectGroupMessage("auth-demo", {
-      clientMessageId,
-      content: route.content,
-    });
-    if (message.missionId !== started.missionId) {
-      throw new Error("Project Group message did not link to its created Mission");
+    const pending = this.pendingMissionStarts.get(messageId);
+    if (pending) {
+      if (pending.fingerprint !== requestFingerprint) {
+        throw new ShepherdControlError(
+          "idempotency_conflict",
+          "Client message ID is already starting a different Mission assignment",
+        );
+      }
+      return await pending.operation;
     }
-    return { missionId: started.missionId, message };
+    const operation = (async () => {
+      const started = await this.startDeterministicDemo({
+        projectId: "auth-demo",
+        originalIntent: route.content,
+        ...(input.frontendAgentId === undefined
+          ? {}
+          : { frontendAgentId: input.frontendAgentId }),
+        ...(input.backendAgentId === undefined
+          ? {}
+          : { backendAgentId: input.backendAgentId }),
+        ...(input.frontendTransport === undefined
+          ? {}
+          : { frontendTransport: input.frontendTransport }),
+        ...(input.backendTransport === undefined
+          ? {}
+          : { backendTransport: input.backendTransport }),
+        requestRecord: {
+          messageId,
+          fingerprint: requestFingerprint,
+        },
+      });
+      const message = this.store
+        .snapshot()
+        .shepherd.groupMessages.find((item) => item.id === messageId);
+      if (!message) {
+        throw new Error("Atomic Mission request record was not persisted");
+      }
+      if (message.missionId !== started.missionId) {
+        throw new Error("Project Group message did not link to its created Mission");
+      }
+      return { missionId: started.missionId, message };
+    })();
+    this.pendingMissionStarts.set(messageId, {
+      fingerprint: requestFingerprint,
+      operation,
+    });
+    try {
+      return await operation;
+    } finally {
+      if (this.pendingMissionStarts.get(messageId)?.operation === operation) {
+        this.pendingMissionStarts.delete(messageId);
+      }
+    }
   }
 
   async cancelMission(missionId: string): Promise<Mission> {
@@ -1650,6 +1752,14 @@ export class ShepherdService {
         missionId: mission.id,
         frontendContractId: sourceContracts[0].id,
         backendContractId: sourceContracts[1].id,
+        frontendTransport:
+          collision.leftContractId === sourceContracts[0].id
+            ? collision.leftClaim.value as AuthTransport
+            : collision.rightClaim.value as AuthTransport,
+        backendTransport:
+          collision.leftContractId === sourceContracts[1].id
+            ? collision.leftClaim.value as AuthTransport
+            : collision.rightClaim.value as AuthTransport,
       };
       const selectedAt = this.timestamp();
       await this.store.mutate((database) => {
@@ -2324,6 +2434,41 @@ export class ShepherdService {
     ) {
       throw new ShepherdControlError("invalid_input", "Mission intent is invalid");
     }
+    if (
+      options.requestRecord &&
+      (!SAFE_ID.test(options.requestRecord.messageId) ||
+        !/^[a-f0-9]{64}$/u.test(options.requestRecord.fingerprint))
+    ) {
+      throw new ShepherdControlError(
+        "invalid_input",
+        "Mission request identity is invalid",
+      );
+    }
+    const suppliedAgentCount = Number(Boolean(options.frontendAgentId)) +
+      Number(Boolean(options.backendAgentId));
+    if (suppliedAgentCount === 1) {
+      throw new ShepherdControlError(
+        "invalid_input",
+        "Select both a Frontend Agent and a Backend Agent",
+      );
+    }
+    if (
+      options.frontendAgentId &&
+      options.frontendAgentId === options.backendAgentId
+    ) {
+      throw new ShepherdControlError(
+        "invalid_input",
+        "Frontend and Backend contracts require different Agents",
+      );
+    }
+    const frontendTransport = options.frontendTransport ?? BEARER_TRANSPORT;
+    const backendTransport = options.backendTransport ?? COOKIE_TRANSPORT;
+    if (frontendTransport === backendTransport) {
+      throw new ShepherdControlError(
+        "invalid_input",
+        "The collision demo requires incompatible authentication transports",
+      );
+    }
     const beforePreparation = this.store.snapshot();
     const existingActive = beforePreparation.shepherd.missions.find(
       (mission) =>
@@ -2331,6 +2476,39 @@ export class ShepherdService {
     );
     if (existingActive) {
       throw new Error("The managed project already has a non-terminal Mission");
+    }
+    const currentAgents = beforePreparation.agents;
+    const selectedFrontendAgent = options.frontendAgentId
+      ? currentAgents.find((agent) => agent.id === options.frontendAgentId)
+      : undefined;
+    const selectedBackendAgent = options.backendAgentId
+      ? currentAgents.find((agent) => agent.id === options.backendAgentId)
+      : undefined;
+    if (options.frontendAgentId && !selectedFrontendAgent) {
+      throw new ShepherdControlError("not_found", "Selected Frontend Agent was not found");
+    }
+    if (options.backendAgentId && !selectedBackendAgent) {
+      throw new ShepherdControlError("not_found", "Selected Backend Agent was not found");
+    }
+    if (selectedFrontendAgent && selectedFrontendAgent.role !== "Frontend") {
+      throw new ShepherdControlError(
+        "invalid_input",
+        "The Frontend contract requires an Agent with the Frontend role",
+      );
+    }
+    if (selectedBackendAgent && selectedBackendAgent.role !== "Backend") {
+      throw new ShepherdControlError(
+        "invalid_input",
+        "The Backend contract requires an Agent with the Backend role",
+      );
+    }
+    for (const selected of [selectedFrontendAgent, selectedBackendAgent]) {
+      if (selected && selected.status !== "ready") {
+        throw new ShepherdControlError(
+          "conflict",
+          `${selected.name} must be ready before Shepherd assigns a Contract`,
+        );
+      }
     }
     const persistedProject = beforePreparation.shepherd.projects.find(
       (item) => item.id === requestedProjectId,
@@ -2391,10 +2569,12 @@ export class ShepherdService {
     const missionId = this.identifier("mission");
     const frontendContractId = this.identifier("contract-front");
     const backendContractId = this.identifier("contract-back");
-    const frontendAgentId = deterministicDemoAgentId(project.projectId, "frontend");
-    const backendAgentId = deterministicDemoAgentId(project.projectId, "backend");
-    const frontendAuthority = authorityFor("frontend");
-    const backendAuthority = authorityFor("backend");
+    const frontendAgentId = selectedFrontendAgent?.id ??
+      deterministicDemoAgentId(project.projectId, "frontend");
+    const backendAgentId = selectedBackendAgent?.id ??
+      deterministicDemoAgentId(project.projectId, "backend");
+    const frontendAuthority = selectedFrontendAgent?.authority ?? authorityFor("frontend");
+    const backendAuthority = selectedBackendAgent?.authority ?? authorityFor("backend");
     const frontendContractAuthority = boundedContractAuthority(
       frontendAuthority,
       authorityFor("frontend"),
@@ -2403,23 +2583,26 @@ export class ShepherdService {
       backendAuthority,
       authorityFor("backend"),
     );
-    const currentAgents = this.store.snapshot().agents;
-    const frontendAgent = this.makeAgent(
-      currentAgents.find((agent) => agent.id === frontendAgentId),
-      frontendAgentId,
-      "Frontend Agent",
-      "Frontend",
-      frontendAuthority,
-      createdAt,
-    );
-    const backendAgent = this.makeAgent(
-      currentAgents.find((agent) => agent.id === backendAgentId),
-      backendAgentId,
-      "Backend Agent",
-      "Backend",
-      backendAuthority,
-      createdAt,
-    );
+    const frontendAgent = selectedFrontendAgent
+      ? { ...selectedFrontendAgent, currentContractId: null, updatedAt: createdAt }
+      : this.makeAgent(
+          currentAgents.find((agent) => agent.id === frontendAgentId),
+          frontendAgentId,
+          "Frontend Agent",
+          "Frontend",
+          frontendAuthority,
+          createdAt,
+        );
+    const backendAgent = selectedBackendAgent
+      ? { ...selectedBackendAgent, currentContractId: null, updatedAt: createdAt }
+      : this.makeAgent(
+          currentAgents.find((agent) => agent.id === backendAgentId),
+          backendAgentId,
+          "Backend Agent",
+          "Backend",
+          backendAuthority,
+          createdAt,
+        );
     await this.ensureAgentWorkspace(
       frontendAgent,
       project.repositoryPath,
@@ -2455,8 +2638,71 @@ export class ShepherdService {
         updatedAt: createdAt,
       };
       replaceById(database.shepherd.projects, projectRecord);
-      replaceById(database.agents, frontendAgent);
-      replaceById(database.agents, backendAgent);
+      if (options.requestRecord) {
+        const duplicate = database.shepherd.groupMessages.find(
+          (message) => message.id === options.requestRecord?.messageId,
+        );
+        if (duplicate) {
+          throw new ShepherdControlError(
+            "idempotency_conflict",
+            "Mission request was durably recorded before this assignment",
+          );
+        }
+      }
+      const reserveAgent = (
+        selected: Agent | undefined,
+        fallback: Agent,
+        role: "Frontend" | "Backend",
+        requestedAuthority: ScopedAuthority,
+        contractId: string,
+      ) => {
+        if (!selected) {
+          replaceById(database.agents, fallback);
+          return;
+        }
+        const current = database.agents.find((agent) => agent.id === selected.id);
+        if (
+          !current ||
+          current.role !== role ||
+          current.status !== "ready" ||
+          current.currentContractId
+        ) {
+          throw new ShepherdControlError(
+            "conflict",
+            `${role} Agent availability changed before Contract assignment`,
+          );
+        }
+        const currentAuthority = boundedContractAuthority(
+          current.authority ?? requestedAuthority,
+          requestedAuthority,
+        );
+        if (JSON.stringify(currentAuthority) !== JSON.stringify(
+          role === "Frontend" ? frontendContractAuthority : backendContractAuthority,
+        )) {
+          throw new ShepherdControlError(
+            "conflict",
+            `${role} Agent authority changed before Contract assignment`,
+          );
+        }
+        current.status = "busy";
+        current.currentContractId = contractId;
+        current.lastError = null;
+        current.updatedAt = createdAt;
+      };
+      reserveAgent(
+        selectedFrontendAgent,
+        frontendAgent,
+        "Frontend",
+        authorityFor("frontend"),
+        frontendContractId,
+      );
+      reserveAgent(
+        selectedBackendAgent,
+        backendAgent,
+        "Backend",
+        authorityFor("backend"),
+        backendContractId,
+      );
 
       const mission: Mission = {
         id: missionId,
@@ -2483,7 +2729,7 @@ export class ShepherdService {
           agentId: frontendAgentId,
           title: "Implement frontend authentication transport",
           objective:
-            'Create src/frontend/auth.json with exactly transport "bearer-jwt" and clientReadableCredential true.',
+            `Configure the required frontend authentication artifact with exactly transport "${frontendTransport}" and clientReadableCredential ${String(frontendTransport === BEARER_TRANSPORT)}.`,
           artifactPath: "src/frontend/auth.json",
           authority: frontendContractAuthority,
           acceptanceChecks: [frontendCheck()],
@@ -2495,7 +2741,7 @@ export class ShepherdService {
           agentId: backendAgentId,
           title: "Implement backend authentication transport",
           objective:
-            'Create src/backend/auth.json with exactly transport "http-only-session-cookie" and clientReadableCredential false.',
+            `Configure the required backend authentication artifact with exactly transport "${backendTransport}" and clientReadableCredential ${String(backendTransport === BEARER_TRANSPORT)}.`,
           artifactPath: "src/backend/auth.json",
           authority: backendContractAuthority,
           acceptanceChecks: [backendCheck()],
@@ -2503,6 +2749,20 @@ export class ShepherdService {
         }),
       ];
       database.shepherd.contracts.push(...contracts);
+      if (options.requestRecord) {
+        appendProjectGroupMessage(database, {
+          id: options.requestRecord.messageId,
+          projectId: project.projectId,
+          missionId,
+          senderType: "human",
+          senderId: null,
+          content: originalIntent,
+          targetAgentId: null,
+          contractId: null,
+          requestFingerprint: options.requestRecord.fingerprint,
+          createdAt,
+        });
+      }
       this.recordEvent(database, {
         type: "mission_created",
         summary: "Created authentication collision Mission",
@@ -2538,6 +2798,8 @@ export class ShepherdService {
       missionId,
       frontendContractId,
       backendContractId,
+      frontendTransport,
+      backendTransport,
     };
   }
 
@@ -2688,6 +2950,7 @@ export class ShepherdService {
         operation: {
           kind: "frontend_contract",
           contractId: prepared.frontendContractId,
+          targetTransport: prepared.frontendTransport,
         },
       },
       {
@@ -2695,6 +2958,7 @@ export class ShepherdService {
         operation: {
           kind: "backend_contract",
           contractId: prepared.backendContractId,
+          targetTransport: prepared.backendTransport,
         },
       },
     ];

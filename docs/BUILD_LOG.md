@@ -7,6 +7,42 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — user-selected Agent Contract demo candidate
+
+- Base: `mock-main` at `6fddb0e84608a8614f745bcfdcd92b091e4f7fdf`.
+  Branch: `feat/demo-agent-contract-flow`, pushed before edits.
+- The existing Shepherd Mission composer can now assign one ready user-created
+  Frontend Agent and one ready user-created Backend Agent to opposite typed auth
+  transports. Reservation and authority are revalidated in the final serialized
+  mutation; Mission request idempotency is fingerprinted and persisted atomically
+  with the Mission, Contracts and originating human message.
+- Every Contract-linked stream event can disclose the complete bounded Execution
+  Contract: identity and assignment, objective, dependencies, semantic contract,
+  contextual inputs, scoped authority, artifacts, acceptance checks and profile,
+  tie-breakers, manifest path and timestamps. Existing evidence remains alongside
+  it; public responses do not expose the server-only request fingerprint.
+- Collision evidence explains that both Resolution Planes fork from the same
+  immutable integration commit and compete by independent project-invariant
+  verification. Non-automatic or non-unique outcomes show a truthful internal
+  human-review ticket with the full durable collision/Mission reference; no
+  external issue-tracker integration is claimed.
+- Causal tests cover selected Agents with reversed transports, concurrent and
+  restart-safe idempotency, assignment mismatch, the stop-versus-reservation race,
+  full Contract rendering and human-review behavior. Literal `npm run check`
+  passed launcher 3/3, Server 739 passed plus two explicit opt-in skips, Web 18/18,
+  all strict production/test typechecks and both builds.
+- The focused real-browser gate passed 4/4: normal completion and forced human
+  review at exact `1280x800` and `1440x900`, including Agent creation/selection,
+  exact Contract assignment/objectives, both Resolution Planes, full evidence,
+  keyboard focus and no document/body overflow. Independent UI review passed at
+  5.31:1 minimum contrast; independent security re-review passed with no remaining
+  scoped blocker. After the final ticket-label wording edit, the first browser
+  invocation served the prior production bundle: both unchanged completion cases
+  passed and both new-label assertions failed. Rebuilding the Web bundle and
+  repeating the exact command passed 4/4. No live/model request was made.
+- This candidate does not claim completion of `GC-03/04`: the separate Project
+  Group `@Agent` click/type → Contract → Agent-summary journey remains open.
+
 ## 2026-08-30 — DEL-04 documentation consolidation candidate
 
 - Base: `mock-main` at `43fb5d3f40a0b90a744aec70b2ab02a8adab5ed9`.

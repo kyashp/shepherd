@@ -142,7 +142,19 @@ export const api = {
     request<{ events: ShepherdEvent[]; nextCursor: number }>(
       `/api/shepherd/events?cursor=${cursor}&limit=${limit}`,
     ),
-  sendShepherdMessage: (content: string) =>
+  sendShepherdMessage: (
+    content: string,
+    assignments?: {
+      frontend: {
+        agentId: string;
+        transport: "bearer-jwt" | "http-only-session-cookie";
+      };
+      backend: {
+        agentId: string;
+        transport: "bearer-jwt" | "http-only-session-cookie";
+      };
+    },
+  ) =>
     request<{
       status: "accepted";
       missionId: string;
@@ -153,6 +165,7 @@ export const api = {
         content,
         preset: "auth-demo",
         clientMessageId: crypto.randomUUID(),
+        ...(assignments === undefined ? {} : { assignments }),
       }),
     }),
   groupMessages: (projectId: string, limit = 200) =>

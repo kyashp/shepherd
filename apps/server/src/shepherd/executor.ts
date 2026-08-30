@@ -11,8 +11,16 @@ import {
 } from "./auth-fixture.js";
 
 export type DeterministicOperation =
-  | { kind: "frontend_contract"; contractId: string }
-  | { kind: "backend_contract"; contractId: string }
+  | {
+      kind: "frontend_contract";
+      contractId: string;
+      targetTransport?: AuthTransport;
+    }
+  | {
+      kind: "backend_contract";
+      contractId: string;
+      targetTransport?: AuthTransport;
+    }
   | {
       kind: "resolution_candidate";
       candidateId: string;
@@ -89,21 +97,31 @@ export class DeterministicFixtureExecutor implements ShepherdExecutor {
       if (controller.signal.aborted) throw new Error("Execution cancelled");
       switch (request.operation.kind) {
         case "frontend_contract":
+          {
+            const transport = request.operation.targetTransport ?? BEARER_TRANSPORT;
           return await this.writeContract(
             request.workspacePath,
             request.operation.contractId,
             "src/frontend/auth.json",
-            BEARER_TRANSPORT,
-            "Frontend auth client uses a bearer JWT.",
+            transport,
+            transport === BEARER_TRANSPORT
+              ? "Frontend auth client uses a bearer JWT."
+              : "Frontend auth client uses an HttpOnly session cookie.",
           );
+          }
         case "backend_contract":
+          {
+            const transport = request.operation.targetTransport ?? COOKIE_TRANSPORT;
           return await this.writeContract(
             request.workspacePath,
             request.operation.contractId,
             "src/backend/auth.json",
-            COOKIE_TRANSPORT,
-            "Backend auth service uses an HttpOnly session cookie.",
+            transport,
+            transport === BEARER_TRANSPORT
+              ? "Backend auth service uses a bearer JWT."
+              : "Backend auth service uses an HttpOnly session cookie.",
           );
+          }
         case "resolution_candidate": {
           const value = authValue(request.operation.targetTransport);
           await Promise.all([

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Link } from "./router";
 import type { Agent, SystemInfo } from "./types";
 import { Icon } from "./ui";
@@ -23,6 +23,10 @@ export function Shell({
   globalError?: string | null;
   onClearError?: () => void;
 }) {
+  const mainRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    mainRef.current?.scrollTo({ top: 0, left: 0 });
+  }, [pathname]);
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -96,7 +100,7 @@ export function Shell({
         </div>
       </aside>
 
-      <main className="main-content">
+      <main className="main-content" ref={mainRef}>
         {system && (!system.arkConfigured || !system.codexAvailable) ? (
           <div className="config-banner" role="status">
             <Icon name="alert" />
