@@ -51,7 +51,12 @@ that limitation is explicit.
   and no late/unhandled work. Keep one attention event, verified Contracts/Planes,
   released Agents, active project, no collision/candidate/promotion/head mutation
   and secret/path scans. Run TST-23/TST-22/F-06, strict/full and hosted Node 22.
-- **Status:** **OPEN / Fixer READY.** Test-only; blocks F-06 integration.
+- **Status:** **FIXER CANDIDATE / Auditor pending.** The row now waits on the exact
+  original Store recovery intent becoming null, then awaits a no-op mutation
+  sentinel before durable reads and teardown. It passed 30/30; the combined
+  Store/recovery/service slice passed 138/138, and two literal full checks each
+  passed launcher 3/3, Server 736 with two opt-in skips, Web 17/17 and both builds.
+  No product/Store behavior changed; hosted/Auditor integration remains pending.
 
 ### `TST-23` — Plane-unwind reload races the original Store persistence queue
 

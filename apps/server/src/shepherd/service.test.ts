@@ -2623,6 +2623,11 @@ describe("Shepherd deterministic walking skeleton", () => {
       () => expect(["attention_required", "failed"]).toContain(service.missionDetail(missionId)?.mission.state),
       { timeout: 10_000 },
     );
+    await vi.waitFor(
+      () => expect(store.persistenceRecoveryIntent()).toBeNull(),
+      { timeout: 10_000 },
+    );
+    await store.mutate(() => undefined);
     const detail = service.missionDetail(missionId);
     if (!detail) throw new Error("Persistence failure Mission disappeared");
     expect(injected).toBe(true);

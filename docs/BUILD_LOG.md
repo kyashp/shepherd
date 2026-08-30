@@ -7,6 +7,23 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — TST-24 Fixer candidate restores the TST-22/F-06 full gate
+
+After visible persistence-error attention, the exact fixture now uses bounded
+`vi.waitFor` on `store.persistenceRecoveryIntent()` becoming null and then awaits a
+test-owned no-op `store.mutate` sentinel. This proves recovery-journal unlink,
+directory sync, in-memory intent clearing and all earlier original-store queue work
+have finished before durable reads, cancellation, reset or root teardown. No sleep,
+retry, timeout increase, suppression, cleanup catch or product change was added.
+
+The exact row passed 30/30. Combined Store/recovery/service coverage including
+TST-23 passed 138/138 without an unhandled rejection or retained artifact. Two
+consecutive literal `npm run check` executions each passed launcher 3/3; Server 736
+with two explicitly opt-in skips; Web 17/17; strict production/test typechecks; and
+both builds. TST-22's prior independent security verdict remains 0 High / 0 Medium
+with only the documented same-UID parent-directory swap Low. Auditor integration
+and hosted evidence remain pending.
+
 ## 2026-08-30 — TST-24 reconciliation-quiescence RED preserved
 
 Auditor tested exact corrected chain
