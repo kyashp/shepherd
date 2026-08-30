@@ -458,6 +458,12 @@ export interface ProjectGroupMessage {
   content: string;
   targetAgentId: string | null;
   contractId: string | null;
+  /** Trusted metadata for a private Agent-chat prompt awaiting/owning a Contract. */
+  contractAssignment?: {
+    preset: "auth-demo-contract";
+    role: "Frontend" | "Backend";
+    transport: "bearer-jwt" | "http-only-session-cookie";
+  };
   /** Server-only durable binding for Mission-creation idempotency. */
   requestFingerprint?: string;
   createdAt: IsoTimestamp;

@@ -10,6 +10,7 @@ import type {
   AgentRun,
   AgentRunner,
   CreateAgentInput,
+  Database,
   Message,
   ScopedAuthority,
   UpdateAgentInput,
@@ -17,6 +18,16 @@ import type {
 import { WorkspaceManager } from "./workspace.js";
 
 const now = () => new Date().toISOString();
+
+const agentHasShepherdReferences = (
+  shepherd: Database["shepherd"],
+  agentId: string,
+): boolean =>
+  shepherd.contracts.some((contract) => contract.agentId === agentId) ||
+  shepherd.events.some((event) => event.agentId === agentId) ||
+  shepherd.groupMessages.some(
+    (message) => message.targetAgentId === agentId || message.senderId === agentId,
+  );
 
 export type AgentAuthorityPresetId =
   | "frontend"
@@ -235,24 +246,31 @@ export class AgentService {
 
   async deleteAgent(id: string): Promise<{ deleted: true }> {
     const agent = this.getAgent(id);
-    if (
-      this.store
-        .snapshot()
-        .shepherd.contracts.some((contract) => contract.agentId === id)
-    ) {
+    const shepherd = this.store.snapshot().shepherd;
+    if (agentHasShepherdReferences(shepherd, id)) {
       throw new HttpError(
         409,
-        "Cannot delete an Agent referenced by durable Shepherd contract history",
+        "Cannot delete an Agent referenced by durable Shepherd history",
       );
     }
     await this.cancelExecution(id);
-    await this.workspaces.archive(agent);
-    await this.store.mutate((database) => {
+    return await this.store.mutate(async (database) => {
+      const currentAgent = database.agents.find((item) => item.id === id);
+      if (!currentAgent) {
+        throw new HttpError(404, "Agent not found");
+      }
+      if (agentHasShepherdReferences(database.shepherd, id)) {
+        throw new HttpError(
+          409,
+          "Cannot delete an Agent referenced by durable Shepherd history",
+        );
+      }
+      await this.workspaces.archive(currentAgent);
       database.agents = database.agents.filter((item) => item.id !== id);
       database.messages = database.messages.filter((item) => item.agentId !== id);
       database.runs = database.runs.filter((item) => item.agentId !== id);
+      return { deleted: true as const };
     });
-    return { deleted: true };
   }
 
   async startAgent(id: string): Promise<Agent> {

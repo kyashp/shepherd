@@ -100,7 +100,10 @@ export function Shell({
         </div>
       </aside>
 
-      <main className="main-content" ref={mainRef}>
+      <main
+        className={`main-content${pathname === "/shepherd" ? " shepherd-main" : ""}`}
+        ref={mainRef}
+      >
         {system && (!system.arkConfigured || !system.codexAvailable) ? (
           <div className="config-banner" role="status">
             <Icon name="alert" />
