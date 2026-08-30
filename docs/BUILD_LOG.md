@@ -7,6 +7,37 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — FM-01 integrated verification and event-evidence follow-up
+
+PR #72 merged to `main` as `2e4058107311170ab12cadc6a6d283aeaefef895`.
+Issue #42 closed and the feature branch was removed. The required integrated
+verification ran from a clean detached worktree at that exact SHA.
+
+- **Integrated evidence:** the FM-01 plus database/service/Git-promotion/recovery
+  slice passed 187/187. Literal `npm run check` passed launcher 3/3, Server
+  808/808 with three explicit skips, Web 19/19, all production/test typechecks and
+  both builds. A lock-backed clean install and `npm audit` reported zero
+  vulnerabilities; the merged feature files matched the reviewed branch bytes.
+- **Independent audit finding:** the final re-verification row asserted
+  `promotion_started` and no completion, but not the resulting
+  `resolving -> attention_required` event. The event had a bounded reason but not
+  the matching failure code/stage, so event removal or misclassification could
+  remain false-green. No schema-widening, protected-promotion, authorization,
+  secret-exposure or data-loss blocker was found.
+- **Causal follow-up:** branch `test/42-fm-01-final-event-evidence`, implementation
+  `471f5e8`, draft PR #74. RED passed 5/6 and failed only because the causal event
+  lacked `failureCode` and `stage`. The existing atomic transition now carries
+  those two fixed fields, and the matrix asserts its exact summary,
+  `resolving -> attention_required`, reason, code and stage through both durable
+  service state and the public events API.
+- **Follow-up evidence:** matrix 6/6, adjacent 187/187, Server production/test
+  types, and a fresh literal gate with the same fully green counts passed. The
+  same read-only Auditor returned PASS with no remaining blocker.
+  `git diff --check` passed. No UI, dependency, schema, promotion-gate, live
+  Runtime or model change ran.
+- `T,A,C` are complete. `I` remains pending until PR #74 is integrated and the
+  corrected focused flow is rerun on updated `origin/main`.
+
 ## 2026-08-30 — FM-01 deterministic failure matrix candidate
 
 Branch `feat/42-fm-01-failure-matrix`, implementation `051b32a`, draft PR #72.
