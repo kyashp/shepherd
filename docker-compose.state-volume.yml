@@ -1,0 +1,75 @@
+# Container-first local profile.
+#
+# The control plane runs inside the container runtime and keeps every Agent state
+# root on a named volume instead of a host bind mount. A host share cannot carry
+# the Codex sandbox's per-file access rights on every supported host, so on those
+# hosts a bind-mounted workspace leaves the Agent unable to read or write the very
+# directory it was given. A volume is a native runtime filesystem on all of them.
+#
+# Prefer `LOCAL_POC_STATE_MODE=container-volume ./scripts/start-local-poc.sh`,
+# which creates and seeds the volume and resolves the engine socket group before
+# invoking this file. Every security gate is unchanged: non-root, no new
+# privileges, all capabilities dropped, and no danger-full-access fallback.
+#
+# HOST is 0.0.0.0 because the server must be reachable through the published port,
+# so APP_AUTH_TOKEN must be a real non-placeholder token, exactly as the ECS
+# profile in docker-compose.yml already requires. The port is published to
+# loopback only.
+services:
+  launchpad:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NODE_IMAGE: ${CONTAINER_RUNTIME_BASE_IMAGE:-node:22-bookworm-slim}
+        DOCKER_CLI_IMAGE: ${CONTAINER_ENGINE_CLIENT_IMAGE:-docker:cli}
+        DEBIAN_MIRROR: ${CONTAINER_APT_MIRROR:-}
+        DEBIAN_SECURITY_MIRROR: ${CONTAINER_APT_SECURITY_MIRROR:-}
+    image: volc-agent-launchpad:local
+    restart: unless-stopped
+    env_file:
+      - ${LAUNCHPAD_ENV_FILE:-.env}
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      RUNTIME_PROVIDER: container
+      CONTAINER_ENGINE: docker
+      CONTAINER_STATE_ROOT: /app/state
+      CONTAINER_STATE_VOLUME: ${CONTAINER_STATE_VOLUME:-launchpad-state}
+      # Every mounted root must live on the state volume, including APP_DATA_DIR:
+      # the installation nonce behind the owner label lives there, and off the
+      # volume each restart would mint a new owner and orphan running containers.
+      APP_DATA_DIR: /app/state/data
+      AGENT_WORKSPACE_ROOT: /app/state/workspaces
+      CODEX_HOME: /app/state/codex-home
+      SHEPHERD_ROOT: /app/state/data/shepherd
+      SHEPHERD_CODEX_HOME_ROOT: /app/state/data/shepherd-codex-homes
+      CODEX_SANDBOX_MODE: ${CODEX_SANDBOX_MODE:-workspace-write}
+      RUNTIME_INSTANCE_ID: ${RUNTIME_INSTANCE_ID:-default}
+      # The image's `node` user, which owns the volume. Disposable Runtime
+      # containers run as the same non-root identity so the control plane can
+      # still reconcile and remove what they wrote.
+      CONTAINER_USER: "1000:1000"
+    ports:
+      - "127.0.0.1:${PUBLIC_PORT:-3000}:3000"
+    volumes:
+      - launchpad-state:/app/state
+      - ${CONTAINER_ENGINE_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
+    # The engine socket is root-owned and group-writable. The control plane stays
+    # non-root and joins only that group. Granting the socket is a real trust
+    # decision, recorded in docs/DEVIATIONS.md.
+    group_add:
+      - "${CONTAINER_ENGINE_SOCKET_GID:-0}"
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 512
+    mem_limit: 4g
+    cpus: 2
+
+volumes:
+  launchpad-state:
+    name: ${CONTAINER_STATE_VOLUME:-launchpad-state}

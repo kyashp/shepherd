@@ -39,9 +39,71 @@ afterEach(async () => {
   );
 });
 
+/** A coherent state-volume layout: every mounted root under one state root. */
+const stateLayout = {
+  CONTAINER_STATE_ROOT: "/app/state",
+  CONTAINER_STATE_VOLUME: "launchpad-state",
+  APP_DATA_DIR: "/app/state/data",
+  AGENT_WORKSPACE_ROOT: "/app/state/workspaces",
+  CODEX_HOME: "/app/state/codex-home",
+  SHEPHERD_ROOT: "/app/state/data/shepherd",
+  SHEPHERD_CODEX_HOME_ROOT: "/app/state/data/shepherd-codex-homes",
+} as const;
+
 describe("Shepherd configuration", () => {
   it("binds to loopback by default", () => {
     expect(loadConfig({}).host).toBe("127.0.0.1");
+  });
+
+  it("keeps host bind mounts when the state volume is unconfigured", () => {
+    const config = loadConfig({});
+    expect(config.containerStateRoot).toBeNull();
+    expect(config.containerStateVolume).toBeNull();
+  });
+
+  it("requires the state root and volume together", () => {
+    expect(() => loadConfig({ CONTAINER_STATE_ROOT: "/app/state" })).toThrow(
+      /CONTAINER_STATE_ROOT and CONTAINER_STATE_VOLUME/u,
+    );
+    expect(() => loadConfig({ CONTAINER_STATE_VOLUME: "launchpad-state" })).toThrow(
+      /CONTAINER_STATE_ROOT and CONTAINER_STATE_VOLUME/u,
+    );
+  });
+
+  it("rejects unsafe state roots and volume names", () => {
+    for (const root of ["state", "/", "/app/state,evil", "/app/state/../state"]) {
+      expect(() =>
+        loadConfig({ ...stateLayout, CONTAINER_STATE_ROOT: root }),
+      ).toThrow(/CONTAINER_STATE_ROOT must be an absolute canonical path/u);
+    }
+    for (const volume of ["bad,name", "-leading", "a".repeat(65), "has space"]) {
+      expect(() =>
+        loadConfig({ ...stateLayout, CONTAINER_STATE_VOLUME: volume }),
+      ).toThrow(/CONTAINER_STATE_VOLUME must be a valid container volume name/u);
+    }
+  });
+
+  it("requires every mounted root inside the state root", () => {
+    expect(() =>
+      loadConfig({
+        CONTAINER_STATE_ROOT: "/app/state",
+        CONTAINER_STATE_VOLUME: "launchpad-state",
+      }),
+    ).toThrow(/must be inside CONTAINER_STATE_ROOT/u);
+    // A sibling that merely shares a prefix is not inside the root.
+    expect(() =>
+      loadConfig({ ...stateLayout, CONTAINER_STATE_ROOT: "/app/state-evil" }),
+    ).toThrow(/must be inside CONTAINER_STATE_ROOT/u);
+    expect(() =>
+      loadConfig({ ...stateLayout, AGENT_WORKSPACE_ROOT: "/elsewhere/workspaces" }),
+    ).toThrow(/AGENT_WORKSPACE_ROOT must be inside CONTAINER_STATE_ROOT/u);
+  });
+
+  it("resolves a coherent state layout", () => {
+    const config = loadConfig({ ...stateLayout });
+    expect(config.containerStateRoot).toBe("/app/state");
+    expect(config.containerStateVolume).toBe("launchpad-state");
+    expect(config.shepherdRoot).toBe("/app/state/data/shepherd");
   });
 
   it("requires a strong non-placeholder token for every non-loopback bind", () => {

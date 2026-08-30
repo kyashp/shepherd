@@ -7,6 +7,10 @@ import type {
   VerificationCheckResult,
   VerificationEvidence,
 } from "./domain.js";
+import {
+  containerStateSubpath,
+  resolveContainerStateMount,
+} from "../config.js";
 import { assertSafeProjectPath } from "./git-client.js";
 
 const SAFE_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$/;
@@ -385,6 +389,9 @@ export interface ContainerVerifierOptions {
   maxOutputBytes?: number;
   tmpfsSize?: string;
   sensitiveValues?: readonly string[];
+  /** Set together to address candidate Planes as subpaths of the state volume. */
+  stateRoot?: string | null;
+  stateVolume?: string | null;
   executor?: VerifierContainerExecutor;
   now?: () => Date;
   idFactory?: () => string;
@@ -403,6 +410,8 @@ interface NormalizedVerifierOptions {
   maxOutputBytes: number;
   tmpfsSize: string;
   sensitiveValues: string[];
+  stateRoot: string | null;
+  stateVolume: string | null;
 }
 
 function assertSimpleValue(value: string, label: string): string {
@@ -426,6 +435,17 @@ function normalizeOptions(options: ContainerVerifierOptions): NormalizedVerifier
     maxOutputBytes: options.maxOutputBytes ?? 262_144,
     tmpfsSize: options.tmpfsSize ?? "64m",
     sensitiveValues: (options.sensitiveValues ?? []).filter((value) => value.length >= 4),
+    ...(() => {
+      // Same validation as the server configuration: both settings together, an
+      // absolute canonical root, and a volume name that cannot inject further
+      // mount options through the engine's comma-separated specification.
+      const state = resolveContainerStateMount({
+        root: options.stateRoot ?? undefined,
+        volume: options.stateVolume ?? undefined,
+        mountRoots: [],
+      });
+      return { stateRoot: state?.root ?? null, stateVolume: state?.volume ?? null };
+    })(),
   };
   if (!SAFE_IDENTIFIER.test(normalized.ownerId)) throw new Error("Invalid verifier owner ID");
   if (!SAFE_IMAGE.test(normalized.containerImage)) throw new Error("Invalid verifier image reference");
@@ -460,6 +480,32 @@ export function verifierContainerName(targetId: string, checkId: string, suffix:
   const safeCheck = checkId.replace(/[^A-Za-z0-9_.-]/g, "-").slice(0, 24);
   const safeSuffix = suffix.replace(/[^A-Za-z0-9]/g, "").slice(0, 12);
   return "shepherd-verify-" + safeTarget + "-" + safeCheck + "-" + safeSuffix;
+}
+
+/**
+ * The candidate Plane is always mounted read-only. In state-volume mode it is
+ * addressed as a subpath of that volume, because the Plane exists only inside the
+ * control plane's own mount namespace and no host path would resolve for the
+ * engine. Fails closed rather than falling back to a bind mount.
+ */
+function verifierMountSpecification(
+  options: NormalizedVerifierOptions,
+  planePath: string,
+): string {
+  if (!options.stateRoot || !options.stateVolume) {
+    return "type=bind,src=" + planePath + ",dst=/workspace,readonly";
+  }
+  const subpath = containerStateSubpath(options.stateRoot, planePath);
+  if (subpath === null) {
+    throw new Error("Plane path escapes CONTAINER_STATE_ROOT");
+  }
+  return (
+    "type=volume,source=" +
+    options.stateVolume +
+    ",target=/workspace,volume-subpath=" +
+    subpath +
+    ",volume-nocopy=true,readonly"
+  );
 }
 
 export function buildVerifierContainerArgs(input: {
@@ -501,7 +547,7 @@ export function buildVerifierContainerArgs(input: {
     "--user",
     input.options.containerUser,
     "--mount",
-    "type=bind,src=" + input.planePath + ",dst=/workspace,readonly",
+    verifierMountSpecification(input.options, input.planePath),
     "--tmpfs",
     "/tmp:rw,noexec,nosuid,nodev,size=" + input.options.tmpfsSize,
     "--workdir",

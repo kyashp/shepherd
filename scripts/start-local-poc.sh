@@ -21,6 +21,14 @@ runtime_apt_security_mirror="${CONTAINER_APT_SECURITY_MIRROR:-}"
 runtime_apt_packages="${CONTAINER_RUNTIME_APT_PACKAGES:-ca-certificates git ripgrep}"
 codex_sandbox_mode="${CODEX_SANDBOX_MODE:-workspace-write}"
 shepherd_execution_mode="${SHEPHERD_EXECUTION_MODE:-auto}"
+# host-bind keeps Agent state on the host and is correct on a Linux host, where a
+# bind mount is a native filesystem. container-volume keeps every state root on a
+# named volume and runs the control plane inside the runtime; it is required
+# wherever the host filesystem reaches the runtime through a virtual machine,
+# because such a share cannot carry the Codex sandbox's per-file access rights.
+state_mode="${LOCAL_POC_STATE_MODE:-host-bind}"
+state_volume="${CONTAINER_STATE_VOLUME:-launchpad-state}"
+container_state_root="/app/state"
 
 log() {
   printf '[local-poc] %s\n' "$*" >&2
@@ -99,7 +107,40 @@ if [[ ! -d node_modules ]]; then
   npm ci
 fi
 
-if [[ -n "${LOCAL_POC_DATA_ROOT:-}" ]]; then
+case "$state_mode" in
+  host-bind | container-volume) ;;
+  *)
+    log "LOCAL_POC_STATE_MODE must be host-bind or container-volume."
+    exit 2
+    ;;
+esac
+
+if [[ "$state_mode" == "container-volume" ]]; then
+  if [[ ! "$state_volume" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$ ]]; then
+    log "CONTAINER_STATE_VOLUME must be a valid container volume name."
+    exit 2
+  fi
+  log "Preparing the $state_volume state volume for the Agent Runtime."
+  "$engine" volume create "$state_volume" >/dev/null
+  # The control-plane image runs as uid 1000, and the disposable Runtime runs as
+  # the same identity so the control plane can still reconcile what it wrote.
+  container_state_user="1000:1000"
+  "$engine" run --rm --user 0:0 \
+    --mount "type=volume,src=$state_volume,dst=/state" \
+    "$runtime_image" sh -c \
+      'mkdir -p /state/data/shepherd /state/data/shepherd-codex-homes \
+         /state/workspaces /state/codex-home \
+       && chown -R 1000:1000 /state && chmod 700 /state/workspaces /state/codex-home'
+  export CONTAINER_STATE_ROOT="$container_state_root"
+  export CONTAINER_STATE_VOLUME="$state_volume"
+  export APP_DATA_DIR="$container_state_root/data"
+  export AGENT_WORKSPACE_ROOT="$container_state_root/workspaces"
+  export CODEX_HOME="$container_state_root/codex-home"
+  export SHEPHERD_ROOT="$container_state_root/data/shepherd"
+  export SHEPHERD_CODEX_HOME_ROOT="$container_state_root/data/shepherd-codex-homes"
+  export CONTAINER_USER="$container_state_user"
+  local_state_root="$state_volume (container volume)"
+elif [[ -n "${LOCAL_POC_DATA_ROOT:-}" ]]; then
   local_state_root="$LOCAL_POC_DATA_ROOT"
   export APP_DATA_DIR="$local_state_root/data"
   export AGENT_WORKSPACE_ROOT="$local_state_root/workspaces"
@@ -131,7 +172,9 @@ if [[ -z "${SHEPHERD_CODEX_HOME_ROOT:-}" \
 fi
 export RUNTIME_INSTANCE_ID="${RUNTIME_INSTANCE_ID:-local-$(id -u)-$(printf '%s' "$repo_dir" | cksum | awk '{print $1}')}"
 
-mkdir -p "$APP_DATA_DIR" "$AGENT_WORKSPACE_ROOT" "$CODEX_HOME"
+if [[ "$state_mode" == "host-bind" ]]; then
+  mkdir -p "$APP_DATA_DIR" "$AGENT_WORKSPACE_ROOT" "$CODEX_HOME"
+fi
 log "Persistent state: $local_state_root"
 export CONTAINER_USER="${CONTAINER_USER:-$(id -u):$(id -g)}"
 
@@ -145,19 +188,43 @@ log "Building $runtime_image from Dockerfile.runtime (base: $runtime_base_image)
   --tag "$runtime_image" \
   .
 
-log "Checking that the Runtime can bind-mount the configured state directories."
+log "Checking that the Runtime can mount and write the configured state directories."
 preflight_user_args=(--user "$CONTAINER_USER")
 if [[ "$(basename "$engine")" == "podman" ]]; then
   preflight_user_args+=(--userns keep-id)
 fi
+if [[ "$state_mode" == "container-volume" ]]; then
+  # volume-nocopy keeps the seeded ownership: without it the engine copies the
+  # image's own directory metadata over an empty subpath and the non-root Runtime
+  # silently loses write access before the sandbox is ever applied.
+  workspace_mount="type=volume,source=$state_volume,target=/workspace,volume-subpath=workspaces,volume-nocopy=true"
+  codex_home_mount="type=volume,source=$state_volume,target=/codex-home,volume-subpath=codex-home,volume-nocopy=true"
+else
+  workspace_mount="type=bind,src=$AGENT_WORKSPACE_ROOT,dst=/workspace"
+  codex_home_mount="type=bind,src=$CODEX_HOME,dst=/codex-home"
+fi
+# Bytes are written and read back, not merely created. `touch` is not a write
+# test: where the sandbox denies opening a file it still permits creating one,
+# and coreutils then reports success after falling back to a timestamp update.
 if ! "$engine" run --rm \
   "${preflight_user_args[@]}" \
-  --mount "type=bind,src=$AGENT_WORKSPACE_ROOT,dst=/workspace" \
-  --mount "type=bind,src=$CODEX_HOME,dst=/codex-home" \
+  --mount "$workspace_mount" \
+  --mount "$codex_home_mount" \
   "$runtime_image" sh -lc \
-    'touch /workspace/.launchpad-write-test /codex-home/.launchpad-write-test && rm /workspace/.launchpad-write-test /codex-home/.launchpad-write-test'; then
-  log "The container engine cannot mount $local_state_root."
-  log "Set LOCAL_POC_DATA_ROOT to a directory shared with Docker/Colima/Podman."
+    'set -e
+     for dir in /workspace /codex-home; do
+       printf launchpad > "$dir/.launchpad-write-test"
+       test "$(cat "$dir/.launchpad-write-test")" = launchpad
+       : > "$dir/.launchpad-write-test"
+       rm "$dir/.launchpad-write-test"
+     done'; then
+  log "The container engine cannot mount and write $local_state_root."
+  if [[ "$state_mode" == "container-volume" ]]; then
+    log "Remove the $state_volume volume and rerun to reseed it."
+  else
+    log "Set LOCAL_POC_DATA_ROOT to a directory shared with Docker/Colima/Podman,"
+    log "or rerun with LOCAL_POC_STATE_MODE=container-volume."
+  fi
   exit 2
 fi
 
@@ -176,8 +243,8 @@ if [[ "$codex_sandbox_mode" == "workspace-write" ]] \
     --cpus 1 \
     --memory 512m \
     --pids-limit 64 \
-    --mount "type=bind,src=$AGENT_WORKSPACE_ROOT,dst=/workspace" \
-    --mount "type=bind,src=$CODEX_HOME,dst=/codex-home" \
+    --mount "$workspace_mount" \
+    --mount "$codex_home_mount" \
     --tmpfs /tmp:rw,nosuid,nodev,mode=1777,size=64m \
     --workdir /workspace \
     --env HOME=/tmp \
@@ -185,10 +252,21 @@ if [[ "$codex_sandbox_mode" == "workspace-write" ]] \
     --env CODEX_HOME=/codex-home \
     "$runtime_image" \
     codex sandbox linux --full-auto -- sh -c \
-      'touch .launchpad-landlock-write-test && rm .launchpad-landlock-write-test && ! touch /etc/.launchpad-landlock-escape-test' \
+      'set -e
+       printf launchpad > .launchpad-landlock-write-test
+       test "$(cat .launchpad-landlock-write-test)" = launchpad
+       rm .launchpad-landlock-write-test
+       if printf escape > /etc/.launchpad-landlock-escape-test 2>/dev/null; then
+         rm -f /etc/.launchpad-landlock-escape-test
+         exit 1
+       fi' \
       >/dev/null 2>&1; then
-  log "Codex workspace-write Landlock is unavailable in the hardened non-root Runtime."
-  log "Shepherd will not fall back to danger-full-access."
+  log "Codex workspace-write Landlock cannot govern the configured workspace in the"
+  log "hardened non-root Runtime. Shepherd will not fall back to danger-full-access."
+  if [[ "$state_mode" == "host-bind" ]]; then
+    log "If the host filesystem reaches the engine through a virtual machine, rerun"
+    log "with LOCAL_POC_STATE_MODE=container-volume."
+  fi
   exit 2
 fi
 
@@ -204,6 +282,10 @@ export CONTAINER_RUNTIME_IMAGE="$runtime_image"
 
 cleanup() {
   local container_ids
+  if [[ "$state_mode" == "container-volume" ]]; then
+    "$engine" compose --file docker-compose.state-volume.yml down \
+      --remove-orphans >/dev/null 2>&1 || true
+  fi
   container_ids="$($engine ps --all --quiet \
     --filter label=io.codejam.launchpad=agent-runtime \
     --filter "label=io.codejam.instance-id=$RUNTIME_INSTANCE_ID" 2>/dev/null || true)"
@@ -219,8 +301,28 @@ trap cleanup EXIT INT TERM
 # Recover cleanly after a terminal or server crash from a previous local run.
 cleanup
 
-log "Building the local Web and API."
-npm run build
+if [[ "$state_mode" == "container-volume" ]]; then
+  # The engine socket is root-owned and group-writable. The control plane stays
+  # non-root and joins only that group; it never runs as root.
+  socket_path="${CONTAINER_ENGINE_SOCKET:-/var/run/docker.sock}"
+  socket_gid="$("$engine" run --rm --user 0:0 \
+    --mount "type=bind,src=$socket_path,dst=/engine.sock" \
+    "$runtime_image" stat -c %g /engine.sock 2>/dev/null | tr -d '\r')"
+  if [[ ! "$socket_gid" =~ ^[0-9]+$ ]]; then
+    log "Could not read the group of $socket_path."
+    log "Set CONTAINER_ENGINE_SOCKET to the engine socket this user can reach."
+    exit 2
+  fi
+  export CONTAINER_ENGINE_SOCKET="$socket_path"
+  export CONTAINER_ENGINE_SOCKET_GID="$socket_gid"
+  export PUBLIC_PORT="$PORT"
+  log "Building and starting the containerized control plane."
+  log "Open http://localhost:$PORT"
+  "$engine" compose --file docker-compose.state-volume.yml up --build
+else
+  log "Building the local Web and API."
+  npm run build
 
-log "Open http://localhost:$PORT"
-npm start
+  log "Open http://localhost:$PORT"
+  npm start
+fi

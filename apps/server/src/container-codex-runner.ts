@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
-import type { AppConfig } from "./config.js";
+import { containerStateSubpath, type AppConfig } from "./config.js";
 import {
   buildCodexArgs,
   parseCodexEventLine,
@@ -182,6 +182,43 @@ function assertSafeMountSource(source: string, label: string): void {
   }
 }
 
+/**
+ * Builds one `--mount` specification. Host bind mounts remain the default. When a
+ * container state volume is configured, the same directory is addressed as a
+ * subpath of that volume instead, because a host share cannot carry the Agent
+ * sandbox's per-file access rights on every supported host. `volume-nocopy` is
+ * mandatory: without it the engine copies the image's own directory metadata over
+ * an empty subpath, silently replacing the non-root owner and denying every write
+ * before the sandbox is even applied. A source outside the state root fails closed;
+ * it never falls back to a bind mount.
+ */
+function mountSpecification(
+  source: string,
+  destination: string,
+  config: AppConfig,
+  label: string,
+  options: readonly string[] = [],
+): string {
+  const suffix = options.map((option) => "," + option).join("");
+  if (!config.containerStateRoot || !config.containerStateVolume) {
+    return "type=bind,src=" + source + ",dst=" + destination + suffix;
+  }
+  const subpath = containerStateSubpath(config.containerStateRoot, source);
+  if (subpath === null) {
+    throw new Error(label + " mount source escapes CONTAINER_STATE_ROOT");
+  }
+  return (
+    "type=volume,source=" +
+    config.containerStateVolume +
+    ",target=" +
+    destination +
+    ",volume-subpath=" +
+    subpath +
+    ",volume-nocopy=true" +
+    suffix
+  );
+}
+
 function requireOwner(ownerId: string | undefined): string {
   if (!ownerId || !ownerPattern.test(ownerId)) {
     throw new Error("Fresh Shepherd containers require a stable installation owner");
@@ -209,6 +246,9 @@ export function buildContainerRunArgs(
       throw new Error("Ephemeral CODEX_HOME cannot reuse the shared Agent home");
     }
   }
+  // The shared Agent home is mounted only on the legacy branch, so it was never
+  // validated. It reaches the same `--mount` specification as every other source.
+  if (!ephemeral) assertSafeMountSource(config.codexHome, "Shared Agent home");
   const ownerId = ephemeral ? requireOwner(options.shepherdOwnerId) : null;
   const name = nameForRequest(request, config.runtimeInstanceId);
   const engineName = config.containerEngine.split(/[\\/]/).at(-1)?.toLowerCase();
@@ -261,11 +301,14 @@ export function buildContainerRunArgs(
     "--env",
     "NO_COLOR=1",
     "--mount",
-    "type=bind,src=" + request.workspacePath + ",dst=/workspace",
+    mountSpecification(request.workspacePath, "/workspace", config, "Workspace"),
     "--mount",
-    "type=bind,src=" +
-      (ephemeral ? request.codexHome : config.codexHome) +
-      ",dst=/codex-home",
+    mountSpecification(
+      ephemeral ? request.codexHome : config.codexHome,
+      "/codex-home",
+      config,
+      ephemeral ? "Ephemeral CODEX_HOME" : "Shared Agent home",
+    ),
     "--workdir",
     "/workspace",
     config.containerRuntimeImage,
