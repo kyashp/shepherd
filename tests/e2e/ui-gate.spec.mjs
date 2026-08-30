@@ -19,6 +19,8 @@ import {
 
 const LONG_AGENT_NAME = "WWWWWWWWW WWWWWWWWW WWWWWWWWW WWWWWWWWW WWWWWWWWW WWWWWWWWW WWWWWWWWW WWWWWWWWWW";
 const EDITED_DESCRIPTION = "Edited through the clean-shell UI gate.";
+const GROUP_AGENT_NAME = "UI Gate Group Agent";
+const LONG_GROUP_MESSAGES = ["W".repeat(1_900), "M".repeat(1_900)];
 const MISSION_INTENT = "Implement frontend and backend authentication, detect their semantic transport collision, and promote the independently verified resolution.";
 const UNKNOWN_ROUTE = "/ui-gate-route-that-does-not-exist";
 
@@ -86,6 +88,24 @@ async function unlockShepherd(page) {
   }
   await expect(page.getByRole("heading", { name: "Shepherd", exact: true })).toBeVisible();
   await expect(page.getByText("Kernel online", { exact: true })).toBeVisible();
+}
+
+async function createProjectGroupAgent(page) {
+  await page.getByRole("link", { name: "Create Agent", exact: true }).first().click();
+  await page.getByLabel("Agent name").fill(GROUP_AGENT_NAME);
+  await page.getByRole("radio", { name: /Frontend/u }).locator("..").click();
+  await page.getByRole("button", { name: "Create Agent", exact: true }).click();
+  await expect(page.getByRole("heading", { name: GROUP_AGENT_NAME, exact: true })).toBeVisible();
+}
+
+async function mentionButtonPresentation(locator) {
+  return await locator.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      cursor: style.cursor,
+      opacity: Number.parseFloat(style.opacity),
+    };
+  });
 }
 
 test.beforeAll(async () => {
@@ -373,6 +393,210 @@ test("covers the clean shell, authentication, Agents, Settings, and not-found st
   const selectedTab = initial.find((tab) => tab.ariaSelected === "true");
   expect.soft(selectedTab?.ariaControls, "the active tab controls the rendered tabpanel").toBe(panels[0]?.id);
   expect.soft(panels[0]?.ariaLabelledby, "the rendered tabpanel is labelled by the active tab").toBe(selectedTab?.id);
+});
+
+test("covers Project Group initialization, recovery, pending sends, and persisted messages", async ({ page, request }, testInfo) => {
+  test.setTimeout(60_000);
+  const viewport = testInfo.project.use.viewport;
+  expect(viewport).toBeDefined();
+  const viewportName = `${viewport.width}x${viewport.height}`;
+  const groupMessagesUrl = "**/api/shepherd/projects/*/group-messages*";
+
+  await unlockShepherd(page);
+  await createProjectGroupAgent(page);
+  const missionCountBefore = (await shepherdState(request)).missions.length;
+  await page.getByRole("link", { name: /Project Group/u }).click();
+  await expect(page.getByText("No Shepherd project yet", { exact: true })).toBeVisible();
+  const composer = page.getByLabel("Message Project Group");
+  const sendButton = page.getByRole("button", { name: "Send group message" });
+  const mentionButton = page.getByLabel("Available mention targets")
+    .getByRole("button", { name: `@${GROUP_AGENT_NAME}`, exact: true });
+  await expect(composer).toBeDisabled();
+  await expect(sendButton).toBeDisabled();
+  const uninitializedMentionPresentation = await mentionButtonPresentation(mentionButton);
+  await preserveSoftFailure(
+    "member mentions are semantically disabled before Project Group initialization",
+    async () => expect(mentionButton).toBeDisabled(),
+  );
+  await captureUiGate(page, viewportName, "14-group-uninitialized");
+
+  let releaseInitialMessages;
+  let observeInitialMessages;
+  const initialMessagesHeld = new Promise((resolve) => { observeInitialMessages = resolve; });
+  const initialMessagesRelease = new Promise((resolve) => { releaseInitialMessages = resolve; });
+  let heldInitialMessages = false;
+  const holdInitialMessages = async (route) => {
+    if (heldInitialMessages || route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    heldInitialMessages = true;
+    observeInitialMessages();
+    await initialMessagesRelease;
+    await route.continue();
+  };
+  await page.route(groupMessagesUrl, holdInitialMessages);
+  const initialized = page.waitForResponse((response) =>
+    response.request().method() === "POST"
+      && response.url().endsWith("/api/shepherd/projects/auth-demo/group-initialization"),
+  );
+  await page.getByRole("button", { name: "Initialize Project Group", exact: true }).click();
+  expect((await initialized).status()).toBe(200);
+  await initialMessagesHeld;
+  try {
+    await expect(page.getByText("Loading real group messages…", { exact: true })).toBeVisible();
+    await captureUiGate(page, viewportName, "15-group-loading");
+  } finally {
+    releaseInitialMessages();
+  }
+  await expect(page.getByText("The Project Group is quiet", { exact: true })).toBeVisible();
+  await page.unroute(groupMessagesUrl, holdInitialMessages);
+  await expect(mentionButton).toBeEnabled();
+  const enabledMentionPresentation = await mentionButtonPresentation(mentionButton);
+  expect.soft(
+    uninitializedMentionPresentation.opacity < enabledMentionPresentation.opacity
+      || uninitializedMentionPresentation.cursor === "not-allowed",
+    "uninitialized member mentions have a non-color disabled treatment",
+  ).toBe(true);
+  await captureUiGate(page, viewportName, "16-group-empty");
+
+  let failedMessageRead = false;
+  const failOneMessageRead = async (route) => {
+    if (!failedMessageRead && route.request().method() === "GET") {
+      failedMessageRead = true;
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "UI gate transient group read" }),
+      });
+      return;
+    }
+    await route.continue();
+  };
+  await page.route(groupMessagesUrl, failOneMessageRead);
+  const reconnectBanner = page.getByRole("status").filter({ hasText: "UI gate transient group read" });
+  await expect(reconnectBanner).toContainText("retrying automatically", { timeout: 5_000 });
+  await expect(page.getByText("The Project Group is quiet", { exact: true })).toBeVisible();
+  await captureUiGate(page, viewportName, "17-group-reconnecting");
+  await page.unroute(groupMessagesUrl, failOneMessageRead);
+  await expect(reconnectBanner).toHaveCount(0, { timeout: 5_000 });
+  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+
+  await composer.fill("");
+  await mentionButton.click();
+  await composer.press("End");
+  const targetedRequest = "use an HttpOnly session cookie.";
+  await composer.type(targetedRequest);
+  const targetedContent = `@"${GROUP_AGENT_NAME}" ${targetedRequest}`;
+  await expect(composer).toHaveValue(targetedContent);
+
+  let releasePendingPost;
+  let observePendingPost;
+  const pendingPostHeld = new Promise((resolve) => { observePendingPost = resolve; });
+  const pendingPostRelease = new Promise((resolve) => { releasePendingPost = resolve; });
+  let heldPostCount = 0;
+  const holdOnePost = async (route) => {
+    if (heldPostCount > 0 || route.request().method() !== "POST") {
+      await route.continue();
+      return;
+    }
+    heldPostCount += 1;
+    observePendingPost();
+    await pendingPostRelease;
+    await route.continue();
+  };
+  await page.route(groupMessagesUrl, holdOnePost);
+  const targetedResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST" && /\/group-messages$/u.test(response.url()),
+  );
+  await composer.press("Enter");
+  await pendingPostHeld;
+  try {
+    await expect(composer).toBeDisabled();
+    await expect(sendButton).toBeDisabled();
+    await expect(mentionButton).toBeDisabled();
+    const pendingMentionPresentation = await mentionButtonPresentation(mentionButton);
+    expect.soft(
+      pendingMentionPresentation.opacity < enabledMentionPresentation.opacity
+        || pendingMentionPresentation.cursor === "not-allowed",
+      "pending member mentions have a non-color disabled treatment",
+    ).toBe(true);
+    expect(heldPostCount).toBe(1);
+  } finally {
+    releasePendingPost();
+  }
+  expect((await targetedResponse).status()).toBe(201);
+  await page.unroute(groupMessagesUrl, holdOnePost);
+  await expect(page.locator(".group-message-human").filter({ hasText: targetedRequest })).toHaveCount(1);
+
+  const storedMessagesResponse = await request.get(
+    `${app.baseURL}/api/shepherd/projects/auth-demo/group-messages`,
+    { headers: authHeaders() },
+  );
+  expect(storedMessagesResponse.status()).toBe(200);
+  const storedMessages = (await storedMessagesResponse.json()).messages;
+  const targetedMessage = storedMessages.find((message) =>
+    message.senderType === "human"
+      && message.targetAgentId
+      && message.content === targetedRequest,
+  );
+  expect(targetedMessage).toMatchObject({ contractId: null, missionId: null });
+
+  for (const [index, content] of LONG_GROUP_MESSAGES.entries()) {
+    const post = page.waitForResponse((response) =>
+      response.request().method() === "POST" && /\/group-messages$/u.test(response.url()),
+    );
+    await composer.fill(content);
+    await composer.press("Enter");
+    expect((await post).status()).toBe(201);
+    const paragraph = page.locator(".group-message-human p")
+      .filter({ hasText: index === 0 ? /^W{1900}$/u : /^M{1900}$/u });
+    await expect(paragraph).toHaveCount(1);
+  }
+
+  const longParagraph = page.locator(".group-message-human p").filter({ hasText: /^W{1900}$/u });
+  const longGeometry = await longParagraph.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      clientWidth: element.clientWidth,
+      lineHeight: Number.parseFloat(style.lineHeight),
+      overflowWrap: style.overflowWrap,
+      scrollHeight: element.scrollHeight,
+      scrollWidth: element.scrollWidth,
+    };
+  });
+  expect(longGeometry.overflowWrap).toBe("anywhere");
+  expect(longGeometry.scrollWidth).toBeLessThanOrEqual(longGeometry.clientWidth + 1);
+  expect(longGeometry.scrollHeight).toBeGreaterThan(longGeometry.lineHeight * 2);
+  const messagesPane = page.locator(".group-messages");
+  const messagesGeometry = await messagesPane.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+  }));
+  expect(messagesGeometry.scrollHeight).toBeGreaterThan(messagesGeometry.clientHeight + 1);
+  await assertScrollOwner(messagesPane);
+  await assertNoDocumentOverflow(page);
+  await assertSafeUiGateSurface(page.locator(".group-chat-panel"));
+  await assertNoSensitiveCanaries({ page });
+
+  const subsequentPoll = page.waitForResponse((response) =>
+    response.request().method() === "GET"
+      && /\/group-messages\?/u.test(response.url())
+      && response.status() === 200,
+  );
+  await subsequentPoll;
+  for (const [index, content] of LONG_GROUP_MESSAGES.entries()) {
+    const messagesAfterPoll = await request.get(
+      `${app.baseURL}/api/shepherd/projects/auth-demo/group-messages`,
+      { headers: authHeaders() },
+    );
+    expect(messagesAfterPoll.status()).toBe(200);
+    const matchingMessages = (await messagesAfterPoll.json()).messages
+      .filter((message) => message.senderType === "human" && message.content === content);
+    expect(matchingMessages, `long Project Group message ${index + 1} remains singular after polling`).toHaveLength(1);
+  }
+  expect((await shepherdState(request)).missions).toHaveLength(missionCountBefore);
+  await captureUiGate(page, viewportName, "18-group-message");
 });
 
 test("covers Shepherd loading, empty, and reconnect states", async ({ page }, testInfo) => {
