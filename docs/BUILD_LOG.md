@@ -22,15 +22,20 @@ Protected `main` at `a62e29b` (merge of PR #86). Branch
 - **Local gate on the same SHA.** `npm run typecheck` passed. Launcher and deploy
   script tests 9/9. Web 20/20. Both production builds passed. The server suite run
   serially reported **837 passed, 7 failed, 2 skipped** across 34 files.
-- **On those 7 local failures.** The captured output showed two of them: a test
-  timeout in the `PERF-01` scheduled-interval case, and the
-  `expected 'resolving' to be 'attention_required'` `vi.waitFor` flake already
-  recorded against this host. The remaining five were truncated by the capture used,
-  so they are **not characterised here** rather than assumed. The same commit passes
-  the full suite on Linux in CI, and this host's documented inability to run the
-  suite green — recorded since the OPS-06 work, where pristine `main` itself failed
-  39 and the branch 61, all timeouts — is the standing explanation. No local figure
-  in this entry is offered as a pass.
+- **On those 7 local failures.** A second serial run on the same SHA reproduced the
+  identical set — 837 passed, 7 failed, 2 skipped, same tests — so this is a stable
+  host condition rather than a varying draw. Enumerated: five in
+  `recovery.process.test.ts` (the four SIGKILL-checkpoint cases and the
+  update-ref/read-tree fail-closed case), and two in `service.test.ts` (the `PERF-01`
+  scheduled-interval case and the `cancels tracked attention-required Missions`
+  case). Every one is a timing failure — `Timed out waiting for recovered`,
+  `Test timed out in 5000ms`, and the recorded
+  `expected 'resolving' to be 'attention_required'` `vi.waitFor` flake. No assertion
+  failure of substance appears in either run. The same commit passes the full suite
+  on Linux in CI, and this host's documented inability to run the suite green —
+  recorded since the OPS-06 work, where pristine `main` itself failed 39 and the
+  branch 61, all timeouts — is the standing explanation. No local figure in this
+  entry is offered as a pass.
 - **Targeted surfaces on the same head passed**: the ST-01, composition,
   verifier-container, codex-executor, app and config suites together 149/149, plus
   the 9/9 script tests. These are the rows' own surfaces and are unaffected by the
