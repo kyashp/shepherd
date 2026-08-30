@@ -7,6 +7,47 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — ST-01 startup settings composed into the service
+
+Branch `fix/44-st-01-startup-settings`, PR #73, against `main` at `07f4202`. No
+live or model call ran.
+
+- `SHEPHERD_AUTO_RESOLUTION` and `SHEPHERD_MAX_PARALLEL_PLANES` were parsed by
+  `loadConfig` and then discarded: `ShepherdServiceOptions` had no field for either
+  and the only production construction passed neither. The gap was invisible in E2E
+  because the harness sets values equal to the persisted defaults.
+- Both options are now declared, passed from resolved configuration, and applied by
+  the pristine-store seeding block. Seeding applies only while the persisted value
+  is still the factory default, so an operator change away from that default
+  survives restart. **Stated limit, now asserted by a test rather than only
+  commented:** an operator who sets the value back TO the factory default is
+  indistinguishable from one who never chose it, and startup configuration seeds
+  over that choice on the next restart while the store is still pristine. Removing
+  the limit needs a persisted "changed by operator" marker, which is a schema change
+  beyond this correction.
+- **Stated behaviour change.** `SHEPHERD_MAX_PARALLEL_PLANES` moves from
+  `min(1).default(4)` to `min(2).default(2)`. A host that sets `1` previously booted
+  because the value was discarded; it now fails at `loadConfig`. That is deliberate:
+  `database-schema.ts`, `updateSettings` and the API all require at least 2, so once
+  composition works a `1` would fail on its first seed write, and a parse-time error
+  is the honest place for it. A host that never set the variable moves from a
+  nominal 4 to 2, which is the value it actually ran with before, since the parsed
+  number never reached the service. `.env.example` shipped `4` and is aligned to `2`
+  so the documented template matches the schema default.
+- Eight causal tests in `apps/server/src/shepherd/startup-settings.test.ts`. Each
+  verified by mutating the guard it covers: dropping both options from `index.ts`,
+  disabling the seeding branch, removing the still-at-default guard so an operator
+  value is clobbered, and restoring the `min(1)`/`default(4)` schema all turn their
+  tests red.
+- An earlier hosted run failed on this branch with `ENOENT` from `mkdtemp`: the test
+  allocated case roots under `.tmp/startup-settings` without creating it, and `.tmp`
+  is gitignored, so a clean checkout had no such directory. It passed locally only
+  because that directory had been created by hand. Corrected in the test; production
+  code was unaffected and the same run passed 809 other tests.
+- Local full-suite figures from this host are not recorded as evidence: the run
+  spanned a branch switch and observed a mixed tree. The hosted exact-head gate is
+  the evidence for this branch.
+
 ## 2026-08-30 — issue #43 integrated verification
 
 PR #75 merged to protected `main` as

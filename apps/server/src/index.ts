@@ -113,6 +113,8 @@ const shepherdService = new ShepherdService({
   sensitiveValues,
   contractTimeoutMs: config.shepherdContractTimeoutMs,
   candidateTimeoutMs: config.shepherdCandidateTimeoutMs,
+  autoResolution: config.shepherdAutoResolution,
+  maxConcurrentPlanes: config.shepherdMaxParallelPlanes,
   ...(shepherdModelReviewer ? { reviewer: shepherdModelReviewer } : {}),
 });
 await shepherdService.initialize();

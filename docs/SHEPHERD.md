@@ -298,9 +298,9 @@ Real secrets belong only in ignored `.env`.
 | `SHEPHERD_CODEX_HOME_ROOT` | Sentinel-guarded parent for one private, ephemeral live-Plane `CODEX_HOME` per execution; must be inside `APP_DATA_DIR` and separate from shared Agent and managed Shepherd roots. |
 | `SHEPHERD_EXECUTION_MODE` | `auto`, `live`, or `deterministic`. `auto` selects live only with usable Ark configuration plus the container Runtime; explicit live fails closed otherwise. |
 | `SHEPHERD_DEMO_MODE` | Enables the fixed, path-free demo Mission and reset controls. |
-| `SHEPHERD_AUTO_RESOLUTION` | Intended startup default for evidence-derived automatic selection. Current composition does not pass it into `ShepherdService`; see `ST-01`. |
+| `SHEPHERD_AUTO_RESOLUTION` | Startup default for evidence-derived automatic selection, composed into `ShepherdService`. Seeds a pristine store only while the persisted value is still the factory default, so a later Settings update stays authoritative. |
 | `SHEPHERD_DELETE_COMPLETED_PLANES` | Retention startup control. The current UI/service keeps completed Planes inspectable; final cleanup behavior remains subject to evidence-retention requirements. |
-| `SHEPHERD_MAX_PARALLEL_PLANES` | Intended startup Plane-capacity setting. Current composition does not pass it into `ShepherdService`; persisted settings do control the service after update. See `ST-01`. |
+| `SHEPHERD_MAX_PARALLEL_PLANES` | Startup Plane-capacity setting, composed into `ShepherdService`. Minimum 2, matching the persisted schema, `updateSettings` and the API; defaults to the persisted default. Seeds a pristine store only while the persisted value is still the factory default, so a later Settings update stays authoritative. |
 | `SHEPHERD_CONTRACT_TIMEOUT_MS` | Maximum contract execution duration. |
 | `SHEPHERD_CANDIDATE_TIMEOUT_MS` | Maximum candidate execution duration. |
 | `SHEPHERD_VERIFICATION_TIMEOUT_MS` | Maximum duration accepted by the independent verifier. |
