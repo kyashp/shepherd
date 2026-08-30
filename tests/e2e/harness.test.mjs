@@ -34,6 +34,21 @@ function verifierCreateArgs({ name, source, target = "contract-fixture" }) {
   ];
 }
 
+async function readFixtureLedger(home) {
+  return (await readFile(path.join(home, ".fake-container-engine", "ledger.jsonl"), "utf8"))
+    .trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+}
+
+async function waitForFixtureLedger(home, predicate, label) {
+  const deadline = Date.now() + 1_000;
+  while (Date.now() < deadline) {
+    const ledger = await readFixtureLedger(home);
+    if (predicate(ledger)) return ledger;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`${label} was not recorded before the bounded deadline`);
+}
+
 test("fake Codex fixture implements bounded deterministic version, run, and resume", async () => {
   const temporaryRoot = await realpath(os.tmpdir());
   const workspace = await mkdtemp(path.join(temporaryRoot, "shepherd-fake-codex-"));
@@ -138,9 +153,11 @@ test("fake container candidate-only gate timestamps and holds only candidate ver
 
     await execFileAsync(fakeContainerEngine, ["start", "--attach", contractName], { encoding: "utf8", env: environment });
     const candidateStart = execFileAsync(fakeContainerEngine, ["start", "--attach", candidateName], { encoding: "utf8", env: environment });
-    await new Promise((resolve) => setTimeout(resolve, 75));
-    const blockedLedger = (await readFile(path.join(home, ".fake-container-engine", "ledger.jsonl"), "utf8"))
-      .trim().split("\n").map((line) => JSON.parse(line));
+    const blockedLedger = await waitForFixtureLedger(
+      home,
+      (ledger) => ledger.some((entry) => entry.operation === "start" && entry.target === "candidate-fixture"),
+      "candidate verifier start",
+    );
     assert.equal(blockedLedger.filter((entry) => entry.operation === "start" && entry.target === "candidate-fixture").length, 1);
     assert.equal(blockedLedger.some((entry) => entry.operation === "complete" && entry.target === "candidate-fixture"), false);
     assert.ok(blockedLedger.every((entry) => Number.isFinite(Date.parse(entry.timestamp))), "every fixture ledger entry has a parseable timestamp");

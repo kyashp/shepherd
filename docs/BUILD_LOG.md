@@ -4911,7 +4911,7 @@ Auditor, security and hosted integration evidence.
 ## 2026-08-30 — PERF-01 Worker candidate
 
 - **Scope and method:** `npm run test:e2e:shepherd-performance` builds the Web and
-  Server artifacts, runs the seven isolated-harness unit checks, then runs the
+  Server artifacts, runs the eight isolated-harness unit checks, then runs the
   deterministic compiled service in Chromium at `1280x800` and `1440x900`. The
   browser creates the normal two-Contract Mission and waits for the persisted
   collision event to render. A fixture-only candidate verifier gate holds both
@@ -4928,12 +4928,12 @@ Auditor, security and hosted integration evidence.
   gate in the test and teardown made the original measurement pass without a
   product, timeout, retry, or assertion change.
 - **Sample:** one clean real-browser sample per required viewport (n=2), on
-  protected-main base `baa6b2f`: persisted collision → visible was 908 ms and
-  861 ms (both within the PRD `<=1.5s` limit); Plane creation from Mission was
-  225 ms and 228 ms; Contract verification through collision was 1,424 ms and
-  1,358 ms; candidate verifier starts were 35 ms and 39 ms apart while both
-  stayed active; collision → promotion start was 1,368 ms and 1,275 ms; total
-  Mission time was 3,690 ms and 3,550 ms.
+  protected-main base `baa6b2f`: persisted collision → visible was 820 ms and
+  1,041 ms (both within the PRD `<=1.5s` limit); Plane creation from Mission was
+  222 ms and 216 ms; Contract verification through collision was 1,278 ms and
+  1,415 ms; candidate verifier starts were 33 ms and 56 ms apart while both
+  stayed active; collision → promotion start was 1,242 ms and 1,632 ms; total
+  Mission time was 3,427 ms and 4,090 ms.
 - **Observed command:** passed: harness 8/8; Chromium 2/2. The test prints each
   bounded metric line, fails the event-to-visible limit, and releases both gates
   during teardown to preserve cleanup. The new fixture ledger timestamp and
