@@ -13,6 +13,9 @@ import {
   startTestApp,
 } from "./support/test-app.mjs";
 import {
+  assertNoSensitiveCanaries,
+  assertScrollOwner,
+  assertVisibleFocus,
   contrastRatio,
   normalizeEvidenceStage,
   uiGateEvidencePath,
@@ -21,6 +24,38 @@ import {
 const execFileAsync = promisify(execFile);
 const fakeCodex = path.join(repositoryRoot, "tests/e2e/fixtures/fake-codex.mjs");
 const fakeContainerEngine = path.join(repositoryRoot, "tests/e2e/fixtures/fake-container-engine.mjs");
+
+async function withBrowserGlobals({ document, getComputedStyle }, run) {
+  const descriptors = new Map(
+    ["document", "getComputedStyle"].map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)]),
+  );
+  Object.defineProperties(globalThis, {
+    document: { configurable: true, value: document },
+    getComputedStyle: { configurable: true, value: getComputedStyle },
+  });
+  try {
+    return await run();
+  } finally {
+    for (const [name, descriptor] of descriptors) {
+      if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+      else delete globalThis[name];
+    }
+  }
+}
+
+function pageForBody(body) {
+  if (!body.ownerDocument) {
+    body.ownerDocument = {
+      createTreeWalker: () => ({ nextNode: () => null }),
+    };
+  }
+  return {
+    locator(selector) {
+      assert.equal(selector, "body");
+      return { evaluate: async (callback, argument) => callback(body, argument) };
+    },
+  };
+}
 
 test("contrastRatio preserves the high contrast of white against the Shepherd surface", () => {
   assert.ok(contrastRatio("#ffffff", "#111827") > 15);
@@ -52,6 +87,82 @@ test("normalizeEvidenceStage rejects punctuation-only stages before they can nam
 
 test("uiGateEvidencePath rejects unsupported viewport names", () => {
   assert.throws(() => uiGateEvidencePath("800x600", "shepherd"), /viewport/i);
+});
+
+test("assertNoSensitiveCanaries rejects a private canary in the body element attributes", async () => {
+  const body = {
+    innerText: "public Shepherd view",
+    getAttributeNames: () => ["data-diagnostic"],
+    getAttribute: () => "E2E-PRIVATE-CANARY",
+    querySelectorAll: () => [],
+  };
+  await assert.rejects(
+    assertNoSensitiveCanaries({ page: pageForBody(body) }),
+    /public DOM/i,
+  );
+});
+
+test("assertNoSensitiveCanaries ignores response and log sources beyond its scan bound", async () => {
+  const body = {
+    innerText: "public Shepherd view",
+    getAttributeNames: () => [],
+    getAttribute: () => null,
+    querySelectorAll: () => [],
+  };
+  const safeSources = Array.from({ length: 8 }, () => "ordinary bounded diagnostic");
+  const beyondBound = [...safeSources, "E2E-PRIVATE-CANARY"];
+  await assert.doesNotReject(
+    assertNoSensitiveCanaries({ page: pageForBody(body), responses: beyondBound, logs: beyondBound }),
+  );
+});
+
+test("assertScrollOwner rejects vertical overflow that only has a horizontal scroll owner", async () => {
+  let left = 0;
+  const element = {
+    clientHeight: 10,
+    clientWidth: 10,
+    scrollHeight: 100,
+    scrollWidth: 100,
+    get scrollLeft() { return left; },
+    set scrollLeft(value) { left = value; },
+    get scrollTop() { return 0; },
+    set scrollTop(value) {},
+  };
+  const locator = {
+    evaluate: async (callback) => callback(element),
+    toString: () => "vertical-pane",
+  };
+  await withBrowserGlobals({
+    document: { documentElement: { scrollWidth: 10 }, body: { scrollWidth: 10 } },
+    getComputedStyle: () => ({ overflowX: "auto", overflowY: "hidden" }),
+  }, async () => {
+    await assert.rejects(assertScrollOwner(locator), /vertical-pane.*scrollable owner/i);
+  });
+});
+
+test("assertVisibleFocus rejects a transparent outline without another focus indicator", async () => {
+  const element = {
+    tagName: "BUTTON",
+    textContent: "Continue",
+    getAttribute: (name) => name === "aria-label" ? "Continue" : null,
+  };
+  const document = { activeElement: undefined };
+  const locator = {
+    focus: async () => { document.activeElement = element; },
+    evaluate: async (callback) => callback(element),
+    toString: () => "continue-button",
+  };
+  await withBrowserGlobals({
+    document,
+    getComputedStyle: () => ({
+      outlineStyle: "solid",
+      outlineWidth: "2px",
+      outlineColor: "rgba(0, 0, 0, 0)",
+      boxShadow: "none",
+    }),
+  }, async () => {
+    await assert.rejects(assertVisibleFocus({}, locator), /visible focus indicator/i);
+  });
 });
 
 function verifierCreateArgs({ name, source, target = "contract-fixture" }) {

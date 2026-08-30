@@ -5,6 +5,8 @@ import { repositoryRoot } from "./test-app.mjs";
 const VIEWPORTS = new Set(["1280x800", "1440x900"]);
 const CHANNEL_MAXIMUM = 255;
 const SOURCE_LIMIT = 16_384;
+const MAX_SCANNED_SOURCES = 8;
+const MAX_DOM_NODES = 512;
 const SENSITIVE_PATTERNS = [
   /\b(?:authorization|bearer)\s+[a-z0-9._~-]{12,}/iu,
   /\b(?:api[_-]?key|secret|token|password)\s*[:=]\s*[\w.-]{8,}/iu,
@@ -71,13 +73,51 @@ function locatorLabel(locator) {
   return locator.toString?.() ?? "target locator";
 }
 
-function boundedText(value) {
-  if (typeof value === "string") return value.slice(0, SOURCE_LIMIT);
-  try {
-    return JSON.stringify(value).slice(0, SOURCE_LIMIT);
-  } catch {
-    return String(value).slice(0, SOURCE_LIMIT);
-  }
+function boundedText(value, limit = SOURCE_LIMIT) {
+  let text = "";
+  const seen = new Set();
+  const append = (part) => {
+    if (text.length < limit) text += String(part).slice(0, limit - text.length);
+  };
+  const serialize = (current, depth = 0) => {
+    if (text.length >= limit || depth > 4) return;
+    if (current === null || typeof current !== "object") {
+      append(current);
+      return;
+    }
+    if (seen.has(current)) {
+      append("[Circular]");
+      return;
+    }
+    seen.add(current);
+    if (Array.isArray(current)) {
+      append("[");
+      for (const item of current.slice(0, MAX_SCANNED_SOURCES)) {
+        serialize(item, depth + 1);
+        append(",");
+      }
+      append("]");
+      return;
+    }
+    append("{");
+    let inspectedCount = 0;
+    for (const key in current) {
+      if (inspectedCount >= MAX_SCANNED_SOURCES) break;
+      inspectedCount += 1;
+      if (!Object.hasOwn(current, key)) continue;
+      append(`${key}:`);
+      serialize(current[key], depth + 1);
+      append(",");
+    }
+    append("}");
+  };
+  serialize(value);
+  return text;
+}
+
+function boundedSources(value) {
+  if (value === undefined || value === null) return [];
+  return (Array.isArray(value) ? value : [value]).slice(0, MAX_SCANNED_SOURCES);
 }
 
 export function contrastRatio(foreground, background) {
@@ -142,22 +182,31 @@ export async function assertScrollOwner(locator) {
       bodyWidth: document.body.scrollWidth,
     };
     const style = getComputedStyle(element);
-    const contentOverflows = element.scrollHeight > element.clientHeight + 1 || element.scrollWidth > element.clientWidth + 1;
-    const allowsScroll = [style.overflowX, style.overflowY].some((value) => value === "auto" || value === "scroll");
     const previous = { left: element.scrollLeft, top: element.scrollTop };
-    element.scrollLeft = Math.min(element.scrollWidth, previous.left + 1);
-    element.scrollTop = Math.min(element.scrollHeight, previous.top + 1);
+    const horizontal = {
+      overflows: element.scrollWidth > element.clientWidth + 1,
+      allowsScroll: style.overflowX === "auto" || style.overflowX === "scroll",
+    };
+    const vertical = {
+      overflows: element.scrollHeight > element.clientHeight + 1,
+      allowsScroll: style.overflowY === "auto" || style.overflowY === "scroll",
+    };
+    if (horizontal.overflows) element.scrollLeft = Math.min(element.scrollWidth, previous.left + 1);
+    if (vertical.overflows) element.scrollTop = Math.min(element.scrollHeight, previous.top + 1);
     const after = {
       documentWidth: document.documentElement.scrollWidth,
       bodyWidth: document.body.scrollWidth,
-      moved: element.scrollLeft !== previous.left || element.scrollTop !== previous.top,
     };
+    horizontal.moved = element.scrollLeft !== previous.left;
+    vertical.moved = element.scrollTop !== previous.top;
     element.scrollLeft = previous.left;
     element.scrollTop = previous.top;
-    return { contentOverflows, allowsScroll, before, after };
+    return { horizontal, vertical, before, after };
   });
-  if (result.contentOverflows && (!result.allowsScroll || !result.after.moved)) {
-    throw new Error(`${locatorLabel(locator)} has overflowing content but is not a scrollable owner`);
+  for (const [axis, status] of Object.entries({ horizontal: result.horizontal, vertical: result.vertical })) {
+    if (status.overflows && (!status.allowsScroll || !status.moved)) {
+      throw new Error(`${locatorLabel(locator)} has ${axis} overflowing content but is not a scrollable owner`);
+    }
   }
   if (result.before.documentWidth !== result.after.documentWidth || result.before.bodyWidth !== result.after.bodyWidth) {
     throw new Error(`${locatorLabel(locator)} changed document width while scrolling`);
@@ -193,6 +242,15 @@ export async function assertVisibleFocus(page, locator) {
   await locator.focus();
   const result = await locator.evaluate((element) => {
     const style = getComputedStyle(element);
+    const colorIsVisible = (color) => {
+      if (!color || color === "transparent") return false;
+      const colors = color.match(/rgba?\([^)]*\)/gu);
+      if (!colors) return true;
+      return colors.some((candidate) => {
+        const values = candidate.match(/[\d.]+/gu)?.map(Number) ?? [];
+        return candidate.startsWith("rgb(") || (values[3] ?? 1) > 0;
+      });
+    };
     const accessibleName = element.getAttribute("aria-label")
       || (element.getAttribute("aria-labelledby")
         ? element.getAttribute("aria-labelledby").split(/\s+/u).map((id) => document.getElementById(id)?.textContent?.trim()).filter(Boolean).join(" ")
@@ -203,8 +261,8 @@ export async function assertVisibleFocus(page, locator) {
     return {
       active: document.activeElement === element,
       accessibleName,
-      visibleIndicator: (style.outlineStyle !== "none" && Number.parseFloat(style.outlineWidth) > 0)
-        || (style.boxShadow !== "none" && !/rgba?\([^)]*,\s*0\)/u.test(style.boxShadow)),
+      visibleIndicator: (style.outlineStyle !== "none" && Number.parseFloat(style.outlineWidth) > 0 && colorIsVisible(style.outlineColor))
+        || (style.boxShadow !== "none" && colorIsVisible(style.boxShadow)),
     };
   });
   if (!result.active) throw new Error(`${locatorLabel(locator)} did not receive focus`);
@@ -228,14 +286,26 @@ export async function assertSafeUiGateSurface(locator) {
 }
 
 export async function assertNoSensitiveCanaries({ page, responses = [], logs = [] }) {
-  const dom = await page.locator("body").evaluate((body) => {
-    const attributes = [...body.querySelectorAll("*")]
-      .flatMap((element) => element.getAttributeNames().map((name) => `${name}=${element.getAttribute(name) ?? ""}`))
-      .join("\n");
-    return `${body.innerText}\n${attributes}`;
-  });
-  const sources = [["public DOM", dom], ["browser/server logs", logs]];
-  for (const [index, response] of [...responses].entries()) {
+  const dom = await page.locator("body").evaluate((body, { limit, maxNodes }) => {
+    let text = "";
+    const append = (part) => {
+      if (text.length < limit) text += String(part).slice(0, limit - text.length);
+    };
+    const textWalker = body.ownerDocument.createTreeWalker(body, 4);
+    for (let node = textWalker.nextNode(), count = 0; node && count < maxNodes; node = textWalker.nextNode(), count += 1) {
+      append(node.nodeValue ?? "");
+    }
+    const elementWalker = body.ownerDocument.createTreeWalker(body, 1);
+    for (let element = body, count = 0; element && count < maxNodes; element = elementWalker.nextNode(), count += 1) {
+      for (const name of element.getAttributeNames()) append(`${name}=${element.getAttribute(name) ?? ""}\n`);
+    }
+    return text;
+  }, { limit: SOURCE_LIMIT, maxNodes: MAX_DOM_NODES });
+  const sources = [["public DOM", dom]];
+  for (const [index, log] of boundedSources(logs).entries()) {
+    sources.push([`browser/server log ${index + 1}`, log]);
+  }
+  for (const [index, response] of boundedSources(responses).entries()) {
     sources.push([`captured API response ${index + 1}`, response]);
   }
   for (const [source, value] of sources) {
