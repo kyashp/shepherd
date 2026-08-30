@@ -7,6 +7,24 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — TST-21 Fixer candidate
+
+The correction closes recovery intent open/stat/read/close operational faults as
+fixed cause-free `PersistenceBoundaryError(recovery_intent_read, unavailable)` while
+retaining fixed schema/symlink/size/owner validation. Database and journal UUID temps
+are registered in memory; a primary plus temp-unlink double fault preserves the
+primary failure and durably marks the exact artifact. Before state becomes observable on
+restart, only a strict matching marker is considered, then fixed content, lstat
+regular-file/no-symlink, owner, mode and database/journal size limits are enforced
+before exact unlink and parent-directory sync. Two restart rows prove removal; a matching marker symlink remains untouched with its outside
+canary unchanged. Two marker-write triple-fault rows preserve the original primary/
+journal identity, expose only bounded `cleanupPending`, and consume exact in-memory
+ownership on same-instance initialize. Focused store coverage passed 43/43; Auditor remains pending.
+The final literal gate passed launcher 3/3, Server 709 passed plus two opt-in skips,
+Web 17/17 and both builds. Independent final security review approved with 0 High /
+0 Medium; Low residuals are same-UID data-directory races and fail-closed handling
+when an external actor removes an exact pending temp.
+
 ## 2026-08-30 — F-06 audit blocked by TST-21 persistence-boundary defects
 
 Auditor replayed exact Worker candidate

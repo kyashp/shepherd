@@ -57,8 +57,12 @@ that limitation is explicit.
   reconciliation, concurrent mutation/event lock, service/API/reload/security,
   literal `npm run check`, and hosted Node 22. Unix/macOS errors must not be
   swallowed; any Windows exception must remain narrowly platform-gated.
-- **Status:** **OPEN / Fixer READY.** F-06 is unintegrated and blocked; no product
-  commit was pushed to `mock-main`.
+- **Status:** **FIXER CANDIDATE / Auditor pending.** Four recovery read-operation
+  faults return fixed cause-free `recovery_intent_read` evidence. Primary and journal
+  file-sync plus unlink double faults preserve the primary outcome and retain one
+  exact UUID temp plus a durable cleanup marker. Restart requires fixed marker
+  content/name, no-symlink, owner, mode and stage-specific size validation. A hostile marker symlink fails
+  closed without touching its outside canary.
 
 ### `TST-20` — Fail-fast verifier sibling persists after test-root teardown
 

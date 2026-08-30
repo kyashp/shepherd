@@ -662,4 +662,127 @@ describe("JsonStore", () => {
       .rejects.toThrow("Persistence recovery journal references unknown durable entities");
     expect(restarted.persistenceRecoveryIntent()).not.toBeNull();
   });
+
+  it.each([
+    "recovery_intent_open",
+    "recovery_intent_stat",
+    "recovery_intent_read",
+    "recovery_intent_close",
+  ] satisfies PersistenceFaultStage[])("bounds %s failures without exposing native diagnostics", async (faultStage) => {
+    const root = await makeTemporaryDirectory();
+    const databasePath = path.join(root, "db.json");
+    let seedFault = false;
+    const seed = new JsonStore(databasePath, {
+      persistenceFaultCheckpoint: (stage) => {
+        if (seedFault && stage === "primary_write") throw new Error("seed journal");
+      },
+    });
+    await seed.initialize();
+    seedFault = true;
+    await expect(seed.mutateRecoverably(recoveryIntent(), () => undefined)).rejects.toThrow();
+    const canary = `TST21_SECRET EACCES /Users/private/${faultStage}`;
+    const restarted = new JsonStore(databasePath, {
+      persistenceFaultCheckpoint: (stage) => {
+        if (stage === faultStage) throw new Error(canary);
+      },
+    });
+    const error = await restarted.initialize().then(() => null, (caught: unknown) => caught as Error);
+    expect(error).toMatchObject({
+      name: "PersistenceBoundaryError",
+      stage: "recovery_intent_read",
+      message: "Persistence recovery journal is unavailable",
+    });
+    expect(`${error?.message}\n${error?.stack}\n${String((error as Error & { cause?: unknown })?.cause)}`)
+      .not.toMatch(/TST21_SECRET|\/Users\/private|EACCES/u);
+  });
+
+  it.each([
+    ["primary_file_sync", "primary_temp_unlink"],
+    ["journal_file_sync", "journal_temp_unlink"],
+  ] satisfies [PersistenceFaultStage, PersistenceFaultStage][])(
+    "preserves %s failure and removes its retained temp on restart after %s",
+    async (primaryStage, cleanupStage) => {
+      const root = await makeTemporaryDirectory();
+      const databasePath = path.join(root, "db.json");
+      let inject = false;
+      const store = new JsonStore(databasePath, {
+        persistenceFaultCheckpoint: (stage) => {
+          if (inject && (stage === primaryStage || stage === cleanupStage)) {
+            throw new Error(`TST21_SECRET ${stage} /private/temp`);
+          }
+        },
+      });
+      await store.initialize();
+      inject = true;
+      const error = await store.mutateRecoverably(recoveryIntent(), (database) => {
+        database.shepherd.settings.modelReviewEnabled = false;
+      }).then(() => null, (caught: unknown) => caught as Error);
+      expect(error?.name).toBe("PersistenceBoundaryError");
+      expect(error?.message).toBe(
+        primaryStage === "primary_file_sync"
+          ? "Database persistence did not complete durably"
+          : "Persistence recovery journal is unavailable",
+      );
+      const retained = (await readdir(root)).filter((name) => name.endsWith(".tmp"));
+      expect(retained).toHaveLength(1);
+      expect(await readFile(path.join(root, retained[0]!), "utf8")).not.toHaveLength(0);
+      const restarted = new JsonStore(databasePath);
+      await restarted.initialize();
+      expect((await readdir(root)).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+    },
+  );
+
+  it("fails closed on a symlinked managed-temp name without touching its outside target", async () => {
+    const root = await makeTemporaryDirectory();
+    const databasePath = path.join(root, "db.json");
+    const outside = path.join(root, "outside-canary.txt");
+    await writeFile(outside, "outside unchanged\n", "utf8");
+    const hostileTemp = `${databasePath}.123e4567-e89b-42d3-a456-426614174000.tmp`;
+    const hostileMarker = hostileTemp + ".cleanup-pending";
+    await writeFile(hostileTemp, "hostile temp\n", { encoding: "utf8", mode: 0o600 });
+    await symlink(outside, hostileMarker);
+    const error = await new JsonStore(databasePath).initialize()
+      .then(() => null, (caught: unknown) => caught as Error);
+    expect(error).toMatchObject({
+      name: "PersistenceBoundaryError",
+      stage: "cleanup",
+      message: "Persistence recovery cleanup remains pending",
+    });
+    expect(`${error?.message}\n${error?.stack}`).not.toContain(root);
+    expect(await readFile(outside, "utf8")).toBe("outside unchanged\n");
+    expect(await readlink(hostileMarker)).toBe(outside);
+  });
+
+  it.each([
+    ["primary_file_sync", "primary_temp_unlink", "primary_cleanup_marker"],
+    ["journal_file_sync", "journal_temp_unlink", "journal_cleanup_marker"],
+  ] satisfies [PersistenceFaultStage, PersistenceFaultStage, PersistenceFaultStage][])(
+    "preserves %s across unlink and %s marker failure with same-instance cleanup",
+    async (primaryStage, unlinkStage, markerStage) => {
+      const root = await makeTemporaryDirectory();
+      const databasePath = path.join(root, "db.json");
+      let inject = false;
+      const store = new JsonStore(databasePath, {
+        persistenceFaultCheckpoint: (stage) => {
+          if (
+            inject &&
+            (stage === primaryStage || stage === unlinkStage || stage === markerStage)
+          ) {
+            throw new Error(`TST21_TRIPLE ${stage} /private/triple`);
+          }
+        },
+      });
+      await store.initialize();
+      inject = true;
+      const error = await store.mutateRecoverably(recoveryIntent(), () => undefined)
+        .then(() => null, (caught: unknown) => caught as Error & { stage?: string; cleanupPending?: boolean });
+      expect(error?.stage).toBe(primaryStage.startsWith("primary") ? "primary" : "journal");
+      expect(error?.cleanupPending).toBe(true);
+      expect(`${error?.message}\n${error?.stack}`).not.toMatch(/TST21_TRIPLE|\/private\/triple/u);
+      expect((await readdir(root)).filter((name) => name.endsWith(".tmp"))).toHaveLength(1);
+      inject = false;
+      await store.initialize();
+      expect((await readdir(root)).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+    },
+  );
 });
