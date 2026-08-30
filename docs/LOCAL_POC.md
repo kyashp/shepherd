@@ -33,27 +33,25 @@ Force an engine by setting `CONTAINER_ENGINE=docker` or
 ### When the host filesystem reaches the engine through a virtual machine
 
 On a host where the container engine runs inside a virtual machine and shares the
-host filesystem into it, startup stops with:
+host filesystem into it, that share cannot carry the Codex sandbox's per-file
+access rights: directory operations succeed while every attempt to open a file
+for reading or writing is denied, so an Agent could not read or write the
+workspace it was given. Shepherd does not fall back to `danger-full-access`.
+
+**You do not need to configure anything for this.** The startup probes detect it
+and the script switches to the container state volume by itself:
 
 ```
-[local-poc] Codex workspace-write Landlock cannot govern the configured workspace
+[local-poc] The Codex sandbox cannot govern a workspace on /Users/you/.volc-agent-launchpad.
+[local-poc] Switching to the launchpad-state container state volume and retrying.
 ```
 
-or, if the server is reached directly, `stage=container_start
-reason=sandbox_probe_failed`. That share cannot carry the Codex sandbox's
-per-file access rights: directory operations succeed while every attempt to open
-a file for reading or writing is denied, so an Agent could not read or write the
-workspace it was given. This is not a credential or Ark failure, and the gate is
-deliberate — Shepherd does not fall back to `danger-full-access`.
+The volume is a native engine filesystem on every supported host. Set
+`LOCAL_POC_STATE_MODE` explicitly to pin one layout and disable the fallback:
+`host-bind` to fail loudly on a host that should work, or `container-volume` to
+skip the host attempt entirely.
 
-Run the container-first profile instead. It keeps every state root on a named
-volume, which is a native engine filesystem on every supported host:
-
-```bash
-LOCAL_POC_STATE_MODE=container-volume ./scripts/start-local-poc.sh
-```
-
-This builds and starts the control plane inside the engine using
+The fallback builds and starts the control plane inside the engine using
 `docker-compose.state-volume.yml`, so it also needs:
 
 - Access to the engine socket, which the control plane joins as a supplementary
@@ -195,7 +193,7 @@ Persistent state defaults to:
 - Linux: `.local/`
 
 Set `LOCAL_POC_DATA_ROOT` to use another directory, or
-`LOCAL_POC_STATE_MODE=container-volume` to keep all state in the
+`LOCAL_POC_STATE_MODE=container-volume` to force all state into the
 `launchpad-state` engine volume instead of on the host.
 
 Each turn mounts only the selected Agent workspace and Codex session directory.

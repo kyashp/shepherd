@@ -6,10 +6,11 @@
 # hosts a bind-mounted workspace leaves the Agent unable to read or write the very
 # directory it was given. A volume is a native runtime filesystem on all of them.
 #
-# Prefer `LOCAL_POC_STATE_MODE=container-volume ./scripts/start-local-poc.sh`,
-# which creates and seeds the volume and resolves the engine socket group before
-# invoking this file. Every security gate is unchanged: non-root, no new
-# privileges, all capabilities dropped, and no danger-full-access fallback.
+# Prefer `./scripts/start-local-poc.sh`. It selects this profile by itself when
+# its probes show the host layout cannot support the sandbox, creates and seeds
+# the volume, and resolves the engine socket group before invoking this file.
+# Every security gate is unchanged: non-root, no new privileges, all capabilities
+# dropped, and no danger-full-access fallback.
 #
 # HOST is 0.0.0.0 because the server must be reachable through the published port.
 # The port is published to loopback only. APP_AUTH_TOKEN is optional and empty by

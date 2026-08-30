@@ -7,6 +7,45 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — the launcher selects its own state layout
+
+Same branch and host. `LOCAL_POC_STATE_MODE` defaulted to `host-bind`, so the
+affected host had to be told to use the container state volume even though the
+launcher's own probes already knew. The probe, not the operating system, is the
+correct signal: what matters is whether the engine sees a native filesystem, and a
+host can fail that on any platform.
+
+- Default is now `auto`. The state selection, mount specification and both probes
+  became functions, so the launcher can apply the host layout, probe it, and on
+  failure apply the volume layout and probe again within one run. `run_state_probes`
+  returns a typed status — 1 the engine cannot mount and write the state, 2 the
+  Codex sandbox cannot govern the workspace — so the fallback message names the
+  actual reason. An explicit `host-bind` or `container-volume` disables the
+  fallback, so a host that should work still fails loudly.
+- Observed on the affected host with no environment variables set at all:
+
+  ```
+  [local-poc] Persistent state: /Users/…/.volc-agent-launchpad
+  [local-poc] Checking that the Runtime can mount and write the configured state directories.
+  [local-poc] Checking that the Codex sandbox can govern the configured workspace.
+  [local-poc] The Codex sandbox cannot govern a workspace on /Users/…/.volc-agent-launchpad.
+  [local-poc] Switching to the launchpad-state-auto container state volume and retrying.
+  [local-poc] Preparing the launchpad-state-auto state volume for the Agent Runtime.
+  [local-poc] Persistent state: launchpad-state-auto (container volume)
+  [local-poc] Checking that the Runtime can mount and write the configured state directories.
+  [local-poc] Checking that the Codex sandbox can govern the configured workspace.
+  [local-poc] Building and starting the containerized control plane.
+  ```
+
+  The mount-and-write probe passed on the host share and the sandbox probe failed,
+  which is the expected split. `GET /api/health` then returned
+  `{"ok":true,"service":"volc-agent-launchpad"}` and the running control plane
+  resolved `executionMode: "live"`, `authTokenLength: 0`. The smoke volume was
+  removed afterwards.
+- `scripts/start-local-poc-launcher.test.mjs` passed 3/3, including the darwin case
+  that pins the five exported host paths: under `auto` its stub engine reports
+  success, the host layout is kept, and the exported paths are unchanged.
+
 ## 2026-08-30 — APP_AUTH_TOKEN requirement removed, capability retained
 
 Same branch and host as the entry below. Requested scope was the requirement, not
