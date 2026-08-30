@@ -385,25 +385,50 @@ async function waitForExit(child, timeoutMs) {
   });
 }
 
+function processGroupExists(processGroupId) {
+  try {
+    process.kill(-processGroupId, 0);
+    return true;
+  } catch (error) {
+    if (error?.code === "ESRCH") return false;
+    throw error;
+  }
+}
+
+async function waitForProcessGroupExit(processGroupId, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!processGroupExists(processGroupId)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return !processGroupExists(processGroupId);
+}
+
 async function stopProcessGroup(child) {
-  if (child.exitCode !== null || child.signalCode !== null) return;
   if (!Number.isSafeInteger(child.pid) || child.pid <= 1) {
-    child.kill("SIGKILL");
-    await waitForExit(child, 5_000);
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill("SIGKILL");
+      await waitForExit(child, 5_000);
+    }
     return;
   }
   try {
     process.kill(-child.pid, "SIGINT");
   } catch (error) {
-    if (error?.code !== "ESRCH") throw error;
+    if (error?.code === "ESRCH") return;
+    throw error;
   }
-  if (await waitForExit(child, 30_000)) return;
+  if (await waitForProcessGroupExit(child.pid, 30_000)) return;
   try {
     process.kill(-child.pid, "SIGKILL");
   } catch (error) {
-    if (error?.code !== "ESRCH") throw error;
+    if (error?.code === "ESRCH") return;
+    throw error;
   }
-  await waitForExit(child, 5_000);
+  assert(
+    await waitForProcessGroupExit(child.pid, 5_000),
+    "Live application process group survived bounded cleanup",
+  );
 }
 
 export async function startLiveApplication(
