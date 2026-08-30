@@ -51,7 +51,7 @@ that limitation is explicit.
   and no late/unhandled work. Keep one attention event, verified Contracts/Planes,
   released Agents, active project, no collision/candidate/promotion/head mutation
   and secret/path scans. Run TST-23/TST-22/F-06, strict/full and hosted Node 22.
-- **Status:** **FIXER CANDIDATE / Auditor pending.** The row now waits on the exact
+- **Status:** **CLOSED / AUDITED** at `7d51ec6`. The row now waits on the exact
   original Store recovery intent becoming null, then awaits a no-op mutation
   sentinel before durable reads and teardown. It passed 30/30; the combined
   Store/recovery/service slice passed 138/138, and two literal full checks each
@@ -84,12 +84,11 @@ that limitation is explicit.
   Plane-unwind attention, durable reload, protected head/canary and raw-diagnostic
   assertions unchanged. Run the combined TST-17/TST-22/F-06 slice, strict/full and
   hosted Node 22.
-- **Status:** **FIXER CANDIDATE / Auditor pending.** The exact test-owned no-op
+- **Status:** **CLOSED / AUDITED** at `7d51ec6`. The exact test-owned no-op
   Store sentinel is placed after attention observation and before reload. The row
   passed 20/20; combined Store/recovery/TST-17/TST-20 coverage passed 138/138 with
-  no late rejection or retained artifact. A distinct transient F-06 recovery row
-  remained order-sensitive in the full suite, so TST-22/F-06 integration and the
-  full gate are still blocked; no product or Store correction is claimed here.
+  no late rejection or retained artifact. TST-24 closed the distinct recovery-row
+  ordering race; full and hosted gates passed. No product or Store change exists.
 
 ### `TST-22` — Cleanup markers do not form a crash-safe retry protocol
 
@@ -119,7 +118,7 @@ that limitation is explicit.
   secret/path/errno reaches startup/log/store/API surfaces; repeated fault/restart
   creates no accumulation. Re-run TST-21/F-06, Plane-unwind stress, adjacent/full/
   security and hosted gates.
-- **Status:** **FIXER CHECKPOINT / blocked by adjacent TST-17 test quiescence.** The correction pre-registers
+- **Status:** **CLOSED / AUDITED** at `7d51ec6`. The correction pre-registers
   every sensitive temp through an fsynced fixed-schema marker inside an adjacent
   owner-validated `0700` private directory. The same marker authority handles
   temp-present and temp-missing removal prefixes, same-instance retry and two
@@ -127,10 +126,8 @@ that limitation is explicit.
   12 publication checkpoints, eight removal checkpoints, double faults, repeated
   same-instance writes, strict-schema/UUID ownership, hostile directory/marker/
   publication symlinks and unrelated files. Full/security evidence is recorded in
-  `BUILD_LOG.md`. Store/security scope is green, but the adjacent TST-17 row starts
-  a reload before its original Store queue is quiescent and failed isolated on
-  repetition 2; the full gate is therefore not claimed. Auditor reproduction and a
-  separately owned test-only correction remain pending.
+  `BUILD_LOG.md`. TST-23/24 join the fixture-owned queues; local, independent
+  security and hosted gates pass.
 
 ### `TST-21` — Recovery-journal reads and temp cleanup are not closed boundaries
 
@@ -161,13 +158,13 @@ that limitation is explicit.
   reconciliation, concurrent mutation/event lock, service/API/reload/security,
   literal `npm run check`, and hosted Node 22. Unix/macOS errors must not be
   swallowed; any Windows exception must remain narrowly platform-gated.
-- **Status:** four recovery read-operation
+- **Status:** **CLOSED / AUDITED** at `7d51ec6`. Four recovery read-operation
   faults return fixed cause-free `recovery_intent_read` evidence. Primary and journal
   file-sync plus unlink double faults preserve the primary outcome and retain one
   exact UUID temp plus a durable cleanup marker. Restart requires fixed marker
-  content/name, no-symlink, owner, mode and stage-specific size validation. A hostile marker symlink fails
-  closed without touching its outside canary, but the cleanup protocol is
-  **BLOCKED by TST-22**. F-06 remains unintegrated.
+  content/name, no-symlink, owner, mode and stage-specific size validation. A hostile
+  marker symlink fails closed without touching its outside canary; TST-22 completes
+  the crash-safe cleanup protocol.
 
 ### `TST-20` — Fail-fast verifier sibling persists after test-root teardown
 
@@ -1046,7 +1043,7 @@ operator-cleanup availability residual; cross-process automatic retry is not cla
 | `F-02` | Source-evidenced: Contract runtime errors can become generic `unknown`. | Shared typed stage error only; preserve candidate-specific handling. | **WORKER VERIFIED** candidate on `work/mock-main`; 95% pending Auditor |
 | `F-04` | Source-evidenced: initial Plane creation can fail before durable stage evidence; later mapper is too late. | Evidence on owning Contract/Mission without inventing a successful Plane. | **AUDITED** at `2cef988`; TST-17 closed |
 | `F-05` | Preserved RED proved a real textual conflict became `unknown/background_demo`. | Typed bounded Mission/integration Plane/event mapping; retain clean conflict Plane for inspection and remove it on reset. | **AUDITED** at `f8d7f71`; TST-18/19 closed |
-| `F-06` | Preserved RED proved atomic rollback alone cannot leave recovery-visible evidence of the failed transition. | Exact-byte digest + bounded sidecar intent at the representative pre-integration transition; reconcile once without claiming an uncommitted mutation persisted. | **WORKER VERIFIED candidate**; Auditor pending |
+| `F-06` | Preserved RED proved atomic rollback alone cannot leave recovery-visible evidence of the failed transition. | Exact-byte digest + bounded sidecar intent at the representative pre-integration transition; reconcile once without claiming an uncommitted mutation persisted. | **RESOLVED + AUDITED** at `7d51ec6`; TST-21–24 closed |
 | `F-07` | Source-evidenced: candidate timeout state mapping is inconsistent and partly regex-based. | One typed timeout class and canonical state mapping. | Worker / ready |
 | `F-08` | Source-evidenced: most non-authority candidate exceptions are retryable; second-failure coverage absent. | Retry only typed transient failures, once, from the immutable base. | Worker / ready |
 | `GC-01` | Earlier reproduction proved buttons inserted bare `@Name With Spaces`, while the parser requires JSON quoting. | Resolved with parser-safe mention formatting, exact Agent-ID fallback, draft-preservation and two-viewport browser coverage; no parser weakening. | **RESOLVED + AUDITED** at `de3e631`; hosted run `33266624301` |

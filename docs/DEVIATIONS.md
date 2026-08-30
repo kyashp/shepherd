@@ -36,7 +36,7 @@ The project is not complete while any row below is **OPEN** or **PARTIAL**.
 
 | Topic | Classification | Current status and evidence | Owning task(s) |
 |---|---|---|---|
-| Failure matrix sequencing | Clarification | **OPEN.** F-01/02, F-04/05 and TST-13–19 are audited, closing typed Agent runtime/timeout, executor filesystem/config, initial Plane creation and Git-conflict boundaries. The complete matrix remains open for manifest, persistence, timeout/retry, tie, polling, model-degradation and required browser rows. | `F-06`–`F-09`, `FM-01`, `UI-01`, `E2E-04`–`E2E-08`, `SEC-REVIEW` |
+| Failure matrix sequencing | Clarification | **OPEN.** F-01/02, F-04–06 and TST-13–24 are audited, closing typed Agent runtime/timeout, executor filesystem/config, initial Plane creation, Git-conflict and representative persistence-recovery boundaries. The complete matrix remains open for manifest, candidate timeout/retry, tie, polling, model-degradation and required browser rows. | `F-07`–`F-09`, `FM-01`, `UI-01`, `E2E-04`–`E2E-08`, `SEC-REVIEW` |
 | Browser-journey sequencing | Clarification | **OPEN.** Backend paths can precede UI implementation, but no PRD journey is complete without its real browser assertions and screenshots. Only `E2E-01` is currently audited; harness/shell tests and source inspection do not close `E2E-02`–`E2E-08`. | `E2E-02`–`E2E-08`, `UI-GATE` |
 
 ## Environment and assurance limitations

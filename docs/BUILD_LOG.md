@@ -7,6 +7,24 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — F-06 and TST-21–24 integrated and audited
+
+Auditor integrated exact corrected chain
+`7d51ec69d1ac6c807d42e872b4616b6357967f48` onto `mock-main`. Independent
+evidence passed TST-23 20/20, TST-24 30/30, Store 70/70, and combined Store/
+recovery/service 133/133. Literal `npm run check` passed launcher 3/3, Server
+736 passed plus two explicit opt-in skips, Web 17/17, strict production/test
+typechecks and both builds. Independent final security review returned 0 High and
+0 Medium; all prior journal-read and sensitive-temp crash-prefix blockers closed.
+Hosted Node 22 Required checks run `33286090602` passed the implementation head.
+
+The accepted Low residual is the documented same-UID parent-directory swap or
+concurrent independent-Store race under the existing single-process managed-root
+threat model. Windows narrowly lacks Unix directory-fsync/mode guarantees; Unix and
+macOS errors are not swallowed. F-06 is explicitly representative of the Mission
+running-to-verifying boundary and does not claim arbitrary store-mutation recovery.
+No live/model/UI call was needed.
+
 ## 2026-08-30 — TST-24 Fixer candidate restores the TST-22/F-06 full gate
 
 After visible persistence-error attention, the exact fixture now uses bounded
