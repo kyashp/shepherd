@@ -4963,11 +4963,18 @@ Auditor, security and hosted integration evidence.
   `docs/ui-review/perf-01/1440x900/` (`01-collision-visible.png` and
   `02-promotion-completed.png` in each); both required states were visually
   inspected. `node --test tests/e2e/harness.test.mjs` also passed 7/7.
+- **CI teardown-race RED/GREEN:** hosted Node 22 run `33316746584` exposed a
+  test-cleanup race after 805 passing tests: a managed temporary disappeared
+  after `lstat` and before `chmod`, which raised `ENOENT`. A deterministic
+  regression now removes a fixture at that exact boundary and reproduced the
+  same failure 1/1 before the fix. Cleanup tolerates only `ENOENT` from that
+  entry `chmod`; sentinel, containment, symlink, permission, and all other
+  failures remain strict. The focused regression passed 1/1, the complete
+  `service.test.ts` file passed 64/64, and a literal `npm run check` passed
+  launcher 3/3, Server 810 passed plus three opt-in skips, Web 20/20, all
+  workspace/test-source typechecks, and both builds.
 - **Limitations:** local deterministic-fixture evidence is not a live-model
   capacity measurement, hosted integrated rerun, package-download proof, or the
   three clean rehearsals owned by `DEMO-REHEARSAL`. Gate `I` remains pending an
-  independent protected-main audit. A final literal `npm run check` passed all
-  workspace and test-source typechecks, plus launcher 3/3, then remained in the
-  unrelated server Vitest suite for 72 seconds and was stopped; no unrelated
-  general-project/full-harness failure or check behavior was changed by this
-  candidate.
+  independent protected-main audit. The prior hosted failure is preserved above;
+  the corrected commit still requires a fresh hosted run.

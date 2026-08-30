@@ -74,7 +74,10 @@ async function makeCaseRoot(): Promise<string> {
   return root;
 }
 
-async function removeServiceCaseRoot(root: string): Promise<void> {
+async function removeServiceCaseRoot(
+  root: string,
+  hooks: { beforeEntryChmod?: (entry: string) => Promise<void> } = {},
+): Promise<void> {
   let rootStat: Awaited<ReturnType<typeof lstat>>;
   try {
     rootStat = await lstat(root);
@@ -123,7 +126,13 @@ async function removeServiceCaseRoot(root: string): Promise<void> {
         }
         await makeDeletable(entry);
       } else if (!entryStat.isSymbolicLink()) {
-        await chmod(entry, 0o600);
+        await hooks.beforeEntryChmod?.(entry);
+        try {
+          await chmod(entry, 0o600);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+          throw error;
+        }
       }
     }
   };
@@ -2252,6 +2261,20 @@ describe("Shepherd deterministic walking skeleton", () => {
     await chmod(snapshotPath, 0o500);
 
     await expect(removeServiceCaseRoot(caseRoot)).resolves.toBeUndefined();
+  });
+
+  it("tolerates a managed file disappearing after cleanup lstat and before chmod", async () => {
+    const caseRoot = await makeCaseRoot();
+    const disappearingFile = path.join(caseRoot, "managed", "candidate.ts");
+    await mkdir(path.dirname(disappearingFile), { recursive: true });
+    await writeFile(disappearingFile, "candidate\n", "utf8");
+    await expect(
+      removeServiceCaseRoot(caseRoot, {
+        beforeEntryChmod: async (entry) => {
+          if (entry === disappearingFile) await rm(disappearingFile);
+        },
+      }),
+    ).resolves.toBeUndefined();
   });
 
   it("refuses to clean a root outside its allocated test fixture", async () => {
