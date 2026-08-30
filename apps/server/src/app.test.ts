@@ -410,6 +410,11 @@ const createShepherdService = (
   overrides: Partial<ShepherdHttpService> = {},
 ): ShepherdHttpService => ({
   state: createShepherdState,
+  initializeProjectGroup: async () => ({
+    ...createShepherdState().projects[0]!,
+    id: "auth-demo",
+    activeMissionId: null,
+  }),
   missionDetail: (id) => (id === missionId ? missionDetail : null),
   eventsAfter: () => [event],
   startDeterministicDemo: async () => ({ missionId }),
@@ -905,6 +910,11 @@ describe("HTTP boundary", () => {
       },
       {
         method: "POST",
+        url: "/api/shepherd/projects/auth-demo/group-initialization",
+        payload: {},
+      },
+      {
+        method: "POST",
         url: "/api/shepherd/projects/project-1/group-messages",
         payload: { clientMessageId: "client-1", content: "Status?" },
       },
@@ -1014,6 +1024,16 @@ describe("HTTP boundary", () => {
       content: "Implement the authentication demo",
       preset: "auth-demo",
       clientMessageId: "mission-client-1",
+    });
+
+    const initializedGroup = await app.inject({
+      method: "POST",
+      url: "/api/shepherd/projects/auth-demo/group-initialization",
+      payload: {},
+    });
+    expect(initializedGroup.statusCode).toBe(200);
+    expect(initializedGroup.json()).toMatchObject({
+      project: { id: "auth-demo", activeMissionId: null },
     });
 
     const privatePrompt = await app.inject({

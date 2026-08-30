@@ -51,6 +51,7 @@ export type { ShepherdMissionDetail } from "./shepherd/service.js";
 
 export interface ShepherdHttpService {
   state(): ShepherdDatabase;
+  initializeProjectGroup(): Promise<ShepherdProject>;
   missionDetail(id: string): ShepherdMissionDetail | null;
   eventsAfter(cursor: number, limit?: number): ShepherdEvent[];
   startDeterministicDemo(options?: Record<string, never>): Promise<{ missionId: string }>;
@@ -1082,6 +1083,12 @@ export async function createApp(
         message: toPublicGroupMessage(accepted.message, publicSecrets),
         executionMode: config.shepherdExecutionMode,
       });
+    });
+
+    app.post("/api/shepherd/projects/auth-demo/group-initialization", async (request) => {
+      emptyDemoBody.parse(request.body ?? {});
+      const project = await shepherdService.initializeProjectGroup();
+      return { project: withoutProjectPath(project, publicSecrets) };
     });
 
     app.get("/api/shepherd/projects/:id/group-messages", async (request) => {

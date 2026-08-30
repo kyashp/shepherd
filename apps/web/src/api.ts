@@ -12,6 +12,7 @@ import type {
   SemanticCollision,
   ShepherdEvent,
   ShepherdMissionDetail,
+  ShepherdProject,
   ShepherdSettings,
   ShepherdState,
   SystemInfo,
@@ -152,6 +153,11 @@ export const api = {
   run: (id: string) => request<{ run: AgentRun }>(`/api/runs/${idPath(id)}`),
 
   shepherdState: () => request<{ state: ShepherdState }>("/api/shepherd/state"),
+  initializeProjectGroup: () =>
+    request<{ project: ShepherdProject }>(
+      "/api/shepherd/projects/auth-demo/group-initialization",
+      { method: "POST", body: "{}" },
+    ),
   mission: (id: string) =>
     request<ShepherdMissionDetail>(`/api/shepherd/missions/${idPath(id)}`),
   events: (cursor: number, limit = 200) =>

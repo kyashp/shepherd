@@ -145,6 +145,7 @@ async function removeManagedRunRoot(harnessRoot, runRoot) {
 
 export async function startTestApp({
   agentRuntimeConfigured = false,
+  beforeStart,
   legacyRuntime = false,
   liveLegacyConfig,
   modelReviewConfigured = false,
@@ -179,6 +180,9 @@ export async function startTestApp({
       access(path.join(repositoryRoot, "apps/server/dist/index.js"), constants.R_OK),
       access(path.join(repositoryRoot, "apps/web/dist/index.html"), constants.R_OK),
     ]);
+    if (beforeStart) {
+      await beforeStart({ dataDirectory, shepherdRoot, workspaceRoot });
+    }
   } catch (error) {
     if (allocated) await removeManagedRunRoot(harnessRoot, runRoot);
     throw error;
