@@ -198,6 +198,21 @@ async function preflightDependencies() {
   await browser.close();
 }
 
+async function assertExactCommittedHead() {
+  const result = await execFileAsync(
+    "git",
+    ["status", "--porcelain=v1", "--untracked-files=normal"],
+    {
+      cwd: repositoryRoot,
+      env: processEnvironment(),
+      encoding: "utf8",
+      timeout: 5_000,
+      maxBuffer: 65_536,
+    },
+  );
+  assert(result.stdout.length === 0, "Live recording requires an exact clean committed worktree");
+}
+
 async function waitForExit(child, timeoutMs) {
   if (child.exitCode !== null || child.signalCode !== null) return true;
   return await new Promise((resolve) => {
@@ -819,6 +834,7 @@ async function main() {
   let completed = false;
   let resultLine = "";
   await preflightDependencies();
+  if (!preflightOnly) await assertExactCommittedHead();
   await prepareManagedRoot(stateRoot, stateSentinel, stateSentinelValue);
   if (!preflightOnly) await prepareManagedRoot(artifactRoot, artifactSentinel, artifactSentinelValue);
   const port = await reserveLoopbackPort();
