@@ -1,28 +1,28 @@
-# UI-GATE Candidate Accessibility and Design Audit
+# UI-GATE Integrated Candidate Accessibility and Design Audit
 
 ## Audit identity
 
 - Issue: [#45](https://github.com/kyashp/shepherd/issues/45), `UI-GATE`
-- Branch: `test/45-ui-gate`
-- Rendered current-main candidate: `d41613b` (causal UI fixes at `bbc7c81`, refreshed through `origin/main` `0ed41dd`)
+- Source: merged [PR #87](https://github.com/kyashp/shepherd/pull/87), branch `test/45-ui-gate`
+- Rendered protected-main integration: `cf4dd0fa5886979f2af823efa65fd028dbb03334` (direct second parent/final candidate `adbb7aa25ed464c3c7080bc6c9c29690ce20d18e`; causal UI fixes at `bbc7c81`)
 - Audit date: 2026-08-31
 - Runtime: Node.js 24.16.0
 - Browser: Google Chrome for Testing 151.0.7922.34, Playwright, one worker
 - Viewports: 1280x800 and 1440x900
-- Reviewed corpus: 36 PNGs, 18 named stages per viewport, 3,229,473 bytes total
-- Evidence command: `E2E_UPDATE_EVIDENCE=true node node_modules/@playwright/test/cli.js test tests/e2e/ui-gate.spec.mjs --workers=1`
-- Ordinary-run boundary: screenshots remain under `.tmp/playwright-evidence/ui-gate/`; only the explicit environment value `true` copies them into this reviewed directory.
+- Reviewed corpus: 36 PNGs, 18 named stages per viewport, 3,225,044 bytes total
+- Post-merge evidence command: exact `cf4dd0fa` archive plus `node node_modules/@playwright/test/cli.js test tests/e2e/ui-gate.spec.mjs --workers=1`
+- Harness ordinary-run boundary: screenshots remain under `.tmp/playwright-evidence/ui-gate/`; only the explicit environment value `true` makes the harness copy them into this reviewed directory. This post-merge follow-up promoted the separately validated exact-main manifest after the run.
 
-The explicit evidence run passed 12/12 tests. Every PNG is non-empty, has its declared dimensions, and belongs to the expected 18-file manifest for its viewport; there are no extra or non-PNG artifacts in the corpus. The positive journeys use the real compiled local server and deterministic public APIs. Request interception is limited to holding or failing real reads to expose loading and reconnect states.
+The protected-main evidence run passed 12/12 tests with one Chromium worker. Every PNG is non-empty, has its declared dimensions, and belongs to the expected 18-file manifest for its viewport; there are no extra or non-PNG artifacts in the corpus. The 18 captures whose bytes changed from the candidate corpus were visually re-inspected before this exact-main corpus was published. The positive journeys use the real compiled local server and deterministic public APIs. Request interception is limited to holding or failing real reads to expose loading and reconnect states.
 
 ## Gate status
 
-| Gate | Candidate status | What is and is not claimed |
+| Gate | Status | What is and is not claimed |
 | --- | --- | --- |
-| `C` candidate checks | Local UI-gate, adjacent Web tests, strict Web typecheck, and Web/Server builds passed. Hosted run `33329417868` passed on evidence commit `38ac907`; an exact post-main-refresh head check is pending. | The candidate is not complete until the final pushed commit is green in hosted CI. |
+| `C` candidate checks | Passed. Local UI-gate, adjacent Web tests, strict Web production/test typechecks, and Web/Server builds passed. Final candidate `adbb7aa` passed hosted runs `33329742705` and `33329742709`. | The four local Windows process-spawn harness cases remain honestly excluded by `spawn EFTYPE`; the full Linux gate is the hosted evidence. |
 | `B` browser evidence | Automated Chromium journeys passed at both exact viewports and all 36 images were inspected against `docs/UI.jpeg`. | The product browser path is directly observed. A separate live inspection through the in-app browser was unavailable because no browser session was connected. |
 | `U` independent usability | Pending. | This implementation-owner review is not an independent approval. |
-| `I` final integration | Pending. | The corpus must be regenerated and the gate rerun on the exact protected-main integration head. |
+| `I` final integration | Passed at protected-main merge `cf4dd0fa`. | The exact merge archive passed the two-viewport UI gate 12/12, regenerated this 36-image corpus, and passed hosted `npm run check` in run `33329997913`. The merge tree is byte-identical to final candidate `adbb7aa`. |
 
 ## Six-surface matrix
 
@@ -111,7 +111,7 @@ No High or Medium visual/accessibility defect was found in the reviewed corpus. 
 
 - No manual screen-reader session was run. Names, roles, relationships, focus, and live-state assertions are DOM evidence, not a substitute for NVDA, JAWS, VoiceOver, or another assistive technology.
 - The product was exercised in Playwright Chromium, but the in-app browser connector reported no available browser session. No separate in-app live visual claim is made.
-- The literal local Node harness reproduced the documented Windows `spawn EFTYPE` boundary: 15/19 passed and the four process-spawn cases failed. This is not recorded as a harness pass; hosted Linux CI remains required on the exact final commit.
+- The literal local Node harness reproduced the documented Windows `spawn EFTYPE` boundary: 15/19 passed and the four process-spawn cases failed. This is not recorded as a harness pass; hosted Linux CI supplied the complete exact-final and exact-integration checks.
 - This is an implementation-owner candidate audit. An independent reviewer must perform and record the `U` gate.
-- Hosted CI must pass on the exact final pushed commit before `C` becomes complete.
-- Protected-main integration, evidence regeneration, and exact integrated rerun remain required for `I`.
+- Final candidate and exact protected-main hosted CI passed; the exact integration corpus was regenerated and re-inspected. Gates `C`, `B`, and `I` are complete.
+- Independent usability gate `U` remains required before this row can be called audited.
