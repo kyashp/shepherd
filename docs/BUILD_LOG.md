@@ -32,6 +32,14 @@ pending checks, and workflow.
   build transformed 41 modules; Server production build passed.
 - No product, UI, schema, dependency, Runtime, secret, or live-model behavior changed;
   no live/model request was made.
+- Independent read-only review rejected five stale/incomplete statements; the exact
+  E2E-02, branch identity, authenticated deployment verification, link-count, and
+  veLinux mapping corrections were applied and the re-review passed with no blocker.
+- The reviewed commit `5a38d37a210c255781055648c43896597497f50f` was fast-forwarded
+  into `mock-main`. The post-merge local-link/PRD/task-count/Track-1 checks passed,
+  literal `npm run check` repeated the 3/3 launcher, 736-pass Server, 17/17 Web,
+  strict typecheck, and two-build result, and `origin/mock-main` was verified at the
+  same exact commit before this bookkeeping update.
 
 ## 2026-08-30 — F-06 and TST-21–24 integrated and audited
 

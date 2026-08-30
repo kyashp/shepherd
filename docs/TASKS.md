@@ -140,10 +140,6 @@ to the open `LIVE-01` gate.
 
 ## Integration and external ownership holds — do not assign
 
-`DEL-04` documentation consolidation is actively owned by
-`docs/hackathon-doc-consolidation`; its owned surface is documentation and root
-navigation only. Do not start a parallel documentation consolidation.
-
 | ID | PRD | Status / owner | Current external work | Integration requirement |
 |---|---|---|---|---|
 | `MR-03` | 8.6, 12 | **AUDITED** at `35ec268` | Invalid findings are dropped individually with bounded count while valid peers survive; all-invalid degrades. Auditor passed MR matrix 165/165, TST-08 stress, full harness/check/security, exactly one external reviewer request (`completed findings=2`), deterministic outcome/advisory assertions, cleanup, and hosted run `33270168480`. | **100% scoped**; `T,A,C,S,L,I` 6/6; audited |
@@ -257,7 +253,7 @@ without an open issue/PR are not active ownership claims.
 | `DEL-01` | 16 Phase 9A | `BLOCKED` by feature freeze | Create `SHEPHERD_ARCHITECTURE.md` from as-built code with locally validated Mermaid and one judge-facing diagram. | **0%**; 0/2; not audited |
 | `DEL-02` | 16 Phase 9C | `BLOCKED` by all tests | Create `SHEPHERD_TEST_REPORT.md` from exact final commands, failures, repeated runs, browser/container/live scope and limitations. | **0%**; 0/2; not audited |
 | `DEL-03` | 16 Phase 9D | `BLOCKED` by freeze | Finish README problem/pitch/setup/demo/tests/security/limitations without removing starter setup; every claim links to evidence. | **30%**; 0/2; not audited |
-| `DEL-04` | 0.1, 16 Phase 9E | `IN PROGRESS`; final pass blocked by freeze | The canonical navigation is `TASKS.md` → PRD/as-built/runbook/evidence documents. Remove the stale handover, retain PRD-required ledgers, and reconcile `SHEPHERD.md`, `DEVIATIONS.md`, `BUILD_LOG.md`, `LOCAL_POC.md`, `TECHJAM.md`, this ledger, and `FIXES.md` again after final evidence. | **50%**; consolidation in progress; final audit pending |
+| `DEL-04` | 0.1, 16 Phase 9E | **PARTIALLY AUDITED** at `5a38d37`; final pass blocked by freeze | The canonical navigation is `TASKS.md` → PRD/as-built/runbook/evidence documents. The stale handover is removed, PRD-required ledgers are retained, and all current links resolve. Reconcile `SHEPHERD.md`, `DEVIATIONS.md`, `BUILD_LOG.md`, `LOCAL_POC.md`, `TECHJAM.md`, this ledger, and `FIXES.md` again after final product evidence. | **75% overall**; consolidation `C,I` passed and independent docs review passed; final frozen-state audit pending |
 | `DEL-05` | 16 Phase 9E, 17 | `BLOCKED` by all work | Final dead/debug/duplicate/artifact/refactor/security review. Refactor only named proven debt with behavior locked; run final `C,B,S,L,I`. | **0%**; 0/5; not audited |
 
 ## Count and current verdict
