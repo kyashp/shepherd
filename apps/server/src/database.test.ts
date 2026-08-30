@@ -655,6 +655,15 @@ describe("Database V2", () => {
     expect(JSON.parse(await readFile(databasePath, "utf8"))).toEqual(database);
   });
 
+  it("keeps server-producible pre-Agent-summary V2 Project Group state compatible", () => {
+    const database = fullMissionDatabase();
+    const legacyMessage = database.shepherd.groupMessages[0]!;
+    legacyMessage.senderType = "shepherd";
+    legacyMessage.senderId = null;
+
+    expect(loadDatabase(database)).toEqual({ database, migrated: false });
+  });
+
   it.each([
     ["unsafe identifier", (database: Database) => (database.shepherd.projects[0]!.id = "../secret")],
     ["invalid timestamp", (database: Database) => (database.shepherd.missions[0]!.updatedAt = "yesterday")],
@@ -691,6 +700,37 @@ describe("Database V2", () => {
     ["too-low Plane concurrency", (database: Database) => ((database.shepherd.settings as { maxConcurrentPlanes: number }).maxConcurrentPlanes = 1)],
     ["too-high Plane concurrency", (database: Database) => ((database.shepherd.settings as { maxConcurrentPlanes: number }).maxConcurrentPlanes = 17)],
     ["malformed event details", (database: Database) => ((database.shepherd.events[0]!.details as Record<string, unknown>).nested = { secret: true })],
+    ["agent summary references an unverified Contract", (database: Database) => {
+      database.shepherd.contracts[0]!.state = "verifying";
+    }],
+    ["agent summary references a Contract without a manifest", (database: Database) => {
+      database.shepherd.contracts[0]!.manifest = null;
+    }],
+    ["agent summary uses the wrong sender", (database: Database) => {
+      database.agents.push({
+        ...database.agents[0]!,
+        id: "agent-2",
+        workspacePath: "/managed/agents/agent-2",
+      });
+      database.shepherd.groupMessages[0]!.senderId = "agent-2";
+    }],
+    ["agent summary targets the wrong Agent", (database: Database) => {
+      database.agents.push({
+        ...database.agents[0]!,
+        id: "agent-2",
+        workspacePath: "/managed/agents/agent-2",
+      });
+      database.shepherd.groupMessages[0]!.targetAgentId = "agent-2";
+    }],
+    ["agent summary references the wrong Contract", (database: Database) => {
+      database.agents.push({
+        ...database.agents[0]!,
+        id: "agent-2",
+        workspacePath: "/managed/agents/agent-2",
+      });
+      database.shepherd.contracts[1]!.agentId = "agent-2";
+      database.shepherd.groupMessages[0]!.contractId = "contract-right";
+    }],
     ["agent summary differs from verified manifest", (database: Database) => {
       database.shepherd.groupMessages[0]!.content = "Unverified runtime output";
     }],

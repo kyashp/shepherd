@@ -1394,6 +1394,41 @@ export class ShepherdService {
         error instanceof Error ? error.message : "Project Group message is invalid",
       );
     }
+    const messageDigest = createHash("sha256")
+      .update(`${projectId}\0${input.clientMessageId}`, "utf8")
+      .digest("hex")
+      .slice(0, 40);
+    const existingContractPrompt = snapshot.shepherd.groupMessages.find(
+      (message) => message.id === `group-contract-${messageDigest}`,
+    );
+    if (existingContractPrompt) {
+      if (route.kind !== "agent") {
+        throw new ShepherdControlError(
+          "idempotency_conflict",
+          "Client message ID was already used for different content",
+        );
+      }
+      return await this.submitProjectGroupContractPrompt(projectId, input, {
+        agentId: route.agentId,
+        content: route.content,
+      });
+    }
+    const existingMessage = snapshot.shepherd.groupMessages.find(
+      (message) => message.id === `group-${messageDigest}`,
+    );
+    if (existingMessage) {
+      const targetAgentId = route.kind === "agent" ? route.agentId : null;
+      if (
+        existingMessage.content !== route.content ||
+        existingMessage.targetAgentId !== targetAgentId
+      ) {
+        throw new ShepherdControlError(
+          "idempotency_conflict",
+          "Client message ID was already used for different content",
+        );
+      }
+      return structuredClone(existingMessage);
+    }
     const activeMission = project.activeMissionId
       ? projectMissions.find((mission) => mission.id === project.activeMissionId) ?? null
       : null;
@@ -1437,12 +1472,7 @@ export class ShepherdService {
         "The auth-demo Contract preset requires a leading @Agent mention",
       );
     }
-    const messageId =
-      "group-" +
-      createHash("sha256")
-        .update(`${projectId}\0${input.clientMessageId}`, "utf8")
-        .digest("hex")
-        .slice(0, 40);
+    const messageId = `group-${messageDigest}`;
     const message: ProjectGroupMessage = {
       id: messageId,
       projectId,
@@ -1681,7 +1711,11 @@ export class ShepherdService {
           return message;
         });
       }
-      if (!peer.contractAssignment || !peer.targetAgentId || !peer.requestFingerprint) {
+      if (
+        peer.contractAssignment?.preset !== "auth-demo-contract" ||
+        !peer.targetAgentId ||
+        !peer.requestFingerprint
+      ) {
         throw new Error("Pending Project Group Contract prompt is missing trusted metadata");
       }
       if (peer.contractAssignment.transport === transport) {
@@ -1939,6 +1973,12 @@ export class ShepherdService {
           message.contractId === null &&
           message.contractAssignment?.preset === "auth-demo-contract",
       );
+      if (pending.some((message) => !message.id.startsWith("group-private-"))) {
+        throw new ShepherdControlError(
+          "conflict",
+          "A Contract prompt from another intake is already waiting; reset the demo to replace it",
+        );
+      }
       if (
         pending.some(
           (message) =>

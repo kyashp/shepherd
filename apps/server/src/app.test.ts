@@ -910,6 +910,11 @@ describe("HTTP boundary", () => {
       },
       {
         method: "POST",
+        url: "/api/shepherd/projects/auth-demo/group-initialization",
+        payload: {},
+      },
+      {
+        method: "POST",
         url: "/api/shepherd/projects/project-1/group-messages",
         payload: { clientMessageId: "client-1", content: "Status?" },
       },
