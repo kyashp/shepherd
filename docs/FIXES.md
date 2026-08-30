@@ -1069,17 +1069,24 @@ operator-cleanup availability residual; cross-process automatic retry is not cla
   `SHEPHERD_RUNTIME_PREFLIGHT_OK`, and a containerized non-root control plane
   creates its workspace, starts the sibling Runtime and reads back what the
   sandboxed Agent wrote.
-- **Owner/status:** Fixer / `CANDIDATE PENDING AFFECTED-HOST GATE`; cause
-  reproduced and corrected on the affected host, PR #56. Causal tests cover
+- **Owner/status:** Fixer / `RESOLVED, INTEGRATED at b80af11` (PR #56); `A` and `S`
+  still open. Cause reproduced and corrected on the affected host. Causal tests cover
   volume-mode mount construction, fail-closed containment, the previously
   unvalidated shared Agent home, preflight shape, configuration resolution,
-  verifier translation and the executor canonicality assertion. Full startup smoke,
-  E2E harness and Auditor `I` remain pending; no live/model call has run.
+  verifier translation and the executor canonicality assertion. The
+  `container-volume` startup smoke and the hosted Linux full gate (run
+  `33300759535` on exact head `b80af11`) are both recorded. No live/model call has
+  run. Still open: adjacent `A` coverage for the verifier composition at
+  `apps/server/src/index.ts:77-78`, the launcher probe/fallback selection, and the
+  verifier fail-closed branch; and an independent `S` review that must also cover
+  `e6a5878`, which removed the non-loopback `APP_AUTH_TOKEN` requirement in the
+  same merge.
 
 ## Confirmed defect inventory
 
 | ID | Evidence class and current failure contract | Minimal-fix boundary | Owner/status |
 |---|---|---|---|
+| `TST-25` | Reproduced on macOS at `b80af11`: `npm run test:e2e:harness:unit` fails 1 of 7 with `fake-codex: workspace identity must be canonical`. `tests/e2e/harness.test.mjs:38` builds its workspace via `mkdtemp(path.join(os.tmpdir(), "shepherd-fake-codex-"))`; on macOS `os.tmpdir()` returns a symlinked `/var/folders/...` path, so the deliberate `realpath` identity assertion at `tests/e2e/fixtures/fake-codex.mjs:69` correctly rejects it. Host-dependent, not intermittent: it passes where `os.tmpdir()` is already canonical, which is why no hosted run catches it — this target is not part of `npm run check`. No safety or data impact; it is a false failure on the presentation host. | Canonicalize the test's own temporary root before `mkdtemp`, matching the existing idiom at `tests/e2e/support/test-app.mjs:93`. Do **not** weaken or remove the fixture assertion: it is the `TST-06` canonical-ancestor hardening. Causal test: assert the harness still rejects a non-canonical workspace while the canonicalized fixture run passes. | Worker / `READY`; discovered during `OPS-06` post-merge reconciliation at `b80af11`; NEW |
 | `F-01` | Source-evidenced: Contract timeout may surface as failure code `unknown` instead of `agent_timeout`. | Typed timeout propagated through Contract/Plane/Agent/Mission/event/API/UI; no message-regex classification. | **RESOLVED + AUDITED** at `83cc1d0`; `T,A,C,S,I` 5/5; 100% scoped |
 | `F-02` | Source-evidenced: Contract runtime errors can become generic `unknown`. | Shared typed stage error only; preserve candidate-specific handling. | **RESOLVED + AUDITED** at `83cc1d0`; `T,A,C,S,I` 5/5; 100% scoped |
 | `F-04` | Source-evidenced: initial Plane creation can fail before durable stage evidence; later mapper is too late. | Evidence on owning Contract/Mission without inventing a successful Plane. | **AUDITED** at `2cef988`; TST-17 closed |
