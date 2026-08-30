@@ -5136,3 +5136,32 @@ Auditor, security and hosted integration evidence.
   three clean rehearsals owned by `DEMO-REHEARSAL`. Gate `I` remains pending an
   independent protected-main audit. The prior hosted failure is preserved above;
   the corrected commit still requires a fresh hosted run.
+
+## 2026-08-30 — PERF-01 protected-main integration audit
+
+- **Integrated identity:** protected `origin/main`
+  `b193e5745661735c44e581ccdc10f2a1ce4692dc` is PR #77's merge commit; its
+  direct second parent is the reviewed correction
+  `332071d37295517721eb1360c501a6746535f5db`. The detached audit worktree was
+  clean before and after verification.
+- **Focused causal checks:** the exact cleanup-race regression passed 1/1 with
+  63 filtered tests, and the actual scheduled candidate-executor overlap proof
+  passed 1/1 with 63 filtered tests.
+- **Integrated browser evidence:** the ordinary non-evidence performance command
+  passed build, harness 7/7, and Chromium 2/2 using the existing pinned read-only
+  browser cache. It did not download/copy/symlink a browser or set
+  `E2E_UPDATE_EVIDENCE`; tracked screenshots remained byte-identical. At
+  `1280x800`: conservative two-Plane-ready 323 ms, verification 303 ms,
+  persisted event → visible 488 ms, collision → promotion complete 2,073 ms,
+  and 3,712 ms total. At `1440x900`: 334 ms, 334 ms, 476 ms, 2,044 ms, and
+  3,680 ms respectively. Both event-visibility samples satisfy the PRD
+  `<=1.5s` limit.
+- **Full and hosted gates:** a literal `npm run check` passed all production and
+  test-source typechecks, launcher 3/3, Server 810 passed with three explicit
+  skips, Web 20/20, and both builds. Hosted exact-main run `33318509842` passed
+  `Node 22 / npm run check` in 2m54s.
+- **Audit result:** independent Auditor returned READY with no Critical or
+  Important findings. PERF-01 gates `B` and `I` are passed. This remains
+  deterministic evidence, not a live-model capacity measurement,
+  package-download proof, or the three clean rehearsals owned by
+  `DEMO-REHEARSAL`.
