@@ -4,8 +4,34 @@ This log records commands actually executed and evidence actually observed. Secr
 
 This is a chronological evidence record, not the current task/status authority.
 Branch and phase statements remain true only for the commit named in their entry.
-Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
+Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
+
+## 2026-08-30 — DEL-04 documentation consolidation candidate
+
+- Base: `mock-main` at `43fb5d3f40a0b90a744aec70b2ab02a8adab5ed9`.
+- Branch: `docs/hackathon-doc-consolidation`, pushed before edits as the ownership
+  signal. Documentation and root navigation are the only owned surfaces.
+- `TASKS.md` is now the canonical entrypoint and explicitly separates the minimum
+  hackathon-ready cut from additional full-PRD work. Its ledger was mechanically
+  recounted as 69 work items: 40 fully audited and 29 not fully audited.
+- The current startup/manual demo SOP moved to `LOCAL_POC.md`; current as-built
+  behavior remains in `SHEPHERD.md`; the competition brief was reduced to Track 1
+  and renamed `TECHJAM.md`; optional deployment essentials moved into `README.md`.
+- Obsolete `HANDOVER.md`, `DEPLOYMENT.md`, and the five-track source digest were
+  removed only after all actionable repository links were redirected. Historical
+  mentions inside this immutable chronological log were intentionally retained.
+- `PRD.md` remained byte-identical with SHA-256
+  `478ca55f201b52ba75c5c2134e0eef9d8ded4eb74f6a35d32062927413a70ced`.
+- A repository-local link checker inspected 15 retained Markdown files; every local
+  target resolved. `TECHJAM.md` contains no Track 2–5 section, `git diff --check`
+  passed, and the stale deviation/browser/count statements were reconciled.
+- Literal `npm run check` passed: launcher 3/3; Server 27 files passed with two
+  explicit opt-in files skipped and 736 tests passed with two skipped; Web 3 files
+  and 17/17 tests passed; strict production/test typechecks passed; Web production
+  build transformed 41 modules; Server production build passed.
+- No product, UI, schema, dependency, Runtime, secret, or live-model behavior changed;
+  no live/model request was made.
 
 ## 2026-08-30 — F-06 and TST-21–24 integrated and audited
 

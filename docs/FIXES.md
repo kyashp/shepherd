@@ -555,8 +555,9 @@ operator-cleanup availability residual; cross-process automatic retry is not cla
   Helper/component 4/4, Web 17/17, harness 7/7, focused browser 2/2 and full
   Chromium 10/10 at both required viewports, strict/build and two final literal
   checks passed. Screenshots and independent UI/security re-reviews passed with no
-  remaining finding. Hosted run `33271397185` passed. The bounded verifier fixture
-  prerequisite is integrated; `E2E-02` itself remains incomplete.
+  remaining finding. Hosted run `33271397185` passed. At this UI-04 checkpoint the
+  bounded verifier fixture prerequisite was integrated while `E2E-02` remained
+  incomplete; `E2E-02` was subsequently audited at `338f1e4`.
 
 
 ### `MR-02` — Settings implies an unavailable reviewer will run

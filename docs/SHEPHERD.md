@@ -3,26 +3,28 @@
 This document describes Shepherd's as-built design and trust boundaries.
 
 For current implementation status, defects, confidence, pending tests, task IDs,
-run instructions, and agent workflow, use [`docs/HANDOVER.md`](HANDOVER.md). If a
-status statement here conflicts with the handover, the handover wins. The product
-requirements remain authoritative in [`docs/PRD.md`](PRD.md), while
+and agent workflow, use [`docs/TASKS.md`](TASKS.md). For run instructions, use
+[`docs/LOCAL_POC.md`](LOCAL_POC.md). If a status statement here conflicts with the
+task ledger, the task ledger wins. The product requirements remain authoritative in
+[`docs/PRD.md`](PRD.md), while
 [`docs/BUILD_LOG.md`](BUILD_LOG.md) is immutable historical evidence for the commit
 and phase named in each entry.
 
 ## Implementation status
 
-The current `main` contains the deterministic kernel, strict persistence and API
+The canonical `mock-main` snapshot named in `TASKS.md` contains the deterministic
+kernel, strict persistence and API
 boundaries, live isolated Agent runtime adapter, cancellation/retry/selection/reset
 controls, Project Group storage/routing foundations, Agent roles/authority, and the
-six requested UI surfaces. The deterministic backend demo path was rerun at the
-snapshot recorded in the handover.
+six requested UI surfaces. The deterministic browser hero path is independently
+audited at the snapshot recorded in the task ledger.
 
 This is not a full-PRD completion claim. The current blocking areas are specifically
-the Project Group end-to-end behavior, advisory-review live finding normalization
-(`MR-03`), general service DAG waves, several typed failure/recovery paths, full
-browser/visual/accessibility evidence, repeated stability and demo timing, and Phase
-9 deliverables. Use the requirement matrix and task ledger in the handover rather
-than deriving status from this summary.
+Project Group end-to-end behavior, general service DAG waves and startup-setting
+composition, remaining typed failure/recovery paths, the complete browser/visual/
+accessibility gate, live Mission continuity, repeated stability/demo timing, final
+security review, and Phase 9 deliverables. Use `TASKS.md` rather than deriving status
+from this summary.
 
 ## Accepted design contract
 
@@ -55,11 +57,14 @@ managed protected branch
 
 The deterministic executor remains available as an explicit, labelled mode and proves
 the kernel independently of model variance. In live mode, each Contract and resolution
-candidate uses a fresh `ARK_MODEL` Codex turn. Two live Missions, each containing two
-Contract and two candidate turns, have passed the opt-in gate. The composed
-`SHEPHERD_MODEL` live smoke made one request and preserved the deterministic outcome,
-but it reported an explicit `invalid_response` degradation. No live completed finding
-is claimed; `MR-03` tracks that separate adapter-normalization correction.
+candidate uses a fresh `ARK_MODEL` Codex turn. Historical Phase 3 opt-in evidence
+records two live Missions, each containing two Contract and two candidate turns; see
+the exact scoped entries in `BUILD_LOG.md`. This does not replace the open exact-head
+continuity gate in `LIVE-01`. The composed
+`SHEPHERD_MODEL` reviewer smoke made exactly one external request, completed with two
+validated findings, and preserved the deterministic outcome. Adapter normalization
+and reviewer authority containment are audited. The separate current live Shepherd
+Mission and legacy-continuity gate remains open as `LIVE-01`.
 
 Recovery remains deterministic across the Phase 2 and Phase 3 boundaries. No LLM is
 called during startup classification, evidence validation, interruption mapping,
@@ -177,7 +182,7 @@ Real secrets belong only in ignored `.env`.
 | `SHEPHERD_ROOT` | Sentinel-guarded managed fixture repositories and Plane worktrees; defaults below `APP_DATA_DIR`. |
 | `SHEPHERD_CODEX_HOME_ROOT` | Sentinel-guarded parent for one private, ephemeral live-Plane `CODEX_HOME` per execution; must be inside `APP_DATA_DIR` and separate from shared Agent and managed Shepherd roots. |
 | `SHEPHERD_EXECUTION_MODE` | `auto`, `live`, or `deterministic`. `auto` selects live only with usable Ark configuration plus the container Runtime; explicit live fails closed otherwise. |
-| `SHEPHERD_DEMO_MODE` | Enables the fixed, path-free demo Mission and reset controls. Clean-start reset currently has a known defect recorded in `HANDOVER.md`. |
+| `SHEPHERD_DEMO_MODE` | Enables the fixed, path-free demo Mission and reset controls. |
 | `SHEPHERD_AUTO_RESOLUTION` | Intended startup default for evidence-derived automatic selection. Current composition does not pass it into `ShepherdService`; see `ST-01`. |
 | `SHEPHERD_DELETE_COMPLETED_PLANES` | Retention startup control. The current UI/service keeps completed Planes inspectable; final cleanup behavior remains subject to evidence-retention requirements. |
 | `SHEPHERD_MAX_PARALLEL_PLANES` | Intended startup Plane-capacity setting. Current composition does not pass it into `ShepherdService`; persisted settings do control the service after update. See `ST-01`. |
@@ -193,7 +198,9 @@ No configured secret value is documented, persisted into Shepherd state, sent to
 
 - `docs/BUILD_LOG.md` — executed commands and bounded observations.
 - `docs/DEVIATIONS.md` — accepted clarifications and material deviations.
-- `docs/HANDOVER.md` — authoritative current status, tasks, runbook, and agent workflow.
+- `docs/TASKS.md` — authoritative current status, completion cut, tasks, and agent workflow.
+- `docs/LOCAL_POC.md` — startup, troubleshooting, and exact manual demo runbook.
+- `docs/TECHJAM.md` — Track 1 competition context, judging, and deliverables.
 - `docs/ui-review/` — inspected UI evidence by viewport and journey.
 - `docs/SHEPHERD_ARCHITECTURE.md` — generated after the implementation freezes.
 - `docs/SHEPHERD_TEST_REPORT.md` — generated from final executed suites.

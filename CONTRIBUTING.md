@@ -1,9 +1,9 @@
 # Contributing
 
-Start with [docs/HANDOVER.md](docs/HANDOVER.md). It is the current implementation,
+Start with [docs/TASKS.md](docs/TASKS.md). It is the current implementation,
 defect, test-gap, ownership, and verification entry point. `docs/PRD.md` remains
 the product-requirement authority; historical build logs are evidence, not the
-live task board.
+live task board. Use [docs/LOCAL_POC.md](docs/LOCAL_POC.md) for the runbook.
 
 Keep changes focused, reproducible, and suitable for a hackathon delivery.
 
@@ -28,10 +28,10 @@ docker compose config
 
 ## Pull requests
 
-- Claim one HANDOVER task through a GitHub issue before editing. If that issue
+- Claim one TASKS item through a GitHub issue before editing. If that issue
   already has an active owner, branch, or draft PR, choose another task.
-- Create a branch and linked draft PR immediately. Independent work branches
-  from `main`; dependent work targets the branch below it in a short stacked PR.
+- Create a branch from current `origin/mock-main`, push it immediately, and open a
+  linked draft PR. Dependent work targets the branch below it in a short true stack.
 - Keep one concern per PR and include its tests in the same PR. Do not create a
   separate "tests later" layer for behavior introduced by the PR.
 - Explain the behavior, root cause where applicable, acceptance criteria,
@@ -43,8 +43,9 @@ docker compose config
 - Material trust-boundary/security changes require independent security review.
 - Material UI changes require browser evidence at 1280x800 and 1440x900 plus
   independent UI review, while preserving the existing Launchpad visual system.
-- Merge only through the protected `main` workflow after relevant checks pass,
-  then rerun the scoped post-merge smoke on updated `main`.
+- Merge only through reviewed PRs into `mock-main` after relevant checks pass, then
+  rerun the scoped post-merge smoke there. Only the integrator promotes the completed
+  campaign to protected `main`.
 - Update English documentation and `.env.example` when configuration changes.
 - Use GitHub Flavored Markdown and relative repository links.
 - Never commit credentials, local state, workspaces, build output, or Terraform
@@ -52,4 +53,4 @@ docker compose config
 - Report security issues according to [SECURITY.md](SECURITY.md).
 
 The repository PR template is the evidence checklist. See the workflow and
-stacking rules in [docs/HANDOVER.md](docs/HANDOVER.md#agent-github-and-stacked-pr-workflow).
+completion rules in [docs/TASKS.md](docs/TASKS.md#working-contract).

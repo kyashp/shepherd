@@ -1,20 +1,24 @@
 # Shepherd Completion Task Ledger
 
 **Canonical implementation snapshot:** `mock-main` at
-`577255e6f4980499f032451d18557f8eefcf80ef`
+`43fb5d3f40a0b90a744aec70b2ab02a8adab5ed9`
 
-**Audited:** 2026-08-29, Asia/Singapore
+**Audited:** 2026-08-30, Asia/Singapore
 
 **Requirement authority:** [`PRD.md`](PRD.md)
 
-**Background and runbook:** [`HANDOVER.md`](HANDOVER.md)
+**Runbook:** [`LOCAL_POC.md`](LOCAL_POC.md)
+
+**As-built design:** [`SHEPHERD.md`](SHEPHERD.md)
+
+**Track 1 brief:** [`TECHJAM.md`](TECHJAM.md)
 
 **Reproduced defects:** [`FIXES.md`](FIXES.md)
 
-This is the canonical work queue for the `mock-main` completion campaign. It
-supersedes status, branch, and “active PR” wording in `HANDOVER.md` wherever that
-wording describes an older checkpoint. The PRD still defines the required scope;
-this ledger does not narrow it.
+This is the canonical entry point and work queue for the `mock-main` completion
+campaign. The PRD still defines the required scope; this ledger does not narrow it.
+`DEVIATIONS.md` records interpretations and environment limits, `FIXES.md` records
+reproduced defects, and `BUILD_LOG.md` preserves exact historical evidence.
 
 ## Working contract
 
@@ -35,6 +39,75 @@ this ledger does not narrow it.
 - Default tests are model/network-free. Use live Ark capacity only for the two
   explicitly labelled sparse live gates.
 
+Before editing, follow the ownership workflow in the root `AGENTS.md`: check issues,
+PRs, remote branches, and worktrees; claim one task; immediately push its narrow
+branch; record owned files and exclusions; then open a linked draft PR when there is
+a comparable commit. The integrator alone merges sibling work. True stacks must name
+their parent and merge order.
+
+A task is ready only when its issue names the ID, PRD references, current and
+expected behavior, acceptance gates, owned files, exclusions, dependencies, and test
+plan. It is done only after the smallest coherent implementation, causal tests,
+targeted and adjacent checks, the applicable `C/B/S/U/L` gates, independent review,
+integration into `origin/mock-main`, and an exact integrated rerun are recorded.
+
+Use this intake shape for a newly discovered defect:
+
+```text
+TASKS/PRD ID; assessed commit; viewport/runtime; reproduction;
+expected; actual; frequency; safety/data impact; redacted evidence;
+proposed causal acceptance test; known ID or NEW
+```
+
+## Hackathon-ready completion cut
+
+All incomplete rows remain PRD work. The following subset is the minimum required to
+call the repository presentation-ready; “additional” below means optional only for
+the hackathon cut, not removed from the PRD.
+
+### Required before submission
+
+- **Exposed product flow:** `GC-02/05`, `GC-03/04`, `GC-06`, and `E2E-03` so the
+  visible Project Group surface performs real bounded work rather than dead-end chat.
+- **Truthful failure story:** `FM-01`, `UI-01`, and at least the complete `E2E-04`
+  denial journey, while preserving every broader failure row for full PRD follow-up.
+- **Advertised controls:** `ST-01`; settings shown in the demo must causally compose.
+- **Judge evidence:** `UI-GATE`, `PERF-01`, `SEC-REVIEW`, `STABILITY`, `LIVE-01`, and
+  `DEMO-REHEARSAL`. `OPS-06` also requires a passing rerun on the actual presentation
+  host when that host is the affected macOS environment.
+- **Submission package:** `DEL-01`–`DEL-05`, including the one-page architecture,
+  exact test report, final README, reconciled documents, and final cleanup review.
+
+### Additional full-PRD work after the hackathon cut
+
+- `F-07/08`, `F-09`, the remaining `FM-01` failure variants, and `E2E-05`–`E2E-08`.
+- `SCH-02` and `SCH-01` for arbitrary validated DAG waves beyond the fixed hero flow.
+- `UI-02` for trusted duration estimates distinct from actual timing.
+- A second-machine rehearsal when it is genuinely available and is not the selected
+  presentation host.
+
+## Requirement and code navigation
+
+| Need | Start here |
+|---|---|
+| Workflow, status, and evidence discipline | PRD 0; this working contract; `BUILD_LOG.md` |
+| Goals, architecture, domain, kernel, API, persistence | PRD 4–10; `SHEPHERD.md`; P0 rows below |
+| UI surfaces and journeys | PRD 11; required-product and P1 rows; `UI.jpeg` |
+| Failures and recovery | PRD 12; failure/recovery rows; `FIXES.md`; `DEVIATIONS.md` |
+| Security | PRD 13; `SEC-REVIEW`; `SECURITY.md` |
+| Performance and judge flow | PRD 14–15; `PERF-01`; `DEMO-REHEARSAL`; `LOCAL_POC.md` |
+| Final gates and deliverables | PRD 16–17; `STABILITY`, `LIVE-01`, and `DEL-01`–`DEL-05` |
+
+Primary implementation areas:
+
+- Mission scheduling/state/resolution/promotion: `apps/server/src/shepherd/{service,state-machine,scheduler,resolution,promotion-gate}.ts`
+- Runtime, manifest, authority, and verification boundaries:
+  `apps/server/src/shepherd/{codex-executor,prompt,manifest,authority,verifier,model-reviewer}.ts`
+- Git/demo/recovery: `apps/server/src/shepherd/{git-client,plane-manager,demo-project,recovery}.ts`
+- Persistence/API/composition: `apps/server/src/{database-schema,database,store,agent-service,app,index,config}.ts`
+- UI: `apps/web/src/{App,Shell,api,types,shepherd-hooks}.ts` and
+  `apps/web/src/pages/`; shared styling is `apps/web/src/styles.css`.
+
 ## UI freeze
 
 The current UI theme and layout are accepted. Preserve the charcoal sidebar,
@@ -52,25 +125,31 @@ scrolling.
 | Environment | Node `24.17.0`; npm `11.17.0`; Git `2.43.0`; Docker client/server `29.7.2` | Recorded |
 | Workspace typecheck | Both server and web passed during `npm run check` | Pass |
 | Launcher tests | 3/3 passed | Pass |
-| Server suite | 26 files and 555 tests passed; 1 opt-in live file/test skipped | Pass after audited `TST-02` integration |
-| Targeted `TST-02` gate | Original RED is preserved in `BUILD_LOG.md`; integrated fix passed 1/1 and full recovery passed 17/17 | Pass |
-| Production build | Web: 40 modules; server TypeScript build passed | Pass |
+| Server suite | 736 tests passed; 2 explicit opt-in tests skipped | Pass at the exact snapshot |
+| Persistence/recovery closeout | `TST-23` 20/20; `TST-24` 30/30; Store 70/70; combined boundary 133/133 | Pass |
+| Production build | Web and server production builds passed | Pass |
 | Dependency audit | 0 vulnerabilities across 251 dependencies | Pass |
 | Script syntax | `bash -n` launcher and Node launcher syntax passed | Pass |
-| Deterministic browser harness | Node harness 2/2 and Chromium 2/2 at `1280x800` and `1440x900`; screenshots inspected | Pass after audited `E2E-HARNESS` integration |
-| Full PRD journeys/live/model gates | Not run in this audit | Pending |
+| Deterministic browser hero | `E2E-02` audited across 52 stage/viewport observations with 26 unique final screenshot hashes | Pass for that scoped journey |
+| Hosted exact-head gate | GitHub Actions runs `33286090602` and `33286319393` succeeded | Pass |
+| Remaining browser/live/model gates | Listed below; no broader completion is implied | Pending |
 
-No model request was made during these audits. The literal full gate and the
-deterministic clean-shell browser harness are green at the snapshot named above.
+No model request was made during the final persistence/recovery closeout. Earlier
+bounded live evidence remains attached to its exact task rows; it is not generalized
+to the open `LIVE-01` gate.
 
 ## Integration and external ownership holds — do not assign
+
+`DEL-04` documentation consolidation is actively owned by
+`docs/hackathon-doc-consolidation`; its owned surface is documentation and root
+navigation only. Do not start a parallel documentation consolidation.
 
 | ID | PRD | Status / owner | Current external work | Integration requirement |
 |---|---|---|---|---|
 | `MR-03` | 8.6, 12 | **AUDITED** at `35ec268` | Invalid findings are dropped individually with bounded count while valid peers survive; all-invalid degrades. Auditor passed MR matrix 165/165, TST-08 stress, full harness/check/security, exactly one external reviewer request (`completed findings=2`), deterministic outcome/advisory assertions, cleanup, and hosted run `33270168480`. | **100% scoped**; `T,A,C,S,L,I` 6/6; audited |
 
-No workstream is externally held. `MR-01` is integrated and independently audited
-for its full bounded reviewer scope after MR-03 and the sparse live gate.
+No product-code workstream is externally held. `MR-01` is integrated and
+independently audited for its full bounded reviewer scope after MR-03 and the sparse live gate.
 Historical
 `feature/shepherd-phase-*`, merged startup/reset/UI branches, and remote branches
 without an open issue/PR are not active ownership claims.
@@ -141,7 +220,7 @@ without an open issue/PR are not active ownership claims.
 | `SCH-02` | 8.3 | `READY`; Worker | Reject DAG cycles before Contract graph persistence using the existing validator; `T,A,C,I`. | **50%**; 0/4; not audited |
 | `SCH-01` | 4.1.6, 8.3 | `BLOCKED` by `SCH-02`; Worker | Service schedules only one fixed initial batch. Implement dependency waves using real Agent occupancy, mutation lock, active Plane count/capacity, failure blocking and downstream re-evaluation; prove overlap. `T,A,C,S,I`. | **35%**; 0/5; not audited |
 | `UI-01` | 11.2, 12 | `BLOCKED` by typed failure work; Worker | Ordinary failed Missions need the same bounded failure evidence clarity as attention states. Reuse current components; no redesign. `T,C,B,U,I`. | **40%**; 0/5; not audited |
-| `UI-04` | 11.1–11.3, 12 | **AUDITED** at `412a010` | Promotion-completed events select/label `promotionEvidence`; candidate events retain candidate verification and promotion-started claims none. Drawer exposes both safe stages with complete roving/focus lifecycle and internal scroll. Auditor passed fixture 7/7, Web 17/17, focused browser 2/2 twice, full Chromium 10/10, literal check, private-field/security/UI review and hosted run `33271397185`. Frontend/CSS/tests only; no backend/schema/live change. | **100% scoped**; `T,C,B,U,I` 5/5; audited. E2E-02 fixture prerequisite integrated; journey incomplete. |
+| `UI-04` | 11.1–11.3, 12 | **AUDITED** at `412a010` | Promotion-completed events select/label `promotionEvidence`; candidate events retain candidate verification and promotion-started claims none. Drawer exposes both safe stages with complete roving/focus lifecycle and internal scroll. Auditor passed fixture 7/7, Web 17/17, focused browser 2/2 twice, full Chromium 10/10, literal check, private-field/security/UI review and hosted run `33271397185`. Frontend/CSS/tests only; no backend/schema/live change. | **100% scoped**; `T,C,B,U,I` 5/5; audited. The fixture prerequisite integrated here; `E2E-02` was subsequently audited at `338f1e4`. |
 | `UI-02` | 4.1.16, 11.3, 14 | `READY`; Worker | UI has an optional estimate renderer but backend produces no `estimatedDurationMs`. Persist/serve a trusted clearly labelled estimate distinct from actual timing. `T,A,C,B,U,I`. | **20%**; 0/6; not audited |
 
 ## P1 — browser, cross-surface and assurance gates
@@ -160,13 +239,13 @@ without an open issue/PR are not active ownership claims.
 | `E2E-04` | 11.6.4, 12 | `BLOCKED` by failure UI | Unauthorized diff visibly denied with evidence and no promotion; `C,B,S,U,I`. | **45%**; 0/5; not audited |
 | `E2E-05` | 11.6.5, 12 | `BLOCKED` by failure UI | Both candidates fail → durable `attention_required`, preserved evidence, no promotion; `C,B,S,U,I`. | **55%**; 0/5; not audited |
 | `E2E-06` | 11.6.6 | `BLOCKED` by `FM-01` | Real service tie → human verified choice → trusted promotion; `C,B,S,U,I`. | **40%**; 0/5; not audited |
-| `E2E-07` | 11.6.7 | `BLOCKED` by harness/`F-09` | Cancel mid-Mission → durable cancelled, released Agents, no promotion; `C,B,S,U,I`. | **55%**; 0/5; not audited |
-| `E2E-08` | 11.6.8, 12 | `BLOCKED` by harness | Kill/restart mid-Mission → reconnect/cursor reconciliation, interrupted visible, no false green/duplicates; `C,B,S,U,I`. | **50%**; 0/5; not audited |
+| `E2E-07` | 11.6.7 | `BLOCKED` by `F-09` product behavior | Cancel mid-Mission → durable cancelled, released Agents, no promotion; `C,B,S,U,I`. | **55%**; 0/5; not audited |
+| `E2E-08` | 11.6.8, 12 | `BLOCKED` by restart/reconnect product composition | Kill/restart mid-Mission → reconnect/cursor reconciliation, interrupted visible, no false green/duplicates; `C,B,S,U,I`. | **50%**; 0/5; not audited |
 | `UI-GATE` | 0.4, 11.1–11.7 | `BLOCKED` by E2E rows | All six surfaces plus loading/empty/error/disabled/reconnect states at both viewports, screenshot corpus under `docs/ui-review/`, keyboard/focus/labels/contrast/long-ID/no-page-overflow checks. Preserve theme. GC-01 review adds two Low evidence items: frame top-of-page and internally scrolled composer states honestly, and verify or minimally improve the visual disabled distinction of mention buttons without changing layout/theme. `C,B,U,I`. | **25%**; 0/4; not audited |
-| `PERF-01` | 14 | `BLOCKED` by harness | Measure persisted event → visible `<=1.5s`, Plane creation, verification, candidate overlap, collision-to-promotion and total demo time; record method/sample/limits. `B,I`. | **10%**; 0/2; not audited |
+| `PERF-01` | 14 | `READY` on the audited browser harness | Measure persisted event → visible `<=1.5s`, Plane creation, verification, candidate overlap, collision-to-promotion and total demo time; record method/sample/limits. `B,I`. | **10%**; 0/2; not audited |
 | `TEST-TS` | 16 Phase 9B | **AUDITED** at integrated implementation `8995605` | Separate strict no-emit server test-source config is enforced by root `typecheck`/`check`; production emit config is unchanged. RED evidence covers 14 errors across 4 test files (4 implicit callback types, 5 invalid Vitest matcher generics, 4 stale promotion fixtures, 1 stale verifier fixture), then 2 nullable fixture values exposed after matcher typing was restored. Auditor confirmed no suppression, broad exclusion, compiler weakening, blanket `any`, assertion weakening, product/UI change, or dependency churn. Candidate and integrated strict test-source checks passed; both production typechecks/builds passed; affected suites passed 73/73; literal candidate and integrated gates passed with launcher 3/3, server 563/563 and one unchanged opt-in live skip, plus both production builds. | **100% scoped**; `T,C,I` passed (3/3); audited |
 | `CI-01` | 0.1, 16, 17 | **AUDITED** at workflow `cda2446`; hosted run `33259565232` succeeded | `required-checks.yml` uses supported official checkout/setup-node actions, Node 22, lockfile-backed npm cache, `npm ci`, Docker availability, and literal `npm run check`; triggers every PR, pushes to `main`/`mock-main`, and merge-queue `checks_requested`. Token permission is only `contents: read`; checkout credentials are not persisted; no `.env`, secrets, artifacts, privileged actions, or live/model path is configured. Independent local validation passed Docker 29.7.2 and launcher 3/3 plus server 555/555 with one opt-in skip. Hosted Node 22.23.2/npm 10.9.8 and Docker client/server 28.0.4 passed locked install, launcher 3/3, server 551 passed/5 environment-gated skips, typechecks, 40-module web build and server build. Stable job check: `Node 22 / npm run check`. Administrator must require that check on protected `main`; this external rule change is not performed by agents. `C,I`. | **100% scoped**; `C,I` passed (2/2); audited |
-| `SEC-REVIEW` | 0.3, 13, 17 | `BLOCKED` by P0/E2E | Repository/store/prompt/API/DOM canary scan, five invariant mutation evidence, artifact/debug/bypass audit, then independent read-only security review and fixes. `C,S,I`. | **45%**; 0/3; not audited |
+| `SEC-REVIEW` | 0.3, 13, 17 | `BLOCKED` by open Group Chat/failure/live behavior | Repository/store/prompt/API/DOM canary scan, five invariant mutation evidence, artifact/debug/bypass audit, then independent read-only security review and fixes. `C,S,I`. | **45%**; 0/3; not audited |
 | `STABILITY` | 16 Phase 9B | `BLOCKED` by all deterministic tests | Literal full suite passes five consecutive times; fix flakiness by cause, never sleeps/weakened assertions. `C,I`. | **0%**; 0/2; not audited |
 | `LIVE-01` | 16 Phase 3/7/8 | `BLOCKED` by P0/current live Mission | Reviewer sub-gate is satisfied: command attempt two made exactly one external request and completed with two bounded findings while deterministic outcome/security/cleanup stayed green. Current live Shepherd Mission and legacy continuity remain required. `L,S,I`. | **55%**; 1/3; not audited |
 | `DEMO-REHEARSAL` | 14–15, 16 Phase 8 | `BLOCKED` by all demo-critical rows | Three clean reset-to-completion judge flows under three minutes, including clean no-op reset and initialized reset; second machine/state if genuinely available. `B,S,I`. | **0%**; 0/3; not audited |
@@ -178,18 +257,17 @@ without an open issue/PR are not active ownership claims.
 | `DEL-01` | 16 Phase 9A | `BLOCKED` by feature freeze | Create `SHEPHERD_ARCHITECTURE.md` from as-built code with locally validated Mermaid and one judge-facing diagram. | **0%**; 0/2; not audited |
 | `DEL-02` | 16 Phase 9C | `BLOCKED` by all tests | Create `SHEPHERD_TEST_REPORT.md` from exact final commands, failures, repeated runs, browser/container/live scope and limitations. | **0%**; 0/2; not audited |
 | `DEL-03` | 16 Phase 9D | `BLOCKED` by freeze | Finish README problem/pitch/setup/demo/tests/security/limitations without removing starter setup; every claim links to evidence. | **30%**; 0/2; not audited |
-| `DEL-04` | 0.1, 16 Phase 9E | `BLOCKED` by freeze | Reconcile `SHEPHERD.md`, `DEVIATIONS.md`, `BUILD_LOG.md`, `HANDOVER.md`, this ledger and `FIXES.md`; remove stale status contradictions only after evidence. | **25%**; 0/2; not audited |
+| `DEL-04` | 0.1, 16 Phase 9E | `IN PROGRESS`; final pass blocked by freeze | The canonical navigation is `TASKS.md` → PRD/as-built/runbook/evidence documents. Remove the stale handover, retain PRD-required ledgers, and reconcile `SHEPHERD.md`, `DEVIATIONS.md`, `BUILD_LOG.md`, `LOCAL_POC.md`, `TECHJAM.md`, this ledger, and `FIXES.md` again after final evidence. | **50%**; consolidation in progress; final audit pending |
 | `DEL-05` | 16 Phase 9E, 17 | `BLOCKED` by all work | Final dead/debug/duplicate/artifact/refactor/security review. Refactor only named proven debt with behavior locked; run final `C,B,S,L,I`. | **0%**; 0/5; not audited |
 
 ## Count and current verdict
 
-- **54 tracked work items:** 20 audited and 34 other incomplete; no external hold
-  items across P0/P1/P2.
-- **Next ready worker assignment:** `F-01/02` unless the integrator selects another
-  non-overlapping ready row.
-- **Audited capability correction:** `MR-02` at `577255e`; its exact no-Ark browser/API/source failure
-  contract is corrected locally and awaits Auditor integration. `OPS-06` follows only when
-  the required collaborator/macOS evidence is available.
+- **69 tracked work items:** 40 fully audited and 29 not fully audited; no external
+  hold items across P0/P1/P2.
+- **Ready non-overlapping assignments:** `F-07/08`, `F-09`, `FM-01`, `GC-02/05`,
+  `ST-01`, `SCH-02`, `UI-02`, and `PERF-01`, subject to the ownership check above.
+- **Presentation-host caveat:** `OPS-06` is integrated and audited provider-free;
+  only the affected collaborator/macOS compatibility rerun remains unverified.
 - **Current completion verdict:** incomplete. Strong kernel evidence exists, but the
   current deterministic full gate is green and all remaining rows above still
   require their stated integration/audit evidence.
