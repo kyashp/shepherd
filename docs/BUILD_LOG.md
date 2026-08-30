@@ -7,6 +7,19 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — F-05 implementation green; final hosted blocked by TST-20
+
+Implementation hosted run `33281977834` passed exact `f8d7f71`. Final docs-head run
+`33282108035` failed with an unhandled `JsonStore.persist` rename ENOENT beneath the
+case root for service test `does not invoke a sibling verifier after infrastructure
+terminalization`. The fail-fast Mission promise had returned, the test released its
+blocked sibling and waited only one event-loop turn, and teardown removed the root
+while late sibling/store persistence remained active. Exact targeted candidate-
+cleanup repeats 10/10 did not reproduce the earlier local contention symptom; this
+hosted failure is preserved separately as TST-20. F-05/TST18/19 product/security
+evidence remains green, but final hosted I and scoped 100% are withdrawn until the
+test owns and joins the exact sibling lifecycle. No retry was used.
+
 ## 2026-08-30 — F-05 / TST-18–19 audited and integrated
 
 Exact `f8d7f71` passed the 28-case real-Git suite five consecutive times (140/140),

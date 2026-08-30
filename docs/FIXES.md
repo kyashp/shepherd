@@ -28,6 +28,29 @@ that limitation is explicit.
 
 ## Immediate queue
 
+### `TST-20` — Fail-fast verifier sibling persists after test-root teardown
+
+- **Evidence class:** hosted final-head run `33282108035`, exact annotation at
+  `store.ts:173`, latest test `does not invoke a sibling verifier after
+  infrastructure terminalization`.
+- **Failure contract:** the Mission promise rejects fail-fast while a backend sibling
+  remains blocked. The test releases that sibling and waits only one `setImmediate`;
+  it never joins the sibling's remaining verification/cleanup/store queue. `afterEach`
+  then removes the exact case root. Hosted Node 22 observed a late atomic-store rename
+  fail with ENOENT inside that removed root, emitted as an unhandled test error.
+- **Minimal correction:** add a deterministic test-owned completion/join signal for
+  the exact sibling lifecycle and its final awaited store mutation before teardown.
+  Preserve production fail-fast behavior, typed infrastructure terminalization,
+  durable interrupted/verification_failed state, no late verifier invocation and
+  snapshot cleanup. Do not add sleeps, retries, timeout inflation, assertion
+  suppression, broad root-cleanup catches, or product behavior changes unless a
+  production lifecycle invariant is independently proven broken.
+- **Acceptance:** preserve hosted RED; exact row stress and full suite under
+  contention; assert no pending sibling/store work before teardown; strict/full and
+  two exact-head hosted Node 22 gates pass with F-03/TST03/04 unchanged.
+- **Status:** **OPEN / test lifecycle blocker.** F-05 implementation hosted run
+  `33281977834` passed, but final docs-head I failed.
+
 ### `TST-19` — Integration identity is checked only after merge mutation
 
 - **Evidence class:** independent source/security review of corrected F-05/TST-18
