@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   appendProjectGroupMessage,
   appendShepherdEvent,
+  defaultShepherdSettings,
 } from "../database.js";
 import { RuntimeExecutionError } from "../errors.js";
 import { JsonStore } from "../store.js";
@@ -498,6 +499,12 @@ export interface ShepherdServiceOptions {
   contractTimeoutMs?: number;
   candidateTimeoutMs?: number;
   /**
+   * Startup settings. These seed a pristine store only; once an operator has
+   * changed a setting the persisted value stays authoritative across restarts.
+   */
+  autoResolution?: boolean;
+  maxConcurrentPlanes?: number;
+  /**
    * Advisory-only semantic reviewer. Absent means no review is attempted and
    * no advisory event is emitted. Its output can never influence deterministic
    * collision detection, winner selection, or promotion.
@@ -898,6 +905,9 @@ export class ShepherdService {
   private readonly idFactory: (prefix: string) => string;
   private readonly contractTimeoutMs: number;
   private readonly candidateTimeoutMs: number;
+  /** Startup seed values. Undefined leaves the persisted setting untouched. */
+  private readonly autoResolution: boolean | undefined;
+  private readonly maxConcurrentPlanes: number | undefined;
   private readonly reviewer: ModelReviewer | null;
   private readonly modelReviewDeadlineMs: number;
   private readonly modelReviewPollMs: number;
@@ -944,6 +954,8 @@ export class ShepherdService {
       options.candidateTimeoutMs ?? 600_000,
       "Candidate",
     );
+    this.autoResolution = options.autoResolution;
+    this.maxConcurrentPlanes = options.maxConcurrentPlanes;
     this.reviewer = options.reviewer ?? null;
     this.modelReviewDeadlineMs = Math.max(
       1,
@@ -1002,6 +1014,8 @@ export class ShepherdService {
       initialState.shepherd.events.length === 0 &&
       (initialState.shepherd.settings.contractTimeoutMs !== this.contractTimeoutMs ||
         initialState.shepherd.settings.candidateTimeoutMs !== this.candidateTimeoutMs ||
+        (this.seedsAutoResolution(initialState.shepherd.settings) ||
+          this.seedsMaxConcurrentPlanes(initialState.shepherd.settings)) ||
         initialState.shepherd.settings.mode !==
           (this.executor.kind === "codex_ephemeral"
             ? "production"
@@ -1011,6 +1025,12 @@ export class ShepherdService {
       await this.store.mutate((database) => {
         database.shepherd.settings.contractTimeoutMs = this.contractTimeoutMs;
         database.shepherd.settings.candidateTimeoutMs = this.candidateTimeoutMs;
+        if (this.seedsAutoResolution(database.shepherd.settings)) {
+          database.shepherd.settings.autoResolution = this.autoResolution as boolean;
+        }
+        if (this.seedsMaxConcurrentPlanes(database.shepherd.settings)) {
+          database.shepherd.settings.maxConcurrentPlanes = this.maxConcurrentPlanes as number;
+        }
         database.shepherd.settings.mode =
           this.executor.kind === "codex_ephemeral"
             ? "production"
@@ -1215,6 +1235,35 @@ export class ShepherdService {
       return previous;
     });
     return { candidate, collision, mission, project, plane, previousPlanes };
+  }
+
+  /**
+   * Startup configuration seeds a setting only while the persisted value is still
+   * the factory default, so an operator change away from that default survives
+   * every later restart.
+   *
+   * Known limit: an operator who sets the value back TO the factory default is
+   * indistinguishable from one who never touched it, because the settings record
+   * carries no "changed by operator" marker, and startup configuration will seed
+   * over that choice on the next restart while the store is still pristine. The
+   * alternative — never seeding — would leave the documented startup variables
+   * inert, which is the defect this closes. Removing the limit needs a persisted
+   * marker, which is a schema change beyond this correction.
+   */
+  private seedsAutoResolution(settings: ShepherdSettings): boolean {
+    return (
+      this.autoResolution !== undefined &&
+      settings.autoResolution === defaultShepherdSettings().autoResolution &&
+      settings.autoResolution !== this.autoResolution
+    );
+  }
+
+  private seedsMaxConcurrentPlanes(settings: ShepherdSettings): boolean {
+    return (
+      this.maxConcurrentPlanes !== undefined &&
+      settings.maxConcurrentPlanes === defaultShepherdSettings().maxConcurrentPlanes &&
+      settings.maxConcurrentPlanes !== this.maxConcurrentPlanes
+    );
   }
 
   settings(): ShepherdSettings {
@@ -2457,6 +2506,7 @@ export class ShepherdService {
             status:
               plan.status === "ready" ? "accepted" : "clarification_required",
             missingFields: [...plan.missingFields],
+            unsafeIntentDetected: plan.unsafeIntentDetected,
             expectedArtifacts: structuredClone(plan.expectedArtifacts),
             acceptanceSummary: plan.acceptanceSummary,
             requiredContent: plan.requiredContent,

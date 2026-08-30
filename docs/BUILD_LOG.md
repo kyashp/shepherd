@@ -7,6 +7,47 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — ST-01 startup settings composed into the service
+
+Branch `fix/44-st-01-startup-settings`, PR #73, against `main` at `07f4202`. No
+live or model call ran.
+
+- `SHEPHERD_AUTO_RESOLUTION` and `SHEPHERD_MAX_PARALLEL_PLANES` were parsed by
+  `loadConfig` and then discarded: `ShepherdServiceOptions` had no field for either
+  and the only production construction passed neither. The gap was invisible in E2E
+  because the harness sets values equal to the persisted defaults.
+- Both options are now declared, passed from resolved configuration, and applied by
+  the pristine-store seeding block. Seeding applies only while the persisted value
+  is still the factory default, so an operator change away from that default
+  survives restart. **Stated limit, now asserted by a test rather than only
+  commented:** an operator who sets the value back TO the factory default is
+  indistinguishable from one who never chose it, and startup configuration seeds
+  over that choice on the next restart while the store is still pristine. Removing
+  the limit needs a persisted "changed by operator" marker, which is a schema change
+  beyond this correction.
+- **Stated behaviour change.** `SHEPHERD_MAX_PARALLEL_PLANES` moves from
+  `min(1).default(4)` to `min(2).default(2)`. A host that sets `1` previously booted
+  because the value was discarded; it now fails at `loadConfig`. That is deliberate:
+  `database-schema.ts`, `updateSettings` and the API all require at least 2, so once
+  composition works a `1` would fail on its first seed write, and a parse-time error
+  is the honest place for it. A host that never set the variable moves from a
+  nominal 4 to 2, which is the value it actually ran with before, since the parsed
+  number never reached the service. `.env.example` shipped `4` and is aligned to `2`
+  so the documented template matches the schema default.
+- Eight causal tests in `apps/server/src/shepherd/startup-settings.test.ts`. Each
+  verified by mutating the guard it covers: dropping both options from `index.ts`,
+  disabling the seeding branch, removing the still-at-default guard so an operator
+  value is clobbered, and restoring the `min(1)`/`default(4)` schema all turn their
+  tests red.
+- An earlier hosted run failed on this branch with `ENOENT` from `mkdtemp`: the test
+  allocated case roots under `.tmp/startup-settings` without creating it, and `.tmp`
+  is gitignored, so a clean checkout had no such directory. It passed locally only
+  because that directory had been created by hand. Corrected in the test; production
+  code was unaffected and the same run passed 809 other tests.
+- Local full-suite figures from this host are not recorded as evidence: the run
+  spanned a branch switch and observed a mixed tree. The hosted exact-head gate is
+  the evidence for this branch.
+
 ## 2026-08-30 — issue #43 integrated verification
 
 PR #75 merged to protected `main` as
@@ -5025,6 +5066,38 @@ Auditor, security and hosted integration evidence.
   Auditor/security/hosted evidence remains. No live/model/network/UI-design call
   ran.
 
+## 2026-08-30 — CHAT-03 unsafe and underspecified Contract intake
+
+- **Scope:** issue #81 strengthens the integrated general private-chat Contract
+  planner without changing the frozen UI theme. A request must end with one direct,
+  allowlisted action on a quoted authority-contained project artifact, the exact
+  bounded project-only `Safety:` statement, and one literal-content `Acceptance:`
+  predicate. Ambiguous, conditional, negated, approval-dependent, credential,
+  privileged, destructive, external/network and safeguard-bypass wording remains an
+  inert clarification and creates no Mission, Contract or Plane.
+- **Recovery:** unsafe intent is accumulated rather than erased by incremental
+  follow-ups. Exact `Replace prior request:` starts a clean bounded draft; a complete
+  follow-up replaces only earlier vague drafts that contained neither an artifact nor
+  unsafe intent. The Agent remains startable/stoppable/deletable after clarification.
+- **Runtime boundary:** the live preflight plants a fake parent credential canary and
+  scans `/proc/[0-9]*/environ` inside the actual Codex Linux sandbox. The unguarded
+  control could read the canary; the generated production preflight in the freshly
+  built Runtime image passed only after the sandboxed child could not recover it.
+  Visibility maps to fixed `credential_isolation_failed` evidence.
+- **Observed deterministic checks:** focused planner/service 27/27; literal
+  `npm run check` passed launcher 3/3, Server 824 passed + two explicit opt-in skips,
+  Web 20/20, strict production/test type checks and both builds. Authenticated
+  Chromium passed 8/8 across exact 1280×800 and 1440×900 projects, covering the auth
+  collision, clarification/correction, lifecycle recovery, durable human review and
+  no document overflow. `git diff --check` passed. Independent security and UI
+  reviews passed with no High/Medium finding.
+- **Live evidence and limitation:** the first broad command incorrectly discovered a
+  stale ignored recording worktree and is not counted. The corrected exact-source,
+  single-worker live command made the bounded provider attempt, reached Contract
+  execution, and failed after 35 seconds with `Contract result manifest is missing`.
+  No retry was made. This is separate Agent-output reliability work and means neither
+  this candidate nor `LIVE-01` claims an exact-head live Mission pass.
+
 ## 2026-08-30 — PERF-01 Worker candidate
 
 - **Scope and environment:** this candidate is based on protected-main `baa6b2f`.
@@ -5095,3 +5168,62 @@ Auditor, security and hosted integration evidence.
   three clean rehearsals owned by `DEMO-REHEARSAL`. Gate `I` remains pending an
   independent protected-main audit. The prior hosted failure is preserved above;
   the corrected commit still requires a fresh hosted run.
+
+## 2026-08-30 — PERF-01 protected-main integration audit
+
+- **Integrated identity:** protected `origin/main`
+  `b193e5745661735c44e581ccdc10f2a1ce4692dc` is PR #77's merge commit; its
+  direct second parent is the reviewed correction
+  `332071d37295517721eb1360c501a6746535f5db`. The detached audit worktree was
+  clean before and after verification.
+- **Focused causal checks:** the exact cleanup-race regression passed 1/1 with
+  63 filtered tests, and the actual scheduled candidate-executor overlap proof
+  passed 1/1 with 63 filtered tests.
+- **Integrated browser evidence:** the ordinary non-evidence performance command
+  passed build, harness 7/7, and Chromium 2/2 using the existing pinned read-only
+  browser cache. It did not download/copy/symlink a browser or set
+  `E2E_UPDATE_EVIDENCE`; tracked screenshots remained byte-identical. At
+  `1280x800`: conservative two-Plane-ready 323 ms, verification 303 ms,
+  persisted event → visible 488 ms, collision → promotion complete 2,073 ms,
+  and 3,712 ms total. At `1440x900`: 334 ms, 334 ms, 476 ms, 2,044 ms, and
+  3,680 ms respectively. Both event-visibility samples satisfy the PRD
+  `<=1.5s` limit.
+- **Full and hosted gates:** a literal `npm run check` passed all production and
+  test-source typechecks, launcher 3/3, Server 810 passed with three explicit
+  skips, Web 20/20, and both builds. Hosted exact-main run `33318509842` passed
+  `Node 22 / npm run check` in 2m54s.
+- **Audit result:** independent Auditor returned READY with no Critical or
+  Important findings. PERF-01 gates `B` and `I` are passed. This remains
+  deterministic evidence, not a live-model capacity measurement,
+  package-download proof, or the three clean rehearsals owned by
+  `DEMO-REHEARSAL`.
+
+## 2026-08-30 — CHAT-03 protected-main reconciliation
+
+- The issue #81 candidate was merged locally with protected `origin/main`
+  `9696c6d`. The only textual conflict was the append-only `BUILD_LOG.md`; both the
+  CHAT-03 and protected-main PERF-01 histories are retained. Startup-settings,
+  performance, architecture, fixtures and screenshots from main were accepted
+  byte-for-byte; product files merged automatically.
+- Focused intake/startup/composition coverage passed 33/33. Literal
+  `npm run check` passed all production/test type checks, launcher 5/5, Server 842
+  passed with two explicit live skips, Web 20/20, and both production builds.
+- Combined authenticated Chromium passed 10/10 at 1280×800 and 1440×900. The
+  issue #81 clarification, lifecycle and human-review journeys remained green;
+  the integrated performance journey completed in 2,343/2,388 ms with persisted
+  collision visibility in 157/101 ms.
+- `git diff --check` and conflict-marker checks passed. No live request was repeated;
+  the earlier exact live result-manifest failure remains an explicit `LIVE-01`
+  limitation rather than being hidden by the deterministic integration result.
+- Hosted `Pull request checks` run `33319816809` then preserved a causal RED: under
+  heavy suite contention, PERF-01 spent its three-second candidate-pair deadline on
+  earlier Mission setup and failed before both candidates arrived, while independent
+  hosted run `33319816797` passed the same repository head. The test-only correction
+  gives pre-candidate setup its own bounded 15-second allowance and starts the
+  unchanged three-second concurrency deadline only when the first real candidate
+  reaches the executor. Product scheduling, timeouts and retry behavior are
+  unchanged; a sequential scheduler still fails the pair deadline and releases the
+  existing gate through `finally`. The preserved row passed 10/10 consecutive
+  focused repetitions; the post-correction literal gate passed launcher 5/5,
+  Server 842 passed with two explicit live skips, Web 20/20, all strict typechecks
+  and both builds.

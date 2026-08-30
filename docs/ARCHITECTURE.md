@@ -555,9 +555,10 @@ This document does not imply the generalized PRD is complete:
 - Trusted lifecycle/verified-manifest summaries exist; general Agent group chatter is
   intentionally absent.
 - The timeline uses actual persisted times but does not produce labeled estimates.
-- `SHEPHERD_AUTO_RESOLUTION` and `SHEPHERD_MAX_PARALLEL_PLANES` are parsed but not
-  passed into initial service composition at this snapshot. Persisted Settings
-  updates do control those behaviors after startup.
+- `SHEPHERD_AUTO_RESOLUTION` and `SHEPHERD_MAX_PARALLEL_PLANES` are composed into
+  `ShepherdService` at startup. They seed a pristine store only while the persisted
+  value is still the factory default, so a later Settings update stays authoritative
+  across restarts.
 - Completed/losing Planes are retained; the parsed delete setting does not activate
   automatic cleanup.
 - The model reviewer is connected when usable but remains advisory and can run in

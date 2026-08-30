@@ -44,6 +44,7 @@ const preflightExitReasons = new Map<number, Extract<EphemeralPreflightResult, {
   [47, "sandbox_connect_denial_failed"],
   [48, "sandbox_connect_denial_failed"],
   [49, "sandbox_probe_failed"],
+  [50, "credential_isolation_failed"],
 ]);
 
 function boundedPreflightExitCode(error: unknown): number | null {
@@ -400,6 +401,7 @@ export function buildEphemeralPreflightCreateArgs(
     "} catch (error) { denied(error); }",
     "setTimeout(() => { socket?.destroy(); process.exit(48); }, 2000);",
   ].join(" ");
+  const parentCanary = "SHEPHERD_PARENT_ENV_MUST_NOT_BE_READABLE";
   const sandboxProbe = [
     "set -eu",
     "workspace_probe=" + shellSingleQuote(workspaceProbe),
@@ -410,6 +412,9 @@ export function buildEphemeralPreflightCreateArgs(
       shellSingleQuote(": > " + shellSingleQuote(privateHomeProbe)) +
       " 2>/dev/null; then exit 41; fi",
     "test ! -e " + shellSingleQuote(privateHomeProbe),
+    'for candidate in /proc/[0-9]*/environ; do if { tr "\\0" "\\n" < "$candidate"; } 2>/dev/null | grep -Fqx ' +
+      shellSingleQuote("SHEPHERD_PARENT_ENV_CANARY=" + parentCanary) +
+      "; then exit 50; fi; done",
     "node -e " + shellSingleQuote(listenProbe),
     "node -e " + shellSingleQuote(connectProbe),
   ].join("; ");
@@ -424,10 +429,13 @@ export function buildEphemeralPreflightCreateArgs(
     'test "$(id -u)" -ne 0 || exit 40',
     "codex --version || exit 42",
     "set +e",
-    "codex sandbox linux --full-auto sh -c " + shellSingleQuote(sandboxProbe),
+    "SHEPHERD_PARENT_ENV_CANARY=" +
+      shellSingleQuote(parentCanary) +
+      " codex sandbox linux --full-auto env -u SHEPHERD_PARENT_ENV_CANARY sh -c " +
+      shellSingleQuote(sandboxProbe),
     "sandbox_status=$?",
     "set -e",
-    'if test "$sandbox_status" -ne 0; then case "$sandbox_status" in 41|43|44|45|46|47|48) exit "$sandbox_status" ;; *) exit 49 ;; esac; fi',
+    'if test "$sandbox_status" -ne 0; then case "$sandbox_status" in 41|43|44|45|46|47|48|50) exit "$sandbox_status" ;; *) exit 49 ;; esac; fi',
     "cleanup",
     "trap - EXIT HUP INT TERM",
     "printf '%s\\n' " + PREFLIGHT_SUCCESS,

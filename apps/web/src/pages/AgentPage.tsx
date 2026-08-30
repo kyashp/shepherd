@@ -272,6 +272,13 @@ export function AgentPage({
             const showsClarification =
               assignment.preset === "general-contract" &&
               assignment.status === "clarification_required";
+            const showsSafetyClarification =
+              showsClarification && assignment.missingFields.includes("safety");
+            const unsafeIntentDetected = assignment.preset === "general-contract" &&
+              assignment.unsafeIntentDetected === true;
+            const remainingMissingFields = assignment.preset === "general-contract"
+              ? assignment.missingFields.filter((field) => field !== "safety")
+              : [];
             return (
               <Fragment key={message.id}>
                 <article className="message message-user">
@@ -283,7 +290,11 @@ export function AgentPage({
                     <header><strong>Shepherd</strong><span>{(showsClarification ? assignment.status : contract?.state ?? (assignment.preset === "general-contract" ? assignment.status : "collecting")).replaceAll("_", " ")}</span></header>
                     <div>
                       {showsClarification
-                        ? <>Before I create the Execution Contract, please provide {assignment.missingFields.map((field) => field.replaceAll("_", " ")).join(", ")}. Include at least one writable project-relative file and an explicit <strong>Acceptance:</strong> statement.</>
+                        ? showsSafetyClarification
+                          ? unsafeIntentDetected
+                            ? <>Shepherd paused this draft before creating a Contract or Plane because it requests a disallowed or external side effect. Begin a new message with <strong>Replace prior request:</strong>, fully restate a non-destructive project-only objective, then add <strong>Safety: project files only; no external, production, privileged, destructive, or credential operations.</strong> before the Acceptance statement.{remainingMissingFields.length > 0 ? <> Also provide {remainingMissingFields.map((field) => field.replaceAll("_", " ")).join(", ")}.</> : null}</>
+                            : <>Shepherd paused before creating a Contract or Plane because the required safety scope is missing. Add <strong>Safety: project files only; no external, production, privileged, destructive, or credential operations.</strong> before the Acceptance statement.{remainingMissingFields.length > 0 ? <> Also provide {remainingMissingFields.map((field) => field.replaceAll("_", " ")).join(", ")}.</> : null}</>
+                          : <>Before I create the Execution Contract, please provide {remainingMissingFields.map((field) => field.replaceAll("_", " ")).join(", ")}. Include the specific change, at least one writable project-relative file, and an independently observable <strong>Acceptance:</strong> statement.</>
                         : contract
                         ? <>Contract <Link href="/shepherd">{shortId(contract.id, 16)}</Link> is {contract.state.replaceAll("_", " ")}. Open Shepherd for its Plane, independent evidence, and protected promotion.</>
                         : assignment.preset === "auth-demo-contract"
