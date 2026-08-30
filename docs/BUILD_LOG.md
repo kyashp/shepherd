@@ -7,6 +7,52 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — private Agent-chat Contract candidate
+
+- Ownership: issue #55, branch `feat/55-private-chat-contracts`, draft PR #57;
+  implementation `6018352`, reviewed correction head `e1fe067`. Protected-main
+  integration remains pending.
+- Frontend and Backend Agents now have an explicit **Route through Shepherd** mode
+  in their existing private chat. Bounded server parsing accepts exactly one
+  HttpOnly-cookie assignment and one bearer-JWT assignment; ambiguous, absent,
+  same-role, same-transport, stopped/busy, authority-incompatible and reused-ID
+  inputs fail closed. Legacy Playground behavior remains available when the mode is
+  off.
+- The first exact bounded prompt and the second prompt are durable before their
+  respective filesystem/Mission work. A restart can resume intake; the second
+  prompt idempotently creates one Mission whose two Contract objectives are the
+  original user assignments. The existing isolated Contract Planes, independent
+  verification, integration, semantic collision, same-base resolution candidates,
+  final re-verification and protected promotion remain authoritative.
+- The old Shepherd Agent/transport selectors and their unused CSS were removed.
+  Private chat shows collection and verified Contract status. A route-mode identity
+  regression prevents Frontend state leaking into a Generalist or Backend. Narrow
+  `/shepherd` flex containment keeps the full fallback composer in viewport while
+  preserving designated internal panel scrolling and the accepted theme.
+- Verification found and corrected three causal defects. The first restart RED was
+  `Shepherd startup artifact reconciliation failed` because a pending Project lacked
+  its trusted Plane-root sentinel. UI review then reproduced hidden route state on a
+  Generalist and main-container Y overflow. Security review found Agent deletion
+  could archive a workspace while private intake persisted a reference or created
+  pre-mutation Project artifacts. Final intake/delete operations serialize through
+  the Store queue; actual barrier coverage proves both orderings keep Agent,
+  workspace, Project and prompt state consistent and restartable.
+- Final literal `npm run check` passed: launcher 3/3; Server 742 passed plus two
+  explicit opt-in skips; Web 18/18; strict production/test type checks and both
+  production builds passed. Focused security/intake regressions passed 3/3.
+- Final authenticated Playwright passed 4/4 at exact `1280x800` and `1440x900`:
+  private Frontend prompt, Generalist isolation, private Backend prompt, verified
+  private status, exact Contract assignment, complete evidence, collision/candidate
+  outcome, human-review fallback, keyboard opt-in, and document/main-container
+  no-overflow/composer-in-viewport checks. A source-only rerun before rebuilding the
+  production Web bundle served stale assets and failed the new identity assertion;
+  the explicit build and every final rerun passed.
+- Independent security and UI re-reviews passed with no remaining blocker. The
+  configured custom reviewer roles were unavailable, so repository-instructed
+  read-only fallback reviewers were used. No live/model request ran; this evidence
+  covers deterministic local behavior only. The separate Project Group `@Agent`
+  journey remains issue #41.
+
 ## 2026-08-30 — protected-main promotion and exact post-merge gate
 
 - PR #52 passed hosted `Node 22 / npm run check` and merged the documentation and

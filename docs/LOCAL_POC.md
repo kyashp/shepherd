@@ -68,16 +68,28 @@ Use a fresh disposable data root for rehearsal. Start with
    Launchpad Agents.
 2. Create `Frontend Auth Agent` with role/preset **Frontend**, then create
    `Backend Auth Agent` with role/preset **Backend**. Both must be ready.
-3. Open **Shepherd**. Select those two Agents, choose **HttpOnly session cookie**
-   for the frontend and **Bearer JWT** for the backend, and confirm the composer
-   warns that the two exclusive claims are incompatible.
-4. Submit this intent once:
+3. Open `Frontend Auth Agent`, enable **Route through Shepherd**, and send this
+   private prompt once:
 
    ```text
-   Implement the authentication demo and resolve any incompatible frontend and backend assumptions using independently verified evidence.
+   Implement the frontend authentication client using an HttpOnly session cookie.
    ```
 
-5. Wait for `completed`. Verify the visible sequence: Mission and two Contracts →
+   Confirm Shepherd says the prompt was captured as
+   `http-only-session-cookie` and is waiting for the Backend Agent.
+4. Open `Backend Auth Agent`, enable **Route through Shepherd**, and send this
+   private prompt once:
+
+   ```text
+   Implement the backend authentication service using a bearer JWT.
+   ```
+
+   The second compatible-role prompt atomically starts one Mission. Open
+   **Shepherd**; the former deterministic Agent/transport selectors must not exist.
+   The small Shepherd composer remains a managed-Agent fallback and is not used in
+   this primary flow.
+5. Wait for `completed`. Verify the visible sequence: the two exact private prompts
+   become two durable Contracts →
    isolated Contract Planes → independent verification → integration → the
    `auth.transport` semantic collision → two resolution candidates → independently
    passing cookie candidate and rejected bearer candidate → final re-verification →
@@ -104,8 +116,8 @@ Use a fresh disposable data root for rehearsal. Start with
 1. Open **Settings → General → Reset demo state** and confirm the result.
 2. Under **Execution**, change one timeout and **Maximum parallel Planes**, save,
    refresh, and confirm the values round-trip; then restore them.
-3. Disable **Automatic resolution**, save, and start the same Mission again with
-   the two preserved user-created Agents.
+3. Disable **Automatic resolution**, save, and repeat the two private Agent prompts
+   from the positive flow with the preserved user-created Agents.
 4. At `attention_required`, confirm the internal human-review ticket shows the full
    durable collision/Mission reference. Only an independently passing candidate may offer
    **Select verified future**. Select it and confirm completion through the same
