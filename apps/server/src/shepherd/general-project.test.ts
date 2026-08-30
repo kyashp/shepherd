@@ -5,9 +5,12 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   beginGeneralProjectCreation,
+  beginGeneralProjectDeletion,
   beginGeneralProjectPolicyUpdate,
+  completeGeneralProjectDeletion,
   initializeGeneralAgentProject,
   reconcileGeneralProjectCreations,
+  reconcileGeneralProjectDeletions,
   reconcileGeneralProjectPolicyUpdates,
   recordGeneralProjectPolicyUpdate,
 } from "./demo-project.js";
@@ -150,6 +153,43 @@ describe("general Agent managed project", () => {
     await expect(access(journalPath)).rejects.toMatchObject({ code: "ENOENT" });
     await expect(access(project.repositoryPath)).resolves.toBeUndefined();
     await expect(access(project.planesRoot)).resolves.toBeUndefined();
+  });
+
+  it("deletes only a journaled non-durable general project and preserves a durable one", async () => {
+    const root = await caseRoot();
+    const managedRoot = path.join(root, "managed");
+    const workspace = path.join(root, "workspace");
+    const projectId = "agent-71111111-1111-4111-8111-111111111111";
+    await mkdir(workspace);
+    await writeFile(path.join(workspace, "README.md"), "safe snapshot\n");
+    const project = await initializeGeneralAgentProject({
+      managedRoot,
+      projectId,
+      agentWorkspacePath: workspace,
+      expectedArtifacts: ["README.md"],
+      acceptanceSummary: "clarification is pending",
+      requiredContent: null,
+    });
+
+    await beginGeneralProjectDeletion(managedRoot, projectId);
+    await reconcileGeneralProjectDeletions(managedRoot, new Set([projectId]));
+    await expect(access(project.repositoryPath)).resolves.toBeUndefined();
+    await expect(access(project.planesRoot)).resolves.toBeUndefined();
+    await expect(access(path.join(managedRoot, "projects", projectId + ".json")))
+      .resolves.toBeUndefined();
+
+    await beginGeneralProjectDeletion(managedRoot, projectId);
+    await reconcileGeneralProjectDeletions(managedRoot, new Set());
+    for (const target of [
+      project.repositoryPath,
+      project.planesRoot,
+      path.join(managedRoot, "projects", projectId + ".json"),
+    ]) {
+      await expect(access(target)).rejects.toMatchObject({ code: "ENOENT" });
+    }
+    await expect(
+      completeGeneralProjectDeletion(managedRoot, projectId),
+    ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("rolls back an exact policy-only commit when its Project head was not persisted", async () => {

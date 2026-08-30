@@ -3,6 +3,7 @@ import {
   mkdtemp,
   lstat,
   readFile,
+  readdir,
   symlink,
   writeFile,
 } from "node:fs/promises";
@@ -12,6 +13,7 @@ import { AgentService } from "./agent-service.js";
 import { loadConfig } from "./config.js";
 import { emptyDatabase } from "./database.js";
 import { JsonStore } from "./store.js";
+import type { JsonStoreOptions, PersistenceFaultStage } from "./store.js";
 import { ShepherdService } from "./shepherd/service.js";
 import type { Agent, AgentRunner, Database, RunnerRequest, RunnerResult } from "./types.js";
 import { WorkspaceManager } from "./workspace.js";
@@ -46,6 +48,7 @@ afterEach(async () => {
 async function makeService(
   runner: AgentRunner = new FakeRunner(),
   configOverrides: Record<string, string | undefined> = {},
+  storeOptions: JsonStoreOptions = {},
 ): Promise<AgentService> {
   const testRoot = path.resolve(process.cwd(), ".tmp", "agent-service-tests");
   await mkdir(testRoot, { recursive: true });
@@ -62,7 +65,7 @@ async function makeService(
   });
   const service = new AgentService(
     config,
-    new JsonStore(path.join(root, "data", "db.json")),
+    new JsonStore(path.join(root, "data", "db.json"), storeOptions),
     new WorkspaceManager(path.join(root, "workspaces")),
     runner,
   );
@@ -237,6 +240,7 @@ describe("Agent lifecycle", () => {
 
     await expect(service.deleteAgent(agent.id)).rejects.toMatchObject({
       statusCode: 409,
+      message: "Cannot delete an Agent referenced by durable Shepherd history",
     });
     expect(archive).not.toHaveBeenCalled();
     expect(service.getAgent(agent.id)).toMatchObject({ id: agent.id, status: "ready" });
@@ -249,8 +253,223 @@ describe("Agent lifecycle", () => {
       .resolves.toContain("Pending frontend owner");
   });
 
-  it("serializes Agent archive against a racing private Contract prompt", async () => {
+  it("deletes an Agent whose only Shepherd references are unbound clarification drafts", async () => {
     const service = await makeService();
+    const agent = await service.createAgent({
+      name: "Clarification-only owner",
+      role: "Frontend",
+    });
+    const internals = service as unknown as {
+      store: JsonStore;
+      workspaces: WorkspaceManager;
+    };
+    const caseRoot = path.dirname(path.dirname(agent.workspacePath));
+    const managedRoot = path.join(caseRoot, "data", "shepherd");
+    const shepherd = new ShepherdService({
+      store: internals.store,
+      managedRoot,
+      agentWorkspaceRoot: path.dirname(agent.workspacePath),
+      verifier: {
+        verify: async () => {
+          throw new Error("Clarification-only intake must not invoke verification");
+        },
+      },
+    });
+    await shepherd.initialize();
+    await expect(
+      shepherd.submitPrivateContractPrompt({
+        agentId: agent.id,
+        clientMessageId: "clarification-only-prompt",
+        content: "Create a greeting script.",
+      }),
+    ).resolves.toMatchObject({
+      status: "clarification_required",
+      missionId: null,
+      contractId: null,
+    });
+    await expect(
+      shepherd.submitPrivateContractPrompt({
+        agentId: agent.id,
+        clientMessageId: "clarification-only-follow-up",
+        content: "Create src/hello.py that prints a greeting.",
+      }),
+    ).resolves.toMatchObject({
+      status: "clarification_required",
+      missionId: null,
+      contractId: null,
+    });
+    expect(internals.store.snapshot().shepherd).toMatchObject({
+      projects: [{ id: `agent-${agent.id}`, activeMissionId: null }],
+      missions: [],
+      contracts: [],
+      planes: [],
+      events: [],
+    });
+    expect(internals.store.snapshot().shepherd.groupMessages).toHaveLength(2);
+
+    await expect(service.deleteAgent(agent.id)).resolves.toEqual({ deleted: true });
+
+    const deleted = internals.store.snapshot();
+    expect(deleted.agents).toHaveLength(0);
+    expect(deleted.shepherd.projects).toHaveLength(0);
+    expect(deleted.shepherd.groupMessages).toHaveLength(0);
+    await expect(lstat(agent.workspacePath)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(lstat(path.join(managedRoot, "repositories", `agent-${agent.id}`)))
+      .rejects.toMatchObject({ code: "ENOENT" });
+    await expect(lstat(path.join(managedRoot, "planes", `agent-${agent.id}`)))
+      .rejects.toMatchObject({ code: "ENOENT" });
+    await expect(lstat(path.join(managedRoot, "projects", `agent-${agent.id}.json`)))
+      .rejects.toMatchObject({ code: "ENOENT" });
+
+    const recovered = new ShepherdService({
+      store: internals.store,
+      managedRoot,
+      agentWorkspaceRoot: path.dirname(agent.workspacePath),
+      verifier: {
+        verify: async () => {
+          throw new Error("Recovery must not invoke verification");
+        },
+      },
+    });
+    await expect(recovered.initialize()).resolves.toBeUndefined();
+  });
+
+  it.each([
+    ["primary_temp_open", true],
+    ["primary_directory_sync", false],
+  ] as const)(
+    "reconciles Agent and clarification Project deletion after %s",
+    async (faultStage, agentRemainsDurable) => {
+      let inject = false;
+      const service = await makeService(new FakeRunner(), {}, {
+        persistenceFaultCheckpoint: (stage: PersistenceFaultStage) => {
+          if (inject && stage === faultStage) {
+            inject = false;
+            throw new Error("injected persistence fault");
+          }
+        },
+      });
+      const agent = await service.createAgent({
+        name: `Recoverable ${faultStage} Agent`,
+        role: "Generalist",
+      });
+      const internals = service as unknown as { store: JsonStore };
+      const caseRoot = path.dirname(path.dirname(agent.workspacePath));
+      const dataRoot = path.join(caseRoot, "data");
+      const managedRoot = path.join(dataRoot, "shepherd");
+      const workspaceRoot = path.dirname(agent.workspacePath);
+      const shepherd = new ShepherdService({
+        store: internals.store,
+        managedRoot,
+        agentWorkspaceRoot: workspaceRoot,
+        verifier: {
+          verify: async () => {
+            throw new Error("Clarification recovery must not invoke verification");
+          },
+        },
+      });
+      await shepherd.initialize();
+      await shepherd.submitPrivateContractPrompt({
+        agentId: agent.id,
+        clientMessageId: `recoverable-${faultStage}`,
+        content: "Create a greeting script.",
+      });
+
+      inject = true;
+      await expect(service.deleteAgent(agent.id)).rejects.toMatchObject({
+        statusCode: 500,
+        message: "Agent deletion persistence is uncertain; restart to reconcile safely",
+      });
+      await expect(lstat(agent.workspacePath)).resolves.toMatchObject({
+        isDirectory: expect.any(Function),
+      });
+
+      const persistedBeforeRestart = JSON.parse(
+        await readFile(path.join(dataRoot, "db.json"), "utf8"),
+      ) as Database;
+      expect(persistedBeforeRestart.agents.some((item) => item.id === agent.id))
+        .toBe(agentRemainsDurable);
+      expect(
+        persistedBeforeRestart.shepherd.projects.some(
+          (item) => item.id === `agent-${agent.id}`,
+        ),
+      ).toBe(agentRemainsDurable);
+
+      const config = loadConfig({
+        NODE_ENV: "test",
+        APP_DATA_DIR: dataRoot,
+        AGENT_WORKSPACE_ROOT: workspaceRoot,
+        CODEX_HOME: path.join(caseRoot, "codex"),
+        ARK_API_KEY: "test-key",
+        ARK_MODEL: "ep-test",
+      });
+      const recoveredStore = new JsonStore(path.join(dataRoot, "db.json"));
+      const recoveredAgents = new AgentService(
+        config,
+        recoveredStore,
+        new WorkspaceManager(workspaceRoot),
+        new FakeRunner(),
+      );
+      await expect(recoveredAgents.initialize()).resolves.toBeUndefined();
+      const recoveredShepherd = new ShepherdService({
+        store: recoveredStore,
+        managedRoot,
+        agentWorkspaceRoot: workspaceRoot,
+        verifier: {
+          verify: async () => {
+            throw new Error("Deletion recovery must not invoke verification");
+          },
+        },
+      });
+      await expect(recoveredShepherd.initialize()).resolves.toBeUndefined();
+
+      expect(recoveredAgents.listAgents().some((item) => item.id === agent.id))
+        .toBe(agentRemainsDurable);
+      if (agentRemainsDurable) {
+        await expect(lstat(agent.workspacePath)).resolves.toMatchObject({
+          isDirectory: expect.any(Function),
+        });
+        await expect(
+          lstat(path.join(managedRoot, "projects", `agent-${agent.id}.json`)),
+        ).resolves.toMatchObject({ isFile: expect.any(Function) });
+      } else {
+        await expect(lstat(agent.workspacePath)).rejects.toMatchObject({ code: "ENOENT" });
+        await expect(
+          lstat(path.join(managedRoot, "projects", `agent-${agent.id}.json`)),
+        ).rejects.toMatchObject({ code: "ENOENT" });
+      }
+      expect(
+        (await readdir(path.join(workspaceRoot, ".deleted"))).some((name) =>
+          name.startsWith(`.deleting-agent-${agent.id}`),
+        ),
+      ).toBe(false);
+      expect(
+        (await readdir(path.join(managedRoot, "projects"))).some((name) =>
+          name.startsWith(`.deleting-general-agent-${agent.id}`),
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it("serializes Agent archive against a racing private Contract prompt", async () => {
+    let blockDeletionPersistence = false;
+    let persistenceStarted!: () => void;
+    const persistenceObserved = new Promise<void>((resolve) => {
+      persistenceStarted = resolve;
+    });
+    let releasePersistence!: () => void;
+    const persistenceBarrier = new Promise<void>((resolve) => {
+      releasePersistence = resolve;
+    });
+    const service = await makeService(new FakeRunner(), {}, {
+      persistenceFaultCheckpoint: async (stage) => {
+        if (blockDeletionPersistence && stage === "primary_write") {
+          blockDeletionPersistence = false;
+          persistenceStarted();
+          await persistenceBarrier;
+        }
+      },
+    });
     const agent = await service.createAgent({
       name: "Racing frontend owner",
       role: "Frontend",
@@ -260,7 +479,7 @@ describe("Agent lifecycle", () => {
       workspaces: WorkspaceManager;
     };
     const caseRoot = path.dirname(path.dirname(agent.workspacePath));
-    const managedRoot = path.join(caseRoot, "shepherd-managed");
+    const managedRoot = path.join(caseRoot, "data", "shepherd");
     const shepherd = new ShepherdService({
       store: internals.store,
       managedRoot,
@@ -272,26 +491,9 @@ describe("Agent lifecycle", () => {
       },
     });
     await shepherd.initialize();
-    const mutate = vi.spyOn(internals.store, "mutate");
-    const originalArchive = internals.workspaces.archive.bind(internals.workspaces);
-    let archiveStarted!: () => void;
-    const archiveObserved = new Promise<void>((resolve) => {
-      archiveStarted = resolve;
-    });
-    let releaseArchive!: () => void;
-    const archiveBarrier = new Promise<void>((resolve) => {
-      releaseArchive = resolve;
-    });
-    let archivedPath: string | null = null;
-    vi.spyOn(internals.workspaces, "archive").mockImplementationOnce(async (current) => {
-      archiveStarted();
-      await archiveBarrier;
-      archivedPath = await originalArchive(current);
-      return archivedPath;
-    });
-
+    blockDeletionPersistence = true;
     const deletion = service.deleteAgent(agent.id);
-    await archiveObserved;
+    await persistenceObserved;
     const racingPrompt = shepherd.submitPrivateContractPrompt({
       agentId: agent.id,
       clientMessageId: "racing-private-prompt",
@@ -300,8 +502,7 @@ describe("Agent lifecycle", () => {
     const promptRejection = expect(racingPrompt).rejects.toMatchObject({
       code: "conflict",
     });
-    await vi.waitFor(() => expect(mutate).toHaveBeenCalledTimes(2));
-    releaseArchive();
+    releasePersistence();
 
     await expect(deletion).resolves.toEqual({ deleted: true });
     await promptRejection;
@@ -309,8 +510,9 @@ describe("Agent lifecycle", () => {
     expect(internals.store.snapshot().shepherd.groupMessages).toHaveLength(0);
     expect(() => service.getAgent(agent.id)).toThrow("Agent not found");
     await expect(lstat(agent.workspacePath)).rejects.toMatchObject({ code: "ENOENT" });
-    expect(archivedPath).not.toBeNull();
-    await expect(lstat(archivedPath!)).resolves.toMatchObject({ isDirectory: expect.any(Function) });
+    const archivedNames = await readdir(path.join(path.dirname(agent.workspacePath), ".deleted"));
+    expect(archivedNames.filter((name) => name.startsWith(`${agent.id}-`))).toHaveLength(1);
+    expect(archivedNames.some((name) => name.startsWith(".deleting-agent-"))).toBe(false);
     await expect(lstat(path.join(managedRoot, "projects", "auth-demo.json")))
       .rejects.toMatchObject({ code: "ENOENT" });
     const recovered = new ShepherdService({
@@ -324,6 +526,185 @@ describe("Agent lifecycle", () => {
       },
     });
     await expect(recovered.initialize()).resolves.toBeUndefined();
+  });
+
+  it("does not strand a general-project policy journal when clarification races deletion", async () => {
+    let blockDeletionPersistence = false;
+    let persistenceStarted!: () => void;
+    const persistenceObserved = new Promise<void>((resolve) => {
+      persistenceStarted = resolve;
+    });
+    let releasePersistence!: () => void;
+    const persistenceBarrier = new Promise<void>((resolve) => {
+      releasePersistence = resolve;
+    });
+    const service = await makeService(new FakeRunner(), {}, {
+      persistenceFaultCheckpoint: async (stage) => {
+        if (blockDeletionPersistence && stage === "primary_write") {
+          blockDeletionPersistence = false;
+          persistenceStarted();
+          await persistenceBarrier;
+        }
+      },
+    });
+    const agent = await service.createAgent({
+      name: "Racing general draft owner",
+      role: "Generalist",
+    });
+    const internals = service as unknown as { store: JsonStore };
+    const caseRoot = path.dirname(path.dirname(agent.workspacePath));
+    const managedRoot = path.join(caseRoot, "data", "shepherd");
+    const workspaceRoot = path.dirname(agent.workspacePath);
+    const shepherd = new ShepherdService({
+      store: internals.store,
+      managedRoot,
+      agentWorkspaceRoot: workspaceRoot,
+      verifier: {
+        verify: async () => {
+          throw new Error("Clarification race must not invoke verification");
+        },
+      },
+    });
+    await shepherd.initialize();
+    await expect(
+      shepherd.submitPrivateContractPrompt({
+        agentId: agent.id,
+        clientMessageId: "general-race-first",
+        content: "Create a greeting script.",
+      }),
+    ).resolves.toMatchObject({ status: "clarification_required" });
+
+    blockDeletionPersistence = true;
+    const deletion = service.deleteAgent(agent.id);
+    await persistenceObserved;
+    const racingPrompt = shepherd.submitPrivateContractPrompt({
+      agentId: agent.id,
+      clientMessageId: "general-race-follow-up",
+      content: "Create scripts/hello.txt containing a greeting.",
+    });
+    const promptRejection = expect(racingPrompt).rejects.toMatchObject({
+      code: "conflict",
+    });
+    releasePersistence();
+
+    await expect(deletion).resolves.toEqual({ deleted: true });
+    await promptRejection;
+    expect(await readdir(path.join(managedRoot, "projects"))).toEqual([]);
+    expect(internals.store.snapshot().shepherd.projects).toEqual([]);
+    expect(internals.store.snapshot().shepherd.groupMessages).toEqual([]);
+
+    const config = loadConfig({
+      NODE_ENV: "test",
+      APP_DATA_DIR: path.join(caseRoot, "data"),
+      AGENT_WORKSPACE_ROOT: workspaceRoot,
+      CODEX_HOME: path.join(caseRoot, "codex"),
+      ARK_API_KEY: "test-key",
+      ARK_MODEL: "ep-test",
+    });
+    const recoveredStore = new JsonStore(path.join(caseRoot, "data", "db.json"));
+    const recoveredAgents = new AgentService(
+      config,
+      recoveredStore,
+      new WorkspaceManager(workspaceRoot),
+      new FakeRunner(),
+    );
+    await expect(recoveredAgents.initialize()).resolves.toBeUndefined();
+    const recoveredShepherd = new ShepherdService({
+      store: recoveredStore,
+      managedRoot,
+      agentWorkspaceRoot: workspaceRoot,
+      verifier: {
+        verify: async () => {
+          throw new Error("Restart after the clarification race must remain idle");
+        },
+      },
+    });
+    await expect(recoveredShepherd.initialize()).resolves.toBeUndefined();
+  });
+
+  it("rejects a direct run after Agent deletion reserves the lifecycle", async () => {
+    const run = vi.fn(async () => ({
+      output: "must not run",
+      threadId: "unexpected-thread",
+      usage: null,
+    }));
+    const cancel = vi.fn(async () => false);
+    const service = await makeService({
+      run,
+      cancel,
+      isAvailable: async () => true,
+    });
+    const agent = await service.createAgent({ name: "Delete-first direct Agent" });
+    const workspaces = (service as unknown as { workspaces: WorkspaceManager }).workspaces;
+    const originalBegin = workspaces.beginArchiveDeletion.bind(workspaces);
+    let deletionReserved!: () => void;
+    const reservationObserved = new Promise<void>((resolve) => {
+      deletionReserved = resolve;
+    });
+    let releaseDeletion!: () => void;
+    const deletionBarrier = new Promise<void>((resolve) => {
+      releaseDeletion = resolve;
+    });
+    vi.spyOn(workspaces, "beginArchiveDeletion").mockImplementationOnce(async (current) => {
+      deletionReserved();
+      await deletionBarrier;
+      await originalBegin(current);
+    });
+
+    const deletion = service.deleteAgent(agent.id);
+    await reservationObserved;
+    await expect(service.sendMessage(agent.id, "Run while deletion is reserved"))
+      .rejects.toMatchObject({
+        statusCode: 409,
+        message: "Agent deletion is in progress",
+      });
+    expect(run).not.toHaveBeenCalled();
+    releaseDeletion();
+    await expect(deletion).resolves.toEqual({ deleted: true });
+    expect(run).not.toHaveBeenCalled();
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("cancels and joins an active direct run before successful Agent deletion", async () => {
+    let runStarted!: () => void;
+    const runObserved = new Promise<void>((resolve) => {
+      runStarted = resolve;
+    });
+    let finishRun!: () => void;
+    const runBarrier = new Promise<void>((resolve) => {
+      finishRun = resolve;
+    });
+    const run = vi.fn(async () => {
+      runStarted();
+      await runBarrier;
+      return { output: "cancelled before deletion", threadId: "joined-thread", usage: null };
+    });
+    const cancel = vi.fn(async () => {
+      finishRun();
+      return true;
+    });
+    const service = await makeService({
+      run,
+      cancel,
+      isAvailable: async () => true,
+    });
+    const agent = await service.createAgent({ name: "Run-first direct Agent" });
+    await expect(service.sendMessage(agent.id, "Start before deletion"))
+      .resolves.toMatchObject({ run: { status: "queued" } });
+    await runObserved;
+
+    await expect(service.deleteAgent(agent.id)).resolves.toEqual({ deleted: true });
+    expect(run).toHaveBeenCalledOnce();
+    expect(cancel).toHaveBeenCalledOnce();
+    const internals = service as unknown as {
+      store: JsonStore;
+      activeExecutions: Map<string, Promise<void>>;
+    };
+    expect(internals.activeExecutions.has(agent.id)).toBe(false);
+    expect(internals.store.snapshot().agents).toEqual([]);
+    expect(internals.store.snapshot().runs).toEqual([]);
+    expect(internals.store.snapshot().messages).toEqual([]);
+    await expect(lstat(agent.workspacePath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("does not stop an Agent reserved by Shepherd while cancellation is pending", async () => {

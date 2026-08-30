@@ -1,9 +1,19 @@
+import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, mkdir, open, realpath, rename } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, realpath, rename, unlink } from "node:fs/promises";
 import path from "node:path";
 import type { Agent } from "./types.js";
 
 const SAFE_AGENT_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u;
+const ARCHIVE_DELETION_PREFIX = ".deleting-agent-";
+const ARCHIVE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+
+interface WorkspaceArchiveDeletionJournal {
+  schemaVersion: 1;
+  marker: "agent-workspace-archive-deletion";
+  agentId: string;
+  archiveId: string;
+}
 
 export class WorkspaceManager {
   private readonly root: string;
@@ -94,6 +104,67 @@ export class WorkspaceManager {
     return destination;
   }
 
+  /** Records a durable intent without moving the workspace before database commit. */
+  async beginArchiveDeletion(agent: Agent): Promise<void> {
+    await this.assertManagedWorkspace(agent);
+    const deletedRoot = path.join(this.root, ".deleted");
+    await this.assertDirectoryIdentity(deletedRoot, "Agent archive root");
+    const journal: WorkspaceArchiveDeletionJournal = {
+      schemaVersion: 1,
+      marker: "agent-workspace-archive-deletion",
+      agentId: agent.id,
+      archiveId: randomUUID(),
+    };
+    const journalPath = this.archiveDeletionJournalPath(agent.id);
+    const handle = await open(
+      journalPath,
+      constants.O_WRONLY |
+        constants.O_CREAT |
+        constants.O_EXCL |
+        constants.O_NOFOLLOW,
+      0o600,
+    );
+    try {
+      await handle.writeFile(JSON.stringify(journal, null, 2) + "\n", "utf8");
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await this.syncDirectory(deletedRoot);
+  }
+
+  async completeArchiveDeletion(agentId: string): Promise<void> {
+    const journalPath = this.archiveDeletionJournalPath(agentId);
+    const journal = await this.readArchiveDeletionJournal(journalPath);
+    if (journal.agentId !== agentId) {
+      throw new Error("Agent workspace deletion journal identity mismatch");
+    }
+    await this.reconcileArchiveDeletion(journalPath, journal, false);
+  }
+
+  /** Restores or completes interrupted deletion according to durable Agent state. */
+  async reconcileArchiveDeletions(
+    durableAgentIds: ReadonlySet<string>,
+  ): Promise<void> {
+    const deletedRoot = path.join(this.root, ".deleted");
+    await this.assertDirectoryIdentity(deletedRoot, "Agent archive root");
+    for (const name of (await readdir(deletedRoot)).sort()) {
+      if (!name.startsWith(ARCHIVE_DELETION_PREFIX) || !name.endsWith(".json")) {
+        continue;
+      }
+      const journalPath = path.join(deletedRoot, name);
+      const journal = await this.readArchiveDeletionJournal(journalPath);
+      if (journalPath !== this.archiveDeletionJournalPath(journal.agentId)) {
+        throw new Error("Agent workspace deletion journal filename mismatch");
+      }
+      await this.reconcileArchiveDeletion(
+        journalPath,
+        journal,
+        durableAgentIds.has(journal.agentId),
+      );
+    }
+  }
+
   async assertManagedWorkspace(agent: Agent): Promise<void> {
     this.assertWorkspaceIdentity(agent);
     await this.assertDirectoryIdentity(agent.workspacePath, "Agent workspace");
@@ -106,6 +177,123 @@ export class WorkspaceManager {
     const expected = this.workspacePath(agent.id);
     if (agent.workspacePath !== expected) {
       throw new Error("Agent workspace does not match its server-owned identity");
+    }
+  }
+
+  private archiveDeletionJournalPath(agentId: string): string {
+    if (!SAFE_AGENT_ID.test(agentId)) {
+      throw new Error("Agent ID cannot identify a workspace deletion journal");
+    }
+    return path.join(this.root, ".deleted", `${ARCHIVE_DELETION_PREFIX}${agentId}.json`);
+  }
+
+  private archiveDeletionPath(journal: WorkspaceArchiveDeletionJournal): string {
+    return path.join(
+      this.root,
+      ".deleted",
+      `${journal.agentId}-${journal.archiveId}`,
+    );
+  }
+
+  private async readArchiveDeletionJournal(
+    journalPath: string,
+  ): Promise<WorkspaceArchiveDeletionJournal> {
+    const before = await lstat(journalPath);
+    if (before.isSymbolicLink() || !before.isFile() || before.size > 4_096) {
+      throw new Error("Agent workspace deletion journal must be a bounded regular file");
+    }
+    const handle = await open(
+      journalPath,
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+    );
+    try {
+      const opened = await handle.stat();
+      if (
+        opened.dev !== before.dev ||
+        opened.ino !== before.ino ||
+        opened.size !== before.size
+      ) {
+        throw new Error("Agent workspace deletion journal identity changed");
+      }
+      const value = JSON.parse(
+        await handle.readFile("utf8"),
+      ) as Partial<WorkspaceArchiveDeletionJournal>;
+      if (
+        !value ||
+        typeof value !== "object" ||
+        value.schemaVersion !== 1 ||
+        value.marker !== "agent-workspace-archive-deletion" ||
+        typeof value.agentId !== "string" ||
+        !SAFE_AGENT_ID.test(value.agentId) ||
+        typeof value.archiveId !== "string" ||
+        !ARCHIVE_ID.test(value.archiveId) ||
+        Object.keys(value).length !== 4
+      ) {
+        throw new Error("Agent workspace deletion journal is malformed");
+      }
+      return value as WorkspaceArchiveDeletionJournal;
+    } finally {
+      await handle.close();
+    }
+  }
+
+  private async reconcileArchiveDeletion(
+    journalPath: string,
+    journal: WorkspaceArchiveDeletionJournal,
+    agentIsDurable: boolean,
+  ): Promise<void> {
+    await this.assertDirectoryIdentity(this.root, "Agent workspace root");
+    const deletedRoot = path.join(this.root, ".deleted");
+    await this.assertDirectoryIdentity(deletedRoot, "Agent archive root");
+    const workspace = this.workspacePath(journal.agentId);
+    const archive = this.archiveDeletionPath(journal);
+    const workspaceExists = await this.isManagedDirectoryIfPresent(
+      workspace,
+      "Agent workspace",
+    );
+    const archiveExists = await this.isManagedDirectoryIfPresent(
+      archive,
+      "Agent archived workspace",
+    );
+    if (workspaceExists && archiveExists) {
+      throw new Error("Agent workspace deletion has ambiguous source and archive state");
+    }
+    if (!workspaceExists && !archiveExists) {
+      throw new Error("Agent workspace deletion lost both source and archive state");
+    }
+    if (agentIsDurable && archiveExists) {
+      await rename(archive, workspace);
+      await this.syncDirectory(this.root);
+      await this.syncDirectory(deletedRoot);
+    } else if (!agentIsDurable && workspaceExists) {
+      await rename(workspace, archive);
+      await this.syncDirectory(this.root);
+      await this.syncDirectory(deletedRoot);
+    }
+    await unlink(journalPath);
+    await this.syncDirectory(deletedRoot);
+  }
+
+  private async isManagedDirectoryIfPresent(
+    directory: string,
+    label: string,
+  ): Promise<boolean> {
+    try {
+      await this.assertDirectoryIdentity(directory, label);
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw error;
+    }
+  }
+
+  private async syncDirectory(directory: string): Promise<void> {
+    if (process.platform === "win32") return;
+    const handle = await open(directory, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      await handle.sync();
+    } finally {
+      await handle.close();
     }
   }
 
