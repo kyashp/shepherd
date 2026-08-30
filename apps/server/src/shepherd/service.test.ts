@@ -1804,6 +1804,8 @@ describe("Shepherd deterministic walking skeleton", () => {
     for (const request of contractRequests) {
       expect("targetTransport" in request.operation).toBe(false);
       expect(request.operation).toMatchObject({ deriveTransportFromScopedContext: true });
+      expect(request.prompt).toBeTypeOf("string");
+      if (!request.prompt) throw new Error("Contract execution prompt was not generated");
       const envelope = JSON.parse(request.prompt.slice(request.prompt.indexOf("\n") + 1));
       const objective = envelope.payload.contract.objective as string;
       expect([frontendPrompt, backendPrompt]).toContain(objective);
