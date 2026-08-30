@@ -7,6 +7,21 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — TST-23 independently reproduced on TST-22 checkpoint
+
+On exact checkpoint `619e3ddd369d2dd8a0ce3b04134c0064c240142e`, Auditor ran only
+`fails closed with bounded attention evidence when initial Plane unwind fails`.
+Its assertions passed 1/1, but the command failed with one unhandled cause-free
+`PersistenceBoundaryError(cleanup, cleanup_pending)` from `JsonStore.persist` on
+the original Store queue. Source ordering confirms the row observes service memory,
+then initializes a second Store before joining that queue. The corrected TST-22
+marker authority is correctly fail-closed under concurrent independent access.
+
+TST-23 therefore requires only a test-owned no-op Store sentinel after attention
+and before reload/teardown, with immediate rejection observation/finally join if
+needed. No sleep/retry/timeout/suppression/cleanup catch or production change is
+permitted. No `mock-main` push or full/hosted/live/model/UI gate is claimed.
+
 ## 2026-08-30 — TST-22 Fixer candidate: crash-safe managed-temp state machine
 
 The correction replaces post-failure temp registration with pre-registration:

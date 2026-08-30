@@ -28,6 +28,35 @@ that limitation is explicit.
 
 ## Immediate queue
 
+### `TST-23` — Plane-unwind reload races the original Store persistence queue
+
+- **Evidence class:** exact isolated Auditor RED on TST-22 checkpoint
+  `619e3ddd369d2dd8a0ce3b04134c0064c240142e`. The named TST-17 row's assertions
+  passed 1/1, but Vitest reported one unhandled `PersistenceBoundaryError` from the
+  original Store after the test had already observed attention and opened a reload.
+- **Failure contract:** the service exposes its in-memory `attention_required`
+  transition before the queued persistence continuation has settled. The test waits
+  only for that visible state, then constructs a second `JsonStore` over the same
+  path. With TST-22's correct fail-closed marker authority, reload can observe the
+  original writer's active marker; teardown can also remove the case root before
+  the late rejection is observed, producing `cleanup_pending`, `ENOTEMPTY`, or an
+  unhandled rejection. This is test lifecycle ownership, not evidence that the
+  corrected Store protocol should permit concurrent independent writers.
+- **Minimal correction:** attach any needed rejection observer immediately, retain
+  every existing TST-17 state/resource/security assertion, and after attention is
+  observed await a test-owned no-op mutation sentinel on the original Store before
+  constructing the reload Store or allowing teardown. Join/release in `finally` if
+  the row owns another deferred lifecycle. Do not add sleeps, retries, timeout
+  increases, rejection suppression, cleanup catches, or product/Store changes.
+- **Acceptance:** preserve the exact RED; the row passes at least 20 consecutive
+  invocations with no unhandled rejection or late filesystem work. Prove the sentinel
+  is queued after every original continuation and before reload/root teardown; keep
+  Plane-unwind attention, durable reload, protected head/canary and raw-diagnostic
+  assertions unchanged. Run the combined TST-17/TST-22/F-06 slice, strict/full and
+  hosted Node 22.
+- **Status:** **OPEN / Fixer READY.** Blocks TST-22/F-06 integration only; no
+  product or Store correction is requested.
+
 ### `TST-22` — Cleanup markers do not form a crash-safe retry protocol
 
 - **Evidence class:** independent causal RED and security re-review of corrected
