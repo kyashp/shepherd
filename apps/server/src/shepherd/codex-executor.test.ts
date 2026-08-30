@@ -345,6 +345,70 @@ afterEach(async () => {
   );
 });
 
+/**
+ * Builds a state-volume layout whose five mount roots are lexically inside
+ * `CONTAINER_STATE_ROOT`, so `loadConfig` accepts them, while the state root itself
+ * is a symlink. Only the executor's canonicality assertions can catch that.
+ * `escape` optionally redirects one root outside the state root through a symlink.
+ */
+async function stateVolumeEnvironment(options: {
+  symlinkStateRoot?: boolean;
+  escape?: "data" | "shepherd";
+}): Promise<TestEnvironment> {
+  const temporaryParent = path.resolve(process.cwd(), ".tmp", "codex-executor");
+  await mkdir(temporaryParent, { recursive: true });
+  const root = await mkdtemp(path.join(temporaryParent, "state-"));
+  temporaryRoots.push(root);
+  const real = path.join(root, "real-state");
+  // When the state root is not itself a symlink it is the real directory, so the
+  // canonicality assertion passes and a later guard is the one under test.
+  const link = options.symlinkStateRoot ? path.join(root, "linked-state") : real;
+  const outside = path.join(root, "outside");
+  const relative = {
+    data: path.join("data"),
+    shepherd: path.join("data", "shepherd"),
+    privateHomes: path.join("data", "shepherd-codex-homes"),
+    sharedHome: path.join("shared-codex-home"),
+    workspaces: path.join("agent-workspaces"),
+    workspace: path.join("execution-workspace"),
+  };
+  await Promise.all(
+    Object.values(relative).map((entry) =>
+      mkdir(path.join(real, entry), { recursive: true }),
+    ),
+  );
+  if (options.escape) {
+    // `data` carries the private CODEX_HOME root with it, so the private root stays
+    // a strict child of the canonical data root and only the state-root assertion
+    // can catch it. `shepherd` leaves the private root inside and escapes alone.
+    const target =
+      options.escape === "data" ? relative.data : relative.shepherd;
+    await rm(path.join(real, target), { recursive: true, force: true });
+    await mkdir(path.join(outside, options.escape, "shepherd"), { recursive: true });
+    await mkdir(path.join(outside, options.escape, "shepherd-codex-homes"), {
+      recursive: true,
+    });
+    await symlink(path.join(outside, options.escape), path.join(real, target));
+  }
+  if (options.symlinkStateRoot) await symlink(real, link);
+  const config = loadConfig({
+    NODE_ENV: "test",
+    RUNTIME_PROVIDER: "container",
+    ARK_API_KEY: "ARK_SECRET_NOT_FOR_PROMPTS_OR_FILES",
+    ARK_MODEL: "agent-model",
+    SHEPHERD_MODEL: "planner-model",
+    CODEX_SANDBOX_MODE: "workspace-write",
+    CONTAINER_STATE_ROOT: link,
+    CONTAINER_STATE_VOLUME: "launchpad-state",
+    APP_DATA_DIR: path.join(link, relative.data),
+    SHEPHERD_ROOT: path.join(link, relative.shepherd),
+    SHEPHERD_CODEX_HOME_ROOT: path.join(link, relative.privateHomes),
+    CODEX_HOME: path.join(link, relative.sharedHome),
+    AGENT_WORKSPACE_ROOT: path.join(link, relative.workspaces),
+  });
+  return { root, config, workspace: path.join(link, relative.workspace) };
+}
+
 describe("CodexShepherdExecutor", () => {
   it("fails closed when the execution workspace is not canonical under the state volume", async () => {
     // The Runtime derives each volume subpath lexically from the absolute path, so
@@ -363,6 +427,55 @@ describe("CodexShepherdExecutor", () => {
 
     await expect(executor.run(executionRequest(alias))).rejects.toThrow(
       "Execution workspace must be canonical under CONTAINER_STATE_ROOT",
+    );
+  });
+
+  it("fails closed when CONTAINER_STATE_ROOT itself is reached through a symlink", async () => {
+    // Every volume subpath is derived lexically from CONTAINER_STATE_ROOT. A root
+    // that is lexically canonical but resolves elsewhere would mount a different
+    // directory under a name the operator believes is confined, so the mismatch
+    // must be refused rather than trusted.
+    const test = await stateVolumeEnvironment({ symlinkStateRoot: true });
+    const executor = new CodexShepherdExecutor(
+      test.config,
+      OWNER,
+      new FakeContainerRunner(),
+    );
+
+    await expect(executor.run(executionRequest(test.workspace))).rejects.toThrow(
+      "CONTAINER_STATE_ROOT must be a canonical directory",
+    );
+  });
+
+  it("fails closed when the private CODEX_HOME root resolves outside the state root", async () => {
+    // Lexically the root is inside CONTAINER_STATE_ROOT, so loadConfig accepts it.
+    // Only the canonical check catches a symlink that leaves the volume, which
+    // would otherwise mount host state the volume was introduced to replace.
+    const test = await stateVolumeEnvironment({ escape: "data" });
+    const executor = new CodexShepherdExecutor(
+      test.config,
+      OWNER,
+      new FakeContainerRunner(),
+    );
+
+    // Asserted in full: the managed-root guard below emits a message sharing the
+    // "escaped CONTAINER_STATE_ROOT" suffix, so a loose match would still pass
+    // with this guard deleted.
+    await expect(executor.run(executionRequest(test.workspace))).rejects.toThrow(
+      "Canonical Shepherd private CODEX_HOME root escaped CONTAINER_STATE_ROOT",
+    );
+  });
+
+  it("fails closed when the managed Shepherd root resolves outside the state root", async () => {
+    const test = await stateVolumeEnvironment({ escape: "shepherd" });
+    const executor = new CodexShepherdExecutor(
+      test.config,
+      OWNER,
+      new FakeContainerRunner(),
+    );
+
+    await expect(executor.run(executionRequest(test.workspace))).rejects.toThrow(
+      "Canonical managed Shepherd root escaped CONTAINER_STATE_ROOT",
     );
   });
 
