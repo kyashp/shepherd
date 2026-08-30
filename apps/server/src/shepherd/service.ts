@@ -5,6 +5,7 @@ import {
   appendProjectGroupMessage,
   appendShepherdEvent,
 } from "../database.js";
+import { RuntimeExecutionError } from "../errors.js";
 import { JsonStore } from "../store.js";
 import type { Agent, Database } from "../types.js";
 import { WorkspaceManager } from "../workspace.js";
@@ -72,7 +73,10 @@ import {
 import { parseProjectGroupMessage } from "./group-routing.js";
 import { GitClient, type GitClientOptions } from "./git-client.js";
 import {
+  GitConflictCleanupError,
+  GitMergeConflictError,
   PlaneAuthorityViolationError,
+  PlaneCreationError,
   PlaneManager,
   type ExecutionWorkspace,
 } from "./plane-manager.js";
@@ -83,7 +87,10 @@ import {
 } from "./prompt.js";
 import { PromotionGate, type PromotionResult } from "./promotion-gate.js";
 import { redactText, redactValue } from "./redaction.js";
-import { reconcileShepherdStartup } from "./recovery.js";
+import {
+  reconcilePersistenceRecoveryIntent,
+  reconcileShepherdStartup,
+} from "./recovery.js";
 import {
   applyWinnerDecision,
   candidatePassesMandatoryVerification,
@@ -367,6 +374,14 @@ function boundedContractAuthority(
   return intersection.authority;
 }
 
+function boundedConflictPreview(conflictFiles: readonly string[]): string {
+  return JSON.stringify(
+    conflictFiles.slice(0, 8).map((file) =>
+      file.length <= 48 ? file : `${file.slice(0, 45)}...`,
+    ),
+  );
+}
+
 export interface ShepherdIndependentVerifier {
   verify(request: VerificationRequest): Promise<VerificationEvidence>;
   cancel?(targetId: string): Promise<boolean>;
@@ -374,8 +389,10 @@ export interface ShepherdIndependentVerifier {
 }
 
 export type ShepherdFaultCheckpoint =
+  | "contract_plane_creation_start"
   | "contract_execution_workspace_ready"
   | "contract_verification_snapshot_ready"
+  | "integration_merge_start"
   | "promotion_ready_for_cas"
   | "promotion_cas_completed";
 
@@ -383,6 +400,7 @@ export interface ShepherdFaultCheckpointContext {
   missionId?: string;
   contractId?: string;
   candidateId?: string;
+  planeId?: string;
 }
 
 export interface ShepherdServiceOptions {
@@ -400,6 +418,8 @@ export interface ShepherdServiceOptions {
   ) => void | Promise<void>;
   /** Internal test-only seam around the protected-ref/worktree CAS boundary. */
   gitPromotionFaults?: GitClientOptions["promotionFaults"];
+  /** Internal test-only seam around merge-conflict cleanup and inspection. */
+  gitMergeFaults?: GitClientOptions["mergeFaults"];
   now?: () => Date;
   idFactory?: (prefix: string) => string;
   contractTimeoutMs?: number;
@@ -423,6 +443,16 @@ export interface DeterministicDemoOptions {
   allowClientReadableCredential?: boolean;
   /** Bounded human intent retained while the runnable plan stays the fixed demo. */
   originalIntent?: string;
+  /** Optional user-created Agents selected by the trusted auth-demo planner. */
+  frontendAgentId?: string;
+  backendAgentId?: string;
+  frontendTransport?: AuthTransport;
+  backendTransport?: AuthTransport;
+  /** Internal durable request binding used by the HTTP Mission command. */
+  requestRecord?: {
+    messageId: string;
+    fingerprint: string;
+  };
 }
 
 export interface ShepherdMissionDetail {
@@ -483,6 +513,10 @@ export interface StartMissionFromMessageInput {
   content: string;
   preset: "auth-demo";
   clientMessageId?: string;
+  frontendAgentId?: string;
+  backendAgentId?: string;
+  frontendTransport?: AuthTransport;
+  backendTransport?: AuthTransport;
 }
 
 export type ShepherdControlErrorCode =
@@ -533,6 +567,8 @@ interface PreparedMission {
   missionId: string;
   frontendContractId: string;
   backendContractId: string;
+  frontendTransport: AuthTransport;
+  backendTransport: AuthTransport;
 }
 
 interface ContractPlaneInput {
@@ -692,6 +728,13 @@ class AuthorityViolationError extends Error {
   }
 }
 
+class ContractVerificationInfrastructureError extends Error {
+  constructor() {
+    super("Contract independent verification infrastructure failed");
+    this.name = "ContractVerificationInfrastructureError";
+  }
+}
+
 class MissionCancelledError extends Error {
   constructor() {
     super("Mission was cancelled");
@@ -716,6 +759,7 @@ export class ShepherdService {
     | ShepherdServiceOptions["faultCheckpoint"]
     | undefined;
   private readonly gitPromotionFaults: GitClientOptions["promotionFaults"];
+  private readonly gitMergeFaults: GitClientOptions["mergeFaults"];
   private readonly now: () => Date;
   private readonly idFactory: (prefix: string) => string;
   private readonly contractTimeoutMs: number;
@@ -728,6 +772,13 @@ export class ShepherdService {
   private readonly backgroundRuns = new Map<
     string,
     Promise<DeterministicDemoResult | null>
+  >();
+  private readonly pendingMissionStarts = new Map<
+    string,
+    {
+      fingerprint: string;
+      operation: Promise<{ missionId: string; message: ProjectGroupMessage }>;
+    }
   >();
 
   constructor(options: ShepherdServiceOptions) {
@@ -744,6 +795,7 @@ export class ShepherdService {
     );
     this.faultCheckpoint = options.faultCheckpoint;
     this.gitPromotionFaults = options.gitPromotionFaults;
+    this.gitMergeFaults = options.gitMergeFaults;
     this.now = options.now ?? (() => new Date());
     this.idFactory =
       options.idFactory ??
@@ -790,6 +842,7 @@ export class ShepherdService {
   }
 
   private async initializeOnce(): Promise<void> {
+    await reconcilePersistenceRecoveryIntent({ store: this.store, now: this.now });
     if (this.store.snapshot().shepherd.projects.length > 0) {
       await validateShepherdManagedRoot(this.managedRoot);
     } else {
@@ -1307,30 +1360,109 @@ export class ShepherdService {
         .update(`auth-demo\0${clientMessageId}`, "utf8")
         .digest("hex")
         .slice(0, 40);
-    const existing = this.store
-      .snapshot()
-      .shepherd.groupMessages.find((message) => message.id === messageId);
+    const expectedFrontendAgentId = input.frontendAgentId ??
+      deterministicDemoAgentId("auth-demo", "frontend");
+    const expectedBackendAgentId = input.backendAgentId ??
+      deterministicDemoAgentId("auth-demo", "backend");
+    const expectedFrontendTransport = input.frontendTransport ?? BEARER_TRANSPORT;
+    const expectedBackendTransport = input.backendTransport ?? COOKIE_TRANSPORT;
+    const requestFingerprint = createHash("sha256")
+      .update(JSON.stringify({
+        preset: input.preset,
+        content: route.content,
+        frontendAgentId: expectedFrontendAgentId,
+        backendAgentId: expectedBackendAgentId,
+        frontendTransport: expectedFrontendTransport,
+        backendTransport: expectedBackendTransport,
+      }), "utf8")
+      .digest("hex");
+    const snapshot = this.store.snapshot();
+    const existing = snapshot.shepherd.groupMessages.find(
+      (message) => message.id === messageId,
+    );
     if (existing) {
-      if (existing.content !== route.content || !existing.missionId) {
+      const contracts = existing.missionId
+        ? snapshot.shepherd.contracts.filter(
+            (contract) => contract.missionId === existing.missionId,
+          )
+        : [];
+      const frontend = contracts.find((contract) =>
+        contract.title.startsWith("Implement frontend"),
+      );
+      const backend = contracts.find((contract) =>
+        contract.title.startsWith("Implement backend"),
+      );
+      if (
+        (existing.requestFingerprint !== undefined
+          ? existing.requestFingerprint !== requestFingerprint
+          : existing.content !== route.content ||
+            frontend?.agentId !== expectedFrontendAgentId ||
+            backend?.agentId !== expectedBackendAgentId ||
+            !frontend?.objective.includes(`transport "${expectedFrontendTransport}"`) ||
+            !backend?.objective.includes(`transport "${expectedBackendTransport}"`)) ||
+        !existing.missionId ||
+        existing.content !== route.content
+      ) {
         throw new ShepherdControlError(
           "idempotency_conflict",
-          "Client message ID was already used for different content",
+          "Client message ID was already used for a different Mission assignment",
         );
       }
       return { missionId: existing.missionId, message: existing };
     }
-    const started = await this.startDeterministicDemo({
-      projectId: "auth-demo",
-      originalIntent: route.content,
-    });
-    const message = await this.sendProjectGroupMessage("auth-demo", {
-      clientMessageId,
-      content: route.content,
-    });
-    if (message.missionId !== started.missionId) {
-      throw new Error("Project Group message did not link to its created Mission");
+    const pending = this.pendingMissionStarts.get(messageId);
+    if (pending) {
+      if (pending.fingerprint !== requestFingerprint) {
+        throw new ShepherdControlError(
+          "idempotency_conflict",
+          "Client message ID is already starting a different Mission assignment",
+        );
+      }
+      return await pending.operation;
     }
-    return { missionId: started.missionId, message };
+    const operation = (async () => {
+      const started = await this.startDeterministicDemo({
+        projectId: "auth-demo",
+        originalIntent: route.content,
+        ...(input.frontendAgentId === undefined
+          ? {}
+          : { frontendAgentId: input.frontendAgentId }),
+        ...(input.backendAgentId === undefined
+          ? {}
+          : { backendAgentId: input.backendAgentId }),
+        ...(input.frontendTransport === undefined
+          ? {}
+          : { frontendTransport: input.frontendTransport }),
+        ...(input.backendTransport === undefined
+          ? {}
+          : { backendTransport: input.backendTransport }),
+        requestRecord: {
+          messageId,
+          fingerprint: requestFingerprint,
+        },
+      });
+      const message = this.store
+        .snapshot()
+        .shepherd.groupMessages.find((item) => item.id === messageId);
+      if (!message) {
+        throw new Error("Atomic Mission request record was not persisted");
+      }
+      if (message.missionId !== started.missionId) {
+        throw new Error("Project Group message did not link to its created Mission");
+      }
+      return { missionId: started.missionId, message };
+    })();
+    this.pendingMissionStarts.set(messageId, {
+      fingerprint: requestFingerprint,
+      operation,
+    });
+    try {
+      return await operation;
+    } finally {
+      if (this.pendingMissionStarts.get(messageId)?.operation === operation) {
+        this.pendingMissionStarts.delete(messageId);
+      }
+    }
   }
 
   async cancelMission(missionId: string): Promise<Mission> {
@@ -1620,6 +1752,14 @@ export class ShepherdService {
         missionId: mission.id,
         frontendContractId: sourceContracts[0].id,
         backendContractId: sourceContracts[1].id,
+        frontendTransport:
+          collision.leftContractId === sourceContracts[0].id
+            ? collision.leftClaim.value as AuthTransport
+            : collision.rightClaim.value as AuthTransport,
+        backendTransport:
+          collision.leftContractId === sourceContracts[1].id
+            ? collision.leftClaim.value as AuthTransport
+            : collision.rightClaim.value as AuthTransport,
       };
       const selectedAt = this.timestamp();
       await this.store.mutate((database) => {
@@ -1960,12 +2100,32 @@ export class ShepherdService {
     );
   }
 
+  private missionHasContractVerificationInfrastructureFailure(
+    missionId: string,
+  ): boolean {
+    const mission = this.store
+      .snapshot()
+      .shepherd.missions.find((item) => item.id === missionId);
+    return (
+      mission?.state === "failed" &&
+      mission.failure?.code === "verification_infrastructure_error" &&
+      mission.failure.stage === "contract_verification"
+    );
+  }
+
   private ensureMissionRunnable(missionId: string): void {
     const mission = this.store
       .snapshot()
       .shepherd.missions.find((item) => item.id === missionId);
     if (!mission) throw new Error("Mission was not found");
     if (mission.state === "cancelled") throw new MissionCancelledError();
+    if (
+      mission.state === "failed" &&
+      mission.failure?.code === "verification_infrastructure_error" &&
+      mission.failure.stage === "contract_verification"
+    ) {
+      throw new ContractVerificationInfrastructureError();
+    }
   }
 
   private assertMissionRunnable(database: Database, missionId: string): Mission {
@@ -1974,6 +2134,13 @@ export class ShepherdService {
     );
     if (!mission) throw new Error("Mission was not found");
     if (mission.state === "cancelled") throw new MissionCancelledError();
+    if (
+      mission.state === "failed" &&
+      mission.failure?.code === "verification_infrastructure_error" &&
+      mission.failure.stage === "contract_verification"
+    ) {
+      throw new ContractVerificationInfrastructureError();
+    }
     return mission;
   }
 
@@ -2053,6 +2220,46 @@ export class ShepherdService {
 
   private makeFailure(error: unknown, stage: string, at: string): FailureInfo {
     const raw = error instanceof Error ? error.message : "Unknown failure";
+    if (error instanceof RuntimeExecutionError) {
+      const publicMessage = new RuntimeExecutionError(
+        error.kind,
+        error.timeoutMs,
+      ).message;
+      return {
+        code: error.kind === "timeout" ? "agent_timeout" : "agent_runtime_error",
+        message: publicMessage,
+        stage: "contract_execution",
+        at,
+        retryable: false,
+      };
+    }
+    if (error instanceof PlaneCreationError) {
+      return {
+        code: "worktree_creation_failure",
+        message: "Contract Plane worktree could not be created",
+        stage: "plane_creation",
+        at,
+        retryable: false,
+      };
+    }
+    if (error instanceof GitMergeConflictError) {
+      return {
+        code: "git_conflict",
+        message: "Verified Contract changes conflict during integration",
+        stage: "integration_merge",
+        at,
+        retryable: false,
+      };
+    }
+    if (error instanceof GitConflictCleanupError) {
+      return {
+        code: "git_conflict",
+        message: "Git conflict cleanup requires operator attention",
+        stage: "integration_cleanup",
+        at,
+        retryable: false,
+      };
+    }
     return {
       code: "unknown",
       message: this.safeText(raw),
@@ -2227,6 +2434,41 @@ export class ShepherdService {
     ) {
       throw new ShepherdControlError("invalid_input", "Mission intent is invalid");
     }
+    if (
+      options.requestRecord &&
+      (!SAFE_ID.test(options.requestRecord.messageId) ||
+        !/^[a-f0-9]{64}$/u.test(options.requestRecord.fingerprint))
+    ) {
+      throw new ShepherdControlError(
+        "invalid_input",
+        "Mission request identity is invalid",
+      );
+    }
+    const suppliedAgentCount = Number(Boolean(options.frontendAgentId)) +
+      Number(Boolean(options.backendAgentId));
+    if (suppliedAgentCount === 1) {
+      throw new ShepherdControlError(
+        "invalid_input",
+        "Select both a Frontend Agent and a Backend Agent",
+      );
+    }
+    if (
+      options.frontendAgentId &&
+      options.frontendAgentId === options.backendAgentId
+    ) {
+      throw new ShepherdControlError(
+        "invalid_input",
+        "Frontend and Backend contracts require different Agents",
+      );
+    }
+    const frontendTransport = options.frontendTransport ?? BEARER_TRANSPORT;
+    const backendTransport = options.backendTransport ?? COOKIE_TRANSPORT;
+    if (frontendTransport === backendTransport) {
+      throw new ShepherdControlError(
+        "invalid_input",
+        "The collision demo requires incompatible authentication transports",
+      );
+    }
     const beforePreparation = this.store.snapshot();
     const existingActive = beforePreparation.shepherd.missions.find(
       (mission) =>
@@ -2234,6 +2476,39 @@ export class ShepherdService {
     );
     if (existingActive) {
       throw new Error("The managed project already has a non-terminal Mission");
+    }
+    const currentAgents = beforePreparation.agents;
+    const selectedFrontendAgent = options.frontendAgentId
+      ? currentAgents.find((agent) => agent.id === options.frontendAgentId)
+      : undefined;
+    const selectedBackendAgent = options.backendAgentId
+      ? currentAgents.find((agent) => agent.id === options.backendAgentId)
+      : undefined;
+    if (options.frontendAgentId && !selectedFrontendAgent) {
+      throw new ShepherdControlError("not_found", "Selected Frontend Agent was not found");
+    }
+    if (options.backendAgentId && !selectedBackendAgent) {
+      throw new ShepherdControlError("not_found", "Selected Backend Agent was not found");
+    }
+    if (selectedFrontendAgent && selectedFrontendAgent.role !== "Frontend") {
+      throw new ShepherdControlError(
+        "invalid_input",
+        "The Frontend contract requires an Agent with the Frontend role",
+      );
+    }
+    if (selectedBackendAgent && selectedBackendAgent.role !== "Backend") {
+      throw new ShepherdControlError(
+        "invalid_input",
+        "The Backend contract requires an Agent with the Backend role",
+      );
+    }
+    for (const selected of [selectedFrontendAgent, selectedBackendAgent]) {
+      if (selected && selected.status !== "ready") {
+        throw new ShepherdControlError(
+          "conflict",
+          `${selected.name} must be ready before Shepherd assigns a Contract`,
+        );
+      }
     }
     const persistedProject = beforePreparation.shepherd.projects.find(
       (item) => item.id === requestedProjectId,
@@ -2284,6 +2559,7 @@ export class ShepherdService {
         ...(this.gitPromotionFaults === undefined
           ? {}
           : { promotionFaults: this.gitPromotionFaults }),
+        ...(this.gitMergeFaults === undefined ? {} : { mergeFaults: this.gitMergeFaults }),
       }),
       now: this.now,
     });
@@ -2293,10 +2569,12 @@ export class ShepherdService {
     const missionId = this.identifier("mission");
     const frontendContractId = this.identifier("contract-front");
     const backendContractId = this.identifier("contract-back");
-    const frontendAgentId = deterministicDemoAgentId(project.projectId, "frontend");
-    const backendAgentId = deterministicDemoAgentId(project.projectId, "backend");
-    const frontendAuthority = authorityFor("frontend");
-    const backendAuthority = authorityFor("backend");
+    const frontendAgentId = selectedFrontendAgent?.id ??
+      deterministicDemoAgentId(project.projectId, "frontend");
+    const backendAgentId = selectedBackendAgent?.id ??
+      deterministicDemoAgentId(project.projectId, "backend");
+    const frontendAuthority = selectedFrontendAgent?.authority ?? authorityFor("frontend");
+    const backendAuthority = selectedBackendAgent?.authority ?? authorityFor("backend");
     const frontendContractAuthority = boundedContractAuthority(
       frontendAuthority,
       authorityFor("frontend"),
@@ -2305,23 +2583,26 @@ export class ShepherdService {
       backendAuthority,
       authorityFor("backend"),
     );
-    const currentAgents = this.store.snapshot().agents;
-    const frontendAgent = this.makeAgent(
-      currentAgents.find((agent) => agent.id === frontendAgentId),
-      frontendAgentId,
-      "Frontend Agent",
-      "Frontend",
-      frontendAuthority,
-      createdAt,
-    );
-    const backendAgent = this.makeAgent(
-      currentAgents.find((agent) => agent.id === backendAgentId),
-      backendAgentId,
-      "Backend Agent",
-      "Backend",
-      backendAuthority,
-      createdAt,
-    );
+    const frontendAgent = selectedFrontendAgent
+      ? { ...selectedFrontendAgent, currentContractId: null, updatedAt: createdAt }
+      : this.makeAgent(
+          currentAgents.find((agent) => agent.id === frontendAgentId),
+          frontendAgentId,
+          "Frontend Agent",
+          "Frontend",
+          frontendAuthority,
+          createdAt,
+        );
+    const backendAgent = selectedBackendAgent
+      ? { ...selectedBackendAgent, currentContractId: null, updatedAt: createdAt }
+      : this.makeAgent(
+          currentAgents.find((agent) => agent.id === backendAgentId),
+          backendAgentId,
+          "Backend Agent",
+          "Backend",
+          backendAuthority,
+          createdAt,
+        );
     await this.ensureAgentWorkspace(
       frontendAgent,
       project.repositoryPath,
@@ -2357,8 +2638,71 @@ export class ShepherdService {
         updatedAt: createdAt,
       };
       replaceById(database.shepherd.projects, projectRecord);
-      replaceById(database.agents, frontendAgent);
-      replaceById(database.agents, backendAgent);
+      if (options.requestRecord) {
+        const duplicate = database.shepherd.groupMessages.find(
+          (message) => message.id === options.requestRecord?.messageId,
+        );
+        if (duplicate) {
+          throw new ShepherdControlError(
+            "idempotency_conflict",
+            "Mission request was durably recorded before this assignment",
+          );
+        }
+      }
+      const reserveAgent = (
+        selected: Agent | undefined,
+        fallback: Agent,
+        role: "Frontend" | "Backend",
+        requestedAuthority: ScopedAuthority,
+        contractId: string,
+      ) => {
+        if (!selected) {
+          replaceById(database.agents, fallback);
+          return;
+        }
+        const current = database.agents.find((agent) => agent.id === selected.id);
+        if (
+          !current ||
+          current.role !== role ||
+          current.status !== "ready" ||
+          current.currentContractId
+        ) {
+          throw new ShepherdControlError(
+            "conflict",
+            `${role} Agent availability changed before Contract assignment`,
+          );
+        }
+        const currentAuthority = boundedContractAuthority(
+          current.authority ?? requestedAuthority,
+          requestedAuthority,
+        );
+        if (JSON.stringify(currentAuthority) !== JSON.stringify(
+          role === "Frontend" ? frontendContractAuthority : backendContractAuthority,
+        )) {
+          throw new ShepherdControlError(
+            "conflict",
+            `${role} Agent authority changed before Contract assignment`,
+          );
+        }
+        current.status = "busy";
+        current.currentContractId = contractId;
+        current.lastError = null;
+        current.updatedAt = createdAt;
+      };
+      reserveAgent(
+        selectedFrontendAgent,
+        frontendAgent,
+        "Frontend",
+        authorityFor("frontend"),
+        frontendContractId,
+      );
+      reserveAgent(
+        selectedBackendAgent,
+        backendAgent,
+        "Backend",
+        authorityFor("backend"),
+        backendContractId,
+      );
 
       const mission: Mission = {
         id: missionId,
@@ -2385,7 +2729,7 @@ export class ShepherdService {
           agentId: frontendAgentId,
           title: "Implement frontend authentication transport",
           objective:
-            'Create src/frontend/auth.json with exactly transport "bearer-jwt" and clientReadableCredential true.',
+            `Configure the required frontend authentication artifact with exactly transport "${frontendTransport}" and clientReadableCredential ${String(frontendTransport === BEARER_TRANSPORT)}.`,
           artifactPath: "src/frontend/auth.json",
           authority: frontendContractAuthority,
           acceptanceChecks: [frontendCheck()],
@@ -2397,7 +2741,7 @@ export class ShepherdService {
           agentId: backendAgentId,
           title: "Implement backend authentication transport",
           objective:
-            'Create src/backend/auth.json with exactly transport "http-only-session-cookie" and clientReadableCredential false.',
+            `Configure the required backend authentication artifact with exactly transport "${backendTransport}" and clientReadableCredential ${String(backendTransport === BEARER_TRANSPORT)}.`,
           artifactPath: "src/backend/auth.json",
           authority: backendContractAuthority,
           acceptanceChecks: [backendCheck()],
@@ -2405,6 +2749,20 @@ export class ShepherdService {
         }),
       ];
       database.shepherd.contracts.push(...contracts);
+      if (options.requestRecord) {
+        appendProjectGroupMessage(database, {
+          id: options.requestRecord.messageId,
+          projectId: project.projectId,
+          missionId,
+          senderType: "human",
+          senderId: null,
+          content: originalIntent,
+          targetAgentId: null,
+          contractId: null,
+          requestFingerprint: options.requestRecord.fingerprint,
+          createdAt,
+        });
+      }
       this.recordEvent(database, {
         type: "mission_created",
         summary: "Created authentication collision Mission",
@@ -2440,6 +2798,8 @@ export class ShepherdService {
       missionId,
       frontendContractId,
       backendContractId,
+      frontendTransport,
+      backendTransport,
     };
   }
 
@@ -2590,6 +2950,7 @@ export class ShepherdService {
         operation: {
           kind: "frontend_contract",
           contractId: prepared.frontendContractId,
+          targetTransport: prepared.frontendTransport,
         },
       },
       {
@@ -2597,6 +2958,7 @@ export class ShepherdService {
         operation: {
           kind: "backend_contract",
           contractId: prepared.backendContractId,
+          targetTransport: prepared.backendTransport,
         },
       },
     ];
@@ -2649,18 +3011,40 @@ export class ShepherdService {
       return input;
     });
     const contractPlanes: Plane[] = [];
-    for (const input of scheduledInputs) {
-      contractPlanes.push(await this.createContractPlane(prepared, input.contractId));
+    try {
+      for (const input of scheduledInputs) {
+        contractPlanes.push(await this.createContractPlane(prepared, input.contractId));
+      }
+    } catch (error) {
+      await this.unwindInitialContractPlanes(prepared, contractPlanes, error);
+      throw error;
     }
-    const contractResults = await allSettledBounded(
+    let rejectInfrastructureFailure!: (reason: unknown) => void;
+    const infrastructureFailure = new Promise<PromiseSettledResult<void>[]>(
+      (_resolve, reject) => {
+        rejectInfrastructureFailure = reject;
+      },
+    );
+    const contractResultsPromise = allSettledBounded(
       scheduledInputs,
       this.settings().maxConcurrentPlanes,
       async (input, index) => {
         const plane = contractPlanes[index];
         if (!plane) throw new Error("Contract Plane was not created");
-        await this.executeContract(prepared, input, plane);
+        try {
+          await this.executeContract(prepared, input, plane);
+        } catch (error) {
+          if (error instanceof ContractVerificationInfrastructureError) {
+            rejectInfrastructureFailure(error);
+          }
+          throw error;
+        }
       },
     );
+    const contractResults = await Promise.race([
+      contractResultsPromise,
+      infrastructureFailure,
+    ]);
     const contractFailure = contractResults.find(
       (result): result is PromiseRejectedResult => result.status === "rejected",
     );
@@ -2668,15 +3052,44 @@ export class ShepherdService {
     this.ensureMissionRunnable(prepared.missionId);
 
     const verificationAt = this.timestamp();
-    await this.store.mutate((database) => {
-      this.assertMissionRunnable(database, prepared.missionId);
-      transitionMissionAndRecord(database, prepared.missionId, "verifying", {
-        actor: "control_plane",
-        eventActor: SHEPHERD_ACTOR,
+    try {
+      await this.store.mutateRecoverably({
+        operation: "mission_verification_transition",
+        missionId: prepared.missionId,
+        contractIds: [prepared.frontendContractId, prepared.backendContractId],
+        planeIds: contractPlanes.map((plane) => plane.id),
+        stage: "mission_verification_persistence",
         timestamp: verificationAt,
+      }, (database) => {
+        this.assertMissionRunnable(database, prepared.missionId);
+        transitionMissionAndRecord(database, prepared.missionId, "verifying", {
+          actor: "control_plane",
+          eventActor: SHEPHERD_ACTOR,
+          timestamp: verificationAt,
+        });
       });
-    });
+    } catch (error) {
+      if (this.store.persistenceRecoveryIntent()) {
+        const outcome = await reconcilePersistenceRecoveryIntent({
+          store: this.store,
+          now: this.now,
+        });
+        if (outcome === "committed") {
+          return await this.continueAfterMissionVerificationPersistence(
+            prepared,
+            contractPlanes,
+          );
+        }
+      }
+      throw error;
+    }
+    return await this.continueAfterMissionVerificationPersistence(prepared, contractPlanes);
+  }
 
+  private async continueAfterMissionVerificationPersistence(
+    prepared: PreparedMission,
+    contractPlanes: Plane[],
+  ): Promise<DeterministicDemoResult> {
     const integrationPlane = await this.integrateContracts(prepared);
     const integrationCommit = integrationPlane.headCommit;
     if (!integrationCommit) throw new Error("Integration Plane has no immutable head");
@@ -2846,18 +3259,48 @@ export class ShepherdService {
     const snapshot = this.store.snapshot();
     const contract = snapshot.shepherd.contracts.find((item) => item.id === contractId);
     if (!contract) throw new Error("Execution Contract is missing");
-    const plane = await prepared.planeManager.createPlane({
-      id: this.identifier("plane-contract"),
-      projectId: prepared.project.projectId,
+    const planeId = this.identifier("plane-contract");
+    await this.checkpoint("contract_plane_creation_start", {
       missionId: prepared.missionId,
-      kind: "contract",
       contractId,
-      candidateId: null,
-      baseCommit: prepared.project.headCommit,
-      purpose: contract.objective,
-      executionIdentity: this.identifier("execution"),
-      authority: contract.authority,
+      planeId,
     });
+    let plane: Plane;
+    try {
+      plane = await prepared.planeManager.createPlane({
+        id: planeId,
+        projectId: prepared.project.projectId,
+        missionId: prepared.missionId,
+        kind: "contract",
+        contractId,
+        candidateId: null,
+        baseCommit: prepared.project.headCommit,
+        purpose: contract.objective,
+        executionIdentity: this.identifier("execution"),
+        authority: contract.authority,
+      });
+    } catch (error) {
+      const failedAt = this.timestamp();
+      const failure = this.makeFailure(error, "plane_creation", failedAt);
+      await this.store.mutate((database) => {
+        transitionContractAndRecord(database, contractId, "execution_failed", {
+          actor: "control_plane",
+          eventActor: SHEPHERD_ACTOR,
+          timestamp: failedAt,
+          failure,
+          summary: "Contract Plane worktree creation failed",
+          details: { failureCode: failure.code, stage: failure.stage },
+        });
+        const agent = database.agents.find((item) => item.id === contract.agentId);
+        if (agent) {
+          agent.status = "error";
+          agent.currentContractId = null;
+          agent.lastError = failure.message;
+          agent.updatedAt = failedAt;
+        }
+      });
+      throw error;
+    }
     try {
       await this.store.mutate((database) => {
         this.assertMissionRunnable(database, prepared.missionId);
@@ -2874,6 +3317,98 @@ export class ShepherdService {
       throw error;
     }
     return plane;
+  }
+
+  private async unwindInitialContractPlanes(
+    prepared: PreparedMission,
+    planes: readonly Plane[],
+    creationError: unknown,
+  ): Promise<void> {
+    if (planes.length === 0) return;
+    const destroyedIds = new Set<string>();
+    const cleanupFailedIds = new Set<string>();
+    for (const plane of [...planes].reverse()) {
+      try {
+        await prepared.planeManager.destroyPlane(plane);
+        destroyedIds.add(plane.id);
+      } catch {
+        cleanupFailedIds.add(plane.id);
+      }
+    }
+    const updatedAt = this.timestamp();
+    const cleanupFailure: FailureInfo = {
+      code: "worktree_creation_failure",
+      message: "Initial Contract Plane cleanup requires operator attention",
+      stage: "plane_unwind",
+      at: updatedAt,
+      retryable: false,
+    };
+    const creationFailure = this.makeFailure(
+      creationError,
+      "plane_creation",
+      updatedAt,
+    );
+    await this.store.mutate((database) => {
+      const missionContracts = database.shepherd.contracts.filter(
+        (contract) => contract.missionId === prepared.missionId,
+      );
+      database.shepherd.planes = database.shepherd.planes.filter((plane) => {
+        if (destroyedIds.has(plane.id)) return false;
+        if (cleanupFailedIds.has(plane.id)) {
+          plane.state = "failed";
+          plane.error = cleanupFailure;
+          plane.updatedAt = updatedAt;
+        }
+        return true;
+      });
+      for (const contract of missionContracts) {
+        if (contract.planeId && destroyedIds.has(contract.planeId)) {
+          contract.planeId = null;
+          contract.updatedAt = updatedAt;
+        } else if (
+          contract.planeId &&
+          cleanupFailedIds.has(contract.planeId) &&
+          canTransitionContract(contract.state, "interrupted", "control_plane")
+        ) {
+          transitionContractAndRecord(database, contract.id, "interrupted", {
+            actor: "control_plane",
+            eventActor: SHEPHERD_ACTOR,
+            timestamp: updatedAt,
+            failure: cleanupFailure,
+            summary: "Initial Contract Plane cleanup requires operator attention",
+            details: { failureCode: cleanupFailure.code, stage: cleanupFailure.stage },
+          });
+        }
+        const agent = database.agents.find((item) => item.id === contract.agentId);
+        if (agent?.currentContractId === contract.id) {
+          agent.currentContractId = null;
+          agent.status = cleanupFailedIds.has(contract.planeId ?? "")
+            ? "error"
+            : "ready";
+          agent.lastError = cleanupFailedIds.has(contract.planeId ?? "")
+            ? cleanupFailure.message
+            : null;
+          agent.updatedAt = updatedAt;
+        }
+      }
+      if (cleanupFailedIds.size > 0) {
+        const mission = database.shepherd.missions.find(
+          (item) => item.id === prepared.missionId,
+        );
+        if (
+          mission &&
+          canTransitionMission(mission.state, "attention_required", "control_plane")
+        ) {
+          transitionMissionAndRecord(database, mission.id, "attention_required", {
+            actor: "control_plane",
+            eventActor: SHEPHERD_ACTOR,
+            timestamp: updatedAt,
+            attentionReason: "plane_unwind_failed",
+            failure: creationFailure,
+          });
+        }
+      }
+    });
   }
 
   private async persistContractAuthorityDenial(
@@ -2996,7 +3531,10 @@ export class ShepherdService {
       );
       initialPlane.runtimeSessionFingerprint = runtimeSessionFingerprint;
     } catch (error) {
-      if (error instanceof MissionCancelledError || this.missionIsCancelled(prepared.missionId)) {
+      if (
+        error instanceof MissionCancelledError ||
+        this.missionIsCancelled(prepared.missionId)
+      ) {
         if (executionWorkspace) {
           await prepared.planeManager
             .destroyExecutionWorkspace(executionWorkspace)
@@ -3004,18 +3542,39 @@ export class ShepherdService {
         }
         throw new MissionCancelledError();
       }
+      if (
+        error instanceof ContractVerificationInfrastructureError ||
+        this.missionHasContractVerificationInfrastructureFailure(
+          prepared.missionId,
+        )
+      ) {
+        if (executionWorkspace) {
+          await prepared.planeManager
+            .destroyExecutionWorkspace(executionWorkspace)
+            .catch(() => undefined);
+        }
+        throw new ContractVerificationInfrastructureError();
+      }
       const failedAt = this.timestamp();
       const failure = this.makeFailure(error, "contract_execution", failedAt);
       await this.store.mutate((database) => {
         transitionContractAndRecord(
           database,
           input.contractId,
-          "execution_failed",
+          failure.code === "agent_timeout"
+            ? "execution_timed_out"
+            : "execution_failed",
           {
             actor: "control_plane",
             eventActor: SHEPHERD_ACTOR,
             timestamp: failedAt,
             failure,
+            ...(failure.code === "agent_timeout"
+              ? { summary: "Agent Runtime execution timed out" }
+              : failure.code === "agent_runtime_error"
+                ? { summary: "Agent Runtime execution failed" }
+                : {}),
+            details: { failureCode: failure.code },
           },
         );
         const plane = database.shepherd.planes.find(
@@ -3288,24 +3847,51 @@ export class ShepherdService {
     });
 
     if (!plane.headCommit) throw new Error("Contract Plane has no immutable commit");
-    const evidence = this.sanitizeEvidence(
-      await prepared.planeManager.withVerificationSnapshot(
-        plane.headCommit,
-        async (snapshot) => {
-          await this.checkpoint("contract_verification_snapshot_ready", {
-            missionId: prepared.missionId,
-            contractId: input.contractId,
-          });
-          return await this.verifier.verify({
-            targetType: "contract",
-            targetId: input.contractId,
-            planePath: snapshot.path,
-            checks: contract.acceptance.checks,
-            changedFiles: plane.changedFiles,
-          });
-        },
-      ),
-    );
+    let evidence: VerificationEvidence;
+    try {
+      evidence = this.sanitizeEvidence(
+        await prepared.planeManager.withVerificationSnapshot(
+          plane.headCommit,
+          async (snapshot) => {
+            await this.checkpoint("contract_verification_snapshot_ready", {
+              missionId: prepared.missionId,
+              contractId: input.contractId,
+            });
+            this.ensureMissionRunnable(prepared.missionId);
+            return await this.verifier.verify({
+              targetType: "contract",
+              targetId: input.contractId,
+              planePath: snapshot.path,
+              checks: contract.acceptance.checks,
+              changedFiles: plane.changedFiles,
+            });
+          },
+        ),
+      );
+    } catch (error) {
+      if (
+        error instanceof MissionCancelledError ||
+        this.missionIsCancelled(prepared.missionId)
+      ) {
+        throw new MissionCancelledError();
+      }
+      evidence = await this.persistContractVerificationInfrastructureFailure(
+        prepared.missionId,
+        input.contractId,
+        plane.id,
+      );
+    }
+    if (
+      evidence.checks.some(
+        (check) => check.mandatory && check.status === "infrastructure_error",
+      )
+    ) {
+      evidence = await this.persistContractVerificationInfrastructureFailure(
+        prepared.missionId,
+        input.contractId,
+        plane.id,
+      );
+    }
     this.ensureMissionRunnable(prepared.missionId);
     const verifiedAt = this.timestamp();
     if (!evidence.passed) {
@@ -3412,6 +3998,182 @@ export class ShepherdService {
     });
   }
 
+  private async persistContractVerificationInfrastructureFailure(
+    missionId: string,
+    contractId: string,
+    planeId: string,
+  ): Promise<never> {
+    const failedAt = this.timestamp();
+    const failure: FailureInfo = {
+      code: "verification_infrastructure_error",
+      message: "Contract independent verification infrastructure failed",
+      stage: "contract_verification",
+      at: failedAt,
+      retryable: true,
+    };
+    let cancelled = false;
+    const executorIds: string[] = [];
+    const verifierIds: string[] = [];
+    await this.store.mutate((database) => {
+      const mission = database.shepherd.missions.find(
+        (item) => item.id === missionId,
+      );
+      const contract = database.shepherd.contracts.find(
+        (item) => item.id === contractId,
+      );
+      const plane = database.shepherd.planes.find((item) => item.id === planeId);
+      if (!mission || !contract || !plane) {
+        throw new Error(
+          "Contract verification records disappeared before failure persistence",
+        );
+      }
+      if (mission.state === "cancelled") {
+        cancelled = true;
+        return;
+      }
+      if (
+        mission.state === "failed" &&
+        mission.failure?.code === failure.code &&
+        mission.failure.stage === failure.stage
+      ) {
+        return;
+      }
+      if (contract.state !== "verifying") {
+        throw new Error(
+          "Contract left verification before infrastructure failure persistence",
+        );
+      }
+      const missionContractIds = new Set(mission.contractIds);
+      for (const affectedContract of database.shepherd.contracts) {
+        if (
+          affectedContract.missionId !== missionId ||
+          !missionContractIds.has(affectedContract.id)
+        ) {
+          continue;
+        }
+        if (affectedContract.state === "verifying") {
+          verifierIds.push(affectedContract.id);
+        }
+        if (affectedContract.id === contractId) {
+          transitionContractAndRecord(
+            database,
+            affectedContract.id,
+            "verification_failed",
+            {
+              actor: "control_plane",
+              eventActor: SHEPHERD_ACTOR,
+              timestamp: failedAt,
+              failure: { ...failure },
+              summary: failure.message,
+              details: {
+                failureCode: failure.code,
+                stage: failure.stage,
+              },
+            },
+          );
+        } else if (
+          canTransitionContract(
+            affectedContract.state,
+            "interrupted",
+            "control_plane",
+          )
+        ) {
+          transitionContractAndRecord(
+            database,
+            affectedContract.id,
+            "interrupted",
+            {
+              actor: "control_plane",
+              eventActor: SHEPHERD_ACTOR,
+              timestamp: failedAt,
+              failure: { ...failure },
+              summary:
+                "Contract interrupted after independent verification infrastructure failed",
+              details: {
+                failureCode: failure.code,
+                stage: failure.stage,
+              },
+            },
+          );
+        }
+      }
+      for (const affectedPlane of database.shepherd.planes) {
+        if (
+          affectedPlane.missionId !== missionId ||
+          affectedPlane.kind !== "contract" ||
+          !affectedPlane.contractId ||
+          !missionContractIds.has(affectedPlane.contractId)
+        ) {
+          continue;
+        }
+        if (
+          affectedPlane.state === "creating" ||
+          affectedPlane.state === "ready" ||
+          affectedPlane.state === "running" ||
+          affectedPlane.state === "inspecting"
+        ) {
+          executorIds.push(affectedPlane.executionIdentity);
+          affectedPlane.state =
+            affectedPlane.id === planeId ? "failed" : "interrupted";
+          affectedPlane.error = { ...failure };
+          affectedPlane.updatedAt = failedAt;
+        }
+      }
+      for (const agent of database.agents) {
+        if (
+          agent.currentContractId &&
+          missionContractIds.has(agent.currentContractId)
+        ) {
+          agent.status = "error";
+          agent.currentContractId = null;
+          agent.lastError = failure.message;
+          agent.updatedAt = failedAt;
+        }
+      }
+      if (
+        mission.state !== "failed" &&
+        canTransitionMission(mission.state, "failed", "control_plane")
+      ) {
+        transitionMissionAndRecord(database, missionId, "failed", {
+          actor: "control_plane",
+          eventActor: SHEPHERD_ACTOR,
+          timestamp: failedAt,
+          failure: { ...failure },
+          summary: failure.message,
+          details: {
+            failureCode: failure.code,
+            stage: failure.stage,
+          },
+        });
+      }
+      const project = database.shepherd.projects.find(
+        (item) => item.id === mission.projectId,
+      );
+      if (project?.activeMissionId === missionId) {
+        project.activeMissionId = null;
+        project.updatedAt = failedAt;
+      }
+    });
+    if (cancelled) throw new MissionCancelledError();
+    const verifierCancel = this.verifier.cancel;
+    const cancellationTasks: Promise<boolean>[] = [
+      ...new Set(executorIds),
+    ].map((id) =>
+      Promise.resolve().then(async () => await this.executor.cancel(id)),
+    );
+    if (verifierCancel) {
+      cancellationTasks.push(
+        ...[...new Set(verifierIds)].map((id) =>
+          Promise.resolve().then(
+            async () => await verifierCancel.call(this.verifier, id),
+          ),
+        ),
+      );
+    }
+    void Promise.allSettled(cancellationTasks);
+    throw new ContractVerificationInfrastructureError();
+  }
+
   private async integrateContracts(prepared: PreparedMission): Promise<Plane> {
     this.ensureMissionRunnable(prepared.missionId);
     let integration = await prepared.planeManager.createIntegrationPlane({
@@ -3432,6 +4194,10 @@ export class ShepherdService {
       await prepared.planeManager.destroyPlane(integration).catch(() => undefined);
       throw error;
     }
+    await this.checkpoint("integration_merge_start", {
+      missionId: prepared.missionId,
+      planeId: integration.id,
+    });
     const contractPlanes = this.store
       .snapshot()
       .shepherd.planes.filter(
@@ -3443,13 +4209,72 @@ export class ShepherdService {
     }
     for (const contractPlane of contractPlanes) {
       this.ensureMissionRunnable(prepared.missionId);
-      const merged = await prepared.planeManager.mergePlane(
-        integration,
-        contractPlane,
-      );
+      let merged;
+      try {
+        merged = await prepared.planeManager.mergePlane(integration, contractPlane);
+      } catch (error) {
+        if (!(error instanceof GitConflictCleanupError)) throw error;
+        const failedAt = this.timestamp();
+        const failure = this.makeFailure(error, "integration_cleanup", failedAt);
+        await this.store.mutate((database) => {
+          const persistedIntegration = database.shepherd.planes.find(
+            (plane) => plane.id === integration.id,
+          );
+          const mission = database.shepherd.missions.find(
+            (item) => item.id === prepared.missionId,
+          );
+          if (!persistedIntegration || !mission) {
+            throw new Error("Integration state disappeared before cleanup failure persistence");
+          }
+          persistedIntegration.state = "failed";
+          persistedIntegration.error = failure;
+          persistedIntegration.updatedAt = failedAt;
+          if (mission.state !== "attention_required") {
+            transitionMissionAndRecord(database, mission.id, "attention_required", {
+              actor: "control_plane",
+              eventActor: SHEPHERD_ACTOR,
+              timestamp: failedAt,
+              attentionReason: failure.message,
+              failure,
+              summary: failure.message,
+              details: { failureCode: failure.code, stage: failure.stage },
+            });
+          }
+        });
+        throw error;
+      }
       this.ensureMissionRunnable(prepared.missionId);
       if (!merged.merged || merged.conflictFiles.length > 0) {
-        throw new Error("Verified Contracts produced a textual Git conflict");
+        const error = new GitMergeConflictError(merged.conflictFiles);
+        const failedAt = this.timestamp();
+        const failure = this.makeFailure(error, "integration_merge", failedAt);
+        await this.store.mutate((database) => {
+          const persistedIntegration = database.shepherd.planes.find(
+            (plane) => plane.id === integration.id,
+          );
+          if (!persistedIntegration) {
+            throw new Error("Integration Plane disappeared before conflict persistence");
+          }
+          persistedIntegration.state = "failed";
+          persistedIntegration.error = failure;
+          persistedIntegration.updatedAt = failedAt;
+          this.recordEvent(database, {
+            type: "mission_state_changed",
+            summary: failure.message,
+            missionId: prepared.missionId,
+            contractId: contractPlane.contractId,
+            planeId: integration.id,
+            actor: SHEPHERD_ACTOR,
+            timestamp: failedAt,
+            details: {
+              failureCode: failure.code,
+              stage: failure.stage,
+              conflictFileCount: merged.conflictFiles.length,
+              conflictFiles: boundedConflictPreview(merged.conflictFiles),
+            },
+          });
+        });
+        throw error;
       }
       integration = merged.plane;
       await this.store.mutate((database) => {
@@ -4060,6 +4885,10 @@ export class ShepherdService {
       if (!candidate || !plane || candidate.executionState === "failed") return;
       candidate.executionState = "failed";
       const rawMessage = error instanceof Error ? error.message : "";
+      const runtimeFailure =
+        error instanceof RuntimeExecutionError
+          ? new RuntimeExecutionError(error.kind, error.timeoutMs)
+          : null;
       candidate.failure = error instanceof AuthorityViolationError
         ? {
               code: "unauthorized_file_change",
@@ -4069,12 +4898,13 @@ export class ShepherdService {
               retryable: false,
             }
         : {
-            code: /timed out after/iu.test(rawMessage)
+            code: runtimeFailure?.kind === "timeout" || /timed out after/iu.test(rawMessage)
               ? "candidate_timeout"
               : error instanceof Error && error.name === "PlaneCreationError"
                 ? "worktree_creation_failure"
                 : "agent_runtime_error",
-            message: this.safeText(rawMessage || "Candidate execution failed"),
+            message: runtimeFailure?.message ??
+              this.safeText(rawMessage || "Candidate execution failed"),
             stage: "candidate_execution",
             at: failedAt,
             retryable: true,
@@ -4553,6 +5383,9 @@ export class ShepherdService {
     error: unknown,
     stage: string,
   ): Promise<void> {
+    if (this.store.persistenceRecoveryIntent()?.missionId === missionId) {
+      return;
+    }
     const failedAt = this.timestamp();
     await this.store.mutate((database) => {
       const mission = database.shepherd.missions.find(
@@ -4572,6 +5405,12 @@ export class ShepherdService {
           eventActor: SHEPHERD_ACTOR,
           timestamp: failedAt,
           failure,
+          ...(failure.code === "agent_timeout"
+            ? { summary: "Mission failed because an Agent Runtime timed out" }
+            : failure.code === "agent_runtime_error"
+              ? { summary: "Mission failed because an Agent Runtime execution failed" }
+              : {}),
+          details: { failureCode: failure.code },
         });
       }
       const project = database.shepherd.projects.find(

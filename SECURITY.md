@@ -6,7 +6,8 @@ on the default branch is supported.
 Shepherd adds stricter authority, Git Plane, verifier, redaction, and promotion
 boundaries for its managed demo project. These do not turn the broader Starter
 Kit into a production identity or tenant-isolation system. Current security
-evidence and pending review are tracked in [docs/HANDOVER.md](docs/HANDOVER.md).
+evidence and pending review are tracked in [docs/TASKS.md](docs/TASKS.md), with
+material interpretations in [docs/DEVIATIONS.md](docs/DEVIATIONS.md).
 
 ## Report a vulnerability
 

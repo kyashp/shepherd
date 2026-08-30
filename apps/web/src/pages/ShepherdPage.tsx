@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { api } from "../api";
 import { navigate } from "../router";
 import { useShepherdPolling } from "../shepherd-hooks";
 import type {
   Agent,
+  AuthTransport,
   ExecutionContract,
   Mission,
   Plane,
@@ -30,6 +31,7 @@ import {
 } from "../ui";
 
 type EventFilter = "all" | "contracts" | "verification" | "collisions" | "resolution";
+type CandidateEvidenceStage = "candidate" | "promotion";
 
 const filterLabels: Array<{ id: EventFilter; label: string }> = [
   { id: "all", label: "All" },
@@ -55,7 +57,7 @@ function matchesFilter(event: ShepherdEvent, filter: EventFilter): boolean {
   return /resolution|candidate|tie|promotion/u.test(event.type);
 }
 
-function EvidenceSummary({ evidence }: { evidence: VerificationEvidence }) {
+export function EvidenceSummary({ evidence }: { evidence: VerificationEvidence }) {
   return (
     <div className="evidence-summary">
       <div className="evidence-head">
@@ -83,31 +85,243 @@ function EvidenceSummary({ evidence }: { evidence: VerificationEvidence }) {
   );
 }
 
+export function ExecutionContractPanel({
+  contract,
+  agent,
+}: {
+  contract: ExecutionContract;
+  agent: Agent | null;
+}) {
+  const timestamps = [
+    ["Created", contract.createdAt],
+    ["Updated", contract.updatedAt],
+    ["Started", contract.startedAt],
+    ["Agent completed", contract.agentCompletedAt],
+    ["Verified", contract.verifiedAt],
+    ["Completed", contract.completedAt],
+  ].filter((entry): entry is [string, string] => Boolean(entry[1]));
+  return (
+    <section className="contract-definition" aria-label="Agent execution contract">
+      <div className="contract-definition-heading">
+        <div><span className="eyebrow">Agent execution contract</span><strong>{contract.title}</strong></div>
+        <StatePill value={contract.state} />
+      </div>
+      <dl className="event-details contract-core-details">
+        <div><dt>Contract ID</dt><dd>{contract.id}</dd></div>
+        <div><dt>Assigned Agent</dt><dd>{agent?.name ?? contract.agentId}</dd></div>
+        <div><dt>Agent ID</dt><dd>{contract.agentId}</dd></div>
+        <div><dt>Mission</dt><dd>{contract.missionId}</dd></div>
+        <div><dt>Plane</dt><dd>{contract.planeId ?? "Assigned when execution starts"}</dd></div>
+      </dl>
+      <div className="contract-definition-section">
+        <strong>Objective</strong>
+        <p>{contract.objective}</p>
+      </div>
+      <div className="contract-definition-grid">
+        <div>
+          <strong>Dependencies</strong>
+          <p>{contract.dependencyIds.length > 0 ? contract.dependencyIds.join(" · ") : "None — runnable in parallel"}</p>
+        </div>
+        <div>
+          <strong>Semantic contract</strong>
+          <p>Scopes: {contract.semanticScopes.join(" · ") || "None"}</p>
+          <p>Exclusive claims: {contract.declaredClaimKeys.join(" · ") || "None"}</p>
+        </div>
+      </div>
+      <div className="contract-definition-section">
+        <strong>Contextual inputs</strong>
+        {contract.contextualInputs.length > 0 ? (
+          <ul className="contract-compact-list">
+            {contract.contextualInputs.map((input) => (
+              <li key={`${input.name}-${input.sourceContractId ?? "mission"}`}><span>{input.name}</span><code>{input.value}</code></li>
+            ))}
+          </ul>
+        ) : <p>None</p>}
+      </div>
+      <div className="contract-definition-section">
+        <strong>Scoped authority</strong>
+        <dl className="contract-authority">
+          <div><dt>Readable</dt><dd>{contract.authority.readable.join(" · ")}</dd></div>
+          <div><dt>Writable</dt><dd>{contract.authority.writable.join(" · ")}</dd></div>
+          <div><dt>Forbidden</dt><dd>{contract.authority.forbidden.join(" · ")}</dd></div>
+        </dl>
+      </div>
+      <div className="contract-definition-section">
+        <strong>Expected artifacts</strong>
+        <ul className="contract-compact-list">
+          {contract.expectedArtifacts.map((artifact) => (
+            <li key={artifact.path}><code>{artifact.path}</code><span>{artifact.required ? "Required" : "Optional"} · {artifact.description}</span></li>
+          ))}
+        </ul>
+      </div>
+      <div className="contract-definition-section">
+        <strong>Independent acceptance</strong>
+        <ul className="contract-compact-list">
+          {contract.acceptance.checks.map((check) => (
+            <li key={check.id}><span>{check.name}</span><code>{check.profileId} · {check.mandatory ? "mandatory" : "optional"} · {formatDuration(check.timeoutMs)}</code></li>
+          ))}
+        </ul>
+        <p>Result manifest: <code>{contract.resultManifestPath}</code></p>
+        <p>Objective tie-breakers: {contract.acceptance.objectiveTieBreakers.join(" · ") || "None"}</p>
+      </div>
+      <dl className="event-details contract-timestamps">
+        {timestamps.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{formatDateTime(value)}</dd></div>)}
+      </dl>
+    </section>
+  );
+}
+
+export function eventEvidencePresentation(
+  event: Pick<ShepherdEvent, "type">,
+  contract: ExecutionContract | null,
+  candidate: ResolutionCandidate | null,
+): { evidence: VerificationEvidence; label: string } | null {
+  if (contract?.verificationEvidence.at(-1)) {
+    return {
+      evidence: contract.verificationEvidence.at(-1)!,
+      label: "Contract verification",
+    };
+  }
+  if (!candidate) return null;
+  if (event.type === "promotion_completed") {
+    return candidate.promotionEvidence
+      ? {
+          evidence: candidate.promotionEvidence,
+          label: "Final promotion re-verification",
+        }
+      : null;
+  }
+  if (event.type === "promotion_started") return null;
+  return candidate.verificationEvidence
+    ? { evidence: candidate.verificationEvidence, label: "Candidate verification" }
+    : null;
+}
+
+export function candidateEvidenceStages(candidate: ResolutionCandidate | null) {
+  if (!candidate) return [];
+  return [
+    candidate.verificationEvidence
+      ? {
+          id: "candidate" as const,
+          label: "Candidate verification",
+          evidence: candidate.verificationEvidence,
+        }
+      : null,
+    candidate.promotionEvidence
+      ? {
+          id: "promotion" as const,
+          label: "Final promotion re-verification",
+          evidence: candidate.promotionEvidence,
+        }
+      : null,
+  ].filter((stage): stage is NonNullable<typeof stage> => stage !== null);
+}
+
+export function CandidateEvidencePanel({
+  candidate,
+  planeId,
+}: {
+  candidate: ResolutionCandidate;
+  planeId: string;
+}) {
+  const [evidenceStage, setEvidenceStage] = useState<CandidateEvidenceStage>("candidate");
+  useEffect(() => setEvidenceStage("candidate"), [planeId]);
+  const stages = candidateEvidenceStages(candidate);
+  const selectedStage = stages.find((stage) => stage.id === evidenceStage) ?? stages[0];
+  const selectStageFromKeyboard = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    currentIndex: number,
+  ) => {
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % stages.length;
+    if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + stages.length) % stages.length;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = stages.length - 1;
+    if (nextIndex === null) return;
+    event.preventDefault();
+    const nextStage = stages[nextIndex];
+    if (!nextStage) return;
+    setEvidenceStage(nextStage.id);
+    requestAnimationFrame(() => document.getElementById(`evidence-tab-${nextStage.id}`)?.focus());
+  };
+  if (!selectedStage) return null;
+  return (
+    <section className="drawer-section" aria-labelledby="resolution-evidence-title">
+      <h3 id="resolution-evidence-title">Resolution evidence</h3>
+      {stages.length > 1 ? (
+        <div className="filter-row evidence-stage-tabs" role="tablist" aria-label="Resolution evidence stage">
+          {stages.map((stage, index) => {
+            const selected = stage.id === selectedStage.id;
+            return (
+              <button
+                key={stage.id}
+                id={`evidence-tab-${stage.id}`}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                aria-controls="resolution-evidence-panel"
+                tabIndex={selected ? 0 : -1}
+                className={selected ? "active" : ""}
+                onClick={() => setEvidenceStage(stage.id)}
+                onKeyDown={(event) => selectStageFromKeyboard(event, index)}
+              >
+                {stage.label}
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <strong className="evidence-stage-label">{selectedStage.label}</strong>
+      )}
+      <div
+        id="resolution-evidence-panel"
+        role={stages.length > 1 ? "tabpanel" : undefined}
+        aria-labelledby={stages.length > 1 ? `evidence-tab-${selectedStage.id}` : undefined}
+      >
+        <EvidenceSummary evidence={selectedStage.evidence} />
+      </div>
+    </section>
+  );
+}
+
 function EventEvidence({
   event,
   state,
+  agents,
 }: {
   event: ShepherdEvent;
   state: ShepherdState;
+  agents: Agent[];
 }) {
   const contract = event.contractId
-    ? state.contracts.find((item) => item.id === event.contractId)
+    ? state.contracts.find((item) => item.id === event.contractId) ?? null
     : null;
   const candidate = event.candidateId
-    ? state.candidates.find((item) => item.id === event.candidateId)
+    ? state.candidates.find((item) => item.id === event.candidateId) ?? null
     : null;
   const collision = event.collisionId
     ? state.collisions.find((item) => item.id === event.collisionId)
     : null;
-  const evidence = contract?.verificationEvidence.at(-1) ?? candidate?.verificationEvidence ?? null;
+  const evidencePresentation = eventEvidencePresentation(event, contract, candidate);
   const safeDetails = Object.entries(event.details).filter(([key]) => !blockedDetailKeys.test(key));
-  if (!evidence && !collision && safeDetails.length === 0 && !contract?.failure && !candidate?.failure) {
+  if (!contract && !evidencePresentation && !collision && safeDetails.length === 0 && !candidate?.failure) {
     return null;
   }
   return (
     <details className="event-evidence">
       <summary>View evidence</summary>
-      {evidence ? <EvidenceSummary evidence={evidence} /> : null}
+      {contract ? (
+        <ExecutionContractPanel
+          contract={contract}
+          agent={agents.find((item) => item.id === contract.agentId) ?? null}
+        />
+      ) : null}
+      {evidencePresentation ? (
+        <section aria-label={evidencePresentation.label}>
+          <strong className="evidence-stage-label">{evidencePresentation.label}</strong>
+          <EvidenceSummary evidence={evidencePresentation.evidence} />
+        </section>
+      ) : null}
       {collision ? (
         <div className="claim-compare">
           <div><span>Left</span><strong>{collision.leftClaim.value}</strong></div>
@@ -134,12 +348,14 @@ function EventEvidence({
 
 function ContractStream({
   state,
+  agents,
   events,
   mission,
   filter,
   setFilter,
 }: {
   state: ShepherdState;
+  agents: Agent[];
   events: ShepherdEvent[];
   mission: Mission | null;
   filter: EventFilter;
@@ -189,7 +405,7 @@ function ContractStream({
                 {event.actor.displayName}
                 {event.contractId ? ` · ${shortId(event.contractId, 13)}` : ""}
               </p>
-              <EventEvidence event={event} state={state} />
+              <EventEvidence event={event} state={state} agents={agents} />
             </div>
           </article>
         ))}
@@ -320,6 +536,7 @@ function PlaneDetailDrawer({
 }) {
   const [plane, setPlane] = useState<Plane | null>(() => state.planes.find((item) => item.id === planeId) ?? null);
   const [error, setError] = useState<string | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     let active = true;
     void api.plane(planeId).then(({ plane: next }) => {
@@ -329,14 +546,23 @@ function PlaneDetailDrawer({
     });
     return () => { active = false; };
   }, [planeId]);
+  useEffect(() => closeButtonRef.current?.focus(), [planeId]);
   const contract = plane?.contractId ? state.contracts.find((item) => item.id === plane.contractId) : null;
   const candidate = plane?.candidateId ? state.candidates.find((item) => item.id === plane.candidateId) : null;
   const agent = contract ? agents.find((item) => item.id === contract.agentId) : null;
   return (
-    <aside className="detail-drawer" role="dialog" aria-modal="false" aria-labelledby="plane-detail-title">
+    <aside
+      className="detail-drawer"
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby="plane-detail-title"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") onClose();
+      }}
+    >
       <div className="drawer-heading">
         <div><span className="eyebrow">Plane detail</span><h2 id="plane-detail-title">{plane?.purpose ?? shortId(planeId, 18)}</h2></div>
-        <button onClick={onClose} aria-label="Close Plane detail">×</button>
+        <button ref={closeButtonRef} onClick={onClose} aria-label="Close Plane detail">×</button>
       </div>
       {error ? <ErrorState message={error} /> : null}
       {!plane ? <LoadingPanel label="Loading Plane evidence…" /> : (
@@ -361,7 +587,7 @@ function PlaneDetailDrawer({
             </section>
           ) : null}
           {contract?.verificationEvidence.at(-1) ? <EvidenceSummary evidence={contract.verificationEvidence.at(-1)!} /> : null}
-          {candidate?.verificationEvidence ? <EvidenceSummary evidence={candidate.verificationEvidence} /> : null}
+          {candidate ? <CandidateEvidencePanel candidate={candidate} planeId={planeId} /> : null}
           {candidate && candidate.retryCount > 0 ? (
             <section className="drawer-section retry-evidence">
               <h3>Retry evidence</h3>
@@ -393,6 +619,7 @@ function PlaneTree({
   requestedPlaneId: string | null;
 }) {
   const [selectedPlaneId, setSelectedPlaneId] = useState<string | null>(requestedPlaneId);
+  const openerRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => setSelectedPlaneId(requestedPlaneId), [requestedPlaneId]);
   const planes = mission ? state.planes.filter((plane) => plane.missionId === mission.id) : [];
   const contractPlanes = planes.filter((plane) => plane.kind === "contract");
@@ -409,7 +636,10 @@ function PlaneTree({
         className="tree-node"
         style={{ "--tree-depth": depth } as React.CSSProperties}
         key={plane.id}
-        onClick={() => setSelectedPlaneId(plane.id)}
+        onClick={(event) => {
+          openerRef.current = event.currentTarget;
+          setSelectedPlaneId(plane.id);
+        }}
         title={plane.purpose}
       >
         <span className="tree-connector" />
@@ -447,7 +677,7 @@ function PlaneTree({
                 <span><strong>{collision.key}</strong><small>{collision.leftClaim.value} ≠ {collision.rightClaim.value}</small></span>
                 <StatePill value={collision.state} />
               </summary>
-              <p>{collision.reason}</p>
+              <p>{collision.reason} The competing Resolution Planes below fork from the same integration commit and must independently pass the project invariant.</p>
             </details>
           ))}
           {resolutionPlanes.map((plane) => planeButton(plane, 2))}
@@ -461,6 +691,7 @@ function PlaneTree({
           onClose={() => {
             setSelectedPlaneId(null);
             if (window.location.search) navigate("/shepherd", true);
+            requestAnimationFrame(() => openerRef.current?.focus());
           }}
         />
       ) : null}
@@ -480,6 +711,7 @@ function AttentionControls({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const collisions = state.collisions.filter((item) => item.missionId === mission.id);
+  const ticketId = collisions[0]?.id ?? mission.id;
   const tied = state.candidates.filter((candidate) =>
     candidate.missionId === mission.id && candidate.selectionState === "tied" && candidate.executionState === "passed",
   );
@@ -501,8 +733,9 @@ function AttentionControls({
     <section className="attention-panel" aria-labelledby="attention-title">
       <Icon name="alert" />
       <div>
-        <span className="eyebrow">Human decision required</span>
+        <span className="eyebrow">Internal human-review ticket</span>
         <h2 id="attention-title">{tied.length > 0 ? "Verified candidates are objectively tied" : "Mission needs attention"}</h2>
+        <span className="attention-ticket-ref">Reference {ticketId} · durable attention_required</span>
         <p>{mission.attentionReason ?? mission.failure?.message ?? "Inspect the preserved evidence before deciding what happens next."}</p>
         {error ? <div className="field-error" role="alert">{error}</div> : null}
         {tied.length > 0 ? (
@@ -536,7 +769,24 @@ export function ShepherdPage({ agents, search }: { agents: Agent[]; search: stri
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [frontendAgentId, setFrontendAgentId] = useState<string>("");
+  const [backendAgentId, setBackendAgentId] = useState<string>("");
+  const [frontendTransport, setFrontendTransport] = useState<AuthTransport>("http-only-session-cookie");
+  const [backendTransport, setBackendTransport] = useState<AuthTransport>("bearer-jwt");
   const requestedPlaneId = new URLSearchParams(search).get("plane");
+
+  const frontendAgents = useMemo(
+    () => agents.filter((agent) => agent.role === "Frontend"),
+    [agents],
+  );
+  const backendAgents = useMemo(
+    () => agents.filter((agent) => agent.role === "Backend"),
+    [agents],
+  );
+  const assignedFrontendId = frontendAgentId || frontendAgents[0]?.id || "";
+  const assignedBackendId = backendAgentId || backendAgents[0]?.id || "";
+  const hasUserAssignments = Boolean(assignedFrontendId && assignedBackendId);
+  const collisionReady = frontendTransport !== backendTransport;
 
   const sortedMissions = useMemo(() => [...(state?.missions ?? [])].sort((a, b) =>
     new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
@@ -553,7 +803,21 @@ export function ShepherdPage({ agents, search }: { agents: Agent[]; search: stri
     setSubmitting(true);
     setActionError(null);
     try {
-      const result = await api.sendShepherdMessage(intent.trim());
+      const result = await api.sendShepherdMessage(
+        intent.trim(),
+        hasUserAssignments
+          ? {
+              frontend: {
+                agentId: assignedFrontendId,
+                transport: frontendTransport,
+              },
+              backend: {
+                agentId: assignedBackendId,
+                transport: backendTransport,
+              },
+            }
+          : undefined,
+      );
       setSelectedMissionId(result.missionId);
       setIntent("");
       await refresh();
@@ -612,7 +876,7 @@ export function ShepherdPage({ agents, search }: { agents: Agent[]; search: stri
       {mission ? <AttentionControls state={state} mission={mission} onChanged={() => void refresh()} /> : null}
 
       <div className="shepherd-grid">
-        <ContractStream state={state} events={events} mission={mission} filter={filter} setFilter={setFilter} />
+        <ContractStream state={state} agents={agents} events={events} mission={mission} filter={filter} setFilter={setFilter} />
         <div className="kernel-right-column">
           <Timeline mission={mission} contracts={contracts} candidates={candidates} agents={agents} collisions={collisions} />
           <PlaneTree mission={mission} project={project} state={state} agents={agents} requestedPlaneId={requestedPlaneId} />
@@ -620,6 +884,44 @@ export function ShepherdPage({ agents, search }: { agents: Agent[]; search: stri
       </div>
 
       <form className="kernel-composer" onSubmit={submitMission}>
+        <fieldset className="mission-assignments" disabled={submitting || Boolean(project?.activeMissionId && mission && !terminalMissionStates.has(mission.state))}>
+          <legend className="sr-only">Execution contract assignments</legend>
+          {hasUserAssignments ? (
+            <div className="mission-assignment-grid">
+              <div className="mission-assignment-group">
+                <label htmlFor="frontend-contract-agent">Frontend Agent</label>
+                <select id="frontend-contract-agent" value={assignedFrontendId} onChange={(event) => setFrontendAgentId(event.target.value)}>
+                  {frontendAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+                </select>
+                <label className="sr-only" htmlFor="frontend-contract-transport">Frontend authentication transport</label>
+                <select id="frontend-contract-transport" value={frontendTransport} onChange={(event) => setFrontendTransport(event.target.value as AuthTransport)}>
+                  <option value="http-only-session-cookie">HttpOnly session cookie</option>
+                  <option value="bearer-jwt">Bearer JWT</option>
+                </select>
+              </div>
+              <div className="mission-assignment-group">
+                <label htmlFor="backend-contract-agent">Backend Agent</label>
+                <select id="backend-contract-agent" value={assignedBackendId} onChange={(event) => setBackendAgentId(event.target.value)}>
+                  {backendAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+                </select>
+                <label className="sr-only" htmlFor="backend-contract-transport">Backend authentication transport</label>
+                <select id="backend-contract-transport" value={backendTransport} onChange={(event) => setBackendTransport(event.target.value as AuthTransport)}>
+                  <option value="bearer-jwt">Bearer JWT</option>
+                  <option value="http-only-session-cookie">HttpOnly session cookie</option>
+                </select>
+              </div>
+            </div>
+          ) : (
+            <p>Create one Frontend Agent and one Backend Agent to assign your own identities; otherwise Shepherd uses its managed demo Agents.</p>
+          )}
+          {hasUserAssignments ? (
+            <small className={collisionReady ? "assignment-ready" : "assignment-warning"}>
+              {collisionReady
+                ? "Two incompatible exclusive auth.transport claims will be independently verified before integration."
+                : "Choose different transports to demonstrate a semantic collision."}
+            </small>
+          ) : null}
+        </fieldset>
         <label htmlFor="shepherd-intent" className="sr-only">Message Shepherd</label>
         <textarea
           id="shepherd-intent"
@@ -632,7 +934,7 @@ export function ShepherdPage({ agents, search }: { agents: Agent[]; search: stri
             }
           }}
           placeholder="Describe a Mission for Shepherd…"
-          rows={2}
+          rows={1}
           maxLength={2_000}
           disabled={submitting || Boolean(project?.activeMissionId && mission && !terminalMissionStates.has(mission.state))}
         />
@@ -642,7 +944,7 @@ export function ShepherdPage({ agents, search }: { agents: Agent[]; search: stri
               ? "One mutating Mission at a time · cancel or wait before starting another"
               : `Enter to send · polled about every second${lastUpdated ? ` · updated ${formatTime(lastUpdated.toISOString())}` : ""}`}
           </span>
-          <button className="send-button" aria-label="Send Mission" disabled={!intent.trim() || submitting || Boolean(project?.activeMissionId && mission && !terminalMissionStates.has(mission.state))}>
+          <button className="send-button" aria-label="Send Mission" disabled={!intent.trim() || submitting || !collisionReady || Boolean(project?.activeMissionId && mission && !terminalMissionStates.has(mission.state))}>
             {submitting ? <Spinner label="Creating Mission" /> : <Icon name="send" />}
           </button>
         </div>

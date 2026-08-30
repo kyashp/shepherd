@@ -21,6 +21,7 @@ import {
 import {
   GitClient,
   GitCommandError,
+  GitMergeCleanupError,
   assertFullObjectId,
   assertSafeGitBranch,
   assertSafeProjectPath,
@@ -98,6 +99,13 @@ export class GitMergeConflictError extends Error {
   constructor(readonly conflictFiles: string[]) {
     super("Git merge conflict in " + conflictFiles.length + " file(s)");
     this.name = "GitMergeConflictError";
+  }
+}
+
+export class GitConflictCleanupError extends Error {
+  constructor() {
+    super("Git conflict cleanup requires operator attention");
+    this.name = "GitConflictCleanupError";
   }
 }
 
@@ -1131,11 +1139,19 @@ export class PlaneManager {
     if (sourceChanges.some(isControlPlanePath)) {
       throw new Error("Source Plane contains protected control metadata");
     }
-    const merged = await this.git.mergeCommit(
-      integrationPlane.worktreePath,
-      sourceHead,
-      "Integrate Plane " + sourcePlane.id,
-    );
+    let merged;
+    try {
+      merged = await this.git.mergeCommit(
+        integrationPlane.worktreePath,
+        sourceHead,
+        "Integrate Plane " + sourcePlane.id,
+        integrationPlane.branch,
+        integrationPlane.headCommit ?? "",
+      );
+    } catch (error) {
+      if (error instanceof GitMergeCleanupError) throw new GitConflictCleanupError();
+      throw error;
+    }
     const updated = await this.inspectPlane({
       ...integrationPlane,
       headCommit: merged.headCommit,

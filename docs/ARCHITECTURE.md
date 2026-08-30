@@ -3,7 +3,7 @@
 > This file documents the original Launchpad baseline and extension seams. For
 > Shepherd's current control-plane design and trust boundaries, read
 > [`SHEPHERD.md`](SHEPHERD.md); for current implementation status and remaining
-> work, read [`HANDOVER.md`](HANDOVER.md). The final PRD-required generated
+> work, read [`TASKS.md`](TASKS.md). The final PRD-required generated
 > `SHEPHERD_ARCHITECTURE.md` does not yet exist.
 
 Volc Agent Launchpad is a single-node control plane for hackathon use.

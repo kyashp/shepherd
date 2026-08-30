@@ -92,7 +92,7 @@ class RecordingEphemeralRunner implements EphemeralContainerRunner {
   async isEphemeralAvailable(
     workspacePath: string,
     codexHome: string,
-  ): Promise<boolean> {
+  ) {
     return await this.inner.isEphemeralAvailable(workspacePath, codexHome);
   }
 

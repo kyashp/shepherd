@@ -2,6 +2,7 @@ export type AgentStatus = "ready" | "busy" | "stopped" | "error";
 export type RunStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 export type AgentRole = "Frontend" | "Backend" | "Verification" | "Generalist";
 export type AuthorityPresetId = "frontend" | "backend" | "verification" | "generalist";
+export type AuthTransport = "bearer-jwt" | "http-only-session-cookie";
 
 export interface ScopedAuthority {
   readable: string[];
@@ -73,6 +74,7 @@ export interface SystemInfo {
   codexSandboxMode: string;
   runtimeProvider: "local-process" | "container";
   shepherdExecutionMode: "live" | "deterministic";
+  shepherdModelReviewConfigured: boolean;
   containerEngine: string | null;
   runtime: string;
 }
@@ -189,6 +191,11 @@ export interface ExecutionContract {
   agentId: string;
   title: string;
   objective: string;
+  contextualInputs: Array<{
+    name: string;
+    value: string;
+    sourceContractId: string | null;
+  }>;
   dependencyIds: string[];
   semanticScopes: string[];
   declaredClaimKeys: string[];
@@ -203,6 +210,7 @@ export interface ExecutionContract {
     objectiveTieBreakers: string[];
   };
   planeId: string | null;
+  resultManifestPath: ".shepherd/result.json";
   verificationEvidence: VerificationEvidence[];
   state: ContractState;
   failure: FailureInfo | null;

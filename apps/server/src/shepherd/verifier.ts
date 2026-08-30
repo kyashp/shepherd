@@ -106,6 +106,11 @@ interface ActiveContainer {
   termination: Promise<void> | null;
 }
 
+interface ActiveVerificationTarget {
+  cancelled: boolean;
+  cancellation: Promise<boolean> | null;
+}
+
 function verifierHostEnvironment(): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = {
     PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin",
@@ -130,6 +135,8 @@ function verifierHostEnvironment(): NodeJS.ProcessEnv {
 export class DockerVerifierExecutor implements VerifierContainerExecutor {
   private readonly active = new Map<string, ActiveContainer>();
   private readonly reserved = new Set<string>();
+  private readonly cancelledReservations = new Set<string>();
+  private readonly terminating = new Set<string>();
 
   private async removeByName(engine: string, name: string): Promise<void> {
     await new Promise<void>((resolve) => {
@@ -192,7 +199,11 @@ export class DockerVerifierExecutor implements VerifierContainerExecutor {
     if (!SAFE_IDENTIFIER.test(input.ownerId)) {
       throw new Error("Invalid verifier owner ID");
     }
-    if (this.active.size > 0 || this.reserved.size > 0) {
+    if (
+      this.active.size > 0 ||
+      this.reserved.size > 0 ||
+      this.terminating.size > 0
+    ) {
       throw new Error("Cannot reconcile verifier containers while checks are active");
     }
     const owned = await this.listOwned(engine, input.ownerId);
@@ -215,7 +226,11 @@ export class DockerVerifierExecutor implements VerifierContainerExecutor {
   }
 
   async run(invocation: VerifierContainerInvocation): Promise<VerifierContainerResult> {
-    if (this.active.has(invocation.key) || this.reserved.has(invocation.key)) {
+    if (
+      this.active.has(invocation.key) ||
+      this.reserved.has(invocation.key) ||
+      this.terminating.has(invocation.key)
+    ) {
       throw new Error("Verification target already has a running container");
     }
     if (invocation.args[0] !== "run" || invocation.args[1] !== "--rm") {
@@ -241,9 +256,15 @@ export class DockerVerifierExecutor implements VerifierContainerExecutor {
         (error) => resolve(!error),
       );
     });
-    if (!created) {
-      await this.removeByName(invocation.engine, invocation.containerName);
+    const cancelledBeforeStart = this.cancelledReservations.delete(invocation.key);
+    if (!created || cancelledBeforeStart) {
       this.reserved.delete(invocation.key);
+      this.terminating.add(invocation.key);
+      try {
+        await this.removeByName(invocation.engine, invocation.containerName);
+      } finally {
+        this.terminating.delete(invocation.key);
+      }
       return {
         exitCode: null,
         stdout: "",
@@ -251,8 +272,10 @@ export class DockerVerifierExecutor implements VerifierContainerExecutor {
         durationMs: Date.now() - startedAt,
         timedOut: false,
         outputExceeded: false,
-        cancelled: false,
-        startError: "Container engine failed to create the verifier",
+        cancelled: cancelledBeforeStart,
+        startError: created
+          ? null
+          : "Container engine failed to create the verifier",
       };
     }
 
@@ -335,6 +358,11 @@ export class DockerVerifierExecutor implements VerifierContainerExecutor {
   }
 
   async cancel(key: string): Promise<boolean> {
+    if (this.terminating.has(key)) return true;
+    if (this.reserved.has(key)) {
+      this.cancelledReservations.add(key);
+      return true;
+    }
     const active = this.active.get(key);
     if (!active) return false;
     active.cancelled = true;
@@ -517,6 +545,7 @@ export class ContainerVerifier {
   private readonly executor: VerifierContainerExecutor;
   private readonly now: () => Date;
   private readonly idFactory: () => string;
+  private readonly activeTargets = new Map<string, ActiveVerificationTarget>();
   private canonicalPlanesRoot: string | null = null;
 
   constructor(
@@ -553,12 +582,37 @@ export class ContainerVerifier {
       }
       ids.add(check.id);
     }
+    if (this.activeTargets.has(request.targetId)) {
+      throw new Error("Verification target already has an active request");
+    }
+    const activeTarget: ActiveVerificationTarget = {
+      cancelled: false,
+      cancellation: null,
+    };
+    this.activeTargets.set(request.targetId, activeTarget);
+    try {
     const changedFiles = [...new Set(request.changedFiles.map(assertSafeProjectPath))].sort();
     const planePath = await this.assertManagedPlane(request.planePath);
     const started = this.now();
     const results: VerificationCheckResult[] = [];
 
     for (const check of request.checks) {
+      if (activeTarget.cancelled) {
+        results.push({
+          id: check.id,
+          name: check.name,
+          profileId: check.profileId,
+          mandatory: check.mandatory,
+          status: "infrastructure_error",
+          passed: false,
+          exitCode: null,
+          durationMs: 0,
+          stdout: "",
+          stderr: "",
+          error: "Verification was cancelled",
+        });
+        continue;
+      }
       let resolved: ResolvedVerificationCheck;
       try {
         resolved = this.registry.resolve(check);
@@ -681,11 +735,24 @@ export class ContainerVerifier {
         optional.length +
         " optional checks passed",
     };
+    } finally {
+      if (activeTarget.cancellation) {
+        await activeTarget.cancellation.catch(() => false);
+      }
+      if (this.activeTargets.get(request.targetId) === activeTarget) {
+        this.activeTargets.delete(request.targetId);
+      }
+    }
   }
 
   async cancel(targetId: string): Promise<boolean> {
     if (!SAFE_IDENTIFIER.test(targetId)) throw new Error("Invalid verification target ID");
-    return await this.executor.cancel(targetId);
+    const activeTarget = this.activeTargets.get(targetId);
+    if (!activeTarget) return false;
+    activeTarget.cancelled = true;
+    activeTarget.cancellation ??= this.executor.cancel(targetId);
+    await activeTarget.cancellation;
+    return true;
   }
 
   /** Removes only verifier containers owned by this stable server identity. */

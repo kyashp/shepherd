@@ -1,12 +1,13 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { AcceptanceCheck } from "./domain.js";
 import {
   ContainerVerifier,
+  DockerVerifierExecutor,
   TrustedCheckRegistry,
   type VerifierContainerExecutor,
   type VerifierContainerInvocation,
@@ -91,6 +92,34 @@ class RecordingExecutor implements VerifierContainerExecutor {
   }
 }
 
+class BlockingCancellationExecutor implements VerifierContainerExecutor {
+  readonly invocations: VerifierContainerInvocation[] = [];
+  readonly cancelledIds: string[] = [];
+  private releaseFirst!: (value: VerifierContainerResult) => void;
+
+  async run(invocation: VerifierContainerInvocation): Promise<VerifierContainerResult> {
+    this.invocations.push(invocation);
+    if (this.invocations.length === 1) {
+      return await new Promise<VerifierContainerResult>((resolve) => {
+        this.releaseFirst = resolve;
+      });
+    }
+    return result();
+  }
+
+  async cancel(targetId: string): Promise<boolean> {
+    this.cancelledIds.push(targetId);
+    this.releaseFirst(
+      result({
+        exitCode: null,
+        cancelled: true,
+        startError: "Synthetic active verifier cancellation",
+      }),
+    );
+    return true;
+  }
+}
+
 function result(overrides: Partial<VerifierContainerResult> = {}): VerifierContainerResult {
   return {
     exitCode: 0,
@@ -117,6 +146,113 @@ function check(input: Partial<AcceptanceCheck> = {}): AcceptanceCheck {
 }
 
 describe("independent verifier contract", () => {
+  it("keeps target cancellation sticky across sequential checks and permits bounded ID reuse", async () => {
+    const fixture = await createPlaneFixture();
+    try {
+      const executor = new BlockingCancellationExecutor();
+      const verifier = new ContainerVerifier(
+        new TrustedCheckRegistry([
+          { id: "node-check", command: "node", args: [], cwd: "." },
+        ]),
+        {
+          planesRoot: fixture.planesRoot,
+          containerEngine,
+          containerImage: runtimeImage,
+          containerUser,
+          ownerId: "sticky-cancel-owner",
+          executor,
+        },
+      );
+      const verification = verifier.verify({
+        targetType: "contract",
+        targetId: "sticky-target",
+        planePath: fixture.planePath,
+        checks: [check({ id: "first" }), check({ id: "second" })],
+        changedFiles: [],
+      });
+      await vi.waitFor(() => expect(executor.invocations).toHaveLength(1));
+      await expect(verifier.cancel("sticky-target")).resolves.toBe(true);
+      const cancelled = await verification;
+      expect(executor.cancelledIds).toEqual(["sticky-target"]);
+      expect(executor.invocations).toHaveLength(1);
+      expect(cancelled.passed).toBe(false);
+      expect(cancelled.checks.map((item) => item.status)).toEqual([
+        "infrastructure_error",
+        "infrastructure_error",
+      ]);
+      expect(cancelled.checks[1]).toMatchObject({
+        id: "second",
+        error: "Verification was cancelled",
+      });
+
+      const reused = await verifier.verify({
+        targetType: "contract",
+        targetId: "sticky-target",
+        planePath: fixture.planePath,
+        checks: [check({ id: "reused" })],
+        changedFiles: [],
+      });
+      expect(reused.passed).toBe(true);
+      expect(executor.invocations).toHaveLength(2);
+    } finally {
+      await destroyPlaneFixture(fixture);
+    }
+  });
+
+  it("keeps cancellation sticky across reserved container creation before start", async () => {
+    const fixture = await createPlaneFixture();
+    try {
+      const enginePath = path.join(fixture.casePath, "fake-container-engine.mjs");
+      const logPath = path.join(fixture.casePath, "engine.log");
+      await writeFile(
+        enginePath,
+        `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(logPath)}, JSON.stringify(args) + "\\n", "utf8");
+if (args[0] === "create" || args[0] === "rm") setTimeout(() => process.exit(0), 150);
+else process.exit(0);
+`,
+        "utf8",
+      );
+      await chmod(enginePath, 0o700);
+      const executor = new DockerVerifierExecutor();
+      const invocation: VerifierContainerInvocation = {
+        key: "reserved-target",
+        engine: enginePath,
+        args: ["run", "--rm", "--name", "sticky-container", "runtime-image"],
+        containerName: "sticky-container",
+        timeoutMs: 1_000,
+        maxOutputBytes: 1_024,
+      };
+      const running = executor.run(invocation);
+      await vi.waitFor(async () =>
+        expect(await readFile(logPath, "utf8")).toContain('["create"'),
+      );
+      await expect(executor.cancel("other-target")).resolves.toBe(false);
+      await expect(executor.cancel("reserved-target")).resolves.toBe(true);
+      await vi.waitFor(async () =>
+        expect(await readFile(logPath, "utf8")).toContain('["rm"'),
+      );
+      await expect(executor.cancel("reserved-target")).resolves.toBe(true);
+      await expect(running).resolves.toMatchObject({
+        cancelled: true,
+        exitCode: null,
+      });
+      const cancelledLog = await readFile(logPath, "utf8");
+      expect(cancelledLog).not.toContain('["start"');
+
+      await expect(executor.run(invocation)).resolves.toMatchObject({
+        cancelled: false,
+        exitCode: 0,
+      });
+      const reusedLog = await readFile(logPath, "utf8");
+      expect(reusedLog.match(/^\["start"/gmu)).toHaveLength(1);
+    } finally {
+      await destroyPlaneFixture(fixture);
+    }
+  });
+
   it("uses only registry argv and builds a credential-free bounded container invocation", async () => {
     const fixture = await createPlaneFixture();
     try {

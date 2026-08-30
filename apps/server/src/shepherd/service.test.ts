@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   access,
   chmod,
@@ -11,13 +12,17 @@ import {
   rm,
   stat,
   symlink,
+  watch,
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { toPublicMissionDetail } from "../app.js";
+import { RuntimeExecutionError } from "../errors.js";
 import { JsonStore } from "../store.js";
+import type { Agent, Database } from "../types.js";
 import { WorkspaceManager } from "../workspace.js";
 import {
   BEARER_TRANSPORT,
@@ -40,6 +45,9 @@ import {
   ShepherdService,
   type ShepherdIndependentVerifier,
 } from "./service.js";
+import { PlaneManager } from "./plane-manager.js";
+import { assertSafeProjectPath } from "./git-client.js";
+import { reconcilePersistenceRecoveryIntent } from "./recovery.js";
 import type { VerificationRequest } from "./verifier.js";
 
 const repositoryTestRoot = fileURLToPath(
@@ -478,6 +486,54 @@ class FailCookieCandidateOnceExecutor implements ShepherdExecutor {
   }
 }
 
+class TypedFailingCandidateExecutor implements ShepherdExecutor {
+  readonly kind = "deterministic_fixture" as const;
+  private readonly inner = new DeterministicFixtureExecutor();
+
+  constructor(private readonly diagnostic: string) {}
+
+  async run(request: ShepherdExecutionRequest): Promise<ShepherdExecutionResult> {
+    if (request.operation.kind === "resolution_candidate") {
+      const failure = new RuntimeExecutionError("execution");
+      failure.message = this.diagnostic;
+      throw failure;
+    }
+    return await this.inner.run(request);
+  }
+
+  async cancel(executionId: string): Promise<boolean> {
+    return await this.inner.cancel(executionId);
+  }
+}
+
+class TypedFailingContractExecutor implements ShepherdExecutor {
+  readonly kind = "deterministic_fixture" as const;
+
+  constructor(private readonly error: Error) {}
+
+  async run(): Promise<ShepherdExecutionResult> {
+    throw this.error;
+  }
+
+  async cancel(): Promise<boolean> {
+    return false;
+  }
+}
+
+class MustNotRunExecutor implements ShepherdExecutor {
+  readonly kind = "deterministic_fixture" as const;
+  calls = 0;
+
+  async run(): Promise<ShepherdExecutionResult> {
+    this.calls += 1;
+    throw new Error("Executor ran after Plane creation failed");
+  }
+
+  async cancel(): Promise<boolean> {
+    return false;
+  }
+}
+
 class BlockingExecutor implements ShepherdExecutor {
   readonly kind = "deterministic_fixture" as const;
   readonly executionIds: string[] = [];
@@ -531,6 +587,305 @@ class PromotionThrowingVerifier extends HostTrustedFixtureVerifier {
       throw new Error("Synthetic promotion verifier infrastructure failure");
     }
     return await super.verify(request);
+  }
+}
+
+function returnedContractInfrastructureEvidence(
+  evidence: VerificationEvidence,
+  canary: string,
+  privatePath: string,
+): VerificationEvidence {
+  return {
+    ...evidence,
+    passed: false,
+    checks: evidence.checks.map((check, index) =>
+      index === 0
+        ? {
+            ...check,
+            status: "infrastructure_error",
+            passed: false,
+            exitCode: 125,
+            stderr: `Synthetic returned verifier failure ${canary}`,
+            error: `Verifier launch failed at ${privatePath}`,
+          }
+        : check,
+    ),
+    summary: `Synthetic returned verifier failure ${canary} at ${privatePath}`,
+  };
+}
+
+class ContractInfrastructureEvidenceVerifier extends HostTrustedFixtureVerifier {
+  readonly siblingSnapshotCaptured: Promise<string>;
+  private markSiblingSnapshotCaptured!: (snapshotPath: string) => void;
+  readonly siblingReturned: Promise<void>;
+  private markSiblingReturned!: () => void;
+  private readonly siblingReleased: Promise<void>;
+  private releaseSiblingVerification!: () => void;
+  private readonly contractPair = new TwoArrivalBarrier();
+
+  constructor(
+    private readonly canary: string,
+    private readonly privatePath: string,
+  ) {
+    super();
+    this.siblingSnapshotCaptured = new Promise<string>((resolve) => {
+      this.markSiblingSnapshotCaptured = resolve;
+    });
+    this.siblingReturned = new Promise<void>((resolve) => {
+      this.markSiblingReturned = resolve;
+    });
+    this.siblingReleased = new Promise<void>((resolve) => {
+      this.releaseSiblingVerification = resolve;
+    });
+  }
+
+  override async verify(
+    request: VerificationRequest,
+  ): Promise<VerificationEvidence> {
+    if (request.targetType !== "contract") return await super.verify(request);
+    if (!request.targetId.includes("front")) {
+      this.markSiblingSnapshotCaptured(request.planePath);
+    }
+    await this.contractPair.arrive();
+    if (request.targetId.includes("front")) {
+      return returnedContractInfrastructureEvidence(
+        await super.verify(request),
+        this.canary,
+        this.privatePath,
+      );
+    }
+    await this.siblingReleased;
+    try {
+      return await super.verify(request);
+    } finally {
+      this.markSiblingReturned();
+    }
+  }
+
+  releaseSibling(): void {
+    this.contractPair.release();
+    this.releaseSiblingVerification();
+  }
+}
+
+class ContractAcceptanceFailureEvidenceVerifier extends HostTrustedFixtureVerifier {
+  override async verify(
+    request: VerificationRequest,
+  ): Promise<VerificationEvidence> {
+    const evidence = await super.verify(request);
+    if (request.targetType !== "contract") return evidence;
+    return {
+      ...evidence,
+      passed: false,
+      checks: evidence.checks.map((check, index) =>
+        index === 0
+          ? {
+              ...check,
+              status: "failed",
+              passed: false,
+              exitCode: 1,
+              error: "Trusted verification check exited non-zero",
+            }
+          : check,
+      ),
+      summary: "A mandatory Contract acceptance check failed",
+    };
+  }
+}
+
+class TwoArrivalBarrier {
+  private arrivals = 0;
+  private readonly arrived: Promise<void>;
+  private releaseArrivals!: () => void;
+
+  constructor() {
+    this.arrived = new Promise<void>((resolve) => {
+      this.releaseArrivals = resolve;
+    });
+  }
+
+  async arrive(): Promise<void> {
+    this.arrivals += 1;
+    if (this.arrivals === 2) this.releaseArrivals();
+    await this.arrived;
+  }
+
+  release(): void {
+    this.releaseArrivals();
+  }
+}
+
+class SnapshotTrackingContractThrowingVerifier extends HostTrustedFixtureVerifier {
+  readonly siblingSnapshotCaptured: Promise<string>;
+  private markSiblingSnapshotCaptured!: (snapshotPath: string) => void;
+  readonly siblingReturned: Promise<void>;
+  private markSiblingReturned!: () => void;
+  private readonly siblingReleased: Promise<void>;
+  private releaseSiblingVerification!: () => void;
+  private readonly contractPair = new TwoArrivalBarrier();
+
+  constructor(
+    private readonly canary: string,
+    private readonly privatePath: string,
+  ) {
+    super();
+    this.siblingSnapshotCaptured = new Promise<string>((resolve) => {
+      this.markSiblingSnapshotCaptured = resolve;
+    });
+    this.siblingReturned = new Promise<void>((resolve) => {
+      this.markSiblingReturned = resolve;
+    });
+    this.siblingReleased = new Promise<void>((resolve) => {
+      this.releaseSiblingVerification = resolve;
+    });
+  }
+
+  override async verify(
+    request: VerificationRequest,
+  ): Promise<VerificationEvidence> {
+    if (request.targetType !== "contract") {
+      return await super.verify(request);
+    }
+    if (!request.targetId.includes("front")) {
+      this.markSiblingSnapshotCaptured(request.planePath);
+    }
+    await this.contractPair.arrive();
+    if (request.targetId.includes("front")) {
+      throw new Error(
+        `Synthetic Contract verifier failure ${this.canary} at ${this.privatePath}`,
+      );
+    }
+    await this.siblingReleased;
+    try {
+      return await super.verify(request);
+    } finally {
+      this.markSiblingReturned();
+    }
+  }
+
+  releaseSibling(): void {
+    this.contractPair.release();
+    this.releaseSiblingVerification();
+  }
+}
+
+class OneContractThrowingVerifier extends HostTrustedFixtureVerifier {
+  readonly siblingEntered: Promise<void>;
+  private markSiblingEntered!: () => void;
+  readonly siblingExited: Promise<void>;
+  private markSiblingExited!: () => void;
+  private readonly siblingReleased: Promise<void>;
+  private releaseSiblingVerification!: () => void;
+  private readonly contractPair = new TwoArrivalBarrier();
+
+  constructor() {
+    super();
+    this.siblingEntered = new Promise<void>((resolve) => {
+      this.markSiblingEntered = resolve;
+    });
+    this.siblingExited = new Promise<void>((resolve) => {
+      this.markSiblingExited = resolve;
+    });
+    this.siblingReleased = new Promise<void>((resolve) => {
+      this.releaseSiblingVerification = resolve;
+    });
+  }
+
+  override async verify(
+    request: VerificationRequest,
+  ): Promise<VerificationEvidence> {
+    if (request.targetType !== "contract") {
+      return await super.verify(request);
+    }
+    if (!request.targetId.includes("front")) this.markSiblingEntered();
+    await this.contractPair.arrive();
+    if (request.targetId.includes("front")) {
+      throw new Error("Synthetic frontend Contract verifier failure");
+    }
+    await this.siblingReleased;
+    try {
+      return await super.verify(request);
+    } finally {
+      this.markSiblingExited();
+    }
+  }
+
+  releaseSibling(): void {
+    this.contractPair.release();
+    this.releaseSiblingVerification();
+  }
+}
+
+class OneContractInfrastructureEvidenceVerifier extends HostTrustedFixtureVerifier {
+  readonly siblingEntered: Promise<void>;
+  private markSiblingEntered!: () => void;
+  readonly siblingExited: Promise<void>;
+  private markSiblingExited!: () => void;
+  private readonly siblingReleased: Promise<void>;
+  private releaseSiblingVerification!: () => void;
+  private readonly contractPair = new TwoArrivalBarrier();
+
+  constructor() {
+    super();
+    this.siblingEntered = new Promise<void>((resolve) => {
+      this.markSiblingEntered = resolve;
+    });
+    this.siblingExited = new Promise<void>((resolve) => {
+      this.markSiblingExited = resolve;
+    });
+    this.siblingReleased = new Promise<void>((resolve) => {
+      this.releaseSiblingVerification = resolve;
+    });
+  }
+
+  override async verify(
+    request: VerificationRequest,
+  ): Promise<VerificationEvidence> {
+    if (request.targetType !== "contract") {
+      return await super.verify(request);
+    }
+    if (!request.targetId.includes("front")) this.markSiblingEntered();
+    await this.contractPair.arrive();
+    if (request.targetId.includes("front")) {
+      return returnedContractInfrastructureEvidence(
+        await super.verify(request),
+        "concurrent-returned-canary",
+        "/private/concurrent-returned-path",
+      );
+    }
+    await this.siblingReleased;
+    try {
+      return await super.verify(request);
+    } finally {
+      this.markSiblingExited();
+    }
+  }
+
+  releaseSibling(): void {
+    this.contractPair.release();
+    this.releaseSiblingVerification();
+  }
+}
+
+class RecordingFrontendInfrastructureVerifier extends HostTrustedFixtureVerifier {
+  readonly targetIds: string[] = [];
+
+  override async verify(
+    request: VerificationRequest,
+  ): Promise<VerificationEvidence> {
+    this.targetIds.push(request.targetId);
+    const evidence = await super.verify(request);
+    if (
+      request.targetType === "contract" &&
+      request.targetId.includes("front")
+    ) {
+      return returnedContractInfrastructureEvidence(
+        evidence,
+        "pre-invocation-canary",
+        "/private/pre-invocation-path",
+      );
+    }
+    return evidence;
   }
 }
 
@@ -609,6 +964,26 @@ async function settleWithin<T>(promise: Promise<T>, timeoutMs = 5_000): Promise<
   }
 }
 
+async function waitForOwnedPathRemoval(targetPath: string): Promise<void> {
+  const parent = path.dirname(targetPath);
+  const targetName = path.basename(targetPath);
+  const watcher = watch(parent);
+  try {
+    for await (const event of watcher) {
+      if (event.filename !== targetName) continue;
+      try {
+        await lstat(targetPath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+        throw error;
+      }
+    }
+    throw new Error("Owned verification snapshot watcher ended before cleanup");
+  } finally {
+    await watcher.return?.();
+  }
+}
+
 async function gitOutput(cwd: string, args: string[]): Promise<string> {
   return await new Promise<string>((resolve, reject) => {
     execFile(
@@ -638,6 +1013,131 @@ async function gitOutput(cwd: string, args: string[]): Promise<string> {
 }
 
 describe("Shepherd deterministic walking skeleton", () => {
+  it("binds concurrent Mission idempotency to both transport assignments", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+    });
+    const input = {
+      content: "Run the bounded assignment idempotently.",
+      preset: "auth-demo" as const,
+      clientMessageId: "same-mission-request",
+      frontendTransport: COOKIE_TRANSPORT,
+      backendTransport: BEARER_TRANSPORT,
+    };
+    const [first, duplicate] = await Promise.all([
+      service.startMissionFromMessage(input),
+      service.startMissionFromMessage(input),
+    ]);
+    expect(duplicate.missionId).toBe(first.missionId);
+    expect(store.snapshot().shepherd.missions).toHaveLength(1);
+    expect(
+      store.snapshot().shepherd.groupMessages.find(
+        (message) => message.missionId === first.missionId && message.senderType === "human",
+      )?.requestFingerprint,
+    ).toMatch(/^[a-f0-9]{64}$/u);
+    const recoveredService = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+    });
+    await expect(recoveredService.startMissionFromMessage(input)).resolves.toMatchObject({
+      missionId: first.missionId,
+    });
+    expect(store.snapshot().shepherd.missions).toHaveLength(1);
+    await expect(service.startMissionFromMessage({
+      ...input,
+      frontendTransport: BEARER_TRANSPORT,
+      backendTransport: COOKIE_TRANSPORT,
+    })).rejects.toMatchObject({ code: "idempotency_conflict" });
+    expect(store.snapshot().shepherd.missions).toHaveLength(1);
+    backgroundTestMissions.push({ service, missionId: first.missionId });
+  }, 30_000);
+
+  it("assigns user-created role Agents to opposite auth transport contracts", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const agentWorkspaceRoot = path.join(caseRoot, "agent-workspaces");
+    const workspaces = new WorkspaceManager(agentWorkspaceRoot);
+    await workspaces.initialize();
+    const createdAt = "2026-08-30T00:00:00.000Z";
+    const frontendAgent: Agent = {
+      id: "11111111-1111-4111-8111-111111111111",
+      name: "Demo Frontend",
+      description: "User-created frontend specialist",
+      instructions: "Implement only assigned frontend contracts.",
+      status: "ready",
+      workspacePath: workspaces.workspacePath("11111111-1111-4111-8111-111111111111"),
+      codexThreadId: null,
+      lastError: null,
+      role: "Frontend",
+      authority: {
+        readable: ["**"],
+        writable: ["src/frontend/**"],
+        forbidden: [".git/**", ".shepherd/**", "checks/**", "policy.json"],
+      },
+      createdAt,
+      updatedAt: createdAt,
+    };
+    const backendAgent: Agent = {
+      ...frontendAgent,
+      id: "22222222-2222-4222-8222-222222222222",
+      name: "Demo Backend",
+      description: "User-created backend specialist",
+      role: "Backend",
+      workspacePath: workspaces.workspacePath("22222222-2222-4222-8222-222222222222"),
+      authority: {
+        readable: ["**"],
+        writable: ["src/backend/**"],
+        forbidden: [".git/**", ".shepherd/**", "checks/**", "policy.json"],
+      },
+    };
+    await workspaces.create(frontendAgent);
+    await workspaces.create(backendAgent);
+    await store.mutate((database) => database.agents.push(frontendAgent, backendAgent));
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot,
+      verifier: new HostTrustedFixtureVerifier(),
+    });
+
+    const result = await service.runDeterministicDemo({
+      originalIntent: "Demonstrate a user-assigned authentication collision.",
+      frontendAgentId: frontendAgent.id,
+      backendAgentId: backendAgent.id,
+      frontendTransport: COOKIE_TRANSPORT,
+      backendTransport: BEARER_TRANSPORT,
+    });
+    const detail = service.missionDetail(result.mission.id);
+    expect(detail?.agents.map((agent) => [agent.id, agent.name])).toEqual([
+      [frontendAgent.id, frontendAgent.name],
+      [backendAgent.id, backendAgent.name],
+    ]);
+    expect(detail?.contracts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        agentId: frontendAgent.id,
+        objective: expect.stringContaining(COOKIE_TRANSPORT),
+      }),
+      expect.objectContaining({
+        agentId: backendAgent.id,
+        objective: expect.stringContaining(BEARER_TRANSPORT),
+      }),
+    ]));
+    expect(detail?.claims.map((claim) => claim.value).sort()).toEqual(
+      [BEARER_TRANSPORT, COOKIE_TRANSPORT].sort(),
+    );
+    expect(result.selectedCandidate.targetValue).toBe(COOKIE_TRANSPORT);
+    expect(result.mission.state).toBe("completed");
+  }, 30_000);
+
   it("cleans a case root containing a read-only trusted verification snapshot", async () => {
     const caseRoot = await makeCaseRoot();
     const snapshotPath = path.join(
@@ -1312,6 +1812,1173 @@ describe("Shepherd deterministic walking skeleton", () => {
     ).toBe(true);
   });
 
+  it("terminalizes Contract verification infrastructure failures without promotion or sensitive diagnostics", async () => {
+    const caseRoot = await makeCaseRoot();
+    const canary = "F03-CANARY-verifier-secret-443322";
+    const privatePath = path.join(caseRoot, "private-verifier-diagnostic.txt");
+    const storePath = path.join(caseRoot, "state.json");
+    const store = new JsonStore(storePath, { sensitiveValues: [canary] });
+    await store.initialize();
+    const verifier = new SnapshotTrackingContractThrowingVerifier(
+      canary,
+      privatePath,
+    );
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier,
+      sensitiveValues: [canary],
+    });
+
+    const run = service.runDeterministicDemo();
+    const runOutcome = run.then(
+      (value) => ({ status: "fulfilled" as const, value }),
+      (reason: unknown) => ({ status: "rejected" as const, reason }),
+    );
+    let siblingSnapshotRoot = "";
+    let snapshotRemoved: Promise<void> | undefined;
+    let thrownMessage = "";
+    try {
+      siblingSnapshotRoot = path.resolve(await verifier.siblingSnapshotCaptured);
+      expect(path.basename(siblingSnapshotRoot)).toMatch(/^verify-/u);
+      expect(path.basename(path.dirname(siblingSnapshotRoot))).toBe(
+        ".trusted-verification",
+      );
+      expect(siblingSnapshotRoot.startsWith(path.resolve(caseRoot) + path.sep)).toBe(
+        true,
+      );
+      const outcome = await runOutcome;
+      expect(outcome.status).toBe("rejected");
+      if (outcome.status !== "rejected") {
+        throw new Error("Contract verifier infrastructure Mission unexpectedly fulfilled");
+      }
+      expect(outcome.reason).toBeInstanceOf(Error);
+      thrownMessage = (outcome.reason as Error).message;
+      await expect(access(siblingSnapshotRoot)).resolves.toBeUndefined();
+
+      snapshotRemoved = settleWithin(
+        waitForOwnedPathRemoval(siblingSnapshotRoot),
+      );
+      verifier.releaseSibling();
+      await verifier.siblingReturned;
+      await snapshotRemoved;
+    } finally {
+      verifier.releaseSibling();
+      await Promise.allSettled([
+        run,
+        verifier.siblingReturned,
+        ...(snapshotRemoved ? [snapshotRemoved] : []),
+      ]);
+    }
+    await expect(access(siblingSnapshotRoot)).rejects.toMatchObject({ code: "ENOENT" });
+
+    const mission = service.state().missions.at(-1);
+    const detail = service.missionDetail(mission?.id ?? "missing");
+    if (!detail) throw new Error("Failed Mission detail disappeared");
+    const contractPlanes = detail.planes.filter((plane) => plane.kind === "contract");
+    expect({
+      thrownMessage,
+      mission: {
+        state: detail.mission.state,
+        failureCode: detail.mission.failure?.code,
+        failureStage: detail.mission.failure?.stage,
+        activeMissionId: detail.project.activeMissionId,
+      },
+      contractStates: detail.contracts.map((contract) => contract.state).sort(),
+      contractFailureCodes: detail.contracts
+        .map((contract) => contract.failure?.code)
+        .sort(),
+      planeStates: contractPlanes.map((plane) => plane.state).sort(),
+      planeFailureCodes: contractPlanes.map((plane) => plane.error?.code).sort(),
+      agentStatuses: detail.agents.map((agent) => agent.status).sort(),
+      agentContractIds: detail.agents.map((agent) => agent.currentContractId),
+    }).toEqual({
+      thrownMessage: "Contract independent verification infrastructure failed",
+      mission: {
+        state: "failed",
+        failureCode: "verification_infrastructure_error",
+        failureStage: "contract_verification",
+        activeMissionId: null,
+      },
+      contractStates: ["interrupted", "verification_failed"],
+      contractFailureCodes: [
+        "verification_infrastructure_error",
+        "verification_infrastructure_error",
+      ],
+      planeStates: ["failed", "interrupted"],
+      planeFailureCodes: [
+        "verification_infrastructure_error",
+        "verification_infrastructure_error",
+      ],
+      agentStatuses: ["error", "error"],
+      agentContractIds: [null, null],
+    });
+    expect(detail.collisions).toEqual([]);
+    expect(detail.candidates).toEqual([]);
+    expect(detail.planes.some((plane) => plane.kind !== "contract")).toBe(false);
+    expect(detail.project.protectedHeadCommit).toBe(detail.mission.baseCommit);
+    const verificationFailures = detail.events.filter(
+      (event) => event.type === "verification_failed",
+    );
+    expect(verificationFailures).toHaveLength(1);
+    expect(verificationFailures).toSatisfy((events: typeof verificationFailures) =>
+      events.every(
+        (event) =>
+          event.summary ===
+            "Contract independent verification infrastructure failed" &&
+          event.details.failureCode === "verification_infrastructure_error" &&
+          event.details.stage === "contract_verification",
+      ),
+    );
+    expect(
+      detail.events.filter((event) => event.type === "execution_interrupted"),
+    ).toHaveLength(1);
+    expect(
+      detail.events.some((event) =>
+        [
+          "collision_detected",
+          "candidate_created",
+          "candidate_selected",
+          "promotion_started",
+          "promotion_completed",
+        ].includes(event.type),
+      ),
+    ).toBe(false);
+
+    const publicDetail = toPublicMissionDetail(detail, [canary]);
+    const durableDetailText = JSON.stringify(detail);
+    const publicText = JSON.stringify(publicDetail);
+    const persistedText = await readFile(storePath, "utf8");
+    for (const output of [durableDetailText, publicText, persistedText]) {
+      expect(output).not.toContain(canary);
+      expect(output).not.toContain(privatePath);
+      expect(output).not.toContain("Synthetic Contract verifier failure");
+    }
+    expect(publicDetail.mission.failure).toMatchObject({
+      code: "verification_infrastructure_error",
+      stage: "contract_verification",
+    });
+    expect(publicDetail.contracts).toSatisfy((contracts: typeof publicDetail.contracts) =>
+      contracts.every(
+        (contract) =>
+          contract.failure?.code === "verification_infrastructure_error",
+      ),
+    );
+    expect(publicDetail.planes).toSatisfy((planes: typeof publicDetail.planes) =>
+      planes.every((plane) => !("worktreePath" in plane)),
+    );
+  }, 30_000);
+
+  it("terminalizes returned Contract verification infrastructure evidence", async () => {
+    const caseRoot = await makeCaseRoot();
+    const canary = "F03-RETURNED-CANARY-775533";
+    const privatePath = path.join(caseRoot, "private-returned-diagnostic.txt");
+    const storePath = path.join(caseRoot, "state.json");
+    const store = new JsonStore(storePath, { sensitiveValues: [canary] });
+    await store.initialize();
+    const verifier = new ContractInfrastructureEvidenceVerifier(canary, privatePath);
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier,
+      sensitiveValues: [canary],
+    });
+
+    const run = service.runDeterministicDemo();
+    const runOutcome = run.then(
+      (value) => ({ status: "fulfilled" as const, value }),
+      (reason: unknown) => ({ status: "rejected" as const, reason }),
+    );
+    let siblingSnapshotRoot = "";
+    let snapshotRemoved: Promise<void> | undefined;
+    let thrownMessage = "";
+    try {
+      siblingSnapshotRoot = path.resolve(await verifier.siblingSnapshotCaptured);
+      expect(path.basename(siblingSnapshotRoot)).toMatch(/^verify-/u);
+      expect(path.basename(path.dirname(siblingSnapshotRoot))).toBe(
+        ".trusted-verification",
+      );
+      expect(siblingSnapshotRoot.startsWith(path.resolve(caseRoot) + path.sep)).toBe(
+        true,
+      );
+      const outcome = await runOutcome;
+      expect(outcome.status).toBe("rejected");
+      if (outcome.status !== "rejected") {
+        throw new Error("Returned infrastructure Mission unexpectedly fulfilled");
+      }
+      expect(outcome.reason).toBeInstanceOf(Error);
+      thrownMessage = (outcome.reason as Error).message;
+      await expect(access(siblingSnapshotRoot)).resolves.toBeUndefined();
+
+      snapshotRemoved = settleWithin(waitForOwnedPathRemoval(siblingSnapshotRoot));
+      verifier.releaseSibling();
+      await verifier.siblingReturned;
+      await snapshotRemoved;
+    } finally {
+      verifier.releaseSibling();
+      await Promise.allSettled([
+        run,
+        verifier.siblingReturned,
+        ...(snapshotRemoved ? [snapshotRemoved] : []),
+      ]);
+    }
+    await expect(access(siblingSnapshotRoot)).rejects.toMatchObject({ code: "ENOENT" });
+
+    const missionId = service.state().missions.at(-1)?.id;
+    const detail = service.missionDetail(missionId ?? "missing");
+    if (!detail) throw new Error("Failed Mission detail disappeared");
+    expect({
+      thrownMessage,
+      mission: {
+        state: detail.mission.state,
+        code: detail.mission.failure?.code,
+        stage: detail.mission.failure?.stage,
+        activeMissionId: detail.project.activeMissionId,
+      },
+      contracts: detail.contracts.map((contract) => contract.state).sort(),
+      contractCodes: detail.contracts
+        .map((contract) => contract.failure?.code)
+        .sort(),
+      planes: detail.planes.map((plane) => plane.state).sort(),
+      planeCodes: detail.planes.map((plane) => plane.error?.code).sort(),
+      agents: detail.agents.map((agent) => ({
+        status: agent.status,
+        currentContractId: agent.currentContractId,
+      })),
+    }).toEqual({
+      thrownMessage: "Contract independent verification infrastructure failed",
+      mission: {
+        state: "failed",
+        code: "verification_infrastructure_error",
+        stage: "contract_verification",
+        activeMissionId: null,
+      },
+      contracts: ["interrupted", "verification_failed"],
+      contractCodes: [
+        "verification_infrastructure_error",
+        "verification_infrastructure_error",
+      ],
+      planes: ["failed", "interrupted"],
+      planeCodes: [
+        "verification_infrastructure_error",
+        "verification_infrastructure_error",
+      ],
+      agents: [
+        { status: "error", currentContractId: null },
+        { status: "error", currentContractId: null },
+      ],
+    });
+    expect(detail.collisions).toEqual([]);
+    expect(detail.candidates).toEqual([]);
+    expect(detail.planes.every((plane) => plane.kind === "contract")).toBe(true);
+    expect(
+      detail.events.some((event) =>
+        [
+          "verification_passed",
+          "collision_detected",
+          "candidate_created",
+          "promotion_started",
+          "promotion_completed",
+        ].includes(event.type),
+      ),
+    ).toBe(false);
+
+    const publicText = JSON.stringify(toPublicMissionDetail(detail, [canary]));
+    const durableText = JSON.stringify(detail);
+    const persistedText = await readFile(storePath, "utf8");
+    for (const output of [publicText, durableText, persistedText]) {
+      expect(output).not.toContain(canary);
+      expect(output).not.toContain(privatePath);
+      expect(output).not.toContain("Synthetic returned verifier failure");
+    }
+  }, 30_000);
+
+  it("preserves ordinary failed mandatory Contract acceptance semantics", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new ContractAcceptanceFailureEvidenceVerifier(),
+    });
+
+    await expect(service.runDeterministicDemo()).rejects.toThrow(
+      /failed independent verification/u,
+    );
+    const missionId = service.state().missions.at(-1)?.id;
+    const detail = service.missionDetail(missionId ?? "missing");
+    if (!detail) throw new Error("Failed Mission detail disappeared");
+    expect(detail.contracts.map((contract) => contract.failure?.code)).toEqual([
+      "failed_independent_acceptance",
+      "failed_independent_acceptance",
+    ]);
+    expect(
+      detail.events.filter((event) => event.type === "verification_failed"),
+    ).toHaveLength(2);
+    expect(detail.mission.failure?.code).not.toBe(
+      "verification_infrastructure_error",
+    );
+    expect(detail.planes.every((plane) => plane.kind === "contract")).toBe(true);
+    expect(detail.collisions).toEqual([]);
+    expect(detail.candidates).toEqual([]);
+  }, 30_000);
+
+  it.each([
+    {
+      boundary: "thrown verifier exception",
+      createVerifier: () => new OneContractThrowingVerifier(),
+    },
+    {
+      boundary: "returned infrastructure evidence",
+      createVerifier: () => new OneContractInfrastructureEvidenceVerifier(),
+    },
+  ])("atomically interrupts a blocked sibling after $boundary", async ({
+    createVerifier,
+  }) => {
+    const caseRoot = await makeCaseRoot();
+    const storePath = path.join(caseRoot, "state.json");
+    const store = new JsonStore(storePath);
+    await store.initialize();
+    const verifier = createVerifier();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier,
+    });
+
+    const run = service.runDeterministicDemo();
+    const runOutcome = run.then(
+      (value) => ({ status: "fulfilled" as const, value }),
+      (reason: unknown) => ({ status: "rejected" as const, reason }),
+    );
+
+    try {
+      await verifier.siblingEntered;
+      const outcome = await runOutcome;
+      expect(outcome.status).toBe("rejected");
+      if (outcome.status !== "rejected") {
+        throw new Error("Infrastructure failure Mission unexpectedly fulfilled");
+      }
+      expect(outcome.reason).toBeInstanceOf(Error);
+      expect((outcome.reason as Error).message).toContain(
+        "Contract independent verification infrastructure failed",
+      );
+
+      const missionId = service.state().missions.at(-1)?.id;
+      if (!missionId) throw new Error("Failed Mission identity disappeared");
+      const detailBeforeRelease = service.missionDetail(missionId);
+      if (!detailBeforeRelease) throw new Error("Failed Mission detail disappeared");
+      expect({
+        mission: detailBeforeRelease.mission.state,
+        activeMissionId: detailBeforeRelease.project.activeMissionId,
+        contracts: detailBeforeRelease.contracts
+          .map((contract) => contract.state)
+          .sort(),
+        planes: detailBeforeRelease.planes.map((plane) => plane.state).sort(),
+        agents: detailBeforeRelease.agents.map((agent) => ({
+          status: agent.status,
+          currentContractId: agent.currentContractId,
+        })),
+      }).toEqual({
+        mission: "failed",
+        activeMissionId: null,
+        contracts: ["interrupted", "verification_failed"],
+        planes: ["failed", "interrupted"],
+        agents: [
+          { status: "error", currentContractId: null },
+          { status: "error", currentContractId: null },
+        ],
+      });
+
+      const reloadedStore = new JsonStore(storePath);
+      await reloadedStore.initialize();
+      const reloaded = reloadedStore.snapshot();
+      expect({
+        mission: reloaded.shepherd.missions.find((item) => item.id === missionId)
+          ?.state,
+        activeMissionId: reloaded.shepherd.projects.find(
+          (project) => project.id === detailBeforeRelease.project.id,
+        )?.activeMissionId,
+        contracts: reloaded.shepherd.contracts
+          .filter((contract) => contract.missionId === missionId)
+          .map((contract) => contract.state)
+          .sort(),
+        planes: reloaded.shepherd.planes
+          .filter((plane) => plane.missionId === missionId)
+          .map((plane) => plane.state)
+          .sort(),
+        activeAgentContracts: reloaded.agents
+          .filter((agent) => agent.currentContractId !== null)
+          .map((agent) => agent.currentContractId),
+      }).toEqual({
+        mission: "failed",
+        activeMissionId: null,
+        contracts: ["interrupted", "verification_failed"],
+        planes: ["failed", "interrupted"],
+        activeAgentContracts: [],
+      });
+
+      verifier.releaseSibling();
+      await verifier.siblingExited;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      const detailAfterRelease = service.missionDetail(missionId);
+      expect(
+        detailAfterRelease?.contracts.map((contract) => contract.state).sort(),
+      ).toEqual(["interrupted", "verification_failed"]);
+      expect(
+        detailAfterRelease?.events.filter(
+          (event) => event.type === "verification_passed",
+        ),
+      ).toEqual([]);
+      expect(detailAfterRelease?.collisions).toEqual([]);
+      expect(detailAfterRelease?.candidates).toEqual([]);
+      expect(detailAfterRelease?.planes.every((plane) => plane.kind === "contract"))
+        .toBe(true);
+    } finally {
+      verifier.releaseSibling();
+      await Promise.allSettled([run, verifier.siblingExited]);
+    }
+  }, 30_000);
+
+  it("keeps a truly untyped execution exception classified as unknown", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      executor: new TypedFailingContractExecutor(new Error("untyped synthetic failure")),
+    });
+
+    const { missionId } = await startTrackedTestMission(service);
+    await vi.waitFor(
+      () => expect(service.missionDetail(missionId)?.mission.state).toBe("failed"),
+      { timeout: 10_000 },
+    );
+    const detail = service.missionDetail(missionId);
+    expect(detail?.mission.failure).toMatchObject({ code: "unknown", stage: "background_demo" });
+    expect(detail?.contracts.every((contract) => contract.state === "execution_failed" && contract.failure?.code === "unknown")).toBe(true);
+    expect(detail?.candidates).toEqual([]);
+  });
+
+  it("persists a Contract-owned failure when its Plane worktree cannot be created", async () => {
+    const caseRoot = await makeCaseRoot();
+    const managedRoot = path.join(caseRoot, "managed");
+    const storePath = path.join(caseRoot, "state.json");
+    const outsideCanary = path.join(caseRoot, "outside-canary.txt");
+    await writeFile(outsideCanary, "outside unchanged\n", "utf8");
+    const store = new JsonStore(storePath);
+    await store.initialize();
+    const executor = new MustNotRunExecutor();
+    const verifier = new HostTrustedFixtureVerifier();
+    const verify = vi.spyOn(verifier, "verify");
+    let failedPlanePath = "";
+    const service = new ShepherdService({
+      store,
+      managedRoot,
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier,
+      executor,
+      faultCheckpoint: async (checkpoint, context) => {
+        if (checkpoint !== "contract_plane_creation_start" || failedPlanePath) return;
+        failedPlanePath = path.join(managedRoot, "planes", "auth-demo", `contract-${context.planeId}`);
+        await mkdir(failedPlanePath);
+        await writeFile(path.join(failedPlanePath, "partial-canary"), "partial\n", "utf8");
+      },
+    });
+
+    const { missionId } = await startTrackedTestMission(service);
+    await vi.waitFor(
+      () => expect(service.missionDetail(missionId)?.mission.state).toBe("failed"),
+      { timeout: 10_000 },
+    );
+    const detail = service.missionDetail(missionId);
+    if (!detail) throw new Error("Plane creation failure detail disappeared");
+    expect(detail.mission.failure).toMatchObject({ code: "worktree_creation_failure", stage: "plane_creation" });
+    expect(detail.project.activeMissionId).toBeNull();
+    const failedContracts = detail.contracts.filter((contract) => contract.failure?.code === "worktree_creation_failure");
+    expect(failedContracts).toHaveLength(1);
+    expect(failedContracts[0]).toMatchObject({ state: "execution_failed", planeId: null });
+    expect(detail.contracts.filter((contract) => contract.state === "queued" && contract.failure === null)).toHaveLength(1);
+    expect(detail.agents.filter((agent) => agent.status === "error" && agent.currentContractId === null)).toHaveLength(1);
+    expect(detail.planes).toEqual([]);
+    expect(detail.collisions).toEqual([]);
+    expect(detail.candidates).toEqual([]);
+    expect(detail.project.protectedHeadCommit).toBe(detail.mission.baseCommit);
+    expect(executor.calls).toBe(0);
+    expect(verify).not.toHaveBeenCalled();
+    expect(detail.events.filter((event) => event.contractId === failedContracts[0]?.id && event.details.failureCode === "worktree_creation_failure")).toHaveLength(1);
+    expect(detail.events.filter((event) => event.type === "mission_failed" && event.details.failureCode === "worktree_creation_failure")).toHaveLength(1);
+    const publicDetail = JSON.stringify(toPublicMissionDetail(detail, []));
+    expect(publicDetail).toContain('"code":"worktree_creation_failure"');
+    expect(publicDetail).toContain('"stage":"plane_creation"');
+    expect(publicDetail).not.toContain(caseRoot);
+    await expect(access(failedPlanePath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readFile(outsideCanary, "utf8")).toBe("outside unchanged\n");
+
+    const reloaded = new JsonStore(storePath);
+    await reloaded.initialize();
+    const persisted = reloaded.snapshot();
+    expect(persisted.shepherd.planes).toEqual([]);
+    expect(persisted.shepherd.missions.find((mission) => mission.id === missionId)?.failure).toMatchObject({ code: "worktree_creation_failure", stage: "plane_creation" });
+    expect(persisted.shepherd.contracts.filter((contract) => contract.missionId === missionId && contract.failure?.code === "worktree_creation_failure")).toHaveLength(1);
+  });
+
+  it("unwinds the first initial Contract Plane when the second Plane creation fails", async () => {
+    const caseRoot = await makeCaseRoot();
+    const managedRoot = path.join(caseRoot, "managed");
+    const storePath = path.join(caseRoot, "state.json");
+    const outsideCanary = path.join(caseRoot, "outside-canary.txt");
+    await writeFile(outsideCanary, "outside unchanged\n", "utf8");
+    const store = new JsonStore(storePath);
+    await store.initialize();
+    const executor = new MustNotRunExecutor();
+    const verifier = new HostTrustedFixtureVerifier();
+    const verify = vi.spyOn(verifier, "verify");
+    let service!: ShepherdService;
+    let creationCalls = 0;
+    let survivingPath = "";
+    let survivingBranch = "";
+    let failedPlanePath = "";
+    service = new ShepherdService({
+      store,
+      managedRoot,
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier,
+      executor,
+      faultCheckpoint: async (checkpoint, context) => {
+        if (checkpoint !== "contract_plane_creation_start") return;
+        creationCalls += 1;
+        if (creationCalls !== 2) return;
+        const partial = service
+          .state()
+          .planes.find((plane) => plane.missionId === context.missionId);
+        if (!partial) throw new Error("First Plane was not durable before second creation");
+        survivingPath = partial.worktreePath;
+        survivingBranch = partial.branch;
+        failedPlanePath = path.join(
+          managedRoot,
+          "planes",
+          "auth-demo",
+          `contract-${context.planeId}`,
+        );
+        await mkdir(failedPlanePath);
+        await writeFile(path.join(failedPlanePath, "partial-canary"), "partial\n", "utf8");
+      },
+    });
+
+    const { missionId } = await startTrackedTestMission(service);
+    await vi.waitFor(
+      () => expect(service.missionDetail(missionId)?.mission.state).toBe("failed"),
+      { timeout: 10_000 },
+    );
+    const detail = service.missionDetail(missionId);
+    if (!detail) throw new Error("Plane batch failure detail disappeared");
+    expect(creationCalls).toBe(2);
+    expect(detail.mission.failure).toMatchObject({
+      code: "worktree_creation_failure",
+      stage: "plane_creation",
+    });
+    expect(detail.project.activeMissionId).toBeNull();
+    expect(detail.planes).toEqual([]);
+    expect(detail.contracts.every((contract) => contract.planeId === null)).toBe(true);
+    expect(detail.contracts.map((contract) => contract.state).sort()).toEqual([
+      "execution_failed",
+      "queued",
+    ]);
+    expect(
+      detail.contracts.filter(
+        (contract) => contract.failure?.code === "worktree_creation_failure",
+      ),
+    ).toHaveLength(1);
+    expect(detail.agents.every((agent) => agent.currentContractId === null)).toBe(true);
+    expect(detail.agents.every((agent) => agent.status !== "busy")).toBe(true);
+    expect(detail.collisions).toEqual([]);
+    expect(detail.candidates).toEqual([]);
+    expect(detail.project.protectedHeadCommit).toBe(detail.mission.baseCommit);
+    expect(executor.calls).toBe(0);
+    expect(verify).not.toHaveBeenCalled();
+    expect(JSON.stringify(toPublicMissionDetail(detail, []))).not.toContain(caseRoot);
+    await expect(access(survivingPath)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(failedPlanePath)).rejects.toMatchObject({ code: "ENOENT" });
+    const repositoryPath = detail.project.repositoryPath;
+    await expect(access(repositoryPath)).resolves.toBeUndefined();
+    const branchResult = await new Promise<string>((resolve, reject) => {
+      execFile(
+        "git",
+        ["-C", repositoryPath, "branch", "--list", survivingBranch],
+        { env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" } },
+        (error, stdout) => {
+          if (error) reject(new Error("Git branch inspection failed"));
+          else resolve(stdout.trim());
+        },
+      );
+    });
+    expect(branchResult).toBe("");
+    expect(await readFile(outsideCanary, "utf8")).toBe("outside unchanged\n");
+
+    const reloaded = new JsonStore(storePath);
+    await reloaded.initialize();
+    const persisted = reloaded.snapshot();
+    expect(persisted.shepherd.planes.filter((plane) => plane.missionId === missionId)).toEqual([]);
+    expect(
+      persisted.shepherd.contracts
+        .filter((contract) => contract.missionId === missionId)
+        .every((contract) => contract.planeId === null),
+    ).toBe(true);
+  }, 30_000);
+
+  it("fails closed with bounded attention evidence when initial Plane unwind fails", async () => {
+    const caseRoot = await makeCaseRoot();
+    const managedRoot = path.join(caseRoot, "managed");
+    const storePath = path.join(caseRoot, "state.json");
+    const store = new JsonStore(storePath);
+    await store.initialize();
+    const executor = new MustNotRunExecutor();
+    const verifier = new HostTrustedFixtureVerifier();
+    const verify = vi.spyOn(verifier, "verify");
+    const cleanupCanary =
+      "TST17_CLEANUP_SECRET EPERM Darwin /Users/private/plane-worktree";
+    vi.spyOn(PlaneManager.prototype, "destroyPlane").mockRejectedValue(
+      new Error(cleanupCanary),
+    );
+    let service!: ShepherdService;
+    let creationCalls = 0;
+    let survivingPath = "";
+    let failedPlanePath = "";
+    service = new ShepherdService({
+      store,
+      managedRoot,
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier,
+      executor,
+      sensitiveValues: ["TST17_CLEANUP_SECRET"],
+      faultCheckpoint: async (checkpoint, context) => {
+        if (checkpoint !== "contract_plane_creation_start") return;
+        creationCalls += 1;
+        if (creationCalls !== 2) return;
+        const partial = service
+          .state()
+          .planes.find((plane) => plane.missionId === context.missionId);
+        if (!partial) throw new Error("First Plane was not durable before second creation");
+        survivingPath = partial.worktreePath;
+        failedPlanePath = path.join(
+          managedRoot,
+          "planes",
+          "auth-demo",
+          `contract-${context.planeId}`,
+        );
+        await mkdir(failedPlanePath);
+      },
+    });
+
+    const { missionId } = await startTrackedTestMission(service);
+    await vi.waitFor(
+      () =>
+        expect(service.missionDetail(missionId)?.mission.state).toBe(
+          "attention_required",
+        ),
+      { timeout: 10_000 },
+    );
+    await store.mutate(() => undefined);
+    const detail = service.missionDetail(missionId);
+    if (!detail) throw new Error("Plane unwind attention detail disappeared");
+    expect(detail.mission).toMatchObject({
+      state: "attention_required",
+      attentionReason: "plane_unwind_failed",
+      failure: { code: "worktree_creation_failure", stage: "plane_creation" },
+    });
+    expect(detail.project.activeMissionId).toBe(missionId);
+    expect(detail.planes).toHaveLength(1);
+    expect(detail.planes[0]).toMatchObject({
+      state: "failed",
+      error: {
+        code: "worktree_creation_failure",
+        message: "Initial Contract Plane cleanup requires operator attention",
+        stage: "plane_unwind",
+      },
+    });
+    expect(
+      detail.contracts.map((contract) => contract.state).sort(),
+    ).toEqual(["execution_failed", "interrupted"]);
+    expect(detail.agents.every((agent) => agent.currentContractId === null)).toBe(true);
+    expect(detail.agents.every((agent) => agent.status !== "busy")).toBe(true);
+    expect(
+      detail.events.some((event) => event.details.failureCode === "persistence_error"),
+    ).toBe(false);
+    expect(detail.collisions).toEqual([]);
+    expect(detail.candidates).toEqual([]);
+    expect(detail.project.protectedHeadCommit).toBe(detail.mission.baseCommit);
+    expect(executor.calls).toBe(0);
+    expect(verify).not.toHaveBeenCalled();
+    await expect(access(survivingPath)).resolves.toBeUndefined();
+    await expect(access(failedPlanePath)).rejects.toMatchObject({ code: "ENOENT" });
+
+    const reloaded = new JsonStore(storePath, {
+      sensitiveValues: ["TST17_CLEANUP_SECRET"],
+    });
+    await reloaded.initialize();
+    const reloadedState = reloaded.snapshot();
+    expect(
+      reloadedState.shepherd.missions.find((mission) => mission.id === missionId),
+    ).toMatchObject({
+      state: "attention_required",
+      attentionReason: "plane_unwind_failed",
+      failure: { code: "worktree_creation_failure", stage: "plane_creation" },
+    });
+    expect(
+      reloadedState.shepherd.planes.filter((plane) => plane.missionId === missionId),
+    ).toEqual([
+      expect.objectContaining({
+        state: "failed",
+        error: expect.objectContaining({
+          code: "worktree_creation_failure",
+          stage: "plane_unwind",
+        }),
+      }),
+    ]);
+    const surfaces = [
+      JSON.stringify(detail),
+      JSON.stringify(toPublicMissionDetail(detail, [])),
+      JSON.stringify(reloadedState),
+      await readFile(storePath, "utf8"),
+    ].join("\n");
+    for (const canary of [
+      cleanupCanary,
+      "TST17_CLEANUP_SECRET",
+      "/Users/private/plane-worktree",
+      "EPERM Darwin",
+    ]) {
+      expect(surfaces).not.toContain(canary);
+    }
+  }, 30_000);
+
+  it.each([
+    ["clean abort", false],
+    ["unproved cleanup", true],
+  ] as const)("persists an actual textual integration conflict with %s", async (_case, cleanupFault) => {
+    const caseRoot = await makeCaseRoot();
+    const outsideCanary = path.join(caseRoot, "outside-conflict-canary.txt");
+    await writeFile(outsideCanary, "outside unchanged\n", "utf8");
+    const storePath = path.join(caseRoot, "state.json");
+    const store = new JsonStore(storePath);
+    await store.initialize();
+    let injected = false;
+    const conflictFiles = [
+      ...Array.from({ length: 9 }, (_, index) => `conflicts/shared-${index}.txt`),
+      `conflicts/${"long-name-".repeat(7)}tail.txt`,
+    ];
+    let service!: ShepherdService;
+    service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      ...(cleanupFault
+        ? { gitMergeFaults: { beforePostAbortInspection: () => { throw new Error("TST18_PRIVATE /Users/private EPERM Darwin"); } } }
+        : {}),
+      faultCheckpoint: async (checkpoint, context) => {
+        if (checkpoint !== "integration_merge_start" || injected) return;
+        injected = true;
+        const contractPlanes = service
+          .state()
+          .planes.filter((plane) => plane.missionId === context.missionId && plane.kind === "contract")
+          .sort((left, right) => left.id.localeCompare(right.id));
+        expect(contractPlanes).toHaveLength(2);
+        for (const [index, plane] of contractPlanes.entries()) {
+          await mkdir(path.join(plane.worktreePath, "conflicts"), { recursive: true });
+          for (const conflictFile of conflictFiles) {
+            await writeFile(path.join(plane.worktreePath, conflictFile), `side-${index}\n`, "utf8");
+          }
+          await gitOutput(plane.worktreePath, ["add", "--", "conflicts"]);
+          await gitOutput(plane.worktreePath, [
+            "-c", "user.name=Fixture", "-c", "user.email=fixture@local.invalid",
+            "commit", "-m", `test conflict side ${index}`,
+          ]);
+          const headCommit = await gitOutput(plane.worktreePath, ["rev-parse", "HEAD"]);
+          const changedFiles = (await gitOutput(plane.worktreePath, [
+            "diff", "--name-only", `${plane.baseCommit}..${headCommit}`, "--",
+          ])).split("\n").filter(Boolean).sort();
+          await store.mutate((database) => {
+            const persisted = database.shepherd.planes.find((item) => item.id === plane.id);
+            if (!persisted) throw new Error("Contract Plane disappeared during conflict injection");
+            persisted.headCommit = headCommit;
+            persisted.changedFiles = changedFiles;
+            persisted.authority = {
+              readable: ["**"], writable: ["**"], forbidden: [".git/**", ".shepherd/**"],
+            };
+            const contract = database.shepherd.contracts.find((item) => item.id === plane.contractId);
+            if (!contract) throw new Error("Contract disappeared during conflict injection");
+            contract.verificationEvidence = contract.verificationEvidence.map((evidence) => ({
+              ...evidence, changedFiles,
+            }));
+          });
+        }
+      },
+    });
+
+    const { missionId } = await startTrackedTestMission(service);
+    await vi.waitFor(
+      () => expect(service.missionDetail(missionId)?.mission.state).toBe(cleanupFault ? "attention_required" : "failed"),
+      { timeout: 10_000 },
+    );
+    const detail = service.missionDetail(missionId);
+    if (!detail) throw new Error("Git conflict Mission detail disappeared");
+    if (cleanupFault) {
+      expect(detail.mission).toMatchObject({
+        state: "attention_required",
+        failure: { code: "git_conflict", stage: "integration_cleanup" },
+      });
+      expect(detail.project.activeMissionId).toBe(missionId);
+      expect(detail.contracts.every((contract) => contract.state === "verified")).toBe(true);
+      expect(detail.agents.every((agent) => agent.currentContractId === null && agent.status !== "busy")).toBe(true);
+      expect(detail.planes.find((plane) => plane.kind === "integration")).toMatchObject({
+        state: "failed", error: { code: "git_conflict", stage: "integration_cleanup" },
+      });
+      expect(detail.candidates).toEqual([]);
+      expect(detail.collisions).toEqual([]);
+      const surfaces = JSON.stringify([detail, toPublicMissionDetail(detail, []), service.state()]);
+      expect(surfaces).not.toMatch(/TST18_PRIVATE|\/Users\/private|EPERM|Darwin/);
+      expect(detail.events.some((event) => event.details.stage === "integration_cleanup")).toBe(true);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      backgroundTestMissions.pop();
+      const integrationPlane = detail.planes.find((plane) => plane.kind === "integration");
+      if (!integrationPlane) throw new Error("Attention integration Plane disappeared");
+      await expect(access(integrationPlane.worktreePath)).resolves.toBeUndefined();
+      expect(await readFile(outsideCanary, "utf8")).toBe("outside unchanged\n");
+      return;
+    }
+    expect(detail.mission.failure).toMatchObject({
+      code: "git_conflict",
+      message: "Verified Contract changes conflict during integration",
+      stage: "integration_merge",
+    });
+    expect(detail.contracts.every((contract) => contract.state === "verified")).toBe(true);
+    expect(detail.agents.every((agent) => agent.currentContractId === null)).toBe(true);
+    expect(detail.agents.every((agent) => agent.status !== "busy")).toBe(true);
+    expect(detail.planes.filter((plane) => plane.kind === "integration")).toHaveLength(1);
+    const integrationPlane = detail.planes.find((plane) => plane.kind === "integration");
+    expect(integrationPlane).toMatchObject({
+      state: "failed", error: { code: "git_conflict", stage: "integration_merge" },
+    });
+    expect(detail.candidates).toEqual([]);
+    expect(detail.collisions).toEqual([]);
+    expect(detail.project.protectedHeadCommit).toBe(detail.mission.baseCommit);
+    const repositoryPath = detail.project.repositoryPath;
+    const retainedPlanes = detail.planes.map((plane) => ({
+      worktreePath: plane.worktreePath,
+      branch: plane.branch,
+    }));
+    expect(detail.events.some((event) =>
+      event.details.failureCode === "git_conflict" &&
+      event.details.conflictFileCount === conflictFiles.length,
+    )).toBe(true);
+    const conflictEvent = detail.events.find((event) => event.details.failureCode === "git_conflict");
+    const preview = JSON.parse(String(conflictEvent?.details.conflictFiles)) as string[];
+    expect(preview).toHaveLength(8);
+    expect(preview.every((file) => file.length <= 48)).toBe(true);
+    expect(preview.every((file) => !path.isAbsolute(file))).toBe(true);
+    expect(preview.every((file) => !file.split("/").includes(".."))).toBe(true);
+    const publicDetail = JSON.stringify(toPublicMissionDetail(detail, []));
+    expect(publicDetail).toContain("conflicts/shared-0.txt");
+    expect(publicDetail).not.toContain(caseRoot);
+    if (!integrationPlane) throw new Error("Failed integration Plane disappeared");
+    await expect(access(integrationPlane.worktreePath)).resolves.toBeUndefined();
+    expect(await gitOutput(integrationPlane.worktreePath, ["status", "--porcelain=v1"])).toBe("");
+
+    const reloaded = new JsonStore(storePath);
+    await reloaded.initialize();
+    expect(reloaded.snapshot().shepherd.missions.find((mission) => mission.id === missionId)?.failure)
+      .toMatchObject({ code: "git_conflict", stage: "integration_merge" });
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    backgroundTestMissions.pop();
+    const reset = await service.resetDeterministicDemo();
+    expect(reset.restoredHead).toBe(detail.mission.baseCommit);
+    for (const plane of retainedPlanes) {
+      await expect(access(plane.worktreePath)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await gitOutput(repositoryPath, ["branch", "--list", plane.branch])).toBe("");
+    }
+    expect(await gitOutput(repositoryPath, ["rev-parse", "HEAD"])).toBe(detail.mission.baseCommit);
+    expect(await readFile(outsideCanary, "utf8")).toBe("outside unchanged\n");
+  }, 30_000);
+
+  it("rejects unsafe conflict paths at the Git boundary", () => {
+    for (const unsafe of ["../escape", "/absolute", "control\u0000name"]) {
+      expect(() => assertSafeProjectPath(unsafe)).toThrow();
+    }
+    expect(assertSafeProjectPath("back\\slash")).toBe("back/slash");
+  });
+
+  it("reconciles a transient Mission verification persistence failure without promotion", async () => {
+    const caseRoot = await makeCaseRoot();
+    const storePath = path.join(caseRoot, "state.json");
+    let store!: JsonStore;
+    let injected = false;
+    store = new JsonStore(storePath, {
+      persistenceFaultCheckpoint: (stage) => {
+        if (
+          !injected &&
+          stage === "primary_write" &&
+          store.persistenceRecoveryIntent()?.operation === "mission_verification_transition"
+        ) {
+          injected = true;
+          throw new Error("F06_SECRET EIO /Users/private/state.json");
+        }
+      },
+      sensitiveValues: ["F06_SECRET"],
+    });
+    await store.initialize();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      sensitiveValues: ["F06_SECRET"],
+    });
+    const { missionId } = await startTrackedTestMission(service);
+    await vi.waitFor(
+      () => expect(["attention_required", "failed"]).toContain(service.missionDetail(missionId)?.mission.state),
+      { timeout: 10_000 },
+    );
+    await vi.waitFor(
+      () => expect(store.persistenceRecoveryIntent()).toBeNull(),
+      { timeout: 10_000 },
+    );
+    await store.mutate(() => undefined);
+    const detail = service.missionDetail(missionId);
+    if (!detail) throw new Error("Persistence failure Mission disappeared");
+    expect(injected).toBe(true);
+    expect(detail.mission).toMatchObject({
+      state: "attention_required",
+      attentionReason: "persistence_error",
+      failure: {
+        code: "persistence_error",
+        stage: "mission_verification_persistence",
+        message: "Mission persistence failed before integration and requires attention",
+      },
+    });
+    expect(detail.contracts.every((contract) => contract.state === "verified")).toBe(true);
+    expect(detail.planes.every((plane) => plane.kind === "contract" && plane.state === "verified")).toBe(true);
+    expect(detail.agents.every((agent) => agent.currentContractId === null && agent.status !== "busy")).toBe(true);
+    expect(detail.project.activeMissionId).toBe(missionId);
+    expect(detail.project.protectedHeadCommit).toBe(detail.mission.baseCommit);
+    expect(detail.collisions).toEqual([]);
+    expect(detail.candidates).toEqual([]);
+    expect(detail.events.filter((event) => event.details.failureCode === "persistence_error")).toHaveLength(1);
+    expect(store.persistenceRecoveryIntent()).toBeNull();
+    const surfaces = [
+      JSON.stringify(detail),
+      JSON.stringify(toPublicMissionDetail(detail, [])),
+      await readFile(storePath, "utf8"),
+    ].join("\n");
+    for (const canary of ["F06_SECRET", "EIO", "/Users/private/state.json"]) {
+      expect(surfaces).not.toContain(canary);
+    }
+    const retainedPaths = detail.planes.map((plane) => plane.worktreePath);
+    backgroundTestMissions.pop();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await service.cancelMission(missionId);
+    await service.resetDeterministicDemo();
+    await expect(access(storePath + ".persistence-intent.json"))
+      .rejects.toMatchObject({ code: "ENOENT" });
+    for (const retainedPath of retainedPaths) {
+      await expect(access(retainedPath)).rejects.toMatchObject({ code: "ENOENT" });
+    }
+  }, 30_000);
+
+  it("reconciles a retained persistence journal exactly once across two restarts", async () => {
+    const caseRoot = await makeCaseRoot();
+    const storePath = path.join(caseRoot, "state.json");
+    let store!: JsonStore;
+    let failures = 0;
+    store = new JsonStore(storePath, {
+      persistenceFaultCheckpoint: (stage) => {
+        if (
+          failures < 2 &&
+          stage === "primary_write" &&
+          store.persistenceRecoveryIntent()?.operation === "mission_verification_transition"
+        ) {
+          failures += 1;
+          throw new Error("F06_RESTART_SECRET ENOSPC /private/state");
+        }
+      },
+      sensitiveValues: ["F06_RESTART_SECRET"],
+    });
+    await store.initialize();
+    const firstService = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      sensitiveValues: ["F06_RESTART_SECRET"],
+    });
+    const { missionId } = await firstService.startDeterministicDemo();
+    await vi.waitFor(() => expect(failures).toBe(2), { timeout: 10_000 });
+    expect(firstService.missionDetail(missionId)?.mission.state).toBe("running");
+    expect(store.persistenceRecoveryIntent()).not.toBeNull();
+
+    const originalState = JSON.parse(await readFile(storePath, "utf8")) as Database;
+    const originalJournal = JSON.parse(
+      await readFile(storePath + ".persistence-intent.json", "utf8"),
+    ) as Record<string, unknown>;
+    const mismatchPath = path.join(caseRoot, "mismatch", "state.json");
+    await mkdir(path.dirname(mismatchPath), { recursive: true });
+    const mismatchedState = structuredClone(originalState);
+    mismatchedState.shepherd.settings.autoResolution = false;
+    await writeFile(mismatchPath, JSON.stringify(mismatchedState, null, 2) + "\n", "utf8");
+    await writeFile(
+      mismatchPath + ".persistence-intent.json",
+      JSON.stringify(originalJournal) + "\n",
+      { encoding: "utf8", mode: 0o600 },
+    );
+    const mismatchStore = new JsonStore(mismatchPath);
+    await mismatchStore.initialize();
+    await expect(reconcilePersistenceRecoveryIntent({ store: mismatchStore }))
+      .rejects.toThrow("Persistence recovery journal does not match durable Mission state");
+    expect(mismatchStore.persistenceRecoveryIntent()).not.toBeNull();
+
+    const stalePath = path.join(caseRoot, "stale", "state.json");
+    await mkdir(path.dirname(stalePath), { recursive: true });
+    const staleState = structuredClone(originalState);
+    const staleMission = staleState.shepherd.missions.find((mission) => mission.id === missionId);
+    if (!staleMission) throw new Error("Persistence stale fixture Mission disappeared");
+    staleMission.state = "queued";
+    const staleSerialized = JSON.stringify(staleState, null, 2) + "\n";
+    const staleJournal = {
+      ...originalJournal,
+      beforeDigest: createHash("sha256").update(staleSerialized, "utf8").digest("hex"),
+    };
+    await writeFile(stalePath, staleSerialized, "utf8");
+    await writeFile(
+      stalePath + ".persistence-intent.json",
+      JSON.stringify(staleJournal) + "\n",
+      { encoding: "utf8", mode: 0o600 },
+    );
+    const staleStore = new JsonStore(stalePath);
+    await staleStore.initialize();
+    await expect(reconcilePersistenceRecoveryIntent({ store: staleStore }))
+      .rejects.toThrow("Persistence recovery journal precondition is stale");
+    expect(staleStore.persistenceRecoveryIntent()).not.toBeNull();
+
+    const restartedStore = new JsonStore(storePath, {
+      sensitiveValues: ["F06_RESTART_SECRET"],
+    });
+    await restartedStore.initialize();
+    const restartedService = new ShepherdService({
+      store: restartedStore,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      sensitiveValues: ["F06_RESTART_SECRET"],
+    });
+    await restartedService.initialize();
+    const recovered = restartedService.missionDetail(missionId);
+    expect(recovered?.mission).toMatchObject({
+      state: "attention_required",
+      failure: { code: "persistence_error", stage: "mission_verification_persistence" },
+    });
+    expect(recovered?.events.filter((event) => event.details.failureCode === "persistence_error"))
+      .toHaveLength(1);
+    expect(restartedStore.persistenceRecoveryIntent()).toBeNull();
+
+    const secondStore = new JsonStore(storePath, {
+      sensitiveValues: ["F06_RESTART_SECRET"],
+    });
+    await secondStore.initialize();
+    const secondService = new ShepherdService({
+      store: secondStore,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      sensitiveValues: ["F06_RESTART_SECRET"],
+    });
+    await secondService.initialize();
+    const twiceRecovered = secondService.missionDetail(missionId);
+    expect(twiceRecovered?.events.filter((event) => event.details.failureCode === "persistence_error"))
+      .toHaveLength(1);
+    const surfaces = [JSON.stringify(twiceRecovered), await readFile(storePath, "utf8")].join("\n");
+    for (const canary of ["F06_RESTART_SECRET", "ENOSPC", "/private/state"]) {
+      expect(surfaces).not.toContain(canary);
+    }
+  }, 30_000);
+
+  it("does not invoke a sibling verifier after infrastructure terminalization", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const verifier = new RecordingFrontendInfrastructureVerifier();
+    let markBackendReady!: () => void;
+    const backendReady = new Promise<void>((resolve) => {
+      markBackendReady = resolve;
+    });
+    let releaseBackend!: () => void;
+    const backendReleased = new Promise<void>((resolve) => {
+      releaseBackend = resolve;
+    });
+    let markBackendLifecycleExited!: () => void;
+    const backendLifecycleExited = new Promise<void>((resolve) => {
+      markBackendLifecycleExited = resolve;
+    });
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier,
+      faultCheckpoint: async (checkpoint, context) => {
+        if (
+          checkpoint === "contract_verification_snapshot_ready" &&
+          context.contractId?.includes("back")
+        ) {
+          markBackendReady();
+          try {
+            await backendReleased;
+          } finally {
+            markBackendLifecycleExited();
+          }
+        }
+      },
+    });
+
+    const run = service.runDeterministicDemo();
+    const runOutcome = run.then(
+      () => ({ error: null }),
+      (error: unknown) => ({ error }),
+    );
+    try {
+      await backendReady;
+      const { error } = await runOutcome;
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toBe(
+        "Contract independent verification infrastructure failed",
+      );
+      expect(verifier.targetIds).toHaveLength(1);
+      expect(verifier.targetIds[0]).toContain("front");
+    } finally {
+      releaseBackend();
+      await backendLifecycleExited;
+      await store.mutate(() => undefined);
+    }
+    expect(verifier.targetIds).toHaveLength(1);
+    const missionId = service.state().missions.at(-1)?.id;
+    const detail = service.missionDetail(missionId ?? "missing");
+    expect(detail?.contracts.map((contract) => contract.state).sort()).toEqual([
+      "interrupted",
+      "verification_failed",
+    ]);
+    expect(
+      detail?.events.filter((event) => event.type === "verification_passed"),
+    ).toEqual([]);
+    expect(detail?.planes.every((plane) => plane.kind === "contract")).toBe(true);
+  }, 30_000);
+
   it("archives one transient candidate attempt and retries from the same integration commit", async () => {
     const caseRoot = await makeCaseRoot();
     const store = new JsonStore(path.join(caseRoot, "state.json"));
@@ -1353,6 +3020,122 @@ describe("Shepherd deterministic walking skeleton", () => {
         .missionDetail(result.mission.id)
         ?.events.some((event) => event.type === "candidate_retried"),
     ).toBe(true);
+  }, 30_000);
+
+  it("keeps typed candidate Runtime diagnostics out of durable no-promotion state", async () => {
+    const caseRoot = await makeCaseRoot();
+    const storePath = path.join(caseRoot, "state.json");
+    const store = new JsonStore(storePath);
+    await store.initialize();
+    const opaqueCanary = "OPAQUE_CANDIDATE_RUNTIME_424242";
+    const privatePath = "/Users/private-user/candidate/result.json";
+    const diagnostic = `${opaqueCanary} ${privatePath}`;
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      executor: new TypedFailingCandidateExecutor(diagnostic),
+    });
+
+    await expect(service.runDeterministicDemo()).rejects.toThrow(
+      "Resolution requires attention: all_candidates_failed",
+    );
+    const mission = service.state().missions.at(-1);
+    expect(mission).toMatchObject({
+      state: "attention_required",
+      attentionReason: "all_candidates_failed",
+    });
+    const detail = service.missionDetail(mission?.id ?? "missing");
+    expect(detail?.candidates.every((candidate) =>
+      candidate.executionState === "failed" &&
+      candidate.promotionState === "not_started" &&
+      candidate.failure?.message === "Agent Runtime execution failed"
+    )).toBe(true);
+    expect(detail?.events.some((event) => event.type === "promotion_started")).toBe(false);
+    expect(detail?.project.protectedHeadCommit).toBe(mission?.baseCommit);
+
+    const reloaded = new JsonStore(storePath);
+    await reloaded.initialize();
+    const surfaces = [
+      JSON.stringify(detail),
+      JSON.stringify(toPublicMissionDetail(detail!, [])),
+      JSON.stringify(reloaded.snapshot()),
+      await readFile(storePath, "utf8"),
+    ].join("\n");
+    for (const canary of [opaqueCanary, privatePath]) {
+      expect(surfaces).not.toContain(canary);
+    }
+  }, 30_000);
+
+  it.each([
+    {
+      kind: "timeout" as const,
+      code: "agent_timeout" as const,
+      contractState: "execution_timed_out" as const,
+      message: "Agent Runtime exceeded the 1234 ms execution deadline",
+    },
+    {
+      kind: "execution" as const,
+      code: "agent_runtime_error" as const,
+      contractState: "execution_failed" as const,
+      message: "Agent Runtime execution failed",
+    },
+  ])("persists typed Agent Runtime $kind failures across every terminal surface", async ({ kind, code, contractState, message }) => {
+    const caseRoot = await makeCaseRoot();
+    const statePath = path.join(caseRoot, "state.json");
+    const store = new JsonStore(statePath);
+    await store.initialize();
+    const opaqueCanary = "OPAQUE_TYPED_RUNTIME_CANARY_314159";
+    const secretCanary = "SECRET_TYPED_RUNTIME_CANARY_271828";
+    const privatePath = "/Users/private-user/runtime/private.sock";
+    const runtimeError = new RuntimeExecutionError(
+      kind,
+      kind === "timeout" ? 1_234 : undefined,
+    );
+    runtimeError.message = `${opaqueCanary} ${secretCanary} ${privatePath}`;
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      executor: new TypedFailingContractExecutor(runtimeError),
+    });
+
+    const { missionId } = await startTrackedTestMission(service);
+    await vi.waitFor(
+      () => expect(service.missionDetail(missionId)?.mission.state).toBe("failed"),
+      { timeout: 10_000 },
+    );
+    const detail = service.missionDetail(missionId);
+    if (!detail) throw new Error("Typed Runtime failure detail disappeared");
+    expect(detail.mission).toMatchObject({ state: "failed", failure: { code, message } });
+    expect(detail.project.activeMissionId).toBeNull();
+    expect(detail.contracts.every((contract) => contract.state === contractState && contract.failure?.code === code)).toBe(true);
+    expect(detail.planes.every((plane) => plane.kind === "contract" && plane.state === "failed" && plane.error?.code === code)).toBe(true);
+    expect(detail.agents.every((agent) => agent.status === "error" && agent.currentContractId === null && agent.lastError === message)).toBe(true);
+    expect(detail.candidates).toEqual([]);
+    expect(detail.collisions).toEqual([]);
+    expect(detail.project.protectedHeadCommit).toBe(detail.mission.baseCommit);
+    expect(detail.events.filter((event) => event.contractId !== null && event.details.failureCode === code)).toHaveLength(2);
+    expect(detail.events.filter((event) => event.type === "mission_failed" && event.details.failureCode === code)).toHaveLength(1);
+    expect(JSON.stringify(toPublicMissionDetail(detail, []))).toContain(`"code":"${code}"`);
+
+    const reloaded = new JsonStore(statePath);
+    await reloaded.initialize();
+    const persisted = reloaded.snapshot();
+    expect(persisted.shepherd.missions.find((mission) => mission.id === missionId)?.failure?.code).toBe(code);
+    expect(persisted.shepherd.contracts.filter((contract) => contract.missionId === missionId).every((contract) => contract.failure?.code === code)).toBe(true);
+    const publicAndDurable = [
+      JSON.stringify(detail),
+      JSON.stringify(toPublicMissionDetail(detail, [])),
+      JSON.stringify(persisted),
+      await readFile(statePath, "utf8"),
+    ].join("\n");
+    for (const canary of [opaqueCanary, secretCanary, privatePath]) {
+      expect(publicAndDurable).not.toContain(canary);
+    }
+    expect(publicAndDurable).toContain(message);
   }, 30_000);
 
   it("persists cancellation before stopping exact executor identities", async () => {

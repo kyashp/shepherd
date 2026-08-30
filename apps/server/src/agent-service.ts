@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AppConfig } from "./config.js";
-import { isArkConfigured } from "./config.js";
+import { isArkConfigured, isShepherdModelReviewConfigured } from "./config.js";
 import { HttpError, RunCancelledError } from "./errors.js";
 import { JsonStore } from "./store.js";
 import { normalizeScopedAuthority } from "./shepherd/authority.js";
@@ -256,13 +256,18 @@ export class AgentService {
   }
 
   async startAgent(id: string): Promise<Agent> {
-    return this.setStatus(id, "ready");
+    if (this.getAgent(id).currentContractId) {
+      throw new HttpError(409, "Shepherd is currently using this Agent");
+    }
+    return this.setStatus(id, "ready", true);
   }
 
   async stopAgent(id: string): Promise<Agent> {
-    this.getAgent(id);
+    if (this.getAgent(id).currentContractId) {
+      throw new HttpError(409, "Cancel or finish the Shepherd Contract first");
+    }
     await this.cancelExecution(id);
-    return this.setStatus(id, "stopped");
+    return this.setStatus(id, "stopped", true);
   }
 
   getMessages(agentId: string): Message[] {
@@ -361,6 +366,7 @@ export class AgentService {
       codexSandboxMode: this.config.codexSandboxMode,
       runtimeProvider: this.config.runtimeProvider,
       shepherdExecutionMode: this.config.shepherdExecutionMode,
+      shepherdModelReviewConfigured: isShepherdModelReviewConfigured(this.config),
       containerEngine:
         this.config.runtimeProvider === "container"
           ? this.config.containerEngine
@@ -436,11 +442,23 @@ export class AgentService {
     }
   }
 
-  private async setStatus(id: string, status: Agent["status"]): Promise<Agent> {
+  private async setStatus(
+    id: string,
+    status: Agent["status"],
+    rejectShepherdReservation = false,
+  ): Promise<Agent> {
     return this.store.mutate((database) => {
       const agent = database.agents.find((item) => item.id === id);
       if (!agent) {
         throw new HttpError(404, "Agent not found");
+      }
+      if (rejectShepherdReservation && agent.currentContractId) {
+        throw new HttpError(
+          409,
+          status === "stopped"
+            ? "Cancel or finish the Shepherd Contract first"
+            : "Shepherd is currently using this Agent",
+        );
       }
       if (status === "ready" && agent.status === "busy") {
         throw new HttpError(409, "Stop the active run before starting this Agent");

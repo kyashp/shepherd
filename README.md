@@ -1,9 +1,10 @@
 # Volc Agent Launchpad + Shepherd
 
 > [!IMPORTANT]
-> Start with [the Shepherd engineering handover](docs/HANDOVER.md). It is the
-> authoritative current-state, defect, remaining-work, runbook, and multi-agent
-> workflow entry point. [The PRD](docs/PRD.md) remains the requirement authority.
+> Start with [the Shepherd task ledger](docs/TASKS.md). It is the authoritative
+> current-state, defect, remaining-work, evidence, and multi-agent workflow entry
+> point. [The PRD](docs/PRD.md) remains the requirement authority, and
+> [the Local POC guide](docs/LOCAL_POC.md) is the runbook.
 > This README still preserves much of the Starter Kit setup material and is not
 > the final PRD Phase 9 project report.
 
@@ -37,7 +38,7 @@ Volcengine ECS.
   deterministic semantic collision detection, speculative resolution, and
   protected promotion for the managed authentication fixture
 - Shepherd Mission Control, Project Group, timeline, Plane Tree, Agent role and
-  authority configuration, and settings UI (with known gaps itemized in the handover)
+  authority configuration, and settings UI (with known gaps itemized in the task ledger)
 - React and TypeScript Web UI
 - Agent create, edit, start, stop, delete, and multi-turn chat
 - Fastify control plane with asynchronous Run state
@@ -57,9 +58,7 @@ Codex CLI is included in the Runtime image and is not required on the host.
 ## Local browser SOP
 
 For the currently verified deterministic Shepherd command and exact manual test
-walkthrough, use [the HANDOVER runbook](docs/HANDOVER.md#run-and-test-the-current-solution).
-It also records the current `.env` startup and clean-reset defects so a failed
-first attempt is not mistaken for user error.
+walkthrough, use [the Local POC runbook](docs/LOCAL_POC.md).
 
 ### 1. Check the local tools
 
@@ -192,26 +191,104 @@ AGENT_WORKSPACE_ROOT=workspaces
 CODEX_HOME=codex-home
 ```
 
-## Deployment
+## Optional cloud deployment
 
-- [Existing Linux ECS with Docker](docs/DEPLOYMENT.md#existing-linux-ecs)
-- [Complete Volcengine environment with Terraform](docs/DEPLOYMENT.md#terraform-deployment)
-- [Local Docker, Colima, and Podman details](docs/LOCAL_POC.md)
+Local Docker, Colima, or Podman is the recommended judging path; see
+[the Local POC guide](docs/LOCAL_POC.md). The repository retains optional existing
+ECS and Terraform deployment scripts, but cloud deployment does not improve the
+Track 1 score by itself.
+
+### Existing Linux ECS
+
+Use a dedicated Ubuntu 22.04/24.04, Debian 12, or veLinux 2 instance with at
+least 2 vCPU, 4 GiB RAM, a 40 GiB disk, Docker Engine 24+, and the Compose plugin.
+The path was verified on veLinux 2 with Docker Engine 29.6.2 and Compose 5.3.1;
+Debian 10 is unsupported. Follow Docker's official repository instructions,
+verify the downloaded signing-key fingerprint, log in again after group changes,
+and check `docker version`, `docker compose version`, and
+`docker run --rm hello-world` before deployment. Do not replace the engine on a
+host that contains important workloads.
+
+veLinux 2 uses Docker's Debian 12 Bookworm repository. Resolve the supported parent
+before following the official Docker key/repository installation steps:
+
+```bash
+. /etc/os-release
+case "$ID" in
+  ubuntu|debian)
+    DOCKER_DISTRO="$ID"
+    DOCKER_CODENAME="$VERSION_CODENAME"
+    ;;
+  velinux)
+    DOCKER_DISTRO=debian
+    DOCKER_CODENAME=bookworm
+    ;;
+  *)
+    echo "Use the Docker-supported parent distribution."
+    exit 1
+    ;;
+esac
+```
+
+Install `ca-certificates`, `curl`, `gnupg`, `git`, and `openssl`; download the key
+from `https://download.docker.com/linux/$DOCKER_DISTRO/gpg`; compare its complete
+fingerprint with Docker's official installation guide; place the dearmored key in
+`/etc/apt/keyrings/docker.gpg`; and configure the stable repository with
+`$DOCKER_CODENAME`. Then install Docker Engine, CLI, containerd, Buildx, and Compose.
 
 The existing-ECS script deploys from the current source tree:
 
 ```bash
 cp .env.example .env.production
+openssl rand -hex 32
+# Set PUBLIC_PORT, ARK_API_KEY, ARK_MODEL, and the generated APP_AUTH_TOKEN.
+chmod 600 .env.production
 ./scripts/deploy-existing-ecs.sh .env.production
 ```
+
+Verify the result without printing credentials:
+
+```bash
+read -rsp 'APP_AUTH_TOKEN: ' APP_AUTH_TOKEN; export APP_AUTH_TOKEN; printf '\n'
+curl http://127.0.0.1/api/health
+curl -H "Authorization: Bearer $APP_AUTH_TOKEN" http://127.0.0.1/api/system
+docker compose --env-file .env.production ps
+```
+
+Deploy updates with `git pull --ff-only` and rerun the same script. Allow inbound
+HTTP only from the event network, SSH only from administrator addresses, and
+outbound HTTPS only where required. Add HTTPS before sending the shared bearer token
+over an untrusted network. `docker compose --env-file .env.production down` stops
+the service without deleting Agent data.
+
+### Terraform
+
+The Terraform path requires Terraform 1.6+, a Volcengine account with scoped
+resource-creation permission, an existing ECS SSH key pair, a compatible image and
+instance type in the selected region, and a public repository URL.
 
 The Terraform path provisions VPC, subnet, security group, ECS, and EIP:
 
 ```bash
+cp .env.example .env.production
 cp deploy/volcengine/terraform.tfvars.example \
   deploy/volcengine/terraform.tfvars
+export VOLCENGINE_ACCESS_KEY=your-access-key
+export VOLCENGINE_SECRET_KEY=your-secret-key
 ./scripts/deploy-volcengine.sh
 ```
+
+Set Ark values only in `.env.production` and region/zone/image/instance/key/CIDR/
+repository values in `terraform.tfvars`. Provide Volcengine account credentials only
+through the current shell; never give account AK/SK values to an Agent Runtime.
+After Terraform prints `app_url`, allow cloud-init several minutes and inspect it
+with `cloud-init status --wait` and `/var/log/cloud-init-output.log` over SSH.
+
+Use a dedicated test instance. Never commit `.env.production`, Terraform variables
+or state, Ark keys, or Volcengine account credentials. The PoC places the Ark key in
+Terraform user data/state; production requires managed secrets and encrypted remote
+state. `terraform -chdir=deploy/volcengine destroy` removes the ECS instance, system
+disk, and Agent workspaces—back up required code and data first.
 
 ## Configuration
 
@@ -257,12 +334,12 @@ docker compose config
 
 ## Documentation
 
-- [Current engineering handover and task ledger](docs/HANDOVER.md)
+- [Current task ledger and completion cut](docs/TASKS.md)
 - [Shepherd product requirements](docs/PRD.md)
 - [Shepherd design and trust boundaries](docs/SHEPHERD.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Local POC](docs/LOCAL_POC.md)
-- [Deployment](docs/DEPLOYMENT.md)
+- [Track 1 TechJam brief](docs/TECHJAM.md)
 - [Hackathon extension guide](docs/HACKATHON_EXTENSION_GUIDE.md)
 - [Security policy](SECURITY.md)
 - [Contributing](CONTRIBUTING.md)

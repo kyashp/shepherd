@@ -31,6 +31,7 @@ import {
 } from "./git-client.js";
 import {
   PlaneAuthorityViolationError,
+  PlaneCreationError,
   PlaneManager,
   UnsafeExecutionWorkspaceError,
 } from "./plane-manager.js";
@@ -76,7 +77,9 @@ interface Fixture {
   baseCommit: string;
 }
 
-async function createFixture(options: Pick<GitClientOptions, "promotionFaults"> = {}): Promise<Fixture> {
+async function createFixture(
+  options: Pick<GitClientOptions, "promotionFaults" | "mergeFaults"> = {},
+): Promise<Fixture> {
   const casePath = path.join(testRoot, "case-" + randomUUID());
   if (!isInside(testRoot, casePath) || casePath === workspace) throw new Error("Unsafe test fixture path");
   await mkdir(casePath, { recursive: false });
@@ -140,6 +143,44 @@ afterAll(async () => {
 });
 
 describe("GitClient and PlaneManager integration", () => {
+  it("rolls back an attached worktree and branch when initial Plane validation fails", async () => {
+    const fixture = await createFixture();
+    const planeId = "partial-create";
+    const worktreePath = path.join(fixture.planesRoot, `contract-${planeId}`);
+    const protectedCanary = path.join(fixture.repositoryPath, "shared.txt");
+    try {
+      const headFailure = vi
+        .spyOn(fixture.manager.git, "currentHead")
+        .mockRejectedValueOnce(new Error("private git diagnostic /tmp/must-not-surface"));
+      const failure = await fixture.manager
+        .createPlane({
+          id: planeId,
+          projectId: "project",
+          missionId: "mission",
+          kind: "contract",
+          contractId: "contract",
+          baseCommit: fixture.baseCommit,
+          purpose: "partial creation cleanup",
+          executionIdentity: "execution-partial",
+          authority,
+        })
+        .catch((error: unknown) => error);
+      headFailure.mockRestore();
+
+      expect(failure).toBeInstanceOf(PlaneCreationError);
+      expect((failure as Error).message).toBe(`Failed to create managed Plane ${planeId}`);
+      expect((failure as Error).message).not.toContain("/tmp/");
+      await expect(access(worktreePath)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await fixtureGit(fixture.repositoryPath, ["branch", "--list", `shepherd/contract/${planeId}`])).toBe("");
+      expect(await fixtureGit(fixture.repositoryPath, ["worktree", "list", "--porcelain"])).not.toContain(worktreePath);
+      expect(await fixtureGit(fixture.repositoryPath, ["rev-parse", "HEAD"])).toBe(fixture.baseCommit);
+      expect(await readFile(protectedCanary, "utf8")).toBe("base\n");
+    } finally {
+      vi.restoreAllMocks();
+      await destroyFixture(fixture);
+    }
+  });
+
   it("creates isolated Planes from one SHA, strips control metadata, integrates, and resets leaks", async () => {
     const fixture = await createFixture();
     try {
@@ -252,14 +293,120 @@ describe("GitClient and PlaneManager integration", () => {
         authority,
       });
       const first = await fixture.manager.mergePlane(integration, left);
+      const beforeConflictHead = await fixture.manager.git.currentHead(integration.worktreePath);
       const second = await fixture.manager.mergePlane(first.plane, right);
       expect(second).toMatchObject({ merged: false, conflictFiles: ["shared.txt"] });
       expect(await fixture.manager.git.uncommittedFiles(integration.worktreePath)).toEqual([]);
+      const mergeHeadPath = await fixtureGit(integration.worktreePath, ["rev-parse", "--git-path", "MERGE_HEAD"]);
+      await expect(access(path.resolve(integration.worktreePath, mergeHeadPath))).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await fixture.manager.git.currentHead(integration.worktreePath)).toBe(beforeConflictHead);
+      expect(await fixtureGit(integration.worktreePath, ["symbolic-ref", "--quiet", "--short", "HEAD"])).toBe(integration.branch);
       await fixture.manager.resetManagedPlanes();
     } finally {
       await destroyFixture(fixture);
     }
   }, 15_000);
+
+  it.each([
+    ["enumeration", { beforeConflictEnumeration: () => { throw new Error("PRIVATE_ENUM_PATH"); } }, true],
+    ["abort", { beforeAbort: () => { throw new Error("PRIVATE_ABORT_PATH"); } }, false],
+    ["inspection", { beforePostAbortInspection: () => { throw new Error("PRIVATE_INSPECT_PATH"); } }, true],
+  ] as const)("bounds a conflict %s failure and proves the resulting cleanup state", async (_name, mergeFaults, clean) => {
+    const fixture = await createFixture({ mergeFaults });
+    try {
+      const make = async (id: string, content: string) => {
+        const plane = await fixture.manager.createPlane({
+          id, projectId: "project", missionId: "mission", kind: "contract", contractId: id,
+          baseCommit: fixture.baseCommit, purpose: id, executionIdentity: "exec-" + id, authority,
+        });
+        await writeFile(path.join(plane.worktreePath, "shared.txt"), content, "utf8");
+        return await fixture.manager.commitPlane(plane, "Finalize " + id);
+      };
+      const left = await make("cleanup-left", "left\n");
+      const right = await make("cleanup-right", "right\n");
+      const integration = await fixture.manager.createIntegrationPlane({
+        id: "cleanup-integration", projectId: "project", missionId: "mission",
+        baseCommit: fixture.baseCommit, purpose: "cleanup proof", executionIdentity: "exec-cleanup",
+        authority,
+      });
+      const first = await fixture.manager.mergePlane(integration, left);
+      const beforeConflictHead = await fixture.manager.git.currentHead(integration.worktreePath);
+      const observed = fixture.manager.mergePlane(first.plane, right).catch((error: unknown) => error);
+      const error = await observed;
+      expect(error).toMatchObject({ name: "GitConflictCleanupError", message: "Git conflict cleanup requires operator attention" });
+      expect(String(error)).not.toMatch(/PRIVATE_|\/Users\/|EPERM|Darwin/);
+      expect((error as Error & { cause?: unknown }).cause).toBeUndefined();
+      const status = await fixtureGit(integration.worktreePath, ["status", "--porcelain=v1"]);
+      expect(status === "").toBe(clean);
+      if (clean) {
+        expect(await fixture.manager.git.currentHead(integration.worktreePath)).toBe(beforeConflictHead);
+        expect(await fixtureGit(integration.worktreePath, ["symbolic-ref", "--quiet", "--short", "HEAD"])).toBe(integration.branch);
+      } else {
+        await fixtureGit(integration.worktreePath, ["merge", "--abort"]);
+      }
+      await fixture.manager.resetManagedPlanes();
+    } finally {
+      await destroyFixture(fixture);
+    }
+  }, 15_000);
+
+  it.each(["detached", "wrong-branch", "wrong-head", "dirty", "merge-in-progress"] as const)(
+    "rejects a %s integration identity before merge mutation",
+    async (fault) => {
+      const fixture = await createFixture();
+      try {
+        const source = await fixture.manager.createPlane({
+          id: "identity-source", projectId: "project", missionId: "mission", kind: "contract",
+          contractId: "identity-source", baseCommit: fixture.baseCommit, purpose: "identity source",
+          executionIdentity: "exec-identity-source", authority,
+        });
+        await writeFile(path.join(source.worktreePath, "source.txt"), "source\n", "utf8");
+        const committed = await fixture.manager.commitPlane(source, "Finalize identity source");
+        const integration = await fixture.manager.createIntegrationPlane({
+          id: "identity-integration", projectId: "project", missionId: "mission",
+          baseCommit: fixture.baseCommit, purpose: "identity target",
+          executionIdentity: "exec-identity-integration", authority,
+        });
+        if (fault === "detached") {
+          await fixtureGit(integration.worktreePath, ["checkout", "--detach", integration.headCommit!]);
+        } else if (fault === "wrong-branch") {
+          await fixtureGit(integration.worktreePath, ["switch", "-c", "identity-sibling"]);
+        } else if (fault === "wrong-head") {
+          await writeFile(path.join(integration.worktreePath, "unexpected.txt"), "unexpected\n", "utf8");
+          await fixtureGit(integration.worktreePath, ["add", "--", "unexpected.txt"]);
+          await fixtureGit(integration.worktreePath, ["commit", "-m", "unexpected integration head"]);
+        } else if (fault === "dirty") {
+          await writeFile(path.join(integration.worktreePath, "dirty.txt"), "dirty\n", "utf8");
+        } else {
+          const mergeHeadPath = await fixtureGit(integration.worktreePath, ["rev-parse", "--git-path", "MERGE_HEAD"]);
+          await writeFile(path.resolve(integration.worktreePath, mergeHeadPath), committed.headCommit! + "\n", "utf8");
+        }
+        const integrationBefore = {
+          head: await fixtureGit(integration.worktreePath, ["rev-parse", "HEAD"]),
+          status: await fixtureGit(integration.worktreePath, ["status", "--porcelain=v1"]),
+          refs: await fixtureGit(fixture.repositoryPath, ["show-ref", "--heads"]),
+        };
+        const mergeHeadPath = await fixtureGit(integration.worktreePath, ["rev-parse", "--git-path", "MERGE_HEAD"]);
+        const mergeHeadBefore = await readFile(path.resolve(integration.worktreePath, mergeHeadPath), "utf8").catch(() => null);
+        const sourceBefore = await fixtureGit(source.worktreePath, ["rev-parse", "HEAD"]);
+        const error = await fixture.manager.mergePlane(integration, committed).catch((value: unknown) => value);
+        expect(error).toMatchObject({
+          name: "GitConflictCleanupError",
+          message: "Git conflict cleanup requires operator attention",
+        });
+        expect((error as Error & { cause?: unknown }).cause).toBeUndefined();
+        expect(await fixtureGit(integration.worktreePath, ["rev-parse", "HEAD"])).toBe(integrationBefore.head);
+        expect(await fixtureGit(integration.worktreePath, ["status", "--porcelain=v1"])).toBe(integrationBefore.status);
+        expect(await fixtureGit(fixture.repositoryPath, ["show-ref", "--heads"])).toBe(integrationBefore.refs);
+        expect(await readFile(path.resolve(integration.worktreePath, mergeHeadPath), "utf8").catch(() => null)).toBe(mergeHeadBefore);
+        expect(await fixtureGit(source.worktreePath, ["rev-parse", "HEAD"])).toBe(sourceBefore);
+        await fixture.manager.resetManagedPlanes();
+      } finally {
+        await destroyFixture(fixture);
+      }
+    },
+    15_000,
+  );
 
   it("rejects ref injection, boundary escapes, non-sentinel adoption, and sentinel tampering", async () => {
     const fixture = await createFixture();
@@ -364,6 +511,8 @@ describe("GitClient and PlaneManager integration", () => {
           fixture.repositoryPath,
           committed.headCommit!,
           "Attempt protected merge",
+          "main",
+          fixture.baseCommit,
         ),
       ).rejects.toBeInstanceOf(ProtectedGitMutationError);
       await expect(fixture.manager.git.deleteBranch("main")).rejects.toBeInstanceOf(
@@ -422,11 +571,11 @@ describe("GitClient and PlaneManager integration", () => {
       await writeFile(path.join(rejectedCommit.worktreePath, "outside.ts"), "outside scope\n", "utf8");
       await expect(
         fixture.manager.commitPlane(rejectedCommit, "Must reject outside scope"),
-      ).rejects.toMatchObject<Partial<PlaneAuthorityViolationError>>({
+      ).rejects.toMatchObject({
         name: "PlaneAuthorityViolationError",
         operation: "commit",
         deniedPaths: ["outside.ts"],
-      });
+      } satisfies Partial<PlaneAuthorityViolationError>);
       expect(await fixture.manager.git.currentHead(rejectedCommit.worktreePath)).toBe(
         fixture.baseCommit,
       );
@@ -460,11 +609,11 @@ describe("GitClient and PlaneManager integration", () => {
           integration,
           { ...hostileSource, headCommit: hostileHead },
         ),
-      ).rejects.toMatchObject<Partial<PlaneAuthorityViolationError>>({
+      ).rejects.toMatchObject({
         name: "PlaneAuthorityViolationError",
         operation: "merge",
         deniedPaths: ["outside-merge.ts"],
-      });
+      } satisfies Partial<PlaneAuthorityViolationError>);
       expect(await fixture.manager.git.currentHead(integration.worktreePath)).toBe(
         fixture.baseCommit,
       );
@@ -552,11 +701,11 @@ describe("GitClient and PlaneManager integration", () => {
       await writeFile(path.join(execution.path, "outside.ts"), "outside\n", "utf8");
       await expect(
         fixture.manager.importExecutionWorkspace(plane, execution),
-      ).rejects.toMatchObject<Partial<PlaneAuthorityViolationError>>({
+      ).rejects.toMatchObject({
         name: "PlaneAuthorityViolationError",
         operation: "import",
         deniedPaths: ["outside.ts"],
-      });
+      } satisfies Partial<PlaneAuthorityViolationError>);
       expect(await fixture.manager.git.uncommittedFiles(plane.worktreePath)).toEqual([]);
       await rm(path.join(execution.path, "outside.ts"));
 
@@ -871,6 +1020,7 @@ describe("PromotionGate integration", () => {
           expectedHead: fixture.baseCommit,
           checks: [mandatoryCheck],
           loadPersistedSelectedCandidateId: async () => candidate.id,
+          persistPromotingEvidence: async () => {},
         }),
       ).toMatchObject({ promoted: false, reason: "unauthorized_file_change" });
       expect(verifier.verify).not.toHaveBeenCalled();
@@ -889,6 +1039,7 @@ describe("PromotionGate integration", () => {
           expectedHead: fixture.baseCommit,
           checks: [mandatoryCheck],
           loadPersistedSelectedCandidateId: async () => candidate.id,
+          persistPromotingEvidence: async () => {},
         }),
       ).toMatchObject({ promoted: false, reason: "final_reverification_failure" });
 
@@ -906,6 +1057,7 @@ describe("PromotionGate integration", () => {
           expectedHead: fixture.baseCommit,
           checks: [mandatoryCheck],
           loadPersistedSelectedCandidateId: async () => "other-candidate",
+          persistPromotingEvidence: async () => {},
         }),
       ).toMatchObject({ promoted: false, reason: "selection_mismatch" });
 
@@ -918,6 +1070,7 @@ describe("PromotionGate integration", () => {
           expectedHead: fixture.baseCommit,
           checks: [mandatoryCheck],
           loadPersistedSelectedCandidateId: async () => candidate.id,
+          persistPromotingEvidence: async () => {},
         }),
       ).toMatchObject({
         promoted: false,
@@ -1048,12 +1201,12 @@ describe("PromotionGate integration", () => {
           fixture.baseCommit,
           plane.headCommit!,
         ),
-      ).rejects.toMatchObject<Partial<ProtectedWorktreeSynchronizationError>>({
+      ).rejects.toMatchObject({
         name: "ProtectedWorktreeSynchronizationError",
         expectedHead: fixture.baseCommit,
-        candidateHead: plane.headCommit,
+        candidateHead: plane.headCommit!,
         worktreeRestored: true,
-      });
+      } satisfies Partial<ProtectedWorktreeSynchronizationError>);
       expect(await fixtureGit(fixture.repositoryPath, ["rev-parse", "main"])).toBe(
         fixture.baseCommit,
       );
@@ -1114,12 +1267,12 @@ describe("PromotionGate integration", () => {
           fixture.baseCommit,
           plane.headCommit!,
         ),
-      ).rejects.toMatchObject<Partial<ProtectedRefRollbackError>>({
+      ).rejects.toMatchObject({
         name: "ProtectedRefRollbackError",
         expectedHead: fixture.baseCommit,
-        candidateHead: plane.headCommit,
+        candidateHead: plane.headCommit!,
         actualHead: concurrentHead,
-      });
+      } satisfies Partial<ProtectedRefRollbackError>);
       expect(await fixtureGit(fixture.repositoryPath, ["rev-parse", "main"])).toBe(
         concurrentHead,
       );

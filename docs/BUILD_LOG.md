@@ -4,9 +4,2328 @@ This log records commands actually executed and evidence actually observed. Secr
 
 This is a chronological evidence record, not the current task/status authority.
 Branch and phase statements remain true only for the commit named in their entry.
-Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
+Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — protected-main hackathon integration candidate
+
+- Base: campaign integration merge `005a51e02ab39a995803b4ed3717ee0ee55cae6c`,
+  which contains the independently reviewed user-selected Contract flow from PR #40.
+  Branch `docs/hackathon-main-integration` was pushed before edits.
+- Active contribution instructions now target protected `main`, require immediate
+  issue assignment/comment plus an early remote branch, and provide the replacement
+  navigation path after intentional removal of `HANDOVER.md`. `AGENTS.md`,
+  `CLAUDE.md`, `CONTRIBUTING.md`, `TASKS.md`, and the active Fixer rules all freeze
+  visual design and define “minimal” as a complete functionality-preserving fix.
+- `SHEPHERD.md` now inventories implemented Track 1 backend capabilities, separates
+  current evidence from open gates, links the today-feasible work, and records the
+  dated internal assessment: 82% hackathon completion, 90% core demo readiness,
+  85/100 weighted rubric score, 74/100 current winning confidence, and 91/100
+  novelty confidence. The deductions and the dependency/rubric weighting method are
+  explicit; no official-judge or guaranteed-win claim is made.
+- Read-only GitHub audit found only two stale open issues. #35 (MR-02) and #36
+  (CI-01) were closed as completed with their integrated evidence; none was deleted.
+  Unassigned, dependency-aware issues #41–#51 now cover only the minimum
+  hackathon-ready cut and carry `hackathon-ready` plus `priority:P0` labels.
+- The manual runbook now creates/selects user Frontend and Backend Agents, displays
+  both complete Contracts, explains source versus competing Resolution Planes, and
+  verifies the internal human-review ticket. Project Group's unfinished behavior
+  remains explicitly open.
+- `docs/PRD.md` remained byte-identical at SHA-256
+  `478ca55f201b52ba75c5c2134e0eef9d8ded4eb74f6a35d32062927413a70ced`.
+  All local Markdown links resolved across 15 files and `git diff --check` passed.
+- Literal `npm run check` passed on the candidate: launcher 3/3; Server 739 passed
+  plus two explicit opt-in skips; Web 18/18; strict production/test type checks and
+  both builds passed. Neither `actionlint` nor the Ruby YAML fallback exists in this
+  environment, so no local parser pass is claimed for the one-line workflow trigger
+  removal; the hosted required check remains the merge gate.
+- No product source, runtime, schema, dependency, secret, live/model request, or UI
+  implementation changed in this documentation/workflow candidate.
+
+## 2026-08-30 — user-selected Agent Contract demo candidate
+
+- Base: `mock-main` at `6fddb0e84608a8614f745bcfdcd92b091e4f7fdf`.
+  Branch: `feat/demo-agent-contract-flow`, pushed before edits.
+- The existing Shepherd Mission composer can now assign one ready user-created
+  Frontend Agent and one ready user-created Backend Agent to opposite typed auth
+  transports. Reservation and authority are revalidated in the final serialized
+  mutation; Mission request idempotency is fingerprinted and persisted atomically
+  with the Mission, Contracts and originating human message.
+- Every Contract-linked stream event can disclose the complete bounded Execution
+  Contract: identity and assignment, objective, dependencies, semantic contract,
+  contextual inputs, scoped authority, artifacts, acceptance checks and profile,
+  tie-breakers, manifest path and timestamps. Existing evidence remains alongside
+  it; public responses do not expose the server-only request fingerprint.
+- Collision evidence explains that both Resolution Planes fork from the same
+  immutable integration commit and compete by independent project-invariant
+  verification. Non-automatic or non-unique outcomes show a truthful internal
+  human-review ticket with the full durable collision/Mission reference; no
+  external issue-tracker integration is claimed.
+- Causal tests cover selected Agents with reversed transports, concurrent and
+  restart-safe idempotency, assignment mismatch, the stop-versus-reservation race,
+  full Contract rendering and human-review behavior. Literal `npm run check`
+  passed launcher 3/3, Server 739 passed plus two explicit opt-in skips, Web 18/18,
+  all strict production/test typechecks and both builds.
+- The focused real-browser gate passed 4/4: normal completion and forced human
+  review at exact `1280x800` and `1440x900`, including Agent creation/selection,
+  exact Contract assignment/objectives, both Resolution Planes, full evidence,
+  keyboard focus and no document/body overflow. Independent UI review passed at
+  5.31:1 minimum contrast; independent security re-review passed with no remaining
+  scoped blocker. After the final ticket-label wording edit, the first browser
+  invocation served the prior production bundle: both unchanged completion cases
+  passed and both new-label assertions failed. Rebuilding the Web bundle and
+  repeating the exact command passed 4/4. No live/model request was made.
+- This candidate does not claim completion of `GC-03/04`: the separate Project
+  Group `@Agent` click/type → Contract → Agent-summary journey remains open.
+
+## 2026-08-30 — DEL-04 documentation consolidation candidate
+
+- Base: `mock-main` at `43fb5d3f40a0b90a744aec70b2ab02a8adab5ed9`.
+- Branch: `docs/hackathon-doc-consolidation`, pushed before edits as the ownership
+  signal. Documentation and root navigation are the only owned surfaces.
+- `TASKS.md` is now the canonical entrypoint and explicitly separates the minimum
+  hackathon-ready cut from additional full-PRD work. Its ledger was mechanically
+  recounted as 69 work items: 40 fully audited and 29 not fully audited.
+- The current startup/manual demo SOP moved to `LOCAL_POC.md`; current as-built
+  behavior remains in `SHEPHERD.md`; the competition brief was reduced to Track 1
+  and renamed `TECHJAM.md`; optional deployment essentials moved into `README.md`.
+- Obsolete `HANDOVER.md`, `DEPLOYMENT.md`, and the five-track source digest were
+  removed only after all actionable repository links were redirected. Historical
+  mentions inside this immutable chronological log were intentionally retained.
+- `PRD.md` remained byte-identical with SHA-256
+  `478ca55f201b52ba75c5c2134e0eef9d8ded4eb74f6a35d32062927413a70ced`.
+- A repository-local link checker inspected 15 retained Markdown files; every local
+  target resolved. `TECHJAM.md` contains no Track 2–5 section, `git diff --check`
+  passed, and the stale deviation/browser/count statements were reconciled.
+- Literal `npm run check` passed: launcher 3/3; Server 27 files passed with two
+  explicit opt-in files skipped and 736 tests passed with two skipped; Web 3 files
+  and 17/17 tests passed; strict production/test typechecks passed; Web production
+  build transformed 41 modules; Server production build passed.
+- No product, UI, schema, dependency, Runtime, secret, or live-model behavior changed;
+  no live/model request was made.
+- Independent read-only review rejected five stale/incomplete statements; the exact
+  E2E-02, branch identity, authenticated deployment verification, link-count, and
+  veLinux mapping corrections were applied and the re-review passed with no blocker.
+- The reviewed commit `5a38d37a210c255781055648c43896597497f50f` was fast-forwarded
+  into `mock-main`. The post-merge local-link/PRD/task-count/Track-1 checks passed,
+  literal `npm run check` repeated the 3/3 launcher, 736-pass Server, 17/17 Web,
+  strict typecheck, and two-build result, and `origin/mock-main` was verified at the
+  same exact commit before this bookkeeping update.
+
+## 2026-08-30 — F-06 and TST-21–24 integrated and audited
+
+Auditor integrated exact corrected chain
+`7d51ec69d1ac6c807d42e872b4616b6357967f48` onto `mock-main`. Independent
+evidence passed TST-23 20/20, TST-24 30/30, Store 70/70, and combined Store/
+recovery/service 133/133. Literal `npm run check` passed launcher 3/3, Server
+736 passed plus two explicit opt-in skips, Web 17/17, strict production/test
+typechecks and both builds. Independent final security review returned 0 High and
+0 Medium; all prior journal-read and sensitive-temp crash-prefix blockers closed.
+Hosted Node 22 Required checks run `33286090602` passed the implementation head.
+
+The accepted Low residual is the documented same-UID parent-directory swap or
+concurrent independent-Store race under the existing single-process managed-root
+threat model. Windows narrowly lacks Unix directory-fsync/mode guarantees; Unix and
+macOS errors are not swallowed. F-06 is explicitly representative of the Mission
+running-to-verifying boundary and does not claim arbitrary store-mutation recovery.
+No live/model/UI call was needed.
+
+## 2026-08-30 — TST-24 Fixer candidate restores the TST-22/F-06 full gate
+
+After visible persistence-error attention, the exact fixture now uses bounded
+`vi.waitFor` on `store.persistenceRecoveryIntent()` becoming null and then awaits a
+test-owned no-op `store.mutate` sentinel. This proves recovery-journal unlink,
+directory sync, in-memory intent clearing and all earlier original-store queue work
+have finished before durable reads, cancellation, reset or root teardown. No sleep,
+retry, timeout increase, suppression, cleanup catch or product change was added.
+
+The exact row passed 30/30. Combined Store/recovery/service coverage including
+TST-23 passed 138/138 without an unhandled rejection or retained artifact. Two
+consecutive literal `npm run check` executions each passed launcher 3/3; Server 736
+with two explicitly opt-in skips; Web 17/17; strict production/test typechecks; and
+both builds. TST-22's prior independent security verdict remains 0 High / 0 Medium
+with only the documented same-UID parent-directory swap Low. Auditor integration
+and hosted evidence remain pending.
+
+## 2026-08-30 — TST-24 reconciliation-quiescence RED preserved
+
+Auditor tested exact corrected chain
+`7d8483a3ef5998002dab6331bd53532640f953ec`. The transient Mission verification
+persistence row passed once, then passed 18 contention repetitions before failing
+iteration 19. The Mission was visibly `attention_required`, but the complete
+recovery intent remained non-null; a late Store operation also rejected with fixed
+`recovery_pending`.
+
+Source ordering confirms `mutateForPersistenceReconciliation` publishes attention
+before `clearPersistenceRecoveryIntent` finishes journal unlink, parent-directory
+sync and in-memory intent clearing. The test must wait for that exact intent to clear
+and queue a test-owned no-op mutation sentinel on the original Store before durable/
+reload/cancel/teardown work. No sleep, retry, timeout, suppression, assertion
+weakening or product edit is authorized. No `mock-main`, hosted, live, model or UI
+action occurred.
+
+## 2026-08-30 — TST-23 Fixer candidate
+
+The TST-17 Plane-unwind attention row now awaits one test-owned no-op
+`store.mutate` sentinel after observing `attention_required` and before reading
+durable reload state. Because Store operations are serialized, this joins all prior
+original-store persistence without sleeping, retrying, suppressing a rejection or
+changing product behavior. The exact row passed 20/20; combined Store, recovery and
+service coverage passed 138/138 with no unhandled rejection or retained root/temp.
+
+The first literal full gate advanced past TST-23 but stopped in a distinct transient
+Mission-verification persistence row: Server reported 735 passed, two opt-in skips
+and one failure because the row observed attention before its recovery intent was
+cleared. That row passed 10/10 isolated, establishing contention sensitivity rather
+than closure. It is outside TST-23 ownership and is not edited or hidden here; the
+TST-22/F-06 full gate remains blocked pending separately owned evidence/correction.
+
+## 2026-08-30 — TST-23 independently reproduced on TST-22 checkpoint
+
+On exact checkpoint `619e3ddd369d2dd8a0ce3b04134c0064c240142e`, Auditor ran only
+`fails closed with bounded attention evidence when initial Plane unwind fails`.
+Its assertions passed 1/1, but the command failed with one unhandled cause-free
+`PersistenceBoundaryError(cleanup, cleanup_pending)` from `JsonStore.persist` on
+the original Store queue. Source ordering confirms the row observes service memory,
+then initializes a second Store before joining that queue. The corrected TST-22
+marker authority is correctly fail-closed under concurrent independent access.
+
+TST-23 therefore requires only a test-owned no-op Store sentinel after attention
+and before reload/teardown, with immediate rejection observation/finally join if
+needed. No sleep/retry/timeout/suppression/cleanup catch or production change is
+permitted. No `mock-main` push or full/hosted/live/model/UI gate is claimed.
+
+## 2026-08-30 — TST-22 Fixer candidate: crash-safe managed-temp state machine
+
+The correction replaces post-failure temp registration with pre-registration:
+before either database or recovery-journal sensitive temp is opened, a small fixed
+schema containing only kind, strict temp basename and publication UUID is written,
+file-synced, atomically published and directory-synced. All markers and sensitive
+temps live in an adjacent fixed-name private directory validated as a current-owner
+regular directory with mode `0700` and no symlink. Database/journal rename remains
+on the same filesystem; the target parent and private directory are synced at their
+respective transitions.
+
+One idempotent cleanup path handles marker+temp and marker+missing-temp states,
+preserves the primary database/journal failure with bounded `cleanupPending`, and
+consumes any prior marker before another same-instance write can publish. Marker
+publication files are opened no-follow and validated through the same handle;
+schema-bound UUID provenance is required before deletion. General-parent
+lookalikes, malformed foreign files, hostile directory/marker/publication symlinks
+and outside canaries remain untouched.
+
+Observed focused evidence: strict test typecheck passed; Store passed 70/70; the
+selected Store/recovery/service slice passed 134/134 before the private-directory
+hardening and Store returned 70/70 after it. The matrix includes 12 publication
+checkpoints, eight removal checkpoints, primary/journal double faults,
+same-instance retry, two fresh restarts, missing-temp idempotence and repeated-write
+no-accumulation. Independent final security review found 0 High / 0 Medium; the
+documented Low residual is a same-UID parent-directory swap race because Node lacks
+portable `openat`-style anchored operations, and such an actor already controls the
+database parent.
+
+The post-hardening adjacent run exposed a separate deterministic test-quiescence
+defect in the TST-17 cleanup-double-fault row: 138/138 assertions passed but Vitest
+reported a late unhandled Store rejection; isolated stress failed on repetition 2.
+The row observes in-memory `attention_required` then starts a second `JsonStore`
+before the original Store queue is quiescent. The private marker correctly fails
+closed during that overlap. This is not hidden as TST-22 success; a test-owned Store
+queue sentinel is required before reload/teardown. The first post-hardening literal
+gate likewise stopped at Server tests (735 passed, two opt-in skips, one teardown
+failure). Auditor integration/hosted evidence remains pending.
+
+## 2026-08-30 — F-06/TST-21 correction blocked by TST-22 marker lifecycle
+
+Auditor fast-forwarded exact corrected candidate
+`f65681aa48a3bfd384d36fc9320ea63e045d3261` only on the audit ownership branch.
+Store passed 43/43; the selected persistence/journal/Plane slice passed 21/21; and
+the previously order-sensitive initial Plane-unwind attention row passed 20/20, so
+no causal lifecycle or fault-seam-reset defect reproduced there.
+
+The recovery-intent open/stat/read/close boundary is now fixed and cause-free, but
+the temp-marker protocol remains Medium-blocked. Auditor changed only the existing
+double-fault test's recovery instance for a causal probe: same-instance recovery
+failed database and journal rows 2/2 with `cleanup_pending`. The in-memory pass
+removes the temp without its marker, then marker scanning rejects the missing temp.
+Independent security re-review also confirmed unhandled crash prefixes: marker
+publication failure can leave an unmarked full-state temp; temp removal followed by
+marker removal failure or a partial marker can permanently block restart. The probe
+edit was reverted byte-clean. TST-22 records the required idempotent state-machine
+boundary. No product commit was pushed to `mock-main`; full/hosted/live/UI/model
+gates were not claimed after the Medium blocker.
+
+## 2026-08-30 — TST-21 Fixer candidate
+
+The correction closes recovery intent open/stat/read/close operational faults as
+fixed cause-free `PersistenceBoundaryError(recovery_intent_read, unavailable)` while
+retaining fixed schema/symlink/size/owner validation. Database and journal UUID temps
+are registered in memory; a primary plus temp-unlink double fault preserves the
+primary failure and durably marks the exact artifact. Before state becomes observable on
+restart, only a strict matching marker is considered, then fixed content, lstat
+regular-file/no-symlink, owner, mode and database/journal size limits are enforced
+before exact unlink and parent-directory sync. Two restart rows prove removal; a matching marker symlink remains untouched with its outside
+canary unchanged. Two marker-write triple-fault rows preserve the original primary/
+journal identity, expose only bounded `cleanupPending`, and consume exact in-memory
+ownership on same-instance initialize. Focused store coverage passed 43/43; Auditor remains pending.
+The final literal gate passed launcher 3/3, Server 709 passed plus two opt-in skips,
+Web 17/17 and both builds. Independent final security review approved with 0 High /
+0 Medium; Low residuals are same-UID data-directory races and fail-closed handling
+when an external actor removes an exact pending temp.
+
+## 2026-08-30 — F-06 audit blocked by TST-21 persistence-boundary defects
+
+Auditor replayed exact Worker candidate
+`6bc67b3272b530897149aa5a9507e46c2393453a` locally as `1a3be1a` over canonical
+`mock-main` `19876cb740d80c2e868d401f4b5f6164e20ff330`. The focused persistence/journal
+selection passed once (18 passed, 62 skipped) and then passed 10/10 repeated
+invocations. The exact-byte digest, bounded schema, no-follow/size/mode/owner
+checks, pending-recovery mutation/event lock, representative running-to-verifying
+scope, and immediate/two-restart reconciliation design were inspected; no broader
+arbitrary-store recovery claim is accepted.
+
+Integration is blocked. Independent read-only security review found two Medium
+gaps outside the existing single-stage fault matrix. First, non-`ENOENT`/`ELOOP`
+journal open/stat/read failures escape initialization as raw native errors, including
+configured path and OS diagnostic. Second, database or journal primary failure plus
+temp-unlink failure suppresses the cleanup fault; a database temp can retain the
+complete serialized state with no tracking/restart reconciliation, and repetitions
+can accumulate sensitive artifacts. Existing tests have no unlink fault checkpoint
+or native read-fault rows. These are recorded as `TST-21`; no F-06 product commit was
+pushed to `mock-main`, and no full/hosted gate or live/model/UI call was claimed.
+
+## 2026-08-30 — TST-20 audited; F-05 final stability restored
+
+Exact test-only `cdcfa95` passed Auditor row stress 30/30, service/store 56/56,
+strict test types and literal `npm run check` (launcher 3/3, Server 676 passed plus
+two opt-in skips, Web 17/17, both builds). Rejection observation attaches before the
+gates; unconditional `finally` releases and joins the blocked backend checkpoint,
+then a test-owned store mutation drains the persistence queue before teardown. No
+setImmediate, sleep, retry, timeout increase, suppression, cleanup catch, assertion
+weakening or product edit exists. Hosted Node 22 implementation run `33282600354`
+passed. F-05/TST18/19 scoped 100% is restored pending the final docs-head hosted gate.
+
+## 2026-08-30 — TST-20 Fixer candidate
+
+The hosted RED returned from the test while its released backend checkpoint and store
+queue were not owned through teardown. The test-only correction attaches Mission
+rejection observation immediately, always releases and joins the exact backend
+checkpoint lifecycle, and then awaits a test-owned no-op `store.mutate` sentinel.
+The prior `setImmediate` timing assumption is removed. The exact fail-fast/no-sibling-
+verifier/state/no-promotion row passed 20/20 locally; hosted Auditor evidence remains
+pending. No product, timeout, retry, cleanup suppression or assertion change was made.
+The service/store slice passed 56/56 and two literal local gates each passed launcher
+3/3, Server 676 passed plus two opt-in skips, Web 17/17 and both builds.
+
+## 2026-08-30 — F-05 implementation green; final hosted blocked by TST-20
+
+Implementation hosted run `33281977834` passed exact `f8d7f71`. Final docs-head run
+`33282108035` failed with an unhandled `JsonStore.persist` rename ENOENT beneath the
+case root for service test `does not invoke a sibling verifier after infrastructure
+terminalization`. The fail-fast Mission promise had returned, the test released its
+blocked sibling and waited only one event-loop turn, and teardown removed the root
+while late sibling/store persistence remained active. Exact targeted candidate-
+cleanup repeats 10/10 did not reproduce the earlier local contention symptom; this
+hosted failure is preserved separately as TST-20. F-05/TST18/19 product/security
+evidence remains green, but final hosted I and scoped 100% are withdrawn until the
+test owns and joins the exact sibling lifecycle. No retry was used.
+
+## 2026-08-30 — F-05 / TST-18–19 audited and integrated
+
+Exact `f8d7f71` passed the 28-case real-Git suite five consecutive times (140/140),
+combined Git/service 72/72, adjacent API/store/state/recovery/executor/verifier
+133/133, and literal `npm run check` (launcher 3/3, Server 676 passed plus two opt-in
+skips, Web 17/17, both builds). The nine-case identity/cleanup matrix proves clean
+ordinary conflict restoration and zero-mutation rejection for detached, sibling-
+branch, moved-head, dirty and preexisting-MERGE_HEAD states; target/source refs,
+status, MERGE metadata, protected HEAD/canary and downstream state remain unchanged.
+Cleanup uncertainty persists bounded attention evidence and cancel→reset exact
+resource removal. Independent security review found no High/Medium issue. Hosted
+Node 22 run `33281977834` passed. The Low same-host multi-command TOCTOU residual is
+documented; no live/model/UI call ran.
+
+## 2026-08-30 — TST-19 Fixer candidate
+
+The source-confirmed RED allowed a clean integration checkout on the wrong persisted
+branch/head to reach `git merge`. The candidate passes the persisted Plane branch and
+head into the Git boundary and, before mutation, proves no `MERGE_HEAD`, clean
+porcelain, the exact symbolic branch and exact HEAD. Real-Git rows for detached HEAD,
+sibling branch at the same OID, moved head, dirty worktree and preexisting MERGE_HEAD
+all return the fixed cause-free cleanup boundary while preserving integration
+HEAD/status/all head refs, exact `MERGE_HEAD` metadata and source HEAD. The existing service maps this typed result
+to failed integration Plane plus active-project Mission attention, with released
+Agents and no candidate/promotion. Independent review reported 0 High / 0 Medium;
+the remaining Low local-host TOCTOU window requires an actor with independent write
+access and is not a new privilege boundary. Auditor integration remains pending.
+Focused identity rows passed 25/25 across five repeats, combined conflict/identity
+passed 9/9, and adjacent Git/service/recovery passed 72/72. Two literal final
+`npm run check` gates each passed launcher 3/3, Server 676 passed plus two opt-in
+skips, Web 17/17 and both builds.
+
+## 2026-08-30 — TST-18 passes locally; F-05 blocked by TST-19
+
+Auditor replayed exact `53c8415`. Focused Git/service passed 67/67; the two service
+conflict rows repeated 10/10 invocations (20/20 cases), and adjacent API/store/state/
+recovery/executor/verifier passed 133/133. Enumeration, abort and post-inspection
+cleanup rows are fixed/cause-free; ordinary conflict proves absent MERGE_HEAD, clean
+status, exact observed pre-head and persisted branch. The attention path retains
+truthful cleanup state; an ephemeral cancel-then-reset check removed its exact retained
+Plane successfully. The earlier scheduling symptom did not reproduce in 10/10 focused
+candidate-cleanup repeats; however one literal full run later failed that pre-existing
+candidate-cleanup assertion under contention, so no global-stability claim is made.
+
+Independent security review found a distinct Medium precondition defect: expected
+Plane branch/head are compared only after conflict cleanup, not before merge mutation.
+A clean worktree switched to another branch/head can be mutated first. TST-19 requires
+pre-mutation identity proof. The candidate was not pushed to `mock-main`.
+
+## 2026-08-30 — TST-18 Fixer candidate
+
+The preserved implementation RED showed conflict enumeration/path validation before
+abort, accepted abort exit 128, and no combined proof of absent `MERGE_HEAD`, clean
+status and unchanged integration HEAD. The candidate makes abort mandatory, validates
+and caps paths only afterward, and requires all three post-abort facts. Injected real
+conflict rows cover enumeration, abort and inspection failures: each returns the fixed
+cause-free cleanup boundary; enumeration/inspection faults leave a clean worktree,
+while abort failure truthfully leaves it dirty for operator recovery. The service
+persists `git_conflict/integration_cleanup`, a failed integration Plane and an
+`attention_required` Mission with active project, verified Contracts, released Agents,
+no collision/candidate/promotion and no planted diagnostics. Auditor integration is
+still pending. Focused conflict rows passed 4/4, service clean/attention rows 2/2,
+and adjacent Git/service/recovery passed 67/67. The final literal `npm run check`
+passed launcher 3/3, Server 671 passed plus two opt-in skips, Web 17/17 and both
+builds. `npm audit --omit=dev` reported zero vulnerabilities. A read-only security
+fallback's initial Medium branch-integrity finding was corrected by also proving the
+persisted symbolic branch. Final read-only re-review reported 0 High / 0 Medium and
+passed the scoped security boundary.
+
+## 2026-08-30 — F-05 integration blocked by TST-18 merge-abort precedence
+
+Candidate `0208713` was replayed onto canonical F-04 docs as `a7b669b`. Auditor
+passed ordinary real conflict/path gates 3/3: the ten-file add/add Mission retained a
+clean failed integration Plane, bounded count 10 / preview cap 8 / path length 48,
+verified Contracts, released Agents, protected HEAD/canary, no candidates/promotion,
+reload/API evidence and explicit reset removal; the lower real-Git conflict stayed
+clean. No candidate-owned test artifact remained.
+
+An independent cleanup-double-fault injected a planted exception specifically at
+`merge abort` after the real conflict was detected. The exact test reproduced 1/1:
+`mergePlane` rejected with the planted raw abort diagnostic instead of returning the
+validated conflict, proving original-conflict precedence and clean-retention claims
+are not closed. Independent security review additionally found conflict enumeration
+and path validation occur before abort, exit 128 is accepted without checking cleanup,
+and post-merge inspection does not assert clean/head state. Temporary audit
+instrumentation was removed. TST-18 requires a mandatory abort/restore boundary,
+bounded primary conflict and truthful cleanup state; F-05 was not pushed to
+`mock-main`.
+
+## 2026-08-30 — F-04 / TST-17 audited and integrated
+
+Exact implementation `2cef988` passed Auditor focused creation/unwind/double-fault
+3/3, real Git 20/20, adjacent service/executor/container/recovery/store/API/state/
+verifier 174/174, and literal `npm run check` (launcher 3/3, Server 665 passed plus
+two opt-in skips, Web 17/17, both builds). Successful unwind removes only exact
+current-batch durable Plane associations, worktrees and branches; cleanup failure
+truthfully retains a failed Plane and interrupted Contract under bounded
+`plane_unwind` evidence while Mission keeps the primary `plane_creation` failure.
+Agents release, active-project and protected-head invariants hold, and no downstream
+work runs. Independent security fallback found no High/Medium issue. Hosted Node 22
+run `33280187821` passed. F-04 and TST-17 are audited scoped 100%. The Low partial-
+teardown injection granularity limitation is documented; no live/model/UI call ran.
+
+## 2026-08-30 — TST-17 transactional initial Plane unwind candidate
+
+The Fixer preserved the second-of-two RED from `5cc24f5`: one durable ready Plane,
+Contract association, worktree and branch survived after the sibling creation failed.
+Candidate `fix/f04-plane-unwind` now tracks only Planes successfully created by that
+initial batch and destroys them through `PlaneManager` in reverse order before
+removing their exact durable records and Contract associations. The original failed
+Contract and Mission remain `worktree_creation_failure` / `plane_creation`; Agents
+and the terminal Mission's project are released. No downstream executor, verifier,
+integration, collision, candidate or promotion path runs, and protected HEAD plus an
+outside canary remain unchanged across reload.
+
+A cleanup double-fault retains the exact failed Plane and interrupted Contract,
+releases all Agents, and transitions the Mission to existing nonterminal
+`attention_required` / `plane_unwind_failed` while retaining the project as required
+by the active-Mission invariant. Fixed cleanup evidence is
+`worktree_creation_failure` / `plane_unwind`; it does not claim F-06's reserved
+`persistence_error`. Raw cleanup secret/path/OS diagnostics do not reach durable,
+reload or public DTO surfaces. Causal rows passed 2/2, service plus real-Git 61/61,
+security/F-01/recovery/API adjacency 186/186, strict test types and two literal
+checks passed (each: launcher 3/3, Server 665 plus two opt-in skips, Web 17/17 and
+both builds). Independent security review found no High/Medium issue; explicit
+reload-state and non-busy Agent assertions address its actionable Low notes. No
+UI/live/model call ran. Auditor integration remains pending.
+
+## 2026-08-30 — F-04 integration blocked by TST-17 batch unwind
+
+The Auditor rebased candidate `d988292` onto canonical docs as `5cc24f5` and
+independently passed the focused Contract failure 1/1, real partial-Git rollback 1/1,
+both changed suites 59/59, and adjacent executor/container/recovery/store/API/state
+125/125. The real-Git case removes the partial worktree and Shepherd branch while
+preserving protected HEAD/canary; bounded public failure and candidate-owned temp
+cleanup passed. No other-agent artifact was removed.
+
+A causal second-of-two creation injection failed 1/1: after Plane 1 succeeded and
+Plane 2 failed, Mission state was failed but one durable `ready` Plane, its Contract
+association, worktree and branch remained. Source tracing confirmed no batch unwind
+in `executePreparedMission` or `recordMissionFailure`. Independent security fallback
+classified this Medium. The temporary audit test was removed after preserving the
+RED; product candidate was not pushed to `mock-main`. TST-17 requires exact
+batch-owned durable and physical cleanup without weakening the first-call behavior.
+
+## 2026-08-30 — F-01/02 and TST-13–16 independently audited and integrated
+
+Exact implementation `83cc1d0` was pushed to `mock-main`. Auditor verification
+passed executor 67/67, combined runner/executor/service 127/127, adjacent API/store/
+container/state/recovery/verifier 66/66, and literal `npm run check` (launcher 3/3,
+Server 661 passed plus two explicit opt-in skips, Web 17/17, both builds). Manual
+inspection matched all 47 executor-owned filesystem/config expressions to a closed
+boundary and all 31 injected call-site/double-fault rows. Independent security
+fallback returned READY with no High/Medium issue. Secret/artifact/diff scans were
+clean apart from documented placeholders and test canaries. Hosted Node 22 run
+`33278994572` is the implementation integration gate. No external/model/UI call ran.
+The Low restart-invalid-sentinel residual remains fail-closed and may require manual
+operator cleanup; cross-process retry is not claimed.
+
+## 2026-08-30 — TST-16 complete filesystem boundary candidate
+
+The Fixer candidate `fix/f-01-02-filesystem-boundary` closes the remaining raw
+executor-owned filesystem/config paths with fixed stages for private-root
+preparation, private-home and preflight-workspace reconciliation, preflight setup
+and execution setup. It preserves existing fixed policy/invariant errors,
+containment/symlink checks, typed runtime/cancellation behavior and exact cleanup
+precedence; raw native errors are not attached as causes or durable fields.
+
+The causal matrix injects 31 filesystem/config call-site failures across all stages
+failures and proves bounded stage/reason output, exact retained-target cleanup and
+retry, including distinct canonical roots/workspace and sentinel handle/post-create
+edges. TST-15 retains complementary open/handle/unlink/rm coverage. A frozen source
+inventory tracks 47 executor filesystem/config expressions. Contract and candidate tests scan
+Error/cause/stack/inspect, console, store/reload, Mission/Contract/Plane/Agent/event,
+public DTO and real HTTP response surfaces with opaque, secret, path, errno and OS
+canaries; no candidate promotes or moves protected head. Executor 55/55, adjacent
+runtime/service/config/verifier 141/141, strict test typecheck and the first literal
+`npm run check` passed (launcher 3/3, Server 649 plus two explicit opt-in skips, Web
+17/17 and both builds). After the first security review identified missing distinct
+call-site evidence, the matrix expanded to 31 rows and the inventory to all 47 calls;
+focused 67/67, adjacent 154/154 and two corrected literal checks passed (each:
+launcher 3/3, Server 661 plus two skips, Web 17/17 and both builds). Independent
+security re-review found no remaining material
+issue. No model/live/UI call ran. Independent Auditor integration remains pending.
+The existing Low restart-only invalid-sentinel manual-cleanup
+residual remains fail-closed and is not claimed as cross-process automatic recovery.
+
+## 2026-08-30 — TST-15 passes; F-01/02 blocked by complete TST-16 boundary
+
+The Auditor reviewed exact unintegrated chain `8c7cfc1`. Focused runner/executor/
+service passed 93/93 and API/store/container-service/state-machine/recovery/verifier
+adjacency passed 66/66. TST-15's sentinel open/close/unlink and exact interrupted-
+artifact rm fault matrix, bounded double-fault precedence, same-process pending-
+unlink retry, retained cleanup target and containment behavior passed.
+
+The mandated full-source review found remaining Medium raw filesystem/config paths:
+private-root preparation, reconciliation enumeration, preflight setup and execution
+setup still call mkdir/mkdtemp/lstat/readdir/realpath/chmod/config write outside the
+closed boundary. These can expose raw startup inspection or persist as unknown
+Contract/candidate failures. The chain was not pushed to `mock-main`; broad checks
+stopped after the causal boundary was established. TST-16 must complete the fixed
+stage policy and fault matrix. A process restart after both sentinel adoption and
+unlink failure remains fail-closed but may require operator cleanup; this is a
+documented Low availability residual, not a PRD trust-boundary bypass.
+
+## 2026-08-30 — TST-14 passes; F-01/02 blocked by TST-15 cleanup family
+
+The Auditor reviewed exact unintegrated chain `3afc452`. Focused runner/executor/
+service passed 81/81; API/store/container-service/state-machine/recovery/verifier
+adjacency passed 66/66; literal `npm run check` passed launcher 3/3, Server 615/615
+plus two explicit opt-in skips, Web 17/17, strict test/source types and both builds.
+TST-14's success/cancel/timeout/execution precedence, fixed cleanup-only failure,
+retained-home reconciliation, retry, Contract/candidate durable/public/Fastify HTTP/
+log canary exclusion and no-promotion/head-move behavior passed. No external call ran.
+
+The required exhaustive executor review found one remaining Medium cleanup family:
+sentinel open carries raw cause; sentinel validation/adoption close can override
+bounded primary errors; failed adoption unlink is swallowed; and interrupted-home/
+preflight-workspace reconciliation rm failures escape raw. These paths lack causal
+fault coverage. The chain was not pushed to `mock-main`; TST-15 requires fixed
+bounded precedence, actionable retained-artifact retry and clean startup/log Error
+surfaces before integration.
+
+## 2026-08-30 — F-01/02 + TST-13 remain blocked by TST-14 cleanup path
+
+The Auditor reviewed exact corrected chain `c7b5175`. Focused runner/executor/
+service passed 75/75; API/store/container-service/state-machine/recovery/verifier
+adjacency passed 66/66; literal `npm run check` passed launcher 3/3, Server 609/609
+plus two explicit opt-in skips, Web 17/17, strict test/source types and both builds.
+TST-13 successfully bounded parsed stdout/stderr, create/start/spawn/container-
+cleanup and hostile typed fields across Contract and candidate durable/public paths;
+candidate failure retained attention/no-promotion/protected-head behavior. No
+live/model/UI call ran.
+
+Independent exhaustive security fallback found a separate Medium defect: executor
+execution-private-home `rm()` runs directly in `finally`. Its raw exception can
+leak path/OS detail and override typed timeout/execution or cancellation identity.
+That path is not covered by TST-12 preflight or runner container cleanup tests. The
+chain was not pushed to `mock-main`; TST-14 requires bounded cleanup precedence and
+opaque-canary durable/public regression coverage before integration.
+
+## 2026-08-30 — F-01/02 integration blocked by TST-13 stderr exposure
+
+The Auditor reviewed exact unintegrated candidate `685e4ff`. Focused runner,
+executor and service passed 72/72; API/store/container-service/state-machine/
+recovery/verifier adjacency passed 66/66; literal `npm run check` passed launcher
+3/3, Server 606/606 plus two explicit opt-in skips, Web 17/17, strict test/source
+types and both builds. Typed timeout/execution identity, untyped unknown,
+cancellation precedence, durable state codes, ownership release and no-promotion
+behavior were correct. No live/model/UI call ran.
+
+Independent security fallback found one Medium defect: arbitrary parsed Runtime
+error/stderr remains in `RuntimeExecutionError.message`; bounded secret/path
+redaction does not remove opaque attacker/runtime-controlled text, which is then
+persisted and publicly exposed through Contract, Plane, Mission, Agent, event,
+reload and DTO surfaces. F-01/02 was not pushed to `mock-main`. TST-13 requires a
+fixed public execution message plus a causal opaque-stderr canary across the full
+runner → executor → service boundary before integration.
+
+## 2026-08-30 — OPS-06 diagnostics integrated; TST-12 audited
+
+The Auditor integrated exact corrected chain `68dbd59` into `mock-main`. Focused
+runner/executor/config/service/live-runtime tests passed 95 with one explicit live
+skip. Literal `npm run check` passed launcher 3/3, Server 602/602 plus two explicit
+opt-in skips, Web 17/17, strict test/source types and both builds. Hosted Node 22
+required-check run `33274769957` passed.
+
+Independent security fallback returned READY with no finding. The planted cleanup
+fault is absent from message, String, stack, deep inspection, JSON and cause
+surfaces; private-home cleanup continues, the preflight cache resets and a clean
+retry succeeds. Typed diagnostics, non-root/private-home/network/version gates,
+output bound, secret exclusion and owner-scoped cleanup remain fail-closed. No
+live/model call ran. TST-12 is closed at scoped 100%; OPS-06 has `T,A,C,S,I`
+evidence, but affected collaborator/macOS `L` remains explicitly unverified and no
+macOS compatibility claim is made.
+
+## 2026-08-30 — TST-12 executor preflight redaction candidate
+
+The Fixer reproduced the source-confirmed Medium leak on exact Auditor evidence
+`ed3ceb6`: an injected cleanup failure containing planted secret, private macOS
+path and OS diagnostic text emerged unchanged as the uncaught executor preflight
+rejection's `Error.cause`. Inspection-capable startup handling could therefore
+expose detail despite the fixed outer message.
+
+The minimal executor correction removes the raw cause and rejects with only
+`Live Shepherd Runtime preflight failed (stage=cleanup reason=cleanup_failed)`.
+The causal regression checks the Error message, String conversion, stack,
+`util.inspect`, JSON serialization and cause inspection; none contains the planted
+detail. Cleanup remains fail-closed, both mount removals are still attempted, the
+cached failure permits a bounded retry, and the existing primary container-start
+stage/reason assertion is unchanged. No runner mapping, non-root/read-only-home,
+socket-denial, exact-version, output-cap, owner cleanup, fallback, UI or dependency
+behavior changed.
+
+Focused cleanup/primary rows passed 3/3. Adjacent config, runner, executor, service
+and live-runtime coverage passed 95 tests plus one explicit opt-in skip. Strict
+Server test typecheck passed. Two literal `npm run check` gates each passed launcher
+3/3, Server 602/602 plus two opt-in skips, Web 17/17, strict types and both builds.
+Dependency, diff, credential and artifact/root scans were clean. No live, model or
+external request ran. Independent security fallback passed executor/runner 34/34
+and strict test typecheck with no High, Medium or Low finding. Affected-macOS
+validation and hosted Auditor integration remain required before OPS-06 is audited.
+
+## 2026-08-30 — OPS-06 integration blocked by TST-12 security finding
+
+The Auditor rebased candidate `5a1aef9` onto audited `mock-main` as local
+`34477e8`. Focused runner/executor tests passed 186/186 and literal `npm run check`
+passed launcher 3/3, Server 601/601 plus two explicit opt-in skips, Web 17/17,
+strict test/source types and both builds. No live/model request ran.
+
+Configured `security-reviewer` was unavailable; independent read-only fallback
+found one Medium defect. Executor-side preflight mount cleanup attaches raw
+`cleanupError` as `Error.cause`; an uncaught startup failure may render a private
+path or OS detail even though runner stage/reason diagnostics are closed enums.
+The remaining typed mapping, fail-closed sandbox/private-home/non-root/version
+gates, output cap, raw stderr discard and owner-scoped cleanup were READY. OPS-06
+was not pushed to `mock-main`; TST-12 requires a fixed bounded executor cleanup
+error and planted-path causal regression before integration or macOS validation.
+
+## 2026-08-30 — OPS-06 bounded live-preflight diagnostics candidate
+
+The Fixer source-traced the macOS message loss without a live/model request:
+`ContainerCodexRunner.isEphemeralAvailable` caught create/start/output/cleanup
+failures into one boolean. The candidate uses a closed typed result limited to safe
+stage/reason enums. Explicit exits distinguish non-root, private-home denial,
+Codex-version and sandbox listen/connect/generic probe classes; unknown engine
+failures discard raw content. No path, command, secret, endpoint, prompt, stderr or
+fallback is exposed.
+
+All original gates remain mandatory: non-root, read-only root with bounded tmpfs,
+writable workspace, denied private-home write, denied listen/connect, exact version,
+bounded output, success marker and owner-scoped cleanup. Cleanup failure overrides
+success. Runner/executor tests passed 33/33; config/runner/executor/service/default-
+live adjacency passed 87 plus one opt-in skip; production/strict Server typechecks
+passed. Independent security review found no issue; its mapping/cleanup coverage
+note was closed with final table and cleanup regressions. Two final literal checks
+passed: launcher 3/3, Server 601/601 with two opt-in live skips, Web 17/17, strict
+test projects and both builds. Diff, credential, dependency and artifact scans
+passed before commit.
+
+No live/model call ran. Mocked Linux/engine evidence is not affected-macOS evidence:
+macOS validation and Auditor integration remain pending, with no compatibility
+bypass or full OPS-06 claim.
+
+## 2026-08-30 — E2E-02, TST-10 and TST-11 independently audited
+
+The Auditor integrated exact corrected chain `338f1e4` into `mock-main` only after
+four focused real-backend deterministic journeys passed. Harness units passed
+14/14 across those invocations; all 52 screenshot observations were reviewed;
+13/13 named claims were visibly supported at both 1280x800 and 1440x900; and all
+26 final hashes were unique. Exact stages 06, 09, 10 and 11 visibly showed
+promotion start, selected Candidate evidence, distinct final re-verification and
+rejected Candidate evidence with positive pane/drawer/browser intersection.
+
+Full harness passed unit 7/7 plus Chromium 12/12. Literal `npm run check` passed
+launcher 3/3, Server 592/592 plus two explicit opt-in skips, Web 17/17, strict
+test/source types and both builds. Independent rendered/security fallback returned
+READY with no finding; no production UI/CSS, live/model/network request, secret,
+private path, residual process/root or tracked artifact was introduced. Hosted
+Node 22 required-check run `33273947769` passed on the integrated implementation.
+This closes only E2E-02/TST-10/TST-11; `GC-06` and `UI-02` remain unclaimed.
+
+## 2026-08-30 — TST-11 visible drawer-evidence candidate
+
+The Fixer reproduced the Auditor's four visual REDs on exact parent `041521b`:
+stages 09 and 11 at both viewports showed Plane metadata while their named selected
+or rejected Candidate verification summaries remained below the internally
+scrolling drawer. DOM text assertions alone did not prove screenshot visibility.
+
+The test-only correction scrolls each exact evidence summary inside
+`.detail-drawer`, asserts positive intersection with both the drawer content
+viewport and browser viewport, and then requires that marker visibly present before
+capture. It preserves stage 10's ArrowRight/focus/selected final-promotion evidence,
+TST-10's promotion-event visibility, Escape/opener focus, and all functional and
+security assertions. No production, frontend, CSS, theme, timeout, retry, sleep,
+dependency, live or model behavior changed.
+
+Two focused invocations passed both viewports (4/4 journeys; 52 capture
+observations). Manual review of every final image confirmed all 13 named semantic
+claims visibly present at both viewports, and all 26 PNGs had unique hashes. Full
+harness passed unit 7/7 and Chromium 12/12. Two literal `npm run check` gates each
+passed launcher 3/3, Server 592/592 plus two explicit opt-in skips, Web 17/17,
+strict server/web test typechecks and both builds. Dependency, cleanup, ignored
+artifact, bounded-output, diff and visual-theme review were clean. No external,
+live, model or network request ran. Independent hosted Auditor integration remains
+required before TST-11 or E2E-02 can be called audited.
+
+## 2026-08-30 — E2E-02 remains blocked by TST-11 drawer evidence
+
+The Auditor independently verified TST-10 on exact corrected chain `79da51a`:
+two focused invocations passed harness unit 14/14 and Chromium 4/4; each corpus had
+26/26 unique hashes; stage 05/06 differed at both viewports; and promotion start
+was visibly intersecting the Contract pane. All 52 captures were inspected. Full
+harness passed unit 7/7 plus Chromium 12/12. Literal `npm run check` passed launcher
+3/3, Server 592/592 plus two explicit opt-in skips, Web 17/17, strict types and
+builds. Dependency audit, diff, ignored-artifact, process/root cleanup, UI and
+security scans were clean. No live/model/network request ran.
+
+Before integration, a second independent exhaustive semantic manifest review found
+`TST-11`: stage 09 selected-candidate evidence and stage 11 rejected-candidate
+evidence show only Plane header/metadata at both 1280x800 and 1440x900. Their DOM
+text exists below the internally scrolling drawer but is not in the capture. The
+other eleven stage markers are visibly supported in both viewports, and all hashes
+are distinct. The minimal correction is test-only scrolling plus drawer/browser
+intersection proof for the exact candidate-evidence region before stages 09/11;
+stage 10 final evidence and TST-10 must remain intact. Candidate `79da51a` was not
+pushed to `mock-main`; E2E-02 and hosted integration remain blocked.
+
+## 2026-08-30 — TST-10 visible promotion-stage candidate
+
+The Fixer reproduced the preserved E2E-02 visual RED on the exact candidate plus
+Auditor evidence: stage 05 and stage 06 were byte-identical at both 1280x800 and
+1440x900. The DOM assertion located a promotion-start event below the internally
+scrolling Contract pane, so it did not establish visible screenshot evidence.
+
+The test-only correction selects the exact persisted `promotion_started` event,
+scrolls that card into `.event-list`, asserts positive intersection with both the
+pane and browser viewport, and compares the written stage-05/stage-06 PNG bytes.
+No production, frontend, CSS, theme, timeout, retry, sleep or dependency changed.
+
+Two corrected focused invocations passed both viewports (4/4), yielding 52 capture
+observations. The final 26-file corpus had 26 distinct hashes and every image was
+manually inspected; stage 06 visibly shows “Started final authority and independent
+verification gate,” while stage 05 remains a distinct candidate-outcome view. Full
+harness passed unit 7/7 and Chromium 12/12. Strict test typecheck and two literal
+`npm run check` gates passed, each with launcher 3/3, Server 592/592 plus two
+explicit opt-in skips, Web 17/17, strict types and both builds. Dependency,
+cleanup, ignored-artifact, bounded-output, diff and visual-theme reviews were clean.
+No live/model/network request ran. Independent hosted Auditor integration remains
+required before TST-10 or E2E-02 can be called audited.
+
+## 2026-08-30 — E2E-02 candidate audit blocked by TST-10 visual evidence
+
+The Auditor reviewed exact candidate
+`85550e0a6c6c8f2263375943b22271d72c814c05` without pushing it to
+`mock-main`. Its diff is five test/harness/docs files (+420/-2) and contains no
+production or UI change. Two focused invocations passed harness unit 14/14 and
+Chromium 4/4 across 1280x800 and 1440x900. Full harness passed unit 7/7 plus
+Chromium 12/12. Literal `npm run check` passed launcher 3/3, Server 592/592 plus
+two explicit opt-in skips, Web 17/17, strict typechecks and both builds; dependency
+audit reported zero vulnerabilities. API/Git/store assertions prove the immutable
+base, two verified Contracts, exact semantic collision, cookie selection, bearer
+rejection, distinct final evidence, protected-main output, preserved loser,
+Shepherd-authored Project Group lifecycle, 401 boundary, no network/model use,
+source/outside-canary safety and exact reset/process/port/container/root cleanup.
+
+Independent review found `TST-10`: stage 05 and stage 06 are byte-identical at
+both viewports (1280 hash `66159d4f...`; 1440 hash `f35e34c3...`). Although the DOM
+assertion proves the promotion-start event exists, it is below the internally
+scrollable contract pane and is absent from the named stage-06 capture. Therefore
+only 24/26 screenshots are distinct, and “13 material stages” is not yet supported
+visually. The minimal correction is confined to scrolling and intersection-proof
+inside `shepherd-hero.spec.mjs`; no product/UI/theme change, wait inflation or
+assertion weakening is authorized. E2E-02 remains blocked and unintegrated. No
+live/model request ran.
+
+## 2026-08-30 — UI-04 and verifier fixture integrated audit
+
+The Auditor integrated the bounded verifier fixture, UI-04 frontend correction and
+explicit keyboard audit at `412a010`. Independent gates passed: fixture/harness
+7/7, Web 17/17, focused Chromium 2/2 twice, full Chromium 10/10 at 1280x800 and
+1440x900, and literal `npm run check` with launcher 3/3, Server 592/592 plus two
+opt-in skips, Web 17/17, strict types and builds. Screenshots showed the final
+promotion marker under the promotion event and distinct candidate/final drawer
+tabs without overflow/theme drift. Tab, Space, arrows, Home, End, Enter, Escape,
+focus-visible and opener restoration passed. Planted private fields stayed absent
+from API/DOM/store/log surfaces.
+
+The fixture accepts only the exact independent-verifier create/start/rm/ps
+protocol and validates network-none, readonly/non-root/capability/resource/tmpfs/
+environment/check allowlists with bounded output and cleanup. It introduces no
+production debug or live path. Configured custom security/UI reviewer roles were
+unavailable; independent manual fallbacks found no material issue. Dependency and
+artifact scans were clean. Hosted Required checks run `33271397185` passed. UI-04
+is audited scoped 100; the fixture prerequisite is integrated, while E2E-02 remains
+incomplete and ready for Worker continuation. No live/model call ran.
+
+## 2026-08-30 — UI-04 truthful promotion evidence candidate
+
+The Fixer preserved the API/DOM RED, then changed only Shepherd frontend, scoped
+styles and tests. Completed promotion events now bind final promotion
+re-verification evidence; candidate events retain candidate verification and a
+promotion-started event cannot imply final evidence exists. The Resolution Plane
+drawer exposes both safe stages through the existing compact filter visual language
+with candidate default and one/none fallback. Roving tab focus, arrows/Home/End,
+Tab/Enter/Space, focus-visible, drawer initial focus, Escape close, opener restore,
+plane reset and drawer-local scrolling are covered. No backend/schema/API/model
+authority or live behavior changed.
+
+Observed local gates:
+
+- causal Web helper/component 4/4 and full Web 17/17;
+- harness unit 7/7; focused Chromium 2/2 and full deterministic Chromium 10/10
+  across 1280x800 and 1440x900;
+- both final screenshots visually preserved the Launchpad theme/layout with zero
+  document/body X/Y overflow and readable candidate/final labels;
+- planted private evidence ID/stdout/stderr/error values remained absent from body
+  text and serialized DOM; public API private-field and store/log route-marker scans
+  passed;
+- strict test projects, Web build, and two final literal `npm run check` passes:
+  launcher 3/3, Server 592/592 with two opt-in live skips, Web 17/17 and both builds;
+- independent UI and security re-reviews passed with no remaining finding after
+  roving tabs, drawer focus lifecycle and inactive-tab contrast were corrected.
+
+No live/model request ran. Auditor integration/hosted evidence remains pending;
+UI-04 is not audited and broader E2E-02 remains incomplete.
+
+## 2026-08-30 — UI-04 promotion evidence misbinding reproduced
+
+After final hosted run `33270319210` passed on `3846591`, the Auditor rebased the
+bounded fake-container verifier fixture onto an isolated ownership branch and ran
+a fresh 1280x800 browser/API reproduction. The real completed candidate contained
+distinct verification and promotion evidence IDs. A route-scoped public-response
+decoration assigned safe distinct summaries; expanding the real
+`promotion_completed` event displayed the verification marker and omitted the
+promotion marker. Screenshot inspection confirmed the wrong evidence under the
+promotion card without unrelated theme/layout damage. Source inspection confirms
+the same unconditional verification selection in `EventEvidence` and
+`PlaneDetailDrawer`. Product code was not changed; UI-04 is ready for a minimal UI
+selection fix and two-viewport regression.
+
+## 2026-08-30 — MR-01/MR-03/TST-08/TST-09 integrated audit
+
+Auditor gates passed at `35ec268`: config 27/27 plus one default live skip,
+TST-08 returned 20/20 and paired 40/40, reviewer/service/config 165/165, harness
+unit 6/6 and Chromium 8/8, and literal check with launcher 3/3, Server 592/592
+plus two opt-in skips, Web 13/13, strict types and builds. Audit reported zero
+vulnerabilities; diff, credential, snapshot and artifact scans were clean.
+
+The corrected explicit live command was command attempt two overall but made the
+only external reviewer request (1/1); the earlier attempt made zero. Bounded result:
+`completed findings=2`. The test proved exactly one advisory event, unchanged
+deterministic collision/winner/promotion, exact promoted HEAD, store/state secret
+absence and live-root cleanup. The 21-byte ignored outcome file was read once and
+removed. Hosted Required checks run `33270168480` passed. LIVE-01's reviewer
+component is satisfied; its current live Shepherd Mission remains open.
+
+## 2026-08-30 — TST-09 reviewer-only environment isolation candidate
+
+Without making another live request, the Fixer corrected only the reviewer live
+test and causal config coverage. The test now calls `loadConfig` with a clone of
+the real process environment whose sole override is loopback `HOST`. This isolated
+test never starts HTTP; actual Ark credentials/model/base URL, SHEPHERD model
+resolution, all other configuration, the production reviewer predicate and
+sensitive-value filter, and fatal authentication/configuration handling remain
+unchanged. The source environment and ignored `.env` are not mutated.
+
+Observed local gates:
+
+- causal config plus default-skipped live file: 27 passed, one live test skipped;
+  the package script still has both opt-in gates, exact test path, one worker,
+  `bail=1` and retry 0;
+- TST-08 exact row 20/20 and paired infrastructure rows 40/40;
+- MR-03 reviewer/service/config matrix 165/165 and strict Server test typecheck;
+- two literal `npm run check` passes: launcher 3/3, Server 592/592 with two
+  opt-in live skips, Web 13/13, strict test projects and both builds.
+
+External reviewer/model/network calls by the Fixer remain **0**. Independent
+read-only security review passed with no finding; diff, dependency, credential and
+live-artifact scans also passed. Auditor integration and the one explicitly
+authorized live gate remain pending; this entry makes no audited or 100% claim.
+
+## 2026-08-30 — TST-09: MR-03 live gate blocked before egress
+
+The Auditor independently passed the TST-08 returned row 20/20, paired
+infrastructure rows 40/40, MR-03 reviewer/service/config 164/164, adjacent 100/100,
+harness unit 6/6 and Chromium 8/8, and literal `npm run check` (launcher 3/3,
+Server 591/591 with two opt-in skips, Web 13/13, strict types and builds). Diff,
+dependency, credential and exact snapshot-removal checks passed; MR-03 remains
+schema/ref bounded and advisory-only.
+
+After every deterministic gate was green, the explicit live-review command was
+invoked exactly once with retry disabled. It failed during `loadConfig`, before
+reviewer construction or network egress, because the local non-loopback runtime's
+`APP_AUTH_TOKEN` was a placeholder/too short. External reviewer call count was
+therefore **0**. No retry was made, no live root remained, and no secret or raw
+configuration value was printed. MR-01/MR-03 `L` and integration remain open.
+
+## 2026-08-30 — TST-08 returned-evidence teardown quiescence candidate
+
+The Fixer preserved the literal-gate RED and isolated 20/20 scheduling evidence,
+then changed only the returned-infrastructure test fixture. It now coordinates both
+Contract arrivals, attaches the Mission rejection observer immediately, captures
+and validates the exact contained sibling `VerificationRequest.planePath`, proves
+rejection precedes removal, arms an exact-basename watcher before release, and
+joins the sibling, Mission and removal in `finally`. This closes the fixture's
+background-work gap without changing production, MR-03, the cleanup walker,
+timeouts, retry behavior or assertions. No live/model request ran.
+
+Observed local gates:
+
+- exact returned-infrastructure row 20/20 and paired thrown/returned rows 40/40;
+- MR-03 reviewer/service/config matrix 164/164;
+- service/container/API/store/recovery adjacency 82/82;
+- strict Server test-source typecheck;
+- two literal `npm run check` passes: launcher 3/3, Server 591/591 with two
+  opt-in live skips, Web 13/13, strict test-source projects and both builds;
+- diff, credential and stale trusted-snapshot cleanup scans passed. Auditor
+  integration/hosted evidence and MR-03's single bounded live gate remain pending,
+  so this entry makes no audited or 100% claim.
+
+## 2026-08-30 — MR-03 integration blocked by TST-08
+
+MR-03 merged conflict-free locally as `3c878b3` but was not pushed to `mock-main`.
+The focused reviewer/service/config matrix passed 164/164, adjacent service/API/
+store/F-03/recovery/container passed 100/100, and deterministic harness passed unit
+6/6 plus Chromium 8/8. Literal `npm run check` then failed one of 591 executed
+Server tests: returned Contract verification infrastructure evidence reached
+teardown while a sibling exact trusted snapshot root was removed, producing
+`makeDeletable -> realpath -> ENOENT`. The isolated row passed 1/1 and 20/20,
+supporting a scheduling-dependent test coordination gap rather than an MR-03
+product regression. No live/model request ran (call count zero). Ownership was
+published on `audit/tst-08-mr03-cleanup`; MR-03 integration/live remains blocked.
+
+## 2026-08-30 — MR-01/MR-02 integrated audit
+
+The Auditor integrated the controlled MR-01 merge and truthful MR-02 capability
+correction on `mock-main` at `577255e6f4980499f032451d18557f8eefcf80ef`.
+Independent local gates passed: reviewer/config/service 173/173, Settings 5/5,
+adjacent service/API/store/recovery/state/container 100/100, harness unit 6/6 and
+Chromium 8/8 at both required viewports. Four MR-02 screenshots were inspected:
+configured and unavailable states preserve the accepted theme with no document
+overflow or clipping. The literal repository gate passed launcher 3/3, Server
+588/588 with two opt-in live skips, Web 13/13, both strict test typechecks and both
+builds. Dependency audit reported zero vulnerabilities; credential/private-output
+and tracked-artifact scans were clean. Configured reviewer roles were unavailable;
+independent manual security/UI review found no material issue, consistent with the
+candidate's prior independent fallbacks. Hosted Node 22 Required checks run
+`33268567614` passed. No live/model call ran. MR-01 remains below final scoped 100
+until MR-03 and one bounded live reviewer gate; MR-02 is audited scoped 100.
+
+## 2026-08-30 — MR-02 truthful reviewer capability candidate
+
+The Fixer reproduced the no-reviewer mismatch before product edits: persisted
+`modelReviewEnabled=true` rendered as an enabled “Run advisory” control and allowed
+false/true PATCH even though production composed no reviewer. The candidate adds
+one public `shepherdModelReviewConfigured` boolean, computed from the same
+fail-closed startup predicate used by `index.ts`. Settings preserves the stored
+preference but renders the existing native toggle disabled with explicit
+**Unavailable** process-scoped copy when false; configured mode remains editable.
+No credential, model, endpoint or failed-predicate reason is exposed, and no live
+request ran.
+
+Observed local gates:
+
+- causal Server 12/12 and Settings component 5/5;
+- reviewer/config/API adjacency 71/71 and harness unit 6/6;
+- dedicated Chromium 2/2 at 1280x800 and 1440x900, proving zero PATCH while
+  unavailable, exactly two successful mouse/keyboard PATCHes while configured,
+  persisted state, disabled/status semantics, no overflow and no fixture secret in
+  persistence, DOM or logs;
+- full deterministic Chromium 8/8; four screenshots under ignored `.tmp` were
+  visually inspected without theme/layout drift;
+- strict Server/Web test typechecks, two literal `npm run check` passes, clean diff
+  and credential/root scans, and `npm audit` with zero vulnerabilities;
+- independent read-only security review passed with no findings. The configured
+  UI reviewer role was unavailable; a read-only fallback UI review passed with no
+  Critical/High/Medium finding and only the non-blocking absence of stored-off
+  browser screenshots (covered by component tests). Auditor integration/hosted
+  evidence remains pending, so this entry makes no audited or 100% claim.
+
+## 2026-08-30 — MR-01 local audit and MR-02 reproduced blocker
+
+The Auditor published ownership branch `audit/mr-01-integration`, then merged
+current `main` `403fc095b07d60e17de1cb3f82b4e16b6a778919` locally into
+`mock-main` as `1422fd6` without pushing `mock-main`. The resulting tree exactly
+matched the precomputed conflict-free merge tree `804aa74c`. It preserves the
+audited F-03/TST/service work, strict Server/Web tests, E2E harness and both CI
+workflows while adding MR-01's 14-file bounded reviewer composition.
+
+Line review confirmed that only verified Contracts contribute bounded trusted
+objectives, ingested manifest summaries, valid corroborated claims, non-protected
+changed files and committed diff summaries. Closed runtime validation restricts
+result keys, enums, contract pairs and evidence references. The service consumes
+no finding value: it records only sparse bounded advisory metadata, returns void,
+then runs unchanged deterministic collision/candidate/winner/promotion logic.
+Deadline and durable cancellation win over an abort-ignoring reviewer; configured
+sensitive values are excluded/rejected. The independent security fallback found no
+High/Medium issue and returned READY for this provider-free scope. Configured
+`security-reviewer` was unavailable. MR-03 partial-finding behavior and the single
+final live reviewer gate remain deliberately pending; no network/model call ran.
+
+Observed local gates:
+
+- model-reviewer adapter/schema/evidence/redaction, MR service 14-case matrix and
+  readiness config: 3 files, 161/161;
+- Settings rendering: 1/1; API/store: 31/31;
+- F-03/service/container-verifier/recovery/state-machine adjacency: 69/69;
+- deterministic harness: Node 6/6 and Chromium 6/6;
+- literal `npm run check`: launcher 3/3, Server 587/587 with two opt-in live files
+  skipped, Web 9/9, both strict test-source projects and both builds.
+
+The dedicated real-browser audit passed 2/2 at 1280x800 and 1440x900 for real
+Tab/Enter/Space focus semantics, true→false→true PATCH persistence, advisory
+degradation event visibility, exact viewport/document/body overflow, screenshots,
+and absence of auth/private/raw-prompt text. It also reproduced MR-02 causally:
+the real no-Ark process reports `arkConfigured=false` while persisted
+`modelReviewEnabled=true`; Settings presents an enabled checked “Run advisory”
+toggle with no unavailable/not-configured state, and both PATCHes succeed even
+though production deliberately composes no reviewer. Therefore the preference
+cannot cause a call or outcome and silence can look like “no findings.”
+
+MR-02 owns the minimal fix: preserve preference, expose only bounded server-derived
+reviewer capability/operational truth, and reuse current Settings/event visuals.
+Never expose/probe credentials, model IDs, endpoints, prompts or provider state in
+the browser. MR-01 remains a passing provider-free local candidate, but is blocked
+from `mock-main` integration and cannot claim `I` or `L` until MR-02 is corrected;
+MR-03 should integrate before exactly one final sparse live review.
+
+## 2026-08-30 — deviations hard-ledger reconciliation
+
+The Auditor reconciled every section of `docs/DEVIATIONS.md` against the PRD,
+current `mock-main`, exact tested evidence and the canonical task/defect ledgers.
+Each item is now classified as a clarification, actual deviation, environment
+limitation or permanent PRD scope statement, with explicit OPEN/PARTIAL/RESOLVED
+status and existing task IDs. No new task ID was required. The correction prevents
+backend-only or hosted-only evidence from closing browser/live/second-machine
+requirements, identifies completed-Plane cleanup as an allowed future policy rather
+than a shipped automatic cleaner, and makes every actual deviation completion-
+blocking until its named gates pass.
+
+A fresh GitHub/ref audit also found PR #16 (`MR-01`) merged to current `main` as
+`403fc095b07d60e17de1cb3f82b4e16b6a778919`; it is therefore no longer externally
+held, but it is not yet an ancestor of `mock-main` and remains unaudited integration
+work. Draft PR #25 (`MR-03`) remains the sole external hold. This was a read-only
+ownership check; no product branch was merged and no live/model request was made.
+
+## 2026-08-30 — GC-01 and TST-07 integrated audit
+
+The Auditor merged current `main` `662a7e7` into the previously audited
+`mock-main` line as merge `c834c39`, preserved every prior audited mock commit,
+then integrated the test-ownership correction as `de3e631`. The effective product
+change is the bounded GC-01 parser-safe mention helper and Project Group buttons;
+TST-07 only moves the complete eight-case regression to Web ownership and adds
+explicit Web Vitest/strict-test configuration plus root scripts and the matching
+lockfile entries. Server JSX/rootDir, product authority, Shepherd lifecycle, CSS
+and schemas are unchanged. Both CI workflows are retained: `required-checks.yml`
+remains the stable push/PR/merge-queue Docker gate, while the main-sourced
+`pull-request-checks.yml` is a narrower PR/merge-queue duplicate that should be
+consolidated only as a separately owned CI task.
+
+Independent focused evidence passed: Web GC 8/8, full Web 9/9, Server group
+routing 10/10, strict Server and Web test typechecks, `npm ci`, and `npm audit`
+with zero vulnerabilities. The real browser protocol passed 2/2 at 1280x800 and
+1440x900 for mouse and real Tab/Enter/Space activation, focus-visible and composer
+refocus/caret, multiline preservation, safe/spaced/escaped/Unicode/NFKC/ID-fallback
+mentions, exact 2,000 acceptance/2,001 unchanged rejection, in-flight native
+disable/no duplicate submission, parser-exact Agent ID, zero document/body X/Y
+overflow, and absence of the auth token/private run root in rendered text. The
+top-of-page frame places the composer partly below the visible area when the
+runtime banner is present; the accepted internal main-content scroll brings the
+entire composer/helper/send control into both viewports with no overlap. This is
+recorded honestly as a Low UI-GATE framing item, together with the mention button's
+subtle disabled visual distinction; it is not a document-overflow or GC-01 blocker.
+The configured `ui-reviewer` role was unavailable, so an independent read-only
+fallback inspected both frames and the source.
+
+The full deterministic harness passed Node 6/6 and Chromium 6/6. Literal
+`npm run check` passed launcher 3/3, Server 563/563 with one unchanged opt-in live
+skip, Web 9/9, both strict test-source projects and both production builds. No
+live/model call was made. Hosted Node 22 Required checks run
+`33266624301` passed on `de3e631`. GC-01 and TST-07 are therefore independently
+audited at scoped 100%; this does not claim GC-03/04 targeted lifecycle completion.
+
+## TST-07 correct Web test ownership candidate
+
+**Date:** 2026-08-30 (Asia/Singapore)
+**Branch/base:** `fix/mock-main` from canonical blocker head `6e4e230`
+
+The Fixer reproduced the required strict RED exactly: Server test typecheck exited
+2 with TS6142 for the imported Web TSX component and TS6059 for the Web formatter
+outside Server `rootDir`. The cause was test packaging, not formatter/parser/UI
+behavior. The complete eight-case GC-01 regression moved from Server to Web. Web
+gained explicit Vitest and strict test-source configuration/scripts, while root
+`test` and `typecheck` now execute both workspaces. The production component,
+formatter, parser, Server JSX/rootDir and every assertion remain unchanged.
+
+Observed candidate evidence:
+
+- relocated Web regression 8/8 and adjacent Server group-routing 10/10 passed;
+- strict Web and Server test-source checks passed; Web production typecheck/build
+  passed;
+- literal `npm run check` passed twice: launcher 3/3, Server 563/563 plus one
+  unchanged opt-in live skip, Web 9/9, strict/production typechecks and both builds;
+- `npm ci --ignore-scripts --dry-run` completed from the lockfile and `npm audit`
+  reported zero vulnerabilities; `git diff --check` passed;
+- diff is limited to test relocation, Web/root test configuration and scripts,
+  lockfile, and TST-07/GC-01 evidence docs. Default tests remain model/network-free
+  with Web Vitest temp output under repo-local `.tmp/web-tests`.
+
+This is a candidate, not an audit/100% claim. GC-01 still requires independent
+two-viewport browser interaction plus integrated/hosted gates; TST-07 `I` is pending.
+
+## TST-07 blocks current-main / GC-01 integration before push
+
+**Date:** 2026-08-30 (Asia/Singapore)
+**Ownership branch:** `test/tst-07-gc-01-strict-typecheck`
+**Local merge:** `c834c3907abe84fb0bd79250ac93c2bbf78c87c0`
+**Source main:** `662a7e7d2f54cd7eb6e6f33aa761a1d06901f609`
+
+The Auditor real-merged current `origin/main` into audited `mock-main` head
+`5469c1f` only on the dedicated ownership branch. All prior audited mock commits
+remain ancestors and the effective main delta is GC-01, its evidence docs and the
+second CI workflow. Nothing was pushed to `mock-main`.
+
+The first required gate produced a deterministic RED:
+
+```text
+npm run typecheck:tests -w @launchpad/server
+src/project-group-mention.test.ts(5,43): TS6142: Web ProjectGroupPage.tsx was
+resolved, but --jsx is not set
+src/project-group-mention.test.ts(11,8): TS6059: Web project-group-mention.ts is
+outside apps/server/src rootDir
+exit 2
+```
+
+The new Server test imports both Web TSX and a Web helper. That packaging made the
+test discoverable by the default Server Vitest suite on main, but violates the
+strict test-source ownership gate already audited on `mock-main`. Literal
+`npm run check` is therefore known red and was not misreported or rerun broadly.
+No browser/full/hosted GC-01 acceptance claim is made from this branch.
+
+`TST-07` owns the minimal test-only correction: place formatter/component and
+production parser round-trip coverage under correctly discovered, strictly typed
+workspace ownership without broadening Server JSX/rootDir, suppressing/excluding
+tests, weakening the multiline/disabled/exact-boundary/ID assertions, or changing
+product code. GC-01 remains integration-blocked until Fixer correction and the full
+Auditor gates pass.
+
+## TST-05/TST-06 and E2E-01 independent integration closeout
+
+**Date:** 2026-08-30 (Asia/Singapore)
+**Candidate:** `e1d9c349226913a1192702fab3fa21c36514055e`
+**Integrated implementation:** `f6df2d9503a3a482da2cb2882eb913ca2285501c`
+**Committed review evidence:** `284994d`
+
+The candidate was exactly one commit above canonical docs head `3b9137b`. Its diff
+contains only harness fixtures/support, Playwright configuration/scripts/tests and
+canonical evidence docs: no production React, CSS, server, service, schema,
+dependency or debug-route change. The prior E2E candidate and stale screenshot set
+were not integrated.
+
+Independent gates passed:
+
+- harness unit 6/6 and Chromium 6/6 at exact `1280x800` and `1440x900`, repeated
+  three times (unit 18/18 and browser 18/18 total); every run left no `run-*` root;
+- all 16 E2E stages and four adjacent harness/UI-03 ephemeral images were visually
+  inspected. Create is reachable at 1280 through the existing inner scroll and has
+  the established purple focus outline; empty, active, completed, stopped and
+  restarted states preserve the accepted Launchpad theme without document X/Y
+  overflow, clipping or overlap;
+- actual Tab traversal, focus-visible treatment and Enter activation passed for
+  Create, Stop and Start. The journey also proved 401/auth, disabled active composer,
+  exact two-turn fake thread continuity, exact hello files and independent Node
+  artifact tests 2/2, outside canary and symlink confinement, port closure, same-root
+  restart, durable Agent/messages/runs/files, and bounded public/store/DOM/log scans;
+- strict server test-source typecheck and literal `npm run check` passed with
+  launcher 3/3, server 563/563 plus one unchanged opt-in live skip, all typechecks
+  and both builds;
+- default screenshots went only to ignored `.tmp`. Hash sets for all tracked review
+  images were identical before and after each ordinary run. The explicit evidence
+  command passed 2/2 and wrote exactly 16 intended `docs/ui-review/e2e-01` PNGs,
+  with no blank down-state or unrelated evidence; a subsequent ordinary full
+  harness again left those files byte-identical;
+- secret values reach only boolean comparisons, not matcher formatting; live trace,
+  screenshots and video are disabled; retries remain zero; live entry requires the
+  exact opt-in and preserves the two-turn cap, loopback binding, bearer auth, child
+  environment allowlist and empty live `SHEPHERD_MODEL`. Repository, `.tmp`, harness
+  and run-root identities are lstat/realpath checked before allocation/removal.
+  Causal tests cover ancestor symlink rejection, retained-root cleanup after restart
+  failure, fresh setup-failure cleanup and reusable-root rejection. No credential,
+  private path, live artifact or retained root was found.
+
+Configured `ui-reviewer` and `security-reviewer` roles were unavailable. An
+independent rendered fallback re-reviewed the exact 20 ephemeral PNGs and returned
+READY with no severity finding; the Auditor's independent security review found no
+High/Medium issue. Low residuals remain for hostile same-user mutation between
+identity check and recursive removal and exceptional spawn/concurrent-mkdir timing;
+these are bounded local-test-harness conditions and not production authority.
+
+The previously authorized live legacy evidence was accepted without another call:
+exactly two successful ARK turns, no retry, one real Codex thread, generated artifact
+test 2/2, restart persistence, bounded/redacted evidence and cleanup, with no
+Shepherd Mission/model-review invocation. This closes only the PRD 11.6.1 baseline;
+`LIVE-01` remains open for its separately scoped Shepherd/model-review smoke.
+
+Hosted Required checks run
+[`33265640400`](https://github.com/kyashp/shepherd/actions/runs/33265640400)
+passed Node 22, Docker, locked install and literal repository gate in 1m42s.
+
+**Verdict:** `TST-05` and `TST-06` are **AUDITED at scoped 100%** with 5/5 gates;
+`E2E-01` is **AUDITED at scoped 100%** with `C,B,L,S,U,I` 6/6.
+
+## TST-05/TST-06 deterministic E2E harness correction candidate
+
+**Date:** 2026-08-30 (Asia/Singapore)
+**Branch:** `fix/mock-main` (pending commit/Auditor integration)
+
+The Fixer imported the unintegrated E2E-01 harness candidate without its stale
+ledger or screenshots, then changed only test/harness/configuration files. Ordinary
+screenshots now go to ignored `.tmp/playwright-evidence`; only the explicit
+`npm run test:e2e:starter-kit:evidence` mode writes review images. The empty
+server-down canvas was removed: the test records only the observed closed port and
+reserves reconnect UI for E2E-08. At both viewports the existing Create form is
+scrolled until its primary action is visible, and Create, Stop and Start are reached
+with actual Tab focus, checked for the existing focus-visible outline, and activated
+with Enter. No production or UI/theme file changed.
+
+Harness assertions no longer pass credentials or sensitive bodies to matcher
+formatting. Live Playwright trace, screenshot and video are off. Exact live opt-in,
+two-turn/no-retry limit, loopback binding, bearer auth, child environment allowlist
+and empty live `SHEPHERD_MODEL` remain. The repository, `.tmp`, harness and selected
+run-root identities are lstat/realpath checked before allocation/removal. Added fault
+tests reject a repo-contained symlinked harness ancestor without following it and
+prove a previously retained stopped root can be removed after a restart failure.
+
+Observed evidence, with no live/model call:
+
+- harness unit: 6/6 passed, including ancestor-symlink, retained-root restart and
+  fresh-allocation setup-failure cleanup tests;
+- deterministic Chromium: 6/6 passed in 17.5 seconds at exact `1280x800` and
+  `1440x900`; all 16 E2E-01 stage captures were visually inspected under ignored
+  output and the four adjacent harness/UI-03 captures were produced there too;
+- tracked `docs/ui-review` SHA-256 sets were identical before/after the ordinary
+  run; `git diff -- docs/ui-review` was empty and no server-down image was produced;
+- strict server test-source typecheck passed; literal `npm run check` passed twice,
+  each with launcher 3/3, server 563/563 plus one unchanged opt-in live skip, all
+  typechecks and both builds;
+- `git diff --check` passed; stale roots created by the initial controlled failing
+  iteration were explicitly confined and removed, and the final harness root had
+  no `run-*` child.
+
+The earlier independently bounded live legacy evidence remains exactly two
+successful turns with no retry. It was not invoked again. `TST-05`, `TST-06` and
+`E2E-01` remain candidates pending independent UI/security/integrated/hosted audit;
+no `U` or `I` gate is claimed here.
+
+An independent read-only security review found the initial candidate could retain a
+freshly allocated root when setup failed before child spawn. The transaction was
+extended over every post-allocation pre-spawn setup step and the new missing-Codex
+fault regression proves the harness root returns to the exact prior `run-*` set.
+Independent re-review closed the Medium finding and found no remaining High/Medium
+issue. Low local residuals remain for same-user mutation between identity validation
+and recursive removal, an exceptional synchronous `spawn()` throw, and theoretical
+concurrent sibling mkdir completion after a `Promise.all` rejection. These require
+adversarial or exceptional concurrent conditions outside this local harness threat
+model; no broad filesystem refactor was attempted.
+
+## E2E-01 independent audit rejection: visual evidence and failure-path safety
+
+**Date:** 2026-08-30 (Asia/Singapore)
+**Candidate:** `592699d140145165c5ca0d9511478171e5051271` (parent `949cec1`)
+
+The Auditor reviewed the exact candidate in an isolated worktree. It remains
+**unintegrated**. No candidate product, test, screenshot, or documentation file was
+cherry-picked to `mock-main`.
+
+Passing evidence was substantial but insufficient for integration: harness unit
+tests passed 3/3; Chromium passed 6/6 across exact `1280x800` and `1440x900` projects;
+strict server test-source typecheck passed; and literal `npm run check` passed with
+launcher 3/3, server 563/563 plus one unchanged opt-in live skip, all typechecks and
+both builds. All 18 regenerated E2E captures were manually inspected. The previously
+bounded live evidence remains exactly two successful legacy ARK turns, no retry,
+one real Codex thread, generated artifact/test 2/2, restart persistence, redacted
+evidence and cleanup; the Auditor did not consume another live call.
+
+Two blocking gates failed. First, the successful routine harness run modified 16 of
+18 tracked E2E-01 PNGs and the unrelated tracked UI-03 1280 PNG. Only the two
+server-down files stayed byte-identical. Both were blank white canvases: the test
+asserts the port closed, catches reload failure, then screenshots without any DOM or
+visible-state assertion. Calling that a visually inspected application down state
+overclaims the evidence. The 1280 Create Agent image also does not demonstrate that
+the primary action is reachable, and actual Tab/focus-visible/lifecycle keyboard
+coverage is incomplete. This is recorded as `TST-05`; production UI and the accepted
+design must remain unchanged.
+
+Second, source audit found failure-path safety gaps recorded as `TST-06`: a secret is
+passed directly to Playwright matcher output; a retained run root cannot be cleaned
+by a later idempotent stop after restart failure; managed harness ancestor symlinks
+are not canonically rejected before temporary-root creation/removal; and opt-in live
+failure traces/screenshots may retain prompts or output. These require causal fault
+tests and the narrow redaction/confinement/cleanup changes in `FIXES.md`, without
+broadening environment or filesystem authority.
+
+**Verdict:** E2E-01 remains blocked and unintegrated. `TST-05` and `TST-06` must pass
+their targeted, browser/security-review, full, integrated and hosted gates before
+the journey can be marked audited.
+
+## TST-04 independent integration audit and hosted closeout
+
+**Date:** 2026-08-30 (Asia/Singapore)
+
+Auditor inspected the exact candidate and integrated it as
+`00c81ae067961d43ee63acb777bf070ca808c113`. The diff changes only
+`service.test.ts` and evidence docs. It leaves `makeDeletable`, product/service/
+verifier/UI code, timeouts, retries, sleeps, behavioral assertions, sentinel checks,
+path confinement and symlink rejection unchanged.
+
+The captured backend `planePath` is resolved beneath the sentinel-owned case root,
+with exact `.trusted-verification` parent and `verify-*` basename assertions. The
+two-arrival barrier ensures capture before the selected frontend failure; the test
+then observes typed Mission rejection while that root still exists. The watcher is
+armed on the exact parent before sibling release, filters the exact basename, and
+accepts quiescence only after `lstat` returns `ENOENT`. `finally` idempotently
+releases all gates and joins the Mission, sibling return and conditional removal
+promise without replacing the primary assertion failure.
+
+Independent evidence: exact row 20/20 in 28 seconds; service/container-verifier
+slice 43/43; strict test-source typecheck; literal `npm run check` twice in 38/40
+seconds with launcher 3/3, server 563/563 plus one opt-in live skip and both builds;
+integrated focused row 1/1; and `git diff --check`. Hosted Node 22 run
+[`33263688794`](https://github.com/kyashp/shepherd/actions/runs/33263688794)
+passed the locked install, Docker and literal repository gate in 1m42s.
+
+**Verdict:** TST-04 is **AUDITED at scoped 100%**, `T,A,C,I` 4/4. E2E-01 is
+unblocked. No live/model/browser request occurred.
+
+## TST-04 exact verification-snapshot quiescence candidate
+
+**Date:** 2026-08-30 (Asia/Singapore)
+**Branch/base:** `fix/mock-main` / `4f7da60a4b45415fb6283eaa3a60360102875856`
+
+The preserved RED is the full-suite `afterEach` failure recorded below: after all
+typechecks, `makeDeletable -> readdir` received `ENOENT` beneath a sibling
+`.trusted-verification/verify-*/src`, while the exact isolated behavioral row passed.
+The disappearing owned path and order dependence implicated teardown beginning
+before a sibling `withVerificationSnapshot` finalizer finished.
+
+The correction is test-only. `SnapshotTrackingContractThrowingVerifier` records the
+blocked backend request's real `planePath` and uses the existing two-arrival barrier,
+so the selected frontend infrastructure failure is not released before the backend
+snapshot is observable. The Mission promise gets an immediate success/rejection
+observer. After the typed rejection, the test asserts the captured absolute root is
+inside the sentinel-owned case root, its parent is exactly `.trusted-verification`,
+its basename matches `verify-<uuid>`, and that exact directory still exists. This is
+the controlled proof that fail-fast rejection precedes sibling snapshot cleanup.
+
+Before releasing the backend, the test arms `fs.promises.watch` on the exact root's
+parent. Its quiescence signal requires an event for the captured basename followed
+by `lstat(capturedRoot)` returning `ENOENT`, bounded by the existing five-second
+`settleWithin` helper. A `finally` block idempotently releases the Contract pair and
+sibling and joins the Mission, sibling return, and removal outcome. The test cannot
+finish into `afterEach` while that background snapshot cleanup remains active.
+Existing typed terminalization, bounded diagnostics, ownership release,
+no-collision/candidate/promotion and public/store assertions remain unchanged.
+
+Observed GREEN evidence:
+
+- focused causal row: 1/1 passed initially, 560ms test time;
+- 20 independent exact-row invocations: 20/20 passed in 28s;
+- service/container-verifier slice: 43/43 passed in 33.22s;
+- strict server test-source typecheck: passed;
+- literal `npm run check` passed twice under normal contention, 39s/39s each:
+  production and strict test typechecks, launcher 3/3, server 563/563 with one
+  opt-in live skip, and both production builds passed;
+- `git diff --check`: passed.
+
+No `ENOENT` was swallowed in `makeDeletable`; no sleep, retry, timeout increase,
+cleanup-sentinel/path/symlink weakening, product/service/verifier/UI edit, or
+live/model call occurred. `TST-04` is a **100% scoped candidate** with `T,A,C`
+passed; integrated Auditor/hosted `I` remains pending. E2E-01 stays paused only on
+that deterministic baseline audit.
+
+## ST-02 main-to-mock integration audit
+
+**Date:** 2026-08-30 (Asia/Singapore)
+
+PR #13 merged to `main` as `d27dea670108e5a06eac20de7df88f756b68e404`.
+The Auditor merged that mainline into `mock-main` as
+`d5df930923503cf337f865f8c0361fa1b3bd8530`, retaining both histories in the sole
+`BUILD_LOG.md` conflict. The effective product delta is only
+`SettingsPage.tsx` plus its focused test: public Settings schemas/persistence and
+all kernel, harness, strict-type, CI, UI-03 and TST-03 implementation remain intact.
+No notification delivery, external integration, model request, or credential path
+was added.
+
+Observed independent evidence:
+
+- focused static-render regression: 1/1 passed;
+- web production typecheck and 40-module build: passed;
+- real Chromium Settings audit at exact `1280x800` and `1440x900`: three disabled
+  accessible notification controls, three **Reserved** labels, one **Unavailable**
+  label, disabled controls skipped in Tab order, forced interaction sent zero
+  Settings `PATCH` requests, and document/body X/Y scroll sizes equalled client
+  sizes at both viewports;
+- screenshots `docs/ui-review/st-02-settings/{1280x800,1440x900}.png` were inspected
+  and preserve the accepted Launchpad theme with no clipping or overlap;
+- deterministic harness unit 2/2 and Chromium 4/4 passed;
+- literal `npm run check` passed in 39 seconds: launcher 3/3, server 563/563 with
+  one opt-in live skip, strict test-source and production typechecks, and both
+  production builds;
+- `git diff --check` and the bounded diff/artifact review passed.
+
+The configured `ui-reviewer` role was unavailable. An independent read-only rendered
+fallback returned **READY with no scoped findings**. It confirmed truthful copy,
+native disabled semantics, persisted checked-state visibility, non-color-only labels,
+responsive layout and design fidelity. It noted only pre-existing non-blocking
+Settings tablist ARIA/arrow-key and small secondary-type debt; ST-02 does not broaden
+into those shared concerns.
+
+**Verdict:** ST-02 is **AUDITED at scoped 100%**, `T,C,B,U,I` 5/5. This is one
+observed green repository run, not a claim that separately reproduced TST-04
+background-cleanup instability is resolved.
+
+Final hosted Node 22 run
+[`33262928516`](https://github.com/kyashp/shepherd/actions/runs/33262928516)
+passed the locked install, Docker availability and literal repository gate on audit
+head `7f5a719` in 1m42s.
+## TST-04 F-03 snapshot-cleanup teardown race
+
+**Date:** 2026-08-30 (Asia/Singapore)
+**Branch/base:** `work/mock-main` / `e88dbef27b0a7f55acbdab3a7f89b67c9e6900c1`
+
+The literal repository gate passed both production typechecks and the strict server
+test-source typecheck, then failed one F-03 service test during `afterEach` cleanup.
+The behavioral assertions did not fail. The cleanup walker attempted to read a
+sibling trusted-verification snapshot subtree while its owning
+`withVerificationSnapshot` finalizer was removing it:
+
+```text
+service.test.ts > Shepherd deterministic walking skeleton >
+terminalizes Contract verification infrastructure failures without promotion or sensitive diagnostics
+
+afterEach -> removeServiceCaseRoot -> makeDeletable -> readdir
+ENOENT: .tmp/shepherd-tests/service-*/managed/planes/auth-demo/
+        .trusted-verification/verify-*/src
+```
+
+```sh
+npm run check
+# RED after typechecks: server 562 passed, 1 failed, 1 opt-in skipped
+# build phase did not run
+
+npm run test -w @launchpad/server -- --run src/shepherd/service.test.ts \
+  -t 'terminalizes Contract verification infrastructure failures without promotion or sensitive diagnostics'
+# isolated GREEN: 1 passed, 33 skipped
+```
+
+The full-suite-only RED, immediate isolated GREEN, fail-fast concurrent Contract
+verification path, and disappearing snapshot path strongly support an ordering race.
+The required next discriminating check is to record the sibling
+`VerificationRequest.planePath` and prove teardown starts before that exact snapshot
+cleanup/Contract batch is quiescent. No product, UI, test, timeout, or cleanup
+behavior was changed during this diagnosis. The paused E2E-01 deterministic work is
+preserved separately; no live/model call was made.
+
+Auditor source inspection confirmed that the failing `makeDeletable` recursion does
+not suppress a directory disappearing between its entry `chmod` and `readdir`, while
+each concurrent Contract verifier owns a `withVerificationSnapshot(...finally)`
+cleanup. The unmodified current-tree literal gate passed 563/563 plus one opt-in skip,
+which is consistent with an intermittent ordering defect and does not close the
+preserved RED. The Fixer must still prove the exact sibling-path ordering causally
+before changing the fixture.
+
+## TST-03 independent integration audit and hosted closeout
+
+**Date:** 2026-08-30 (Asia/Singapore)
+
+**Integrated implementation:** `0b1c4017f01d37823b13c5da7360f00a8d8e7814`
+
+Auditor inspected the exact candidate diff and confirmed it changes only the test
+fixture and evidence docs: no product, service, verifier, API, persistence, UI,
+workflow, dependency, timeout, sleep, retry, rejection suppression, or weakened
+assertion. Both parameter rows passed 40/40 across 20 independent invocations; the
+service/container-verifier slice passed 43/43; strict test-source typecheck passed;
+the literal repository gate passed locally in 39 seconds with launcher 3/3, server
+563/563 plus one opt-in live skip, and both production builds; integrated focused
+rows passed 2/2. `git diff --check` passed.
+
+Required hosted Node 22 run
+[`33262227553`](https://github.com/kyashp/shepherd/actions/runs/33262227553)
+passed on `0b1c401` in 1m38s, including locked install, Docker availability and the
+literal repository gate. TST-03 is **AUDITED at scoped 100%**, `T,C,I` 3/3. This
+restores UI-03 to **AUDITED at scoped 100%**, `T,C,B,U,I` 5/5, and unblocks E2E-01.
+No live/model call occurred.
+
+## TST-03 deterministic concurrent-verifier regression candidate
+
+**Date:** 2026-08-30 (Asia/Singapore)
+**Branch/base:** `fix/mock-main` / `346ab91bd807ee787ac275d43f10bfe08b5a5532`
+
+The controlled RED remains hosted run
+[`33261198788`](https://github.com/kyashp/shepherd/actions/runs/33261198788):
+the thrown-verifier row exhausted its existing 30-second budget and emitted an
+unhandled `ContractVerificationInfrastructureError` after 558 passed, 5 skipped,
+and 1 failed tests. The prior disposable backend pre-verifier hold reproduced the
+same ordering defect in one second. A subsequent unmodified docs-only hosted run
+[`33261491905`](https://github.com/kyashp/shepherd/actions/runs/33261491905) on
+`346ab91` passed, which corroborates schedule sensitivity but does not make the
+fixture deterministic.
+
+The candidate changes only `service.test.ts`. A reusable two-arrival barrier makes
+the selected frontend thrown/returned infrastructure outcome wait until the backend
+has entered the verifier. A `then` success/failure observer is attached to the
+Mission promise immediately, before `siblingEntered` or any other gate is awaited.
+The assertion still requires the typed infrastructure failure. `finally` releases
+the pair and sibling gates idempotently and joins both the Mission and sibling exit,
+so an assertion failure cannot strand deferred work or create an unhandled
+rejection. Existing atomic terminalization, durable reload, ownership release,
+late-return, no `verification_passed`, no collision/candidate/promotion, and bounded
+Plane assertions remain intact.
+
+Observed GREEN evidence:
+
+- focused parameterized test: 2/2 passed initially in 1.47s (929ms test time);
+- 20 independent focused invocations: both parameter rows passed 40/40 in 37s;
+- Shepherd service/container-verifier slice: 43/43 passed in 32.29s;
+- strict `typecheck:tests`: passed;
+- literal `npm run check` passed twice, in 39s and 40s: both production and strict
+  test-source typechecks, launcher 3/3, server 563/563 with one opt-in live skip,
+  and both production builds passed;
+- `git diff --check`: passed.
+
+No timeout changed, no sleep/retry was added, no failure was swallowed, and no
+product, service, verifier, API, persistence, UI, workflow, dependency, or live/model
+path changed. `TST-03` is a **100% scoped candidate** with `T,C` passed; integrated
+Auditor/hosted gate `I` is pending. UI-03 stays at 98% until that hosted closeout,
+and E2E-01 remains blocked only on the deterministic baseline integration.
+
+## TEST-TS strict server test-source typecheck candidate
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Branch/base:** `work/mock-main` / `39211213bc1f77e8873673eda9e7c87da2b24abd`
+
+The production server compiler excludes `*.test.ts`, so its existing typecheck did
+not validate test sources. A separate `tsconfig.test.json` now reuses the production
+compiler options with `noEmit`, includes production and test sources, and is invoked
+after the unchanged workspace production typechecks by the root `typecheck` script.
+The production build/emit configuration remains unchanged.
+
+The initial strict RED found 14 errors across four test files: four implicit callback
+types, five Vitest 4 matcher calls using removed generic parameters, four promotion
+fixtures missing the required persistence callback, and one container verifier fixture
+missing its required owner identity. Restoring matcher typing then exposed two nullable
+fixture values. The test-only fixes add exact inferred/imported types, use `satisfies`
+for matcher shapes, complete the fixtures with inert deterministic callbacks/identity,
+and assert the already-established non-null candidate-head invariant. No assertion,
+production behavior, UI, compiler strictness, or test coverage was removed.
+
+```sh
+./node_modules/.bin/tsc -p apps/server/tsconfig.test.json --pretty false
+# RED: exit 2; 14 errors across 4 files in the categories recorded above
+
+npm run typecheck:tests -w @launchpad/server
+npm run typecheck -w @launchpad/server
+npm run build -w @launchpad/server
+# all passed; test-source and production typechecks plus production server emit
+
+npm run test -w @launchpad/server -- --run src/app.test.ts \
+  src/shepherd/git-plane-promotion.integration.test.ts \
+  src/shepherd/service.container.test.ts src/shepherd/service.test.ts
+# 4 files passed; 73/73 tests passed
+
+npm run check
+# both workspace production typechecks and the new server test-source typecheck passed
+# launcher tests: 3/3 passed
+# server: 26 files passed, 1 opt-in file skipped;
+# 563 tests passed, 1 opt-in test skipped
+# web 40-module production build and server production build passed
+```
+
+This is implementation evidence only. Independent Auditor integration/review on
+`mock-main` remains the `I` gate, so confidence is scoped to 95%, not 100%.
+
+### TEST-TS independent integration audit
+
+The Auditor reviewed and integrated the candidate as `8995605`. The new config is
+strict, no-emit, and additive: the production server `tsconfig.json`, emitted files,
+web compiler, dependencies, runtime, API, and UI are unchanged. Source review found
+no `ts-nocheck`/`ts-ignore`, new broad exclusion, `skipLibCheck` weakening, blanket
+`any`, assertion removal, or matcher weakening. Runtime matcher objects are unchanged;
+the required fixture callback and owner identity complete existing production
+contracts, while the non-null assertions encode commit invariants already established
+earlier in the same tests.
+
+Independent candidate and integrated evidence:
+
+```sh
+npm run typecheck:tests -w @launchpad/server
+# passed on candidate and integrated implementation
+
+npm run typecheck -w @launchpad/server
+npm run typecheck -w @launchpad/web
+npm run build -w @launchpad/server
+npm run build -w @launchpad/web
+# both production typechecks and builds passed; web transformed 40 modules
+
+npm run test -w @launchpad/server -- --run src/app.test.ts \
+  src/shepherd/git-plane-promotion.integration.test.ts \
+  src/shepherd/service.container.test.ts src/shepherd/service.test.ts
+# 4 files passed; 73/73 tests passed
+
+npm run check
+# passed on candidate and integrated implementation: launcher 3/3; server 26
+# files and 563/563 tests passed with one unchanged opt-in live file/test skipped;
+# strict test-source and production typechecks plus web/server builds passed
+
+git diff --check
+# passed
+```
+
+The recorded RED categories match the exact corrected sites and TypeScript/Vitest
+contracts; the audit did not retain a weakening mutation merely to recreate them.
+`TEST-TS` is **AUDITED, scoped 100%**, with `T,C,I` passed 3/3. Hosted Node 22
+evidence is recorded after the final audit-documentation push.
+
+## UI-03 Create Agent preset-radio overflow correction
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Branch/base:** `fix/mock-main` / `39211213bc1f77e8873673eda9e7c87da2b24abd`
+
+The causal real-browser regression was added before production CSS changed. At
+`1280x800`, Create Agent failed with document scroll/client width `2299/1280`; at
+`1440x900`, it failed with `2579/1440`. The accessible four-radio group, initial
+Generalist selection, one native Tab stop, ArrowLeft focus/selection, and wrapping
+label click all passed before the overflow assertion, preserving the existing
+semantic baseline.
+
+The correction changes only the preset-radio CSS: each transparent absolute native
+radio is `1x1`, and inherited `min-height`, margin, padding, and border are reset.
+No ancestor overflow rule, React/API contract, visible card geometry, or theme was
+changed. Independent read-only review then found that the global focus outline was
+computed on the transparent radio rather than visibly painted on its card. A second
+minimal selector applies the same existing purple 2px focus outline to the wrapping
+label through `:has(input:focus-visible)`; the browser regression asserts that
+visible card treatment directly.
+
+Observed final evidence:
+
+- focused Chromium: 2/2 passed at exact `1280x800` and `1440x900`; document
+  scroll/client widths were `1280/1280` and `1440/1440`, document/body X/Y
+  invariants passed, and all four computed radio boxes were `1x1` with zero
+  inherited minimum height and spacing;
+- semantics: four radios under the `Authority preset` group, Generalist initially
+  checked, one Tab stop, arrow-key focus plus selection, visible focused-card
+  outline, all four wrapping labels selectable, and exactly one checked radio;
+- full deterministic browser harness: 4/4 passed across the two viewports;
+- screenshots inspected at
+  `docs/ui-review/ui-03-create-agent/{1280x800,1440x900}.png`; hashes are
+  `b64a61aa0c01566a710e3a480f6186a95e97075a06d97c89c327ea10cfec2de9` and
+  `ac630408a97445d439f79305b8c25854bdc07d3bb6fa741f45e3509055a26804`;
+- literal `npm run check`: both typechecks, launcher 3/3, server 563/563 with one
+  opt-in live skip, and both production builds passed.
+
+The independent read-only re-review reran the focused browser slice 2/2, observed
+the visible card outline, passed `git diff --check`, and closed its earlier Medium
+finding with no remaining UI-03 findings.
+
+No live/model request was made. `UI-03` is a **100% scoped candidate** with
+`T,C,B,U` passed; integrated Auditor gate `I`, `E2E-01`, and `UI-GATE` remain
+pending and are not claimed here.
+
+### UI-03 independent integration audit
+
+The Auditor integrated the candidate as `83954f7` while preserving the newer
+TEST-TS gate and its evidence. The only product change remains eleven lines in the
+existing preset-radio CSS: a locally bounded transparent native input and the
+existing purple two-pixel focus treatment painted on its wrapping card. No React,
+API, navigation, ancestor overflow, dependency, runtime, or unrelated design change
+was introduced.
+
+Independent integrated evidence:
+
+```sh
+node --test tests/e2e/harness.test.mjs
+# 2/2 passed
+
+PLAYWRIGHT_BROWSERS_PATH=.tmp/playwright-browsers \
+  npx playwright test --config=playwright.config.ts -g "Create Agent presets"
+# 2/2 passed at 1280x800 and 1440x900
+
+PLAYWRIGHT_BROWSERS_PATH=.tmp/playwright-browsers \
+  npx playwright test --config=playwright.config.ts
+# 4/4 passed across both required viewports
+
+npm run check
+# strict server test-source plus both production typechecks passed; launcher 3/3;
+# server 26 files and 563/563 tests passed with one unchanged opt-in live skip;
+# web 40-module and server production builds passed
+
+git diff --check
+# passed
+```
+
+The browser gate observed document/body scroll width and height within client
+geometry, four `1x1` radios with zero inherited minimum height/padding/border/margin,
+an accessible `Authority preset` group and radio names, Generalist initially checked,
+one native Tab stop, ArrowLeft focus/selection, a visible theme-matched 2px outline,
+all four label clicks, and exactly one checked radio. Regenerated screenshots exactly
+matched the committed hashes and were visually inspected for adjacent layout,
+spacing, hierarchy, clipping, and theme consistency. The authenticated token was not
+rendered, temporary browser/run artifacts remained ignored, and no model/network call
+occurred. This establishes `T,B,U,I` for UI-03. Final hosted `C` remained pending
+the audit-documentation push.
+
+### UI-03 hosted closeout failure / TST-03
+
+Required-check run
+[`33261198788`](https://github.com/kyashp/shepherd/actions/runs/33261198788),
+job `99123330844`, failed on final audit head `2ba5cb9`. Setup, checkout, Node 22,
+Docker and locked install passed. The repository gate reached server tests, then
+`atomically interrupts a blocked sibling after 'thrown verifier exception'` timed
+out at 30 seconds and emitted an unhandled
+`ContractVerificationInfrastructureError`. Hosted results were 24 files passed, 2
+skipped and 1 failed; 558 tests passed, 5 environment-gated skipped and 1 failed.
+Builds did not run. The five-skip hosted profile was unchanged.
+
+The UI-03 diff does not touch that backend service test or orchestration. Source
+inspection instead found a schedule-sensitive test contract: it awaits the backend
+fixture's `siblingEntered` promise before attaching rejection handling to the
+already-started Mission. Under contention, the frontend can terminalize first, so
+the awaited sibling signal never arrives and the Mission rejection becomes
+temporarily unhandled. The test has no unconditional sibling release/join when a
+timeout or assertion wins. Five isolated local repetitions subsequently passed 5/5,
+which confirms intermittency and does not correct the hosted RED.
+
+A disposable controlled fault probe then held the backend only at
+`contract_verification_snapshot_ready`, immediately before verifier entry, and
+shortened only that temporary test's budget to one second. The thrown-verifier row
+deterministically timed out and Vitest reported the same unhandled
+`ContractVerificationInfrastructureError`. The mutation lived only in the Auditor's
+temporary worktree and was not integrated. This separates the orchestration race
+from machine speed and directly validates the supported root cause.
+
+`TST-03` now owns the smallest test-only correction: deterministic two-arrival
+coordination, immediate rejection handling, and unconditional bounded release/join;
+no sleep, timeout increase, swallowed rejection, weakened F-03 assertion, or product
+change. Until its repeated/full/hosted acceptance is green, UI-03 remains **98%
+scoped** with `T,B,U,I` passed 4/5 and hosted `C` pending; E2E-01 remains blocked by
+the baseline rather than by its resolved Create Agent browser prerequisite.
+
+## CI-01 required-check workflow candidate
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Branch/base:** `work/mock-main` / `7217c1c055df76ace392d3804bc6517df85ce768`
+
+The repository had no workflow capable of reporting the stable required status
+named `Required checks / Node 22 / npm run check`. This candidate adds one workflow
+and changes no product, UI, server, test, package, lockfile, dependency, or runtime
+configuration.
+
+The workflow follows the current official GitHub Actions contracts reviewed on
+2026-08-29: every `pull_request` runs; `push` is limited to `main` and `mock-main`;
+and `merge_group` is limited to `checks_requested`, which GitHub documents as
+necessary for merge-queue required checks. Workflow concurrency is scoped by the
+workflow name and event ref, so a newer run cancels only an older run for the same
+workflow/ref. The job runs on `ubuntu-latest`, installs Node 22 through
+`actions/setup-node@v7`, caches npm's download cache against the checked-in
+`package-lock.json`, verifies the hosted Docker client/daemon, executes `npm ci`,
+and then executes the literal `npm run check`. The job has a 20-minute timeout.
+
+Security and isolation are explicit:
+
+- top-level token permission is only `contents: read`; all unspecified permissions
+  are `none` under GitHub's workflow permission semantics;
+- `actions/checkout@v6` uses `persist-credentials: false`;
+- no `pull_request_target`, write permission, secret reference, `.env` loader,
+  artifact upload, custom/privileged action, deployment, or external/live/model
+  command exists;
+- `SHEPHERD_LIVE_TEST` is fixed to `false`, and repository secrets are not mapped
+  into the job environment.
+
+No Action-specific linter was installed on this host. The available PyYAML 6.0.1
+parser loaded the workflow with `BaseLoader`, and custom structural assertions
+verified the exact events/branches, merge-group activity, permission, runner,
+timeout, official action versions, and command sequence:
+
+```sh
+python3 -c '<YAML parse and structural assertions>'
+# workflow YAML and required structure: pass
+
+docker version --format '{{.Client.Version}} {{.Server.Version}}'
+# client 29.7.2; server 29.7.2
+
+npm run check
+# Node 24.17.0 / npm 11.17.0 local evidence
+# both workspace typechecks passed
+# launcher tests: 3/3 passed
+# server: 26 files passed, 1 opt-in file skipped;
+# 555 tests passed, 1 opt-in test skipped
+# web and server production builds passed
+
+git diff --check
+# passed
+```
+
+The Worker branch is intentionally not a `push` trigger, and the user prohibited a
+PR for this campaign. After pushing the candidate, the authenticated read-only
+query `gh run list --repo kyashp/shepherd --branch work/mock-main ...` returned
+`[]`, confirming no hosted run exists for that branch. CI-01 remains below 100%
+until the Auditor integrates it into `mock-main`, observes the real hosted Node
+22/Docker run, records the resulting check identity, and confirms the
+protected/merge-queue rule consumes that stable status. No external model request
+was made.
+
+### Independent Auditor pre-hosted integration review
+
+**Candidate:** `bdab32da9305a3787ec4b0c1d2061d521230eeae`
+
+**Integrated workflow:** `cda2446584d0f5d6c07ec8d2521d08fb6711f971`
+
+The Auditor independently confirmed the exact three-file diff: the workflow plus
+`TASKS.md` and this log. Product, UI, server, tests, dependencies, lockfile, runtime
+configuration, and environment examples are unchanged. PyYAML `BaseLoader` parsing
+and structural assertions covered the complete event map, branch filters,
+`checks_requested`, permissions, concurrency expression, runner, timeout, child
+environment, action inputs, and exact command sequence.
+
+Current official GitHub documentation reviewed on 2026-08-29 confirms that
+`pull_request:` without filters runs every PR; `push.branches` limits pushes to the
+two named branches; merge queues require the separate `merge_group` trigger and
+currently support `checks_requested`; unspecified permissions become `none`; the
+workflow/ref concurrency expression cancels only an older matching run; and the
+20-minute positive integer is a valid bounded job timeout. Official action refs
+also resolve: `actions/checkout@v6` is still supported, while v7 is latest and its
+documented breaking safety change concerns `pull_request_target`, which this
+workflow does not use; `actions/setup-node@v7` is current and its npm cache hashes
+the named `package-lock.json` while caching npm data rather than `node_modules`.
+
+Independent local evidence on the candidate:
+
+```sh
+python3 -c '<BaseLoader parse and structural assertions>'
+# pass
+
+docker version --format 'client={{.Client.Version}} server={{.Server.Version}}'
+# client=29.7.2 server=29.7.2
+
+npm run check
+# typechecks passed; launcher 3/3; server 26 files and 555 tests passed;
+# one opt-in live file/test skipped; web 40-module and server builds passed
+
+git diff --check
+# pass
+```
+
+The workflow maps no repository secret and invokes no env loader, model/live test,
+artifact upload, deployment, privileged container, or write-capable command.
+`contents: read` is the only token permission and checkout credential persistence
+is disabled. Hosted Node 22, `npm ci`, Docker daemon availability, the emitted check
+identity, and the real trigger remain pending until the first `mock-main` push run
+completes; CI-01 is not yet marked audited.
+
+### Hosted integration result
+
+The combined `mock-main` push at `cd23488b29d9f45ba854e11ef1b6bf41c1bcda3f`
+triggered the newly integrated workflow exactly once:
+
+- run: `33259565232`
+- URL: `https://github.com/kyashp/shepherd/actions/runs/33259565232`
+- event/ref: `push` / `mock-main`
+- job/check: `Node 22 / npm run check` (`99119063014`)
+- conclusion: `success`
+- duration: 91 seconds, from `2026-08-29T15:11:31Z` to `15:13:02Z`
+
+Every hosted step succeeded: checkout with credential persistence disabled,
+setup-node, Docker client/daemon probe, `npm ci`, literal repository gate, both
+post-action cleanups, and job completion. Bounded logs established the real hosted
+environment and counts:
+
+```text
+Node 22.23.2; npm 10.9.8
+Docker client 28.0.4; server 28.0.4
+launcher: 3/3 passed
+server: 25 files passed, 2 environment-gated files skipped;
+        551 tests passed, 5 skipped, 556 total
+web: 40 modules transformed; production build passed
+server: TypeScript production build passed
+```
+
+The hosted skip delta is explicit rather than hidden: local Docker evidence passed
+555 server tests with only the opt-in live test skipped, while hosted `CI=true`
+retained five repository-defined environment-gated skips. The dedicated hosted
+Docker probe proved both client and daemon availability independently. No secret,
+model, live-test, deployment, artifact, or write-capable path ran.
+
+**Verdict:** `CI-01` is **AUDITED at scoped 100%**, `C,I` 2/2. The stable branch
+protection check to select is `Node 22 / npm run check` from workflow `Required
+checks`. A repository administrator must still add this check to the protected
+`main` ruleset/branch-protection rule (and enable merge queue there if desired);
+that external administrative mutation was not performed by an agent.
+
+## E2E-01 stopped at Create Agent overflow defect
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Branch/base:** `work/mock-main` / `ace01ae0a6875f102ea0fec30e871a0e2f6d60a8`
+
+The Worker extended only the deterministic test composition toward PRD 11.6.1,
+then stopped at the first reproduced production defect as required. Before the
+browser stage, the real web/server production build passed and the existing
+isolated harness causal tests passed 2/2. No `.env` was read and no external/model
+request was made.
+
+The focused command drove the built authenticated application with Playwright
+`1.62.1` / Chromium `151.0.7922.34`:
+
+```sh
+npm run test:e2e:starter-kit
+# build passed; harness unit 2/2 passed
+# browser 0/2: Create Agent overflow assertion failed at both viewports
+# 1280x800: document scrollWidth 2299, clientWidth 1280
+# 1440x900: document scrollWidth 2579, clientWidth 1440
+```
+
+The earliest divergence occurs after the four recommended authority radios render,
+before creating an Agent, calling fake Codex, changing workspace files, or testing
+restart continuity. A one-project diagnostic rerun at `1280x800` enumerated every
+overflowing element. Each transparent absolute `.preset-grid input` retained the
+global `input { width: 100%; min-height: 38px; ... }` sizing: all four inputs had
+`clientWidth=1280`, and their static grid positions produced right edges `1589`,
+`1826`, `2063`, and `2299`. The accepted visible form looked clipped only because
+the main content surface hides X overflow; the document geometry was still invalid.
+
+This establishes `UI-03` causally. The minimal correction belongs to the Fixer:
+bound only the visually hidden native radio dimensions while preserving labels,
+selection, keyboard semantics, and all accepted styling. The Worker did not edit
+React, CSS, or any production file, did not weaken the no-overflow gate, and did not
+attempt the separately labelled sparse live acceptance while deterministic E2E-01
+was red. Live call count: **0**. E2E-01 remains blocked with no acceptance gate
+claimed.
+
+### Independent Auditor reproduction
+
+**Evidence candidate:** `7b92813550f192d2b45e3e4e39f473b99c084615`
+
+**Docs integrated as:** `eb44d8633aa7e78cc7b89ea69e9215e3755be178`
+
+The candidate diff from `ace01ae` contains only this log, `FIXES.md`, and the
+`E2E-01` ledger row. It does not contain the Worker's unfinished E2E-01 code or any
+React, CSS, API, runtime, test configuration, dependency, or production change.
+The Auditor independently drove the integrated built application through access
+token unlock and the Create Agent link using the audited deterministic harness.
+
+At `1280x800`, document geometry was `clientWidth=1280`, `scrollWidth=2299`;
+the four transparent absolute radios were each `1280x38`, with bounds ending at
+`1589`, `1825.75`, `2062.5`, and `2299.25`. At `1440x900`, document geometry was
+`clientWidth=1440`, `scrollWidth=2579`; the radios were each `1440x38`, ending at
+`1749`, `2025.75`, `2302.5`, and `2579.25`. In both cases document height and all
+body X/Y measurements stayed within the viewport. This isolates the failure to
+the root X extent created by the hidden inputs; it is not ordinary page content or
+a vertical-overflow defect.
+
+The browser-computed radio style was `position:absolute`, `opacity:0`, and
+`pointer-events:none`, while global form rules still supplied `width:100%`,
+`min-height:38px`, padding, and a border. The source/geometry causal account is
+therefore confirmed. Existing native semantics were also measured as the
+preservation baseline: Generalist was the initial checked radio and the radio group
+was reached as one Tab stop; ArrowLeft moved both focus and selection to
+Verification; direct focus plus ArrowRight selected the next radio; clicking the
+wrapping Verification label left exactly one radio checked.
+
+No live/model request, Agent creation, fake Codex turn, product edit, or sibling
+branch integration occurred. Temporary screenshots/scripts and the isolated run
+root were removed; no server process remained.
+
+**Verdict:** `UI-03` is independently reproduced with **100% causal-diagnosis
+confidence** and **0% correction completion**. The Fixer must constrain only the
+hidden radio box, explicitly overriding inherited size/spacing properties without
+changing the visible form or native focus/selection/label contract. Required gates
+are focused causal Playwright coverage, `1280x800` and `1440x900` browser/screenshots
+with document/body X/Y invariants, literal `npm run check`, independent rendered
+`ui-reviewer`, and post-integration Auditor rerun. `E2E-01` remains blocked.
+
+## E2E-HARNESS deterministic browser foundation
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Branch/base:** `work/mock-main` / `42d3b517c05a20f6a9e526390e9e82d95306e859`
+
+The repository had the Playwright package but no checked-in configuration, browser
+test, deterministic real-server composition, or fake Codex executable. This
+candidate adds only test infrastructure, two baseline screenshots, root test
+scripts, and evidence documentation. Production server, React, CSS, API, and
+runtime behavior are unchanged.
+
+`tests/e2e/support/test-app.mjs` starts the built Fastify application directly on
+an ephemeral loopback port. Every data, workspace, home, temporary, Codex, and
+Shepherd path is under one exact `.tmp/playwright-harness/run-*` directory. The
+child environment is constructed from an allowlist instead of spreading
+`process.env`: Ark/model values are empty, the execution mode is deterministic,
+and no `.env` loader or live model path runs. Startup uses a bounded fake Codex
+protocol executable and a startup-only fake container engine that permits only the
+two ownership-filtered empty `ps` reconciliation calls. There is no production
+debug/fault route. Readiness polls the real health endpoint; teardown sends
+`SIGTERM`, bounds the wait, retains a `SIGKILL` fallback, removes only the exact
+allocated run root, and is tested to close the port.
+
+Observed focused verification with Playwright `1.62.1` and repo-local Chrome for
+Testing/Chromium `151.0.7922.34`:
+
+```sh
+npm run test:e2e:install
+# Chromium, headless shell, and FFmpeg installed below ignored .tmp/
+
+npm run test:e2e:harness
+# build passed
+# Node harness tests: 2/2 passed
+# Playwright Chromium: 2/2 passed using one worker
+```
+
+The Node tests verify the fake Codex version/run/resume protocol, output/prompt
+bounds, real HTTP health, required bearer authentication, unauthenticated 401,
+authenticated system state, `codexAvailable=true`, deterministic/local runtime,
+real production HTML, ambient-Ark exclusion, and state/process/port cleanup. A
+planted ambient Ark canary and the test bearer token were absent from persisted
+state, the system API payload, and bounded server logs.
+
+The Playwright test unlocks the real app through the access-token form, waits for
+the Shepherd heading and `Kernel online`, verifies the exact browser dimensions,
+asserts document and body scroll sizes do not exceed their client dimensions on
+either axis, and verifies the token is absent from rendered text. Captures were
+written to:
+
+- `docs/ui-review/e2e-harness/1280x800.png`
+- `docs/ui-review/e2e-harness/1440x900.png`
+
+Both captures were visually inspected against PRD 11.7. They preserve the accepted
+cream surface, charcoal sidebar, violet accent, restrained borders/shadows,
+typography and spacing, with no overlap, raw state, or document-level overflow.
+The expected deterministic clean-start runtime warning and empty Mission panels
+are visible. This is harness/baseline evidence only; it does not satisfy the eight
+full PRD journeys, populated/intermediate states, accessibility review, or the
+independent `UI-GATE`.
+
+Repository regression evidence:
+
+```sh
+npm run check
+# both workspace typechecks passed
+# launcher tests: 3/3 passed
+# server: 26 files passed, 1 opt-in file skipped;
+# 555 tests passed, 1 opt-in test skipped
+# web and server production builds passed
+
+git diff --check
+# passed
+```
+
+No external/model API request was made. Secret isolation was exercised through
+store/API/log/DOM checks; no production trust boundary changed, so an independent
+security-reviewer is not required for this test-only candidate. `T`, `C`, `B`, and
+`S` are evidenced. Auditor integration and the `I` gate remain pending.
+
+### Independent Auditor integration
+
+**Candidate:** `fd4953defd4a2e9331bb7dc39f79aea8fbc05342`
+
+**Integrated implementation:** `5b152a0c54ac1ed97c69d69cc84a7e093f5250e9`
+
+The Auditor reviewed the exact parent-relative diff and dependency graph before
+integration. The implementation scope is the Playwright configuration, root test
+scripts, E2E support/fixtures/tests, two PNG baselines, and evidence documentation.
+The existing Playwright `1.62.1` lock entry is reused; `package-lock.json` did not
+change. No server source, web source, CSS, API route, runtime configuration,
+production launcher, `.env` example, or production debug/fault route changed.
+
+Source and focused runtime review confirmed that the built server is spawned
+directly with a constructed child-environment allowlist rather than `process.env`;
+there is no env-file flag or dotenv loader. Ark/model variables are empty, the
+runtime is deterministic and loopback-only, and no model request is possible in
+the exercised state. The real API still requires bearer authentication. The fake
+Codex limits invocation shape, prompt size and output; the fake container engine
+returns only an empty result for the two ownership-filtered startup `ps` probes.
+Readiness is capped at 15 seconds, captured output at 16 KiB, and shutdown at
+`SIGTERM` plus a bounded `SIGKILL` fallback. Each run uses a single exact
+repository-local ignored root; tests proved state-root deletion and port closure.
+
+The candidate was independently tested in a detached audit worktree, then the
+same gates were repeated after integration on `mock-main`:
+
+```sh
+npm run test:e2e:harness:unit
+# build passed; Node harness 2/2 passed
+
+PLAYWRIGHT_BROWSERS_PATH=.tmp/playwright-browsers \
+  npx playwright test --config=playwright.config.ts
+# Chromium 2/2 passed: 1280x800 and 1440x900
+
+npm run check
+# typechecks passed; launcher 3/3; server 26 files and 555 tests passed;
+# one opt-in live file/test skipped; web 40-module build and server build passed
+
+git diff --check
+# passed
+```
+
+Both fresh screenshots had the exact committed dimensions and hashes:
+
+- `1280x800.png`: `07acf85b0cdfe947aca71a3bf26c476a20305761aa7d2f4bf0dca334014bfd05`
+- `1440x900.png`: `3b54e1afe689acee16a8c6a0991e3178f7440f6d2cd9118a03a480bb975ed355`
+
+The Auditor visually inspected both captures. They preserve the accepted charcoal,
+cream and violet design language with legible empty-state hierarchy, no overlap,
+and no document/body X/Y overflow. The access token is absent from DOM text and
+the screenshots; the ambient Ark canary is absent from state, API payloads and
+bounded logs. No server process or per-run state remained after either run. Only
+the expected ignored browser binaries and Playwright last-run metadata remain.
+
+**Verdict:** `E2E-HARNESS` is **AUDITED at scoped 100%** with `T,C,B,S,I` 5/5.
+No independent UI or security reviewer was required because production UI and
+trust-boundary code did not change. This verdict covers only the deterministic
+authenticated clean-shell foundation. `E2E-01` through `E2E-08`, populated and
+composer interactions, accessibility, live-model acceptance, and `UI-GATE` remain
+separate pending work.
+## F-03 Contract verifier infrastructure failure candidate
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Branch/base:** `fix/mock-main` / `origin/mock-main@ace01ae`
+
+The causal regression planted a Contract-only verifier exception containing a
+canary and private diagnostic path. Before the correction, the raw exception
+escaped; the Mission became `failed` with code `unknown` at
+`deterministic_demo`, both Contracts remained `verifying`, both Contract Planes
+remained `inspecting`, and both Agents remained `busy` with
+`currentContractId` retained.
+
+The correction is confined to the existing Contract verification service and
+verifier cancellation boundaries. A thrown verifier infrastructure error or a
+returned mandatory check with status `infrastructure_error` now produces fixed
+`verification_infrastructure_error` evidence at `contract_verification`. Ordinary
+mandatory checks with status `failed` retain `failed_independent_acceptance`.
+One durable mutation sets the throwing/returning Contract and its Plane to
+`verification_failed`/`failed`, interrupts every active sibling Contract/Plane,
+releases all mission-owned Agent and project ownership, and fails the Mission.
+The batch returns promptly, makes bounded best-effort cancellation calls, and
+rejects late sibling completion. Target cancellation remains sticky across
+sequential checks and reserved container creation, prevents later invocation or
+container start, contains repeated cancellation during bounded removal, and allows
+clean exact-ID reuse only after cleanup. Passing verification still requires
+independent evidence; no integration, candidate, or promotion path is entered.
+
+Three read-only review rounds prevented incomplete candidates from release. The
+first found an active sibling beneath a failed Mission. The second fault probe
+found the production container verifier returns infrastructure evidence rather
+than always throwing, plus non-sticky sequential/reserved cancellation. The third
+found a repeated cancel during delayed removal could leave a stale marker and
+cancel later same-ID work. Regressions preserve each failure: blocked sibling plus
+durable reload and late return; returned mandatory infrastructure evidence;
+no sibling verifier invocation; no second sequential check; no `start` after
+reserved cancellation; and delayed removal plus repeated cancel and bounded ID
+reuse. Final re-review reported no blocker, high, or medium finding. The configured
+custom reviewer role was unavailable, so reviews used a separate read-only
+fallback agent.
+
+Observed verification:
+
+```sh
+npm run test -w @launchpad/server -- --run \
+  src/shepherd/service.test.ts src/shepherd/verifier.container.test.ts \
+  -t "terminalizes Contract verification infrastructure failures without promotion or sensitive diagnostics|terminalizes returned Contract verification infrastructure evidence|preserves ordinary failed mandatory Contract acceptance semantics|atomically interrupts a blocked sibling after|does not invoke a sibling verifier after infrastructure terminalization|keeps target cancellation sticky across sequential checks and permits bounded ID reuse|keeps cancellation sticky across reserved container creation before start"
+# 2 files; 8 passed, 34 skipped
+
+npm run test -w @launchpad/server -- --run \
+  src/shepherd/service.test.ts src/shepherd/verifier.container.test.ts \
+  src/shepherd/codex-executor.test.ts src/shepherd/executor.test.ts src/app.test.ts \
+  src/shepherd/recovery.test.ts src/shepherd/recovery.process.test.ts \
+  src/shepherd/state-machine.test.ts src/database.test.ts src/store.test.ts
+# 10 files passed; 185/185 tests passed
+
+npm run check
+# exit 0: both workspace typechecks; launcher 3/3; server 26 files and
+# 563/563 tests passed with one opt-in live file/test skipped;
+# web and server production builds passed
+
+git diff --check
+# exit 0
+```
+
+The planted canary, private path, and raw verifier message were absent from the
+durable Mission detail, public Mission DTO, and persisted store file. No Ark/model
+request was made. Browser/UI and live Runtime gates were not run because this
+candidate changes only backend failure/cancellation orchestration and deterministic tests.
+`T,A,C,S` are fixer-verified; independent Auditor integration gate `I` remains
+pending.
+
+### F-03 independent integration audit
+
+The Auditor reviewed and integrated the corrected candidate as `dc87553` without
+changing UI, dependencies, runtime configuration, public routes, or the existing
+required-check workflow. The state transition uses fixed bounded
+`verification_infrastructure_error` evidence, preserves ordinary mandatory
+acceptance failure, terminalizes all Mission-owned Contract/Plane/Agent/project
+ownership in one durable mutation, and rejects late sibling success before any
+integration, collision, candidate, or promotion path. The container boundary keeps
+cancellation sticky through sequential checks and reserved creation/removal,
+contains repeated cancellation, and releases only the exact target for bounded
+same-ID reuse.
+
+Independent observed results on the candidate and integrated tree:
+
+```sh
+# exact corrected service/verifier selection
+# 2 files passed; 8 passed, 34 skipped
+
+# service/API/recovery/store/state-machine/executor/verifier adjacency
+# 10 files passed; 185/185 tests passed
+
+npm run check
+# launcher 3/3; server 26 files and 563/563 tests passed with one opt-in live
+# file/test skipped; both workspace typechecks and production builds passed
+
+git diff --check
+# passed
+```
+
+The failure regressions reload the durable store after terminalization, release a
+blocked late sibling, and assert the terminal state is unchanged with no green
+verification, integration, collision, candidate, selection, or promotion evidence.
+Canary diagnostics and private paths remain absent from durable state, public DTOs,
+and the store file. No model/network call was made. `F-03` is **AUDITED, scoped
+100%** with `T,A,C,S,I` passed 5/5; hosted Node 22 evidence is recorded after the
+final audit documentation push.
+
+## TST-02 deterministic recovery fixture clock
+
+**Date:** 2026-08-29 (Asia/Singapore)
+**Branch/base:** `work/mock-main` / `6f7660d`
+
+The post-CAS startup-reconciliation fixture created its Git Planes with
+`PlaneManager`'s wall clock but reconciled them at the fixed instant
+`2026-08-29T12:05:00.000Z`. Once wall time passed that instant, recovery attempted
+to persist an `updatedAt` earlier than the Plane's `createdAt`; the store correctly
+rejected the invalid lifecycle state.
+
+The original isolated reproduction was preserved before editing:
+
+```sh
+npm run test -w @launchpad/server -- --run src/shepherd/recovery.test.ts \
+  -t "fails closed, recognizes the exact post-CAS window, cleans private artifacts, and is idempotent"
+# RED: 1 failed, 16 skipped; JsonStore reported
+# "Refusing to persist invalid database state"
+```
+
+The smallest correction is test-only: the affected fixture now passes its existing
+deterministic `12:00Z` clock to `PlaneManager`, so Plane creation precedes the
+deliberate `12:05Z` recovery instant. Production recovery, store validation, and
+lifecycle ordering assertions are unchanged.
+
+Observed GREEN verification:
+
+```sh
+npm run test -w @launchpad/server -- --run src/shepherd/recovery.test.ts \
+  -t "fails closed, recognizes the exact post-CAS window, cleans private artifacts, and is idempotent"
+# 1 passed, 16 skipped
+
+npm run test -w @launchpad/server -- --run src/shepherd/recovery.test.ts
+# 17/17 passed
+
+npm run check
+# exit 0: both workspace typechecks passed; launcher 3/3 passed;
+# server 26 files and 555 tests passed with one opt-in live file/test skipped;
+# web and server production builds passed
+```
+
+No Ark/model request was made. The implementation has `T`, `A`, and `C` evidence;
+independent Auditor integration and the `I` gate remain pending.
+
+### Independent Auditor integration
+
+**Candidate:** `bab6de18e7c28e5f8a132f8d80163f509c890a1e`
+
+**Integrated implementation:** `0cb431a0420e3d7f77784fe4c62b42f92710446c`
+
+The Auditor fetched the candidate without touching the Worker's worktree, reviewed
+the exact parent-relative diff, and found one production-adjacent test change:
+`recovery.test.ts` injects the fixture's existing `12:00Z` clock into its
+`PlaneManager`. The only other changes were this build-log entry and the task row.
+No production, UI, store, recovery, lifecycle-validation, API, security, dependency,
+or configuration file changed. `git show --check` and the parent-to-candidate diff
+check passed.
+
+The candidate was first verified in a separate detached repository-local audit
+worktree:
+
+```sh
+npm run test -w @launchpad/server -- --run src/shepherd/recovery.test.ts \
+  -t "fails closed, recognizes the exact post-CAS window, cleans private artifacts, and is idempotent"
+# 1 passed, 16 skipped
+
+npm run test -w @launchpad/server -- --run src/shepherd/recovery.test.ts
+# 17/17 passed
+
+npm run check
+# launcher 3/3; server 26 files and 555 tests passed;
+# one opt-in live file/test skipped; both production builds passed
+```
+
+After cherry-picking the candidate onto `mock-main` as `0cb431a`, the Auditor ran
+the same integrated-SHA gates again with the same counts: isolated 1/1, recovery
+17/17, launcher 3/3, server 555/555 with one opt-in skip, and both builds green.
+The audit worktree was clean and removed after verification; the main worktree was
+clean before integration.
+
+**Verdict:** `TST-02` is **AUDITED at scoped 100%** with `T,A,C,I` 4/4. The fixed
+fixture clock removes the time-dependent test failure while strict lifecycle/store
+validation remains unchanged. Browser, live-model, UI-review, and security-review
+gates were not run because this correction changes only deterministic test setup
+and evidence documentation.
 ## TST-02 recovery fixture clock candidate
 
 **Date:** 2026-08-29 (Asia/Singapore)
@@ -1910,3 +4229,216 @@ Administration (write) for ruleset creation. CI-01 therefore remains open for:
 3. merge-group execution proof only if a merge queue is enabled.
 
 No repository rule was created or changed by the workflow or this evidence update.
+
+## 2026-08-30 — E2E-02 Worker candidate
+
+The Worker added a model/network-free real-browser hero journey on the audited
+deterministic verifier fixture. It exercised 13 material stages at `1280x800` and
+`1440x900`, from active Contracts through protected promotion and Project Group
+summaries, with backend API, Git, persisted-store and bounded verifier-ledger
+oracles. Focused Chromium passed twice (4/4 total), the full Chromium suite passed
+12/12, and harness unit coverage passed 7/7. All 26 ignored screenshots were
+visually inspected; document/body overflow, clipping and theme drift were absent.
+
+The journey also passed bearer-auth 401, keyboard/focus and evidence-tab controls,
+same-base/distinct-branch candidate identity, 11/11/11 verifier
+create/complete/remove operations, no-network/read-only verifier constraints,
+public DTO/DOM/store/log canary scans, canonical protected output, outside-write
+canary, reset restoration and exact port/process/container/root cleanup. It made
+zero live/model calls and did not change production code, UI or CSS. E2E-02 remains
+at 95% until independent Auditor review and hosted integration evidence; `GC-06`
+remains open because lifecycle summaries are truthfully Shepherd-authored.
+
+## 2026-08-30 — F-01/02 Worker candidate
+
+The original two-case RED proved that typed Agent Runtime timeout and execution
+failures both reached the Mission as `unknown`. The candidate introduces one
+bounded typed Runtime error across the container and executor redaction boundary.
+A timeout now persists Contract `execution_timed_out` with `agent_timeout`; a
+non-timeout execution failure persists `execution_failed` with
+`agent_runtime_error`. Both produce the same causal failure on the failed Plane,
+logical Agent and failed Mission, release active project/Contract ownership, emit
+bounded durable event details, survive store reload and public DTO conversion, and
+leave collision/candidate/promotion state empty. Untyped exceptions remain
+`unknown`; cancellation, verifier infrastructure and candidate behavior are
+unchanged and no message regex was added.
+
+The RED 2/2 became GREEN 3/3 including the untyped control. Runner/executor/service
+focused coverage passed 11/11, adjacent runner/executor/service/API/store coverage
+passed 102/102, strict test typecheck passed, and two literal
+`npm run check` runs passed server 606/606 with two opt-in skips, Web 17/17, launcher
+3/3 and both builds. No live/model call, UI/theme change or schema migration ran.
+F-01/02 remains at 95% pending independent Auditor and hosted integration evidence.
+## 2026-08-30 — TST-13 bounded Agent Runtime failure candidate
+
+- **Branch/base:** `fix/f-01-02-runtime-redaction` from Auditor evidence
+  `b03b17f` (F-01/02 parent `685e4ff`); pushed before implementation.
+- **RED:** non-zero Agent Runtime output selected parsed error/raw stderr as
+  `RuntimeExecutionError.message`. Executor secret/path redaction retained opaque
+  diagnostics, and Contract/candidate failure paths persisted that message through
+  Mission, Contract, Plane, Agent, events, state/reload and public DTO.
+- **Correction:** `RuntimeExecutionError` constructs fixed bounded text from a
+  runtime-normalized closed kind and optional positive safe-integer timeout; its
+  public kind/deadline fields are non-writable. `ContainerCodexRunner.run`
+  reconstructs cancellation/typed errors and maps every other create/start/child/
+  cleanup operational failure to fixed execution text. Executor and service
+  Contract/candidate boundaries reconstruct again before durable/public use. No raw
+  stdout/stderr, parsed failure, model output, path, command or cause is retained.
+- **Causal evidence:** planted parsed-output, stderr, create-exit, synchronous spawn,
+  opaque benign, secret, private-path, hostile-kind and invalid-timeout canaries are
+  absent from Error message/string/stack/inspection/cause and Contract, Plane,
+  Mission, Agent `lastError`, events, raw store, reload and public mission DTO.
+  Candidate Runtime failure exhausts in `attention_required`, starts no promotion,
+  creates no promoted candidate and leaves the protected head at Mission base.
+- **Observed checks:** runner 22/22; focused runner/executor/service 75/75; adjacent
+  service/verifier/model/config 226/226; strict Server test typecheck green; first
+  literal `npm run check` green (launcher 3/3, Server 607 passed + two explicit
+  skips, Web 17/17, production builds green). No live/model/network call ran.
+- **Security review:** first read-only pass found create/spawn diagnostics and the
+  candidate path; second found hostile `kind` mutation. Both were corrected with
+  causal tests. Final read-only follow-up reports no remaining High/Medium finding
+  and a scoped PASS. Second literal `npm run check` is green (launcher 3/3,
+  Server 609 passed + two explicit skips, Web 17/17, production builds green).
+  Auditor U/I remain required.
+## 2026-08-30 — TST-14 execution-home cleanup precedence candidate
+
+- **Branch/base:** `fix/f-01-02-private-home-cleanup` from Auditor evidence
+  `61b3ced` atop bounded Runtime chain `c7b5175`; pushed before edits.
+- **RED:** execution-private-home `rm()` threw its raw opaque/path/OS diagnostic
+  from `finally`, overriding success, cancellation, typed timeout and typed execution
+  in all four controlled rows.
+- **Correction:** executor records only whether a primary outcome failed, clears its
+  active/cancellation ownership, and always attempts exact scoped home removal. A
+  cleanup-only failure becomes fresh fixed typed execution failure; any primary
+  cancellation/timeout/execution remains authoritative. Raw cleanup error is neither
+  attached as cause nor persisted. Failed `0700` owner-scoped homes remain eligible
+  for bounded reconciliation rather than being followed outside their root.
+- **Causal evidence:** 4/4 outcome rows exclude opaque, configured-secret, Mac path
+  and OS-code canaries from Error/string/stack/inspection/cause; inactive cancel
+  returns false; reconciliation removes exactly the retained home; a later distinct
+  execution succeeds and cleans. Contract state proves Mission/Contract/Plane/Agent,
+  event, raw store, reload, public DTO, real `GET /api/shepherd/missions/:id` response
+  and console error/warn capture are canary-free. Candidate cleanup failure exhausts
+  to attention, never starts promotion and leaves protected head at Mission base.
+- **Observed checks:** executor including OPS-06/preflight 21/21; focused/adjacent
+  108/108; strict Server test typecheck; first literal `npm run check` green with
+  launcher 3/3, Server 615 passed + two explicit skips, Web 17/17 and both builds.
+  No live/model/UI/network call ran.
+- **Security review:** initial read-only review found no High/Medium and requested
+  explicit inactive-cancel, log-capture, HTTP and OPS-06 evidence; all are now covered.
+  Final follow-up reports no High/Medium or material evidence gap. A full-suite run
+  exposed and corrected one test-only overclaim: under contention, an unrelated
+  candidate can fail before executor cleanup, so the assertion now requires all
+  candidates terminal/no-promotion, at least one causal fixed cleanup failure and
+  universal canary absence. No timeout/product change was made. Two post-correction
+  literal checks pass identically (launcher 3/3, Server 615 + two explicit skips,
+  Web 17/17, strict types and builds). Auditor U/I remain required.
+## 2026-08-30 — TST-15 bounded sentinel/reconciliation filesystem policy
+
+- **Branch/base:** `fix/f-01-02-sentinel-cleanup` from Auditor evidence `6eb20d0`
+  atop TST-14 `3afc452`; pushed before edits.
+- **RED:** sentinel adoption open attached raw cause; validation/adoption close could
+  override bounded primary errors; failed unlink was swallowed; interrupted private-
+  home and preflight-workspace rm escaped raw errno/path/OS diagnostics. Independent
+  review then identified the adjacent pre-open lstat/chmod/readdir family.
+- **Correction:** one internal `BoundedFilesystemError` policy emits only closed
+  stage/reason text for sentinel validation/adoption and private-home/preflight-
+  workspace reconciliation. It never retains raw cause/detail. Primary failure wins
+  over close/unlink double faults, cleanup-only fails closed, and all exact cleanup
+  attempts still run. Same-process failed sentinel unlink is remembered for exact
+  retry; rm failures retain the exact contained target. No broad delete, fallback,
+  symlink relaxation or public error code was added.
+- **Causal evidence:** faults cover adoption open; existing-sentinel lstat/chmod;
+  pre-adoption readdir/chmod; validation close and read+close; adoption close-only and
+  write+close+unlink; a second failed pending unlink then success; interrupted home
+  and preflight-workspace rm. Opaque/secret/Mac/Linux/errno/path canaries are absent
+  from Error/string/stack/inspection/cause and service initialization Error/cause,
+  store and console logs. Every retained target is observed, retried and removed.
+- **Residual:** pending sentinel ownership is process-local. After restart, an
+  invalid retained sentinel fails closed and may require operator cleanup. This is
+  intentionally not described as automatic cross-process recovery.
+- **Observed checks:** executor 33/33 (also independently rerun); focused/adjacent
+  120/120; strict Server test types; two literal `npm run check` passes, each with
+  launcher 3/3, Server 627 passed + two explicit skips, Web 17/17 and both builds.
+  No live/model/UI/network call ran.
+- **Security review:** first pass found one Medium pre-open family and four evidence
+  gaps. After correction, final read-only re-review reports PASS with no High,
+  Medium or material gap; containment and symlink protections remain unchanged.
+  Auditor U/I remain pending.
+
+## 2026-08-30 — F-05 Worker candidate
+
+- **RED/correction:** a real add/add Git conflict was detected and aborted by the
+  Git boundary, but the service persisted generic `unknown/background_demo` and
+  left the integration Plane inspecting. The narrow correction maps the existing
+  typed conflict to fixed `git_conflict/integration_merge`, marks only the
+  integration Plane failed, and records bounded event evidence.
+- **Boundaries:** ten validated repo-relative conflicts prove an exact total count,
+  an eight-path preview capped at 48 characters, and rejection of absolute,
+  traversal and control paths (backslashes normalize to `/`). No raw Git output,
+  host path or cause is persisted or exposed through the public Mission DTO.
+- **State/cleanup:** source Contracts remain verified and inspectable; Agents are
+  released; candidates/collisions remain empty; protected HEAD does not move. Git
+  merge abort leaves the retained integration worktree clean. Deterministic reset
+  removes all retained Plane worktrees and branches while preserving repository
+  HEAD and an outside canary.
+- **Observed checks so far:** causal 2/2; adjacent service, Git promotion, recovery,
+  store and API 110/110; strict production/test types; first literal `npm run check`
+  passed launcher 3/3, Server 666 passed + two opt-in skips, Web 17/17 and both
+  builds. After adding explicit reset and unsafe-path boundary proof, the second
+  literal gate passed launcher 3/3, Server 667 passed + two opt-in skips, Web 17/17
+  and both builds. Independent Auditor `I` remains pending; no live, model, network
+  or UI-design call ran.
+
+## 2026-08-30 — F-04 Worker candidate
+
+The causal RED used the existing internal fault checkpoint to place a partial
+managed destination immediately before initial Contract Plane creation. Plane
+Manager correctly rolled it back, but the owning Contract remained queued and the
+Mission persisted generic `unknown/background_demo`. The candidate recognizes the
+existing `PlaneCreationError` without exposing its cause, persists fixed bounded
+`worktree_creation_failure/plane_creation` evidence on the owning Contract and
+Mission, releases the logical Agent/project, and records no Plane for a resource
+that never completed creation. Executor and verifier calls remain zero; no
+integration, collision, candidate or promotion state exists.
+
+The original RED became GREEN 1/1. A separate real-Git integration fault after
+worktree attachment proves rollback of the partial worktree and `shepherd/`
+branch, unchanged protected HEAD/file canary, and a fixed public error message.
+Focused coverage passed 2/2; adjacent service/Git/recovery/API/store coverage
+passed 107/107; strict test types and two literal `npm run check` runs passed
+launcher 3/3, Server 663/663 with two opt-in skips, Web 17/17 and both builds. No
+live/model/network/UI/schema change ran. F-04 remains 95% pending independent
+Auditor, security and hosted integration evidence.
+
+## 2026-08-30 — F-06 Worker candidate
+
+- **Scope:** the representative Mission `running -> verifying` write after two
+  verified Contracts and before integration now uses `mutateRecoverably`. The
+  generic store primitive is not claimed as entity-aware recovery for arbitrary
+  mutations.
+- **Journal contract:** the adjacent version-1 sidecar contains only an allowlisted
+  operation, Mission/two Contract/two Plane IDs, fixed stage, timestamp and SHA-256
+  of the exact canonical sanitized bytes written by the shared serializer. It is
+  capped at 8 KiB, mode/owner checked where supported, opened no-follow, and uses
+  temp/write/file-sync/close/rename/parent-directory-sync. Unix/macOS directory
+  sync errors fail bounded; Windows retains file sync, atomic rename and digest
+  reconciliation but cannot claim the same sudden-power-loss directory guarantee.
+- **Recovery:** old digest means the transition did not commit and startup records
+  exactly one bounded `persistence_error` attention event; changed digest must
+  match the committed `verifying` state or a prior exact reconciliation. Pending
+  recovery blocks ordinary mutations and event allocation. Agents are released,
+  Contracts/Planes remain verified, project attention remains active, and no
+  integration/candidate/promotion/protected-head mutation occurs. Reset after
+  cancellation removes the journal and retained Planes.
+- **Fault evidence:** all six journal stages, six primary stages and two journal
+  removal stages are injected. Rename/directory-sync ambiguity, immediate recovery,
+  two restarts/no duplicate, concurrent mutation denial, corrupt/oversize/symlink,
+  unknown IDs, stale precondition and digest mismatch pass with bounded errors and
+  no secret/path/errno canary on public/store/Error/stack surfaces.
+- **Observed checks:** store 34/34; focused persistence/recovery 23/23; adjacent
+  store/service/recovery/API 116/116; first literal `npm run check` passed launcher
+  3/3, Server 700 passed + two opt-in skips, Web 17/17, strict types and both builds.
+  A second literal gate passed with the same counts. Independent
+  Auditor/security/hosted evidence remains. No live/model/network/UI-design call
+  ran.

@@ -58,6 +58,10 @@ export interface ShepherdHttpService {
     content: string;
     preset: "auth-demo";
     clientMessageId?: string;
+    frontendAgentId?: string;
+    backendAgentId?: string;
+    frontendTransport?: "bearer-jwt" | "http-only-session-cookie";
+    backendTransport?: "bearer-jwt" | "http-only-session-cookie";
   }): Promise<{ missionId: string; message: ProjectGroupMessage }>;
   projectGroupMessages(projectId: string, limit?: number): ProjectGroupMessage[];
   sendProjectGroupMessage(
@@ -392,10 +396,13 @@ const toPublicEvent = (
 const toPublicGroupMessage = (
   message: ProjectGroupMessage,
   secrets: readonly string[],
-): ProjectGroupMessage => ({
-  ...message,
-  content: safeText(message.content, secrets, 2_000),
-});
+): ProjectGroupMessage => {
+  const { requestFingerprint: _requestFingerprint, ...publicMessage } = message;
+  return {
+    ...publicMessage,
+    content: safeText(message.content, secrets, 2_000),
+  };
+};
 
 export const toPublicAgent = (
   agent: Agent,
@@ -711,6 +718,31 @@ const shepherdMessageBody = z
     content: z.string().trim().min(1).max(2_000),
     preset: z.string().trim().min(1).max(32),
     clientMessageId: safeIdSchema.optional(),
+    assignments: z
+      .object({
+        frontend: z
+          .object({
+            agentId: z.string().uuid(),
+            transport: z.enum(["bearer-jwt", "http-only-session-cookie"]),
+          })
+          .strict(),
+        backend: z
+          .object({
+            agentId: z.string().uuid(),
+            transport: z.enum(["bearer-jwt", "http-only-session-cookie"]),
+          })
+          .strict(),
+      })
+      .strict()
+      .refine(
+        (value) => value.frontend.agentId !== value.backend.agentId,
+        "Frontend and Backend assignments require different Agents",
+      )
+      .refine(
+        (value) => value.frontend.transport !== value.backend.transport,
+        "The collision demo requires incompatible authentication transports",
+      )
+      .optional(),
   })
   .strict();
 const groupMessageBody = z
@@ -970,6 +1002,14 @@ export async function createApp(
         ...(body.clientMessageId === undefined
           ? {}
           : { clientMessageId: body.clientMessageId }),
+        ...(body.assignments === undefined
+          ? {}
+          : {
+              frontendAgentId: body.assignments.frontend.agentId,
+              backendAgentId: body.assignments.backend.agentId,
+              frontendTransport: body.assignments.frontend.transport,
+              backendTransport: body.assignments.backend.transport,
+            }),
       });
       return reply.code(202).send({
         status: "accepted",

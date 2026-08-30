@@ -6,7 +6,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentService } from "./agent-service.js";
 import { loadConfig } from "./config.js";
 import { emptyDatabase } from "./database.js";
@@ -41,7 +41,10 @@ afterEach(async () => {
   );
 });
 
-async function makeService(runner: AgentRunner = new FakeRunner()): Promise<AgentService> {
+async function makeService(
+  runner: AgentRunner = new FakeRunner(),
+  configOverrides: Record<string, string | undefined> = {},
+): Promise<AgentService> {
   const testRoot = path.resolve(process.cwd(), ".tmp", "agent-service-tests");
   await mkdir(testRoot, { recursive: true });
   const root = await mkdtemp(path.join(testRoot, "case-"));
@@ -53,6 +56,7 @@ async function makeService(runner: AgentRunner = new FakeRunner()): Promise<Agen
     CODEX_HOME: path.join(root, "codex"),
     ARK_API_KEY: "test-key",
     ARK_MODEL: "ep-test",
+    ...configOverrides,
   });
   const service = new AgentService(
     config,
@@ -63,6 +67,20 @@ async function makeService(runner: AgentRunner = new FakeRunner()): Promise<Agen
   await service.initialize();
   return service;
 }
+
+describe("System capabilities", () => {
+  it("reports only whether the Shepherd model reviewer is configured", async () => {
+    const configured = await makeService();
+    const unavailable = await makeService(new FakeRunner(), { ARK_API_KEY: "" });
+
+    await expect(configured.systemInfo()).resolves.toMatchObject({
+      shepherdModelReviewConfigured: true,
+    });
+    await expect(unavailable.systemInfo()).resolves.toMatchObject({
+      shepherdModelReviewConfigured: false,
+    });
+  });
+});
 
 const persistedAgent = (workspacePath: string): Agent => ({
   id: "persisted-agent",
@@ -172,6 +190,43 @@ describe("Agent lifecycle", () => {
     expect((await service.startAgent(agent.id)).status).toBe("ready");
     await expect(service.deleteAgent(agent.id)).resolves.toEqual({ deleted: true });
     expect(service.listAgents()).toHaveLength(0);
+  });
+
+  it("does not stop an Agent reserved by Shepherd while cancellation is pending", async () => {
+    let cancellationStarted!: () => void;
+    const cancellationObserved = new Promise<void>((resolve) => {
+      cancellationStarted = resolve;
+    });
+    let releaseCancellation!: () => void;
+    const cancellationBarrier = new Promise<void>((resolve) => {
+      releaseCancellation = resolve;
+    });
+    const service = await makeService({
+      run: async () => ({ output: "done", threadId: "thread", usage: null }),
+      cancel: async () => {
+        cancellationStarted();
+        await cancellationBarrier;
+        return true;
+      },
+      isAvailable: async () => true,
+    });
+    const agent = await service.createAgent({ name: "Reserved during stop" });
+    const stop = service.stopAgent(agent.id);
+    await cancellationObserved;
+    const store = (service as unknown as { store: JsonStore }).store;
+    const reservedSnapshot = store.snapshot();
+    const reserved = reservedSnapshot.agents.find((item) => item.id === agent.id);
+    if (!reserved) throw new Error("Test Agent disappeared");
+    reserved.currentContractId = "contract-race-guard";
+    reserved.status = "busy";
+    const mutation = vi.spyOn(store, "mutate").mockImplementationOnce(async (mutator) => {
+      return await mutator(reservedSnapshot);
+    });
+    releaseCancellation();
+
+    await expect(stop).rejects.toMatchObject({ statusCode: 409 });
+    expect(mutation).toHaveBeenCalledOnce();
+    expect(service.getAgent(agent.id)).toMatchObject({ status: "ready" });
   });
 
   it("persists role and normalized scoped authority across restart", async () => {

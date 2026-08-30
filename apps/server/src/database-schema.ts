@@ -557,6 +557,7 @@ const groupMessageSchema = z
     content: textSchema,
     targetAgentId: nullableIdSchema,
     contractId: nullableIdSchema,
+    requestFingerprint: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
     createdAt: timestampSchema,
   })
   .strict();
