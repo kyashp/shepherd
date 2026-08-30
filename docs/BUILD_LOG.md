@@ -7,6 +7,19 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — protected-main promotion and exact post-merge gate
+
+- PR #52 passed hosted `Node 22 / npm run check` and merged the documentation and
+  workflow candidate into retained campaign branch `mock-main` at `017e07e`.
+- Promotion PR #53 was mergeable with no main-only commit. Both hosted checks—
+  `Required checks` and `Node 22 / npm run check`—passed before it merged into
+  protected `main` at `5ccd0f143146b2c303be90dc1337e02bb6986459`.
+- On that exact protected-main merge, literal `npm run check` passed locally:
+  launcher 3/3; Server 739 passed plus two explicit opt-in skips; Web 18/18; strict
+  production/test type checks and both production builds passed.
+- The campaign branch was intentionally retained. This follow-up changes only
+  promotion provenance in documentation; it does not change product or UI code.
+
 ## 2026-08-30 — protected-main hackathon integration candidate
 
 - Base: campaign integration merge `005a51e02ab39a995803b4ed3717ee0ee55cae6c`,
