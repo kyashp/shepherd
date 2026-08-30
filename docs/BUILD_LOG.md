@@ -210,6 +210,123 @@ protected-main integration is not claimed.
   joined causally. Protected-main integration remains pending. The same-OS-user
   recursive-path swap and Project-journal sudden-power-loss ordering are retained as
   Low residuals under the existing single-owner local PoC threat/availability model.
+## 2026-08-30 — OPS-06 `A` and `S` gates, and a corrected reconciliation
+
+Protected `main` advanced to `f900656` (PR #71) while this reconciliation branch was
+open; hosted exact-head gate run `33305530655` passed on it. The entry below remains
+true for `b80af11`, the head it names. No live or model call ran.
+
+- **`A` gate (PR #68).** Four guards introduced or relied on by the container state
+  volume appeared only in source and in no test, so each could be deleted with a
+  green suite. Eight causal tests were added for the verifier fail-closed branch,
+  the three executor state-root guards, the `index.ts` verifier composition and the
+  launcher probe/fallback selection. Each was proven by mutating its guard and
+  observing the test fail; all source was restored afterwards. Two of the tests
+  initially passed for the wrong reason — one assertion was satisfied by the
+  following guard's message, since both end in `escaped CONTAINER_STATE_ROOT`, and
+  the launcher assertions read `stdout` while the launcher logs to `stderr`. Both
+  were corrected.
+- **`S` gate (PR #69).** An independent read-only review of the merged range
+  returned **FAIL**: one High and two Medium findings, all against `e6a5878`, which
+  removed the non-loopback `APP_AUTH_TOKEN` requirement inside the same merge with
+  `gh pr view 56 --json reviews` returning `[]`. The container state volume itself
+  passed: the mount construction was attacked directly and no escape was found.
+- **Adversarial re-review of both branches then found three defects in the first
+  corrections, each reproduced rather than argued.** The new deploy guard was
+  defeated by a whitespace-only token and by a CRLF environment file, because the
+  shell tested only for the empty string while the server trims before validating,
+  so both shapes reached the container as an empty token and disabled the bearer
+  boundary — the original finding verbatim. The guard now strips CR and surrounding
+  whitespace as the schema does and applies the same 24-character non-placeholder
+  floor as `config.ts` and `deploy/volcengine/variables.tf`. Separately, that
+  guard's only regression test was executed by no gate: the root `test` script names
+  a single file under `scripts/` and is not a glob, so `npm run check` would have
+  stayed green with the guard deleted; it is now named in that script, and deleting
+  the guard fails the gate. Finally, `index.composition.test.ts` could pass on the
+  exact regression it exists to catch, because its `indexOf("});")` end anchor
+  overshoots when the call is closed in the expanded argument style; the anchor is
+  now a close at column zero, comments are stripped from the window, and the
+  reproduction now fails both assertions.
+- **The High finding is only partly closed.** The guarded deploy script is one of
+  three documented compose entry points; `README` still documents
+  `docker compose up --build` and `docker compose --env-file .env.production up -d`
+  against the same unguarded `docker-compose.yml`, which binds `0.0.0.0` and
+  publishes its port with no address prefix. Pinning that file to loopback was
+  rejected because the profile is meant to be reachable behind a security group and
+  the same file serves the local Docker path. The remainder is carried into
+  `SEC-REVIEW`. This merge must not be recorded as closing it.
+- **Corrections to this branch's own earlier entry.** The `CHAT-01` row was left
+  internally contradictory: a guarded replacement silently matched nothing, so the
+  row still opened `REVIEWED CANDIDATE` while its body already said integration was
+  done. It now reads `INTEGRATED` at `cd82ec4`. An earlier local suite run reported
+  here was discarded rather than recorded, because it spanned a branch switch and
+  observed a mixed tree: it counted 32 test files where `main` has 29.
+- **`TST-25` is resolved** at `e06357c` (PR #71, issue #70) by canonicalizing the
+  test's own temporary root before `mkdtemp`, leaving the fixture assertion intact.
+
+## 2026-08-30 — post-merge reconciliation at integrated `b80af11`
+
+Protected `main` at `b80af11` (merge of PR #56). That head also carries PR #57
+merge `cd82ec4` and PR #60 merge `39cd800`. Same affected host as the entries
+below. No live or model call ran; no Mission was started.
+
+- **Hosted exact-head gate.** Run `33300759535`, event `push`, head branch `main`,
+  head SHA `b80af11`, job `Node 22 / npm run check` on `ubuntu-latest`: success,
+  every step green, 08:06:09Z to 08:08:43Z. This is the green Linux full gate that
+  the `OPS-06` row previously listed as outstanding.
+- **Local rerun on the same SHA.** `npm run typecheck` passed; launcher tests 3/3;
+  web 18/18; both production builds passed. The server suite run serially
+  (`--no-file-parallelism --maxWorkers=1`) reported **745 passed, 6 failed, 6
+  skipped**. The six failures are the recorded affected-host timing condition, not
+  regressions: five in `recovery.process.test.ts` (`Timed out waiting for
+  recovered` with empty child stderr — the forked `--import tsx` child never
+  crashed, it simply exceeded the 25s budget), plus the previously recorded
+  `expected 'resolving' to be 'attention_required'` flake in `service.test.ts`.
+  An earlier attempt to run the suite from the repository root is not evidence:
+  that invocation left `process.cwd()` outside the workspace, so the executor's
+  source-inventory test raised `ENOENT` and the Playwright specs were globbed into
+  the Vitest run.
+- **`npm run test:e2e:harness:unit` on `b80af11`: 6 passed, 1 failed.** The failure
+  is `fake Codex fixture implements bounded deterministic version, run, and
+  resume`, with `fake-codex: workspace identity must be canonical`. This is a real
+  test-only defect, not an environment quirk: `tests/e2e/harness.test.mjs:38`
+  builds its workspace with `mkdtemp(path.join(os.tmpdir(), …))`, and on macOS
+  `os.tmpdir()` is a symlink, so the deliberate `realpath` identity assertion at
+  `tests/e2e/fixtures/fake-codex.mjs:69` correctly rejects it. The repository's own
+  idiom is already `tests/e2e/support/test-app.mjs:93`. This target is not part of
+  `npm run check`, so no hosted run covers it. Recorded as a new defect; the
+  fixture's assertion must not be weakened.
+- **`LIVE-01` cannot run on this host, and the attempt was deliberately not
+  spent.** `live-runtime.integration.test.ts:182-185` pins
+  `CONTAINER_STATE_ROOT` and `CONTAINER_STATE_VOLUME` to `undefined`, so the gate
+  bind-mounts `.tmp/shepherd-live-gate/…` — a host share on this machine — and the
+  OPS-06 container-volume correction cannot apply to it. Two zero-spend probes
+  against the Runtime image confirmed the split on the exact gate path: a plain
+  write to a host-share bind mount inside the container succeeded (exit 0), while
+  the identical write under `codex sandbox linux --full-auto` was denied
+  (`cannot create /workspace/.p: Permission denied`, exit 2). A named-volume
+  control was inconclusive because a freshly created volume is root-owned, so the
+  denial there was ownership rather than Landlock; the bind-mount pair above is the
+  discriminating evidence. Running the gate here would therefore fail at
+  `stage=container_start reason=sandbox_probe_failed` and consume the no-retry
+  allowance for no evidence. `LIVE-01` needs a Linux host, or a change making the
+  gate volume-aware, which is outside an `L` run.
+- **Ledger reconciliation.** The header pointer, the baseline hosted-gate and
+  server-suite rows, the presentation-host caveat, and the `OPS-06`, `CHAT-01` and
+  `LIVE-01` rows described merged work as unmerged candidates and cited hosted runs
+  that were not on the exact head. Corrected from the evidence above.
+  `docs/FIXES.md` carried the same stale `CANDIDATE PENDING AFFECTED-HOST GATE`
+  wording for `OPS-06` and was corrected with it.
+- **Issue split.** `#47` bundled `OPS-06` and `LIVE-01`, which need different
+  hosts, so neither could close. `LIVE-01` moved to issue `#65` with the probe
+  evidence above; `#47` is re-scoped to `OPS-06` only and remains closeable on this
+  host once `A` and `S` land. `main` has since advanced to `a1f1fcc` (PR #62); the
+  evidence in this entry is scoped to `b80af11` and is not restated for that head.
+- **Not claimed.** The `A` and `S` gates for `OPS-06` remain open. `A` is missing
+  the verifier composition at `apps/server/src/index.ts:77-78`, the launcher
+  probe/fallback selection, and the verifier fail-closed branch. `S` is unmet and
+  must also cover `e6a5878`, which removed the non-loopback `APP_AUTH_TOKEN`
+  requirement inside the same merge and carries no recorded independent review.
 
 ## 2026-08-30 — the launcher selects its own state layout
 
