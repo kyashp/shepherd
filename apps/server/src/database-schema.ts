@@ -1479,8 +1479,19 @@ function hasValidReferences(database: DatabaseV2): boolean {
       return false;
     }
     if (message.targetAgentId && !agents.has(message.targetAgentId)) return false;
-    if (message.senderType === "agent" && (!message.senderId || !agents.has(message.senderId))) {
-      return false;
+    if (message.senderType === "agent") {
+      if (
+        !message.senderId ||
+        !agents.has(message.senderId) ||
+        !contract ||
+        contract.agentId !== message.senderId ||
+        message.targetAgentId !== message.senderId ||
+        contract.state !== "verified" ||
+        !contract.manifest ||
+        message.content !== contract.manifest.summary
+      ) {
+        return false;
+      }
     }
     if (message.contractAssignment) {
       const targetAgent = message.targetAgentId

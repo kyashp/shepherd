@@ -530,6 +530,11 @@ export interface DeterministicDemoOptions {
     frontend: PrivateContractPromptRecord;
     backend: PrivateContractPromptRecord;
   };
+  /** Durable Project Group records atomically bound to fixed server-owned Contracts. */
+  groupPromptRecords?: {
+    frontend: PrivateContractPromptRecord;
+    backend: PrivateContractPromptRecord;
+  };
   /** Internal durable request binding used by the HTTP Mission command. */
   requestRecord?: {
     messageId: string;
@@ -899,6 +904,7 @@ export class ShepherdService {
     }
   >();
   private privatePromptTail: Promise<void> = Promise.resolve();
+  private projectGroupMessageTail: Promise<void> = Promise.resolve();
 
   constructor(options: ShepherdServiceOptions) {
     this.store = options.store;
@@ -1341,7 +1347,29 @@ export class ShepherdService {
       .slice(-limit);
   }
 
+  async initializeProjectGroup(): Promise<ShepherdProject> {
+    return await this.serializePrivatePrompt(async () => {
+      await this.initialize();
+      const initializedAt = this.timestamp();
+      return await this.store.mutate(async (database) => {
+        await this.ensurePrivatePromptProject(database, initializedAt);
+        const project = database.shepherd.projects.find((item) => item.id === "auth-demo");
+        if (!project) throw new Error("Project Group initialization did not create the auth demo project");
+        return structuredClone(project);
+      });
+    });
+  }
+
   async sendProjectGroupMessage(
+    projectId: string,
+    input: SendProjectGroupMessageInput,
+  ): Promise<ProjectGroupMessage> {
+    return await this.serializeProjectGroupMessage(async () =>
+      await this.sendProjectGroupMessageOnce(projectId, input),
+    );
+  }
+
+  private async sendProjectGroupMessageOnce(
     projectId: string,
     input: SendProjectGroupMessageInput,
   ): Promise<ProjectGroupMessage> {
@@ -1367,17 +1395,49 @@ export class ShepherdService {
     const projectContracts = snapshot.shepherd.contracts.filter((contract) =>
       projectMissionIds.has(contract.missionId),
     );
-    const agentIds = new Set(projectContracts.map((contract) => contract.agentId));
-    const agents = snapshot.agents.filter((agent) => agentIds.has(agent.id));
-    const uniqueAgents = [...new Map(agents.map((agent) => [agent.id, agent])).values()];
     let route;
     try {
-      route = parseProjectGroupMessage(input.content, uniqueAgents);
+      route = parseProjectGroupMessage(input.content, snapshot.agents);
     } catch (error) {
       throw new ShepherdControlError(
         "invalid_input",
         error instanceof Error ? error.message : "Project Group message is invalid",
       );
+    }
+    const messageDigest = createHash("sha256")
+      .update(`${projectId}\0${input.clientMessageId}`, "utf8")
+      .digest("hex")
+      .slice(0, 40);
+    const existingContractPrompt = snapshot.shepherd.groupMessages.find(
+      (message) => message.id === `group-contract-${messageDigest}`,
+    );
+    if (existingContractPrompt) {
+      if (route.kind !== "agent") {
+        throw new ShepherdControlError(
+          "idempotency_conflict",
+          "Client message ID was already used for different content",
+        );
+      }
+      return await this.submitProjectGroupContractPrompt(projectId, input, {
+        agentId: route.agentId,
+        content: route.content,
+      });
+    }
+    const existingMessage = snapshot.shepherd.groupMessages.find(
+      (message) => message.id === `group-${messageDigest}`,
+    );
+    if (existingMessage) {
+      const targetAgentId = route.kind === "agent" ? route.agentId : null;
+      if (
+        existingMessage.content !== route.content ||
+        existingMessage.targetAgentId !== targetAgentId
+      ) {
+        throw new ShepherdControlError(
+          "idempotency_conflict",
+          "Client message ID was already used for different content",
+        );
+      }
+      return structuredClone(existingMessage);
     }
     const activeMission = project.activeMissionId
       ? projectMissions.find((mission) => mission.id === project.activeMissionId) ?? null
@@ -1386,6 +1446,12 @@ export class ShepherdService {
     let contractId: string | null = null;
     let content = route.content;
     if (route.kind === "agent") {
+      if (!activeMission) {
+        return await this.submitProjectGroupContractPrompt(projectId, input, {
+          agentId: route.agentId,
+          content: route.content,
+        });
+      }
       if (input.assignmentPreset !== "auth-demo-contract") {
         throw new ShepherdControlError(
           "unsupported_assignment",
@@ -1416,12 +1482,7 @@ export class ShepherdService {
         "The auth-demo Contract preset requires a leading @Agent mention",
       );
     }
-    const messageId =
-      "group-" +
-      createHash("sha256")
-        .update(`${projectId}\0${input.clientMessageId}`, "utf8")
-        .digest("hex")
-        .slice(0, 40);
+    const messageId = `group-${messageDigest}`;
     const message: ProjectGroupMessage = {
       id: messageId,
       projectId,
@@ -1451,7 +1512,30 @@ export class ShepherdService {
         }
         return structuredClone(existing);
       }
-      return appendProjectGroupMessage(database, message);
+      const appended = appendProjectGroupMessage(database, message);
+      if (route.kind === "shepherd") {
+        const replyId =
+          "group-shepherd-" +
+          createHash("sha256")
+            .update(`${projectId}\0${messageId}`, "utf8")
+            .digest("hex")
+            .slice(0, 32);
+        if (!database.shepherd.groupMessages.some((item) => item.id === replyId)) {
+          appendProjectGroupMessage(database, {
+            id: replyId,
+            projectId,
+            missionId: null,
+            senderType: "shepherd",
+            senderId: null,
+            content:
+              "Mention a ready Frontend or Backend Agent and request exactly one supported authentication transport.",
+            targetAgentId: null,
+            contractId: null,
+            createdAt: message.createdAt,
+          });
+        }
+      }
+      return appended;
     });
   }
 
@@ -1467,6 +1551,291 @@ export class ShepherdService {
     } finally {
       release();
     }
+  }
+
+  private async serializeProjectGroupMessage<T>(operation: () => Promise<T>): Promise<T> {
+    const previous = this.projectGroupMessageTail;
+    let release!: () => void;
+    this.projectGroupMessageTail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+    }
+  }
+
+  private async submitProjectGroupContractPrompt(
+    projectId: string,
+    input: SendProjectGroupMessageInput,
+    route: { agentId: string; content: string },
+  ): Promise<ProjectGroupMessage> {
+    return await this.serializePrivatePrompt(async () => {
+      await this.initialize();
+      if (projectId !== "auth-demo") {
+        throw new ShepherdControlError(
+          "unsupported_assignment",
+          "Project Group Contract intake is available only for the fixed auth demo",
+        );
+      }
+      const content = normalizedPrivatePrompt(route.content);
+      const transport = transportFromPrivatePrompt(content);
+      const initial = this.store.snapshot();
+      const project = initial.shepherd.projects.find((item) => item.id === projectId);
+      if (!project) throw new ShepherdControlError("not_found", "Project was not found");
+      const agent = initial.agents.find((item) => item.id === route.agentId);
+      if (!agent) throw new ShepherdControlError("not_found", "Agent was not found");
+      if (agent.role !== "Frontend" && agent.role !== "Backend") {
+        throw new ShepherdControlError(
+          "unsupported_assignment",
+          "Only ready Frontend and Backend Agents can receive the fixed authentication Contract",
+        );
+      }
+      const role = agent.role;
+      const messageId =
+        "group-contract-" +
+        createHash("sha256")
+          .update(`${projectId}\0${input.clientMessageId}`, "utf8")
+          .digest("hex")
+          .slice(0, 40);
+      const fingerprint = createHash("sha256")
+        .update(JSON.stringify({
+          source: "project-group",
+          preset: "auth-demo-contract",
+          agentId: agent.id,
+          role,
+          content,
+          transport,
+        }), "utf8")
+        .digest("hex");
+      const existing = initial.shepherd.groupMessages.find((message) => message.id === messageId);
+      if (existing) {
+        if (
+          existing.requestFingerprint !== fingerprint ||
+          existing.content !== content ||
+          existing.targetAgentId !== agent.id ||
+          existing.contractAssignment?.preset !== "auth-demo-contract" ||
+          existing.contractAssignment.role !== role ||
+          existing.contractAssignment.transport !== transport
+        ) {
+          throw new ShepherdControlError(
+            "idempotency_conflict",
+            "Client message ID was already used for a different Project Group Contract prompt",
+          );
+        }
+        if (existing.missionId) return structuredClone(existing);
+      }
+      if (project.activeMissionId) {
+        throw new ShepherdControlError(
+          "conflict",
+          "Finish or reset the active Mission before collecting another Contract prompt",
+        );
+      }
+      if (agent.status !== "ready" || agent.currentContractId) {
+        throw new ShepherdControlError(
+          "conflict",
+          `${agent.name} must be ready before Shepherd collects its Contract prompt`,
+        );
+      }
+      const pending = initial.shepherd.groupMessages.filter(
+        (message) =>
+          message.projectId === projectId &&
+          message.missionId === null &&
+          message.contractId === null &&
+          message.contractAssignment?.preset === "auth-demo-contract",
+      );
+      if (pending.some((message) => !message.id.startsWith("group-contract-"))) {
+        throw new ShepherdControlError(
+          "conflict",
+          "A Contract prompt from another intake is already waiting; reset the demo to replace it",
+        );
+      }
+      if (pending.some((message) => message.id !== messageId && message.contractAssignment?.role === role)) {
+        throw new ShepherdControlError(
+          "conflict",
+          `A ${role} Contract prompt is already waiting; reset the demo to replace it`,
+        );
+      }
+      const peer = pending.find(
+        (message) => message.contractAssignment?.role === (role === "Frontend" ? "Backend" : "Frontend"),
+      );
+      const createdAt = existing?.createdAt ?? this.timestamp();
+      const currentRecord: PrivateContractPromptRecord = {
+        messageId,
+        fingerprint,
+        content,
+        agentId: agent.id,
+        role,
+        transport,
+        createdAt,
+      };
+      if (!peer) {
+        if (existing) return structuredClone(existing);
+        return await this.store.mutate(async (database) => {
+          const current = database.agents.find((item) => item.id === agent.id);
+          if (
+            !current ||
+            current.role !== role ||
+            current.status !== "ready" ||
+            current.currentContractId
+          ) {
+            throw new ShepherdControlError(
+              "conflict",
+              `${agent.name} availability changed before Contract intake`,
+            );
+          }
+          await this.ensurePrivatePromptProject(database, createdAt);
+          if (database.shepherd.groupMessages.some(
+            (message) =>
+              message.projectId === projectId &&
+              message.missionId === null &&
+              message.contractAssignment?.role === role,
+          )) {
+            throw new ShepherdControlError(
+              "conflict",
+              `A ${role} Contract prompt is already waiting`,
+            );
+          }
+          const message = appendProjectGroupMessage(database, {
+            id: messageId,
+            projectId,
+            missionId: null,
+            senderType: "human",
+            senderId: null,
+            content,
+            targetAgentId: agent.id,
+            contractId: null,
+            contractAssignment: {
+              preset: "auth-demo-contract",
+              role,
+              transport,
+            },
+            requestFingerprint: fingerprint,
+            createdAt,
+          });
+          const replyId =
+            "group-shepherd-capture-" +
+            createHash("sha256")
+              .update(`${projectId}\0${messageId}`, "utf8")
+              .digest("hex")
+              .slice(0, 32);
+          appendProjectGroupMessage(database, {
+            id: replyId,
+            projectId,
+            missionId: null,
+            senderType: "shepherd",
+            senderId: null,
+            content: "Contract request captured; awaiting a complementary Frontend or Backend request.",
+            targetAgentId: null,
+            contractId: null,
+            createdAt,
+          });
+          return message;
+        });
+      }
+      if (
+        peer.contractAssignment?.preset !== "auth-demo-contract" ||
+        !peer.targetAgentId ||
+        !peer.requestFingerprint
+      ) {
+        throw new Error("Pending Project Group Contract prompt is missing trusted metadata");
+      }
+      if (peer.contractAssignment.transport === transport) {
+        throw new ShepherdControlError(
+          "invalid_input",
+          "The Frontend and Backend prompts must request incompatible transports for this collision demo",
+        );
+      }
+      const peerAgent = initial.agents.find((item) => item.id === peer.targetAgentId);
+      const oppositeRole = role === "Frontend" ? "Backend" : "Frontend";
+      if (
+        !peerAgent ||
+        peerAgent.role !== oppositeRole ||
+        peerAgent.status !== "ready" ||
+        peerAgent.currentContractId
+      ) {
+        throw new ShepherdControlError(
+          "conflict",
+          `The waiting ${oppositeRole} Agent is no longer ready`,
+        );
+      }
+      const peerRecord: PrivateContractPromptRecord = {
+        messageId: peer.id,
+        fingerprint: peer.requestFingerprint,
+        content: peer.content,
+        agentId: peerAgent.id,
+        role: oppositeRole,
+        transport: peer.contractAssignment.transport,
+        createdAt: peer.createdAt,
+      };
+      const frontend = role === "Frontend" ? currentRecord : peerRecord;
+      const backend = role === "Backend" ? currentRecord : peerRecord;
+      if (!existing) {
+        await this.store.mutate((database) => {
+          if (database.shepherd.groupMessages.some(
+            (message) =>
+              message.projectId === projectId &&
+              message.missionId === null &&
+              message.contractAssignment?.role === role,
+          )) {
+            throw new ShepherdControlError(
+              "conflict",
+              `A ${role} Contract prompt is already waiting`,
+            );
+          }
+          return appendProjectGroupMessage(database, {
+            id: messageId,
+            projectId,
+            missionId: null,
+            senderType: "human",
+            senderId: null,
+            content,
+            targetAgentId: agent.id,
+            contractId: null,
+            contractAssignment: {
+              preset: "auth-demo-contract",
+              role,
+              transport,
+            },
+            requestFingerprint: fingerprint,
+            createdAt,
+          });
+        });
+      }
+      let started: { missionId: string };
+      try {
+        started = await this.startDeterministicDemo({
+          projectId,
+          originalIntent:
+            "Integrate the fixed Frontend and Backend authentication Contracts and resolve any verified semantic collision.",
+          frontendAgentId: frontend.agentId,
+          backendAgentId: backend.agentId,
+          frontendTransport: frontend.transport,
+          backendTransport: backend.transport,
+          groupPromptRecords: { frontend, backend },
+        });
+      } catch (error) {
+        if (!existing) {
+          await this.store.mutate((database) => {
+            database.shepherd.groupMessages = database.shepherd.groupMessages.filter(
+              (message) =>
+                message.id !== messageId ||
+                message.missionId !== null ||
+                message.contractId !== null ||
+                message.requestFingerprint !== fingerprint,
+            );
+          });
+        }
+        throw error;
+      }
+      const accepted = this.store.snapshot().shepherd.groupMessages.find((message) => message.id === messageId);
+      if (!accepted || accepted.missionId !== started.missionId || !accepted.contractId) {
+        throw new Error("Project Group Contract prompt was not bound to its created Mission");
+      }
+      return structuredClone(accepted);
+    });
   }
 
   private async ensurePrivatePromptProject(
@@ -1628,6 +1997,12 @@ export class ShepherdService {
           message.contractId === null &&
           message.contractAssignment?.preset === "auth-demo-contract",
       );
+      if (pending.some((message) => !message.id.startsWith("group-private-"))) {
+        throw new ShepherdControlError(
+          "conflict",
+          "A Contract prompt from another intake is already waiting; reset the demo to replace it",
+        );
+      }
       if (
         pending.some(
           (message) =>
@@ -3350,6 +3725,54 @@ export class ShepherdService {
     });
   }
 
+  private appendVerifiedAgentGroupSummary(
+    database: Database,
+    input: {
+      sourceId: string;
+      missionId: string;
+      contractId: string;
+      agentId: string;
+      summary: string;
+      timestamp: string;
+    },
+  ): void {
+    const mission = database.shepherd.missions.find((item) => item.id === input.missionId);
+    const project = mission
+      ? database.shepherd.projects.find((item) => item.id === mission.projectId)
+      : undefined;
+    const contract = database.shepherd.contracts.find((item) => item.id === input.contractId);
+    if (
+      !mission ||
+      !project ||
+      !contract ||
+      contract.missionId !== mission.id ||
+      contract.agentId !== input.agentId ||
+      contract.state !== "verified" ||
+      !contract.manifest ||
+      contract.manifest.summary !== input.summary
+    ) {
+      return;
+    }
+    const id =
+      "group-agent-" +
+      createHash("sha256")
+        .update(`${project.id}\0${input.sourceId}`, "utf8")
+        .digest("hex")
+        .slice(0, 32);
+    if (database.shepherd.groupMessages.some((message) => message.id === id)) return;
+    appendProjectGroupMessage(database, {
+      id,
+      projectId: project.id,
+      missionId: mission.id,
+      senderType: "agent",
+      senderId: input.agentId,
+      content: input.summary,
+      targetAgentId: input.agentId,
+      contractId: contract.id,
+      createdAt: input.timestamp,
+    });
+  }
+
   private appendLifecycleMessageForEvent(
     database: Database,
     event: ShepherdEvent,
@@ -3457,10 +3880,16 @@ export class ShepherdService {
         "Mission request identity is invalid",
       );
     }
-    if (options.requestRecord && options.privatePromptRecords) {
+    if (options.requestRecord && (options.privatePromptRecords || options.groupPromptRecords)) {
       throw new ShepherdControlError(
         "invalid_input",
-        "A Mission cannot use both Shepherd-composer and private-chat request records",
+        "A Mission cannot use both Shepherd-composer and Contract intake request records",
+      );
+    }
+    if (options.privatePromptRecords && options.groupPromptRecords) {
+      throw new ShepherdControlError(
+        "invalid_input",
+        "A Mission cannot use both private-chat and Project Group Contract records",
       );
     }
     if (options.privatePromptRecords && !options.contractPrompts) {
@@ -3510,14 +3939,14 @@ export class ShepherdService {
         "Private Contract prompts do not match their trusted transport assignments",
       );
     }
-    if (options.privatePromptRecords) {
+    const contractPromptRecords = options.privatePromptRecords ?? options.groupPromptRecords;
+    if (contractPromptRecords) {
       const records = [
-        options.privatePromptRecords.frontend,
-        options.privatePromptRecords.backend,
+        contractPromptRecords.frontend,
+        contractPromptRecords.backend,
       ];
       if (
-        options.privatePromptRecords.frontend.messageId ===
-          options.privatePromptRecords.backend.messageId ||
+        contractPromptRecords.frontend.messageId === contractPromptRecords.backend.messageId ||
         records.some(
           (record) =>
             !SAFE_ID.test(record.messageId) ||
@@ -3525,18 +3954,19 @@ export class ShepherdService {
             !/^[a-f0-9]{64}$/u.test(record.fingerprint) ||
             !Number.isFinite(Date.parse(record.createdAt)),
         ) ||
-        options.privatePromptRecords.frontend.role !== "Frontend" ||
-        options.privatePromptRecords.backend.role !== "Backend" ||
-        options.privatePromptRecords.frontend.agentId !== options.frontendAgentId ||
-        options.privatePromptRecords.backend.agentId !== options.backendAgentId ||
-        options.privatePromptRecords.frontend.transport !== frontendTransport ||
-        options.privatePromptRecords.backend.transport !== backendTransport ||
-        options.privatePromptRecords.frontend.content !== frontendObjective ||
-        options.privatePromptRecords.backend.content !== backendObjective
+        contractPromptRecords.frontend.role !== "Frontend" ||
+        contractPromptRecords.backend.role !== "Backend" ||
+        contractPromptRecords.frontend.agentId !== options.frontendAgentId ||
+        contractPromptRecords.backend.agentId !== options.backendAgentId ||
+        contractPromptRecords.frontend.transport !== frontendTransport ||
+        contractPromptRecords.backend.transport !== backendTransport ||
+        (options.privatePromptRecords &&
+          (contractPromptRecords.frontend.content !== frontendObjective ||
+            contractPromptRecords.backend.content !== backendObjective))
       ) {
         throw new ShepherdControlError(
           "invalid_input",
-          "Private Contract prompt metadata is inconsistent",
+          "Contract prompt metadata is inconsistent",
         );
       }
     }
@@ -3720,10 +4150,10 @@ export class ShepherdService {
           );
         }
       }
-      if (options.privatePromptRecords) {
+      if (contractPromptRecords) {
         const records = [
-          options.privatePromptRecords.frontend,
-          options.privatePromptRecords.backend,
+          contractPromptRecords.frontend,
+          contractPromptRecords.backend,
         ];
         const pendingForProject = database.shepherd.groupMessages.filter(
           (message) =>
@@ -3746,7 +4176,7 @@ export class ShepherdService {
         ) {
           throw new ShepherdControlError(
             "conflict",
-            "Private Contract intake changed before Mission creation",
+            "Contract intake changed before Mission creation",
           );
         }
         for (const { record, message } of existingRecords) {
@@ -3765,7 +4195,7 @@ export class ShepherdService {
           ) {
             throw new ShepherdControlError(
               "idempotency_conflict",
-              "The waiting private Contract prompt no longer matches its request",
+              "The waiting Contract prompt no longer matches its request",
             );
           }
         }
@@ -3868,10 +4298,10 @@ export class ShepherdService {
         }),
       ];
       database.shepherd.contracts.push(...contracts);
-      if (options.privatePromptRecords) {
+      if (contractPromptRecords) {
         for (const record of [
-          options.privatePromptRecords.frontend,
-          options.privatePromptRecords.backend,
+          contractPromptRecords.frontend,
+          contractPromptRecords.backend,
         ]) {
           const contractId =
             record.role === "Frontend" ? frontendContractId : backendContractId;
@@ -5455,6 +5885,14 @@ export class ShepherdService {
         (item) => item.id === input.contractId,
       );
       if (verifiedContract?.manifest) {
+        this.appendVerifiedAgentGroupSummary(database, {
+          sourceId: verifiedEvent.id,
+          missionId: prepared.missionId,
+          contractId: verifiedContract.id,
+          agentId: verifiedContract.agentId,
+          summary: verifiedContract.manifest.summary,
+          timestamp: verifiedAt,
+        });
         this.appendServerGroupMessage(database, {
           sourceId: verifiedEvent.id,
           missionId: prepared.missionId,

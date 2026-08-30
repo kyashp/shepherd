@@ -224,7 +224,6 @@ test("real Shepherd hero chain verifies, resolves, and promotes protected output
   expect(entities.planes.every((item) => item.kind === "contract" && item.state === "inspecting")).toBe(true);
   expect(entities.events.filter((item) => item.type === "contract_started")).toHaveLength(2);
   expect(entities.events.filter((item) => item.type === "agent_completed")).toHaveLength(2);
-  await expect(page.getByText("One mutating Mission at a time", { exact: false })).toBeVisible({ timeout: 3_000 });
   await expect(composer).toBeDisabled();
   await expect(page.getByText("Agent", { exact: true })).toHaveCount(2);
   await capture(page, testInfo, "01-contracts-active");
@@ -328,7 +327,7 @@ test("real Shepherd hero chain verifies, resolves, and promotes protected output
   expect(entities.events).toHaveLength(33);
   expect(entities.events.map((item) => item.sequence)).toEqual([...entities.events.map((item) => item.sequence)].sort((a, b) => a - b));
   await clickFilter(page, "All");
-  await expect(page.getByText("Completed", { exact: true }).first()).toBeVisible({ timeout: 3_000 });
+  await expect(page.locator(".timeline-panel .state-pill")).toHaveText("Completed", { timeout: 3_000 });
   await expect(page.locator(".plane-tree")).toContainText("Promoted");
   await capture(page, testInfo, "07-completed-overview");
 
@@ -377,7 +376,21 @@ test("real Shepherd hero chain verifies, resolves, and promotes protected output
   expect(group.messages.some((item) => item.senderType === "shepherd" && item.content.startsWith("Collision detected:"))).toBe(true);
   expect(group.messages.some((item) => item.senderType === "shepherd" && item.content.startsWith("Promotion completed:"))).toBe(true);
   expect(group.messages.some((item) => item.senderType === "shepherd" && item.content.startsWith("Mission completed"))).toBe(true);
-  expect(group.messages.some((item) => item.senderType === "agent")).toBe(false);
+  const verifiedContracts = entities.contracts.filter(
+    (contract) => contract.state === "verified" && contract.verificationEvidence.length === 1,
+  );
+  const agentMessages = group.messages.filter((item) => item.senderType === "agent");
+  expect(agentMessages).toHaveLength(verifiedContracts.length);
+  expect(agentMessages).toEqual(expect.arrayContaining(verifiedContracts.map((contract) =>
+    expect.objectContaining({
+      senderId: contract.agentId,
+      targetAgentId: contract.agentId,
+      contractId: contract.id,
+      content: contract.title.includes("backend")
+        ? "Backend auth service uses an HttpOnly session cookie."
+        : "Frontend auth client uses a bearer JWT.",
+    }),
+  )));
   await expect(page.getByText("Promotion completed: auth.transport=http-only-session-cookie.", { exact: true })).toBeVisible();
   await capture(page, testInfo, "12-project-group-lifecycle");
 

@@ -7,6 +7,43 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — issue #41 audited Project Group journey candidate
+
+Branch `feat/41-project-group-journey`, draft PR #64. This is candidate evidence;
+protected-main integration is not claimed.
+
+- An explicit Project Group initialization creates the fixed idle auth-demo
+  Project without starting a Mission, Contract, Plane, executor, shell or model.
+  Unmentioned bounded messages persist with a bounded Shepherd reply. A leading
+  ready Frontend/Backend mention captures one fixed authentication transport; a
+  complementary opposite-role request enters the existing deterministic
+  two-Contract Mission with server-authored objectives and authority.
+- Agent-authored Group messages are derived only from verified persisted manifest
+  summaries and remain bound to the exact sender, target, Contract and Mission.
+  Hostile V2 checks cover non-verified and missing-manifest states from valid
+  nonterminal controls, plus wrong sender, target, Contract and summary. The
+  pre-Agent-summary V2 shape remains compatible.
+- Audit correction made Project Group routing atomic across ordinary and Contract
+  idempotency namespaces. The causal regression failed with two accepted requests
+  before the correction and passes with exactly one accepted message afterward.
+  Private-chat and Project Group pending prompts cannot pair across intake
+  provenance, and Mission-preparation failure rolls back only the new prompt.
+- Literal `npm run check` passed: launcher 3/3, Server 795 passed with three
+  explicit skips, Web 19/19, all production/test-source typechecks and both builds.
+  The focused Database plus Shepherd suite passed 136/136; the final independent
+  re-review passed its 3 targeted tests and `git diff --check` with no remaining
+  finding.
+- Authenticated focused Chromium passed 2/2 at `1280x800` and `1440x900` from the
+  real mention button through verified Contract evidence; the adjacent Shepherd
+  hero journey also passed 2/2. The broader direct Playwright run passed 18/20;
+  the two failures were unchanged legacy harness issues outside #41: a 0.09375px
+  starter-kit viewport rounding assertion and a separate response timeout. Harness
+  unit tests passed 6/7; the one unchanged macOS fixture compares canonical
+  `/private/var/...` and non-canonical `/var/...` temporary paths.
+- `npm audit` reported zero vulnerabilities. No live/model request ran, no secret
+  or raw prompt/output was persisted in evidence, and the accepted UI design was
+  not redesigned.
+
 ## 2026-08-30 — the launcher selects its own state layout
 
 Same branch and host. `LOCAL_POC_STATE_MODE` defaulted to `host-bind`, so the
