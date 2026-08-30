@@ -306,25 +306,24 @@ class ObservedConcurrentExecutor implements ShepherdExecutor {
 class CandidateExecutionIntervalExecutor implements ShepherdExecutor {
   readonly kind = "deterministic_fixture" as const;
   private readonly inner = new DeterministicFixtureExecutor();
-  private readonly bothCandidatesStarted: Promise<void>;
   private releaseCandidates!: () => void;
   private readonly candidatesReleased: Promise<void>;
   candidateStarts: string[] = [];
   candidateCompletes: string[] = [];
 
   constructor() {
-    this.bothCandidatesStarted = new Promise<void>((resolve) => {
-      this.resolveBothCandidatesStarted = resolve;
-    });
     this.candidatesReleased = new Promise<void>((resolve) => {
       this.releaseCandidates = resolve;
     });
   }
 
-  private resolveBothCandidatesStarted!: () => void;
-
   async waitForBothCandidates(): Promise<void> {
-    await this.bothCandidatesStarted;
+    const deadline = Date.now() + 3_000;
+    while (Date.now() < deadline) {
+      if (this.candidateStarts.length === 2) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error("both candidate executions did not start before the bounded deadline");
   }
 
   release(): void {
@@ -335,11 +334,10 @@ class CandidateExecutionIntervalExecutor implements ShepherdExecutor {
     if (request.operation.kind !== "resolution_candidate") {
       return await this.inner.run(request);
     }
-    this.candidateStarts.push(new Date().toISOString());
-    if (this.candidateStarts.length === 2) this.resolveBothCandidatesStarted();
+    this.candidateStarts = [...this.candidateStarts, new Date().toISOString()];
     await this.candidatesReleased;
     const result = await this.inner.run(request);
-    this.candidateCompletes.push(new Date().toISOString());
+    this.candidateCompletes = [...this.candidateCompletes, new Date().toISOString()];
     return result;
   }
 

@@ -4938,9 +4938,11 @@ Auditor, security and hosted integration evidence.
 - **Instrumented concurrency proof (not a timing measurement):** the focused
   `ShepherdService` test owns a wrapper around the deterministic executor. It
   gates only `resolution_candidate` calls, records ISO start/completion times
-  without prompts, paths, or IDs, waits for exactly two real scheduler arrivals,
-  asserts no completion before release, then asserts two parseable completions and
-  `max(start) <= min(complete)`. It passed 1/1 (62 filtered) after the causal RED.
+  without prompts, paths, or IDs, waits up to three seconds for exactly two real
+  scheduler arrivals, asserts no completion before release, then asserts two
+  parseable completions and `max(start) <= min(complete)`. Its bounded rejection
+  still enters `finally` to release background work. It passed 1/1 (62 filtered)
+  after the causal RED.
   This test-owned injection is separate from the ungated browser path, so gate
   delay cannot enter the natural timing samples.
 - **Verifier lifecycle and isolation evidence:** the natural browser run asserts
