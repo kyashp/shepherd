@@ -7,7 +7,12 @@ import path from "node:path";
 const argv = process.argv.slice(2);
 const safeName = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/u;
 const safeTarget = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$/u;
-const allowedChecks = new Set(["checks/frontend.cjs", "checks/backend.cjs", "checks/project-security.cjs"]);
+const allowedChecks = new Set([
+  "checks/frontend.cjs",
+  "checks/backend.cjs",
+  "checks/project-security.cjs",
+  "checks/general-contract.cjs",
+]);
 const stateRoot = path.join(process.env.HOME ?? "", ".fake-container-engine");
 const containerRoot = path.join(stateRoot, "containers");
 const occurrenceRoot = path.join(stateRoot, "occurrences");

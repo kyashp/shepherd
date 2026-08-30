@@ -21,7 +21,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { toPublicMissionDetail } from "../app.js";
 import { RuntimeExecutionError } from "../errors.js";
-import { JsonStore } from "../store.js";
+import { JsonStore, type PersistenceFaultStage } from "../store.js";
 import type { Agent, Database } from "../types.js";
 import { WorkspaceManager } from "../workspace.js";
 import {
@@ -42,8 +42,10 @@ import {
   AUTH_BACKEND_PROFILE_ID,
   AUTH_FRONTEND_PROFILE_ID,
   AUTH_PROJECT_PROFILE_ID,
+  GENERAL_CONTRACT_PROFILE_ID,
   ShepherdService,
   type ShepherdIndependentVerifier,
+  type ShepherdServiceOptions,
 } from "./service.js";
 import { PlaneManager } from "./plane-manager.js";
 import { assertSafeProjectPath } from "./git-client.js";
@@ -212,6 +214,7 @@ class HostTrustedFixtureVerifier implements ShepherdIndependentVerifier {
       [AUTH_FRONTEND_PROFILE_ID]: "checks/frontend.cjs",
       [AUTH_BACKEND_PROFILE_ID]: "checks/backend.cjs",
       [AUTH_PROJECT_PROFILE_ID]: "checks/project-security.cjs",
+      [GENERAL_CONTRACT_PROFILE_ID]: "checks/general-contract.cjs",
     };
     const checks: VerificationCheckResult[] = [];
     for (const check of request.checks) {
@@ -940,11 +943,72 @@ async function waitForTerminalMission(
     const state = service.missionDetail(missionId)?.mission.state;
     if (state === "completed") return;
     if (state === "failed" || state === "attention_required" || state === "cancelled") {
-      throw new Error(`Background Mission ended in ${state}`);
+      const failure = service.missionDetail(missionId)?.mission.failure;
+      const detail = service.missionDetail(missionId);
+      throw new Error(
+        `Background Mission ended in ${state}${failure ? `: ${failure.stage}: ${failure.message}` : ""}; contracts=${detail?.contracts.map((item) => item.state).join(",")}; planes=${detail?.planes.map((item) => `${item.kind}:${item.state}`).join(",")}; last=${detail?.events.at(-1)?.summary}`,
+      );
     }
     await new Promise<void>((resolve) => setTimeout(resolve, 10));
   }
   throw new Error("Background Mission did not complete before the test deadline");
+}
+
+async function createGeneralContractFixture(
+  options: Pick<
+    ShepherdServiceOptions,
+    "faultCheckpoint" | "gitPromotionFaults"
+  > & {
+    verifier?: ShepherdIndependentVerifier;
+    persistenceFaultCheckpoint?: (stage: PersistenceFaultStage) => void;
+  } = {},
+) {
+  const caseRoot = await makeCaseRoot();
+  const store = new JsonStore(path.join(caseRoot, "state.json"), {
+    ...(options.persistenceFaultCheckpoint === undefined
+      ? {}
+      : { persistenceFaultCheckpoint: options.persistenceFaultCheckpoint }),
+  });
+  await store.initialize();
+  const agentWorkspaceRoot = path.join(caseRoot, "agent-workspaces");
+  const workspaces = new WorkspaceManager(agentWorkspaceRoot);
+  await workspaces.initialize();
+  const createdAt = "2026-08-30T00:00:00.000Z";
+  const id = "41111111-1111-4111-8111-111111111111";
+  const agent: Agent = {
+    id,
+    name: "General Contract Agent",
+    description: "Handles bounded general work",
+    instructions: "Complete only confirmed Shepherd Contracts.",
+    status: "ready",
+    workspacePath: workspaces.workspacePath(id),
+    codexThreadId: null,
+    lastError: null,
+    role: "Generalist",
+    authority: {
+      readable: ["**"],
+      writable: ["scripts/**"],
+      forbidden: [".git/**", ".shepherd/**", "checks/**", "policy.json"],
+    },
+    currentContractId: null,
+    createdAt,
+    updatedAt: createdAt,
+  };
+  await workspaces.create(agent);
+  await store.mutate((database) => database.agents.push(agent));
+  const service = new ShepherdService({
+    store,
+    managedRoot: path.join(caseRoot, "managed"),
+    agentWorkspaceRoot,
+    verifier: options.verifier ?? new HostTrustedFixtureVerifier(),
+    ...(options.faultCheckpoint === undefined
+      ? {}
+      : { faultCheckpoint: options.faultCheckpoint }),
+    ...(options.gitPromotionFaults === undefined
+      ? {}
+      : { gitPromotionFaults: options.gitPromotionFaults }),
+  });
+  return { agent, caseRoot, service, store };
 }
 
 async function settleWithin<T>(promise: Promise<T>, timeoutMs = 5_000): Promise<T> {
@@ -1058,6 +1122,454 @@ describe("Shepherd deterministic walking skeleton", () => {
     })).rejects.toMatchObject({ code: "idempotency_conflict" });
     expect(store.snapshot().shepherd.missions).toHaveLength(1);
     backgroundTestMissions.push({ service, missionId: first.missionId });
+  }, 30_000);
+
+  it("clarifies an incomplete private request before executing and promoting a general Contract", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const agentWorkspaceRoot = path.join(caseRoot, "agent-workspaces");
+    const workspaces = new WorkspaceManager(agentWorkspaceRoot);
+    await workspaces.initialize();
+    const createdAt = "2026-08-30T00:00:00.000Z";
+    const agent: Agent = {
+      id: "41111111-1111-4111-8111-111111111111",
+      name: "General Contract Agent",
+      description: "Handles bounded general work",
+      instructions: "Complete only confirmed Shepherd Contracts.",
+      status: "ready",
+      workspacePath: workspaces.workspacePath("41111111-1111-4111-8111-111111111111"),
+      codexThreadId: null,
+      lastError: null,
+      role: "Generalist",
+      authority: {
+        readable: ["**"],
+        writable: ["scripts/**"],
+        forbidden: [".git/**", ".shepherd/**", "checks/**", "policy.json"],
+      },
+      currentContractId: null,
+      createdAt,
+      updatedAt: createdAt,
+    };
+    await workspaces.create(agent);
+    await store.mutate((database) => database.agents.push(agent));
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot,
+      verifier: new HostTrustedFixtureVerifier(),
+    });
+
+    const draft = await service.submitPrivateContractPrompt({
+      agentId: agent.id,
+      clientMessageId: "general-draft-one",
+      content: "Build the greeting feature.",
+    });
+    expect(draft).toMatchObject({
+      status: "clarification_required",
+      missionId: null,
+      contractId: null,
+    });
+    expect(draft.clarification).toContain("project-relative file");
+    expect(store.snapshot().shepherd.missions).toHaveLength(0);
+    expect(store.snapshot().shepherd.contracts).toHaveLength(0);
+    expect(store.snapshot().shepherd.planes).toHaveLength(0);
+    await expect(service.submitPrivateContractPrompt({
+      agentId: agent.id,
+      clientMessageId: "general-draft-one",
+      content: "Build the greeting feature.",
+    })).resolves.toMatchObject({
+      status: "clarification_required",
+      message: { id: draft.message.id },
+    });
+    await expect(service.submitPrivateContractPrompt({
+      agentId: agent.id,
+      clientMessageId: "general-draft-one",
+      content: "Build a different feature.",
+    })).rejects.toMatchObject({ code: "idempotency_conflict" });
+    expect(store.snapshot().shepherd.groupMessages).toHaveLength(1);
+
+    const accepted = await service.submitPrivateContractPrompt({
+      agentId: agent.id,
+      clientMessageId: "general-draft-two",
+      content:
+        'Create `scripts/hello.txt`. Acceptance: the file exists and contains "Hello from Shepherd".',
+    });
+    expect(accepted).toMatchObject({
+      status: "accepted",
+      missionId: expect.any(String),
+      contractId: expect.any(String),
+      clarification: null,
+    });
+    await waitForTerminalMission(service, accepted.missionId!);
+    const detail = service.missionDetail(accepted.missionId!);
+    expect(detail?.mission.state).toBe("completed");
+    expect(detail?.contracts).toHaveLength(1);
+    expect(detail?.contracts[0]).toMatchObject({
+      state: "verified",
+      expectedArtifacts: [expect.objectContaining({ path: "scripts/hello.txt" })],
+    });
+    expect(detail?.planes.filter((plane) => plane.kind === "contract")).toHaveLength(1);
+    expect(detail?.planes.filter((plane) => plane.kind === "integration")).toEqual([
+      expect.objectContaining({ state: "verified" }),
+    ]);
+    expect(await readFile(path.join(agent.workspacePath, "scripts/hello.txt"), "utf8"))
+      .toBe("Hello from Shepherd\n");
+  }, 30_000);
+
+  it("keeps a general Agent reserved and rejects cancellation after its durable promotion marker", async () => {
+    let releasePromotion!: () => void;
+    let markPromotionReached!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      releasePromotion = resolve;
+    });
+    const reached = new Promise<void>((resolve) => {
+      markPromotionReached = resolve;
+    });
+    const fixture = await createGeneralContractFixture({
+      faultCheckpoint: async (checkpoint, context) => {
+        if (checkpoint !== "promotion_ready_for_cas" || !context.planeId) return;
+        markPromotionReached();
+        await blocked;
+      },
+    });
+    const accepted = await fixture.service.submitPrivateContractPrompt({
+      agentId: fixture.agent.id,
+      clientMessageId: "general-promotion-race",
+      content:
+        'Create `scripts/held.txt`. Acceptance: the file contains "held by Shepherd".',
+    });
+    try {
+      await reached;
+      const detail = fixture.service.missionDetail(accepted.missionId!);
+      expect(detail?.planes.find((plane) => plane.kind === "integration")).toMatchObject({
+        generalPromotionState: "promoting",
+        generalPromotionEvidence: { passed: true, targetType: "promotion" },
+      });
+      expect(detail?.agents.find((agent) => agent.id === fixture.agent.id)).toMatchObject({
+        status: "busy",
+        currentContractId: accepted.contractId,
+      });
+      await expect(
+        access(path.join(fixture.agent.workspacePath, "scripts", "held.txt")),
+      ).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(
+        fixture.service.cancelMission(accepted.missionId!),
+      ).rejects.toMatchObject({ code: "conflict" });
+    } finally {
+      releasePromotion();
+    }
+    await waitForTerminalMission(fixture.service, accepted.missionId!);
+    expect(
+      await readFile(path.join(fixture.agent.workspacePath, "scripts", "held.txt"), "utf8"),
+    ).toBe("held by Shepherd\n");
+  }, 30_000);
+
+  it("rolls back a failed general CAS before any Agent workspace mutation", async () => {
+    const fixture = await createGeneralContractFixture({
+      gitPromotionFaults: {
+        beforeWorktreeSynchronization: () => {
+          throw new Error("synthetic protected worktree synchronization failure");
+        },
+      },
+    });
+    const accepted = await fixture.service.submitPrivateContractPrompt({
+      agentId: fixture.agent.id,
+      clientMessageId: "general-cas-failure",
+      content:
+        'Create `scripts/not-promoted.txt`. Acceptance: the file contains "must stay isolated".',
+    });
+    await vi.waitFor(
+      () =>
+        expect(
+          fixture.service.missionDetail(accepted.missionId!)?.mission.state,
+        ).toBe("failed"),
+      { timeout: 15_000 },
+    );
+    const detail = fixture.service.missionDetail(accepted.missionId!);
+    expect(detail?.project.protectedHeadCommit).toBe(detail?.mission.baseCommit);
+    expect(
+      await gitOutput(detail?.project.repositoryPath ?? "", ["rev-parse", "main"]),
+    ).toBe(detail?.mission.baseCommit);
+    expect(detail?.planes.find((plane) => plane.kind === "integration")).toMatchObject({
+      state: "failed",
+      generalPromotionState: "failed",
+      generalPromotionEvidence: { passed: true, targetType: "promotion" },
+    });
+    expect(detail?.agents.find((agent) => agent.id === fixture.agent.id)).toMatchObject({
+      status: "error",
+      currentContractId: null,
+    });
+    await expect(
+      access(path.join(fixture.agent.workspacePath, "scripts", "not-promoted.txt")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  }, 30_000);
+
+  it("records attention with durable evidence when failure lands after general CAS", async () => {
+    const fixture = await createGeneralContractFixture({
+      faultCheckpoint: (checkpoint, context) => {
+        if (checkpoint === "promotion_cas_completed" && context.planeId) {
+          throw new Error("synthetic post-CAS process boundary");
+        }
+      },
+    });
+    const accepted = await fixture.service.submitPrivateContractPrompt({
+      agentId: fixture.agent.id,
+      clientMessageId: "general-post-cas-failure",
+      content:
+        'Create `scripts/post-cas.txt`. Acceptance: the file contains "protected only".',
+    });
+    await vi.waitFor(
+      () =>
+        expect(
+          ["attention_required", "failed"],
+        ).toContain(
+          fixture.service.missionDetail(accepted.missionId!)?.mission.state,
+        ),
+      { timeout: 15_000 },
+    );
+    const detail = fixture.service.missionDetail(accepted.missionId!);
+    expect(
+      detail?.mission.state,
+      JSON.stringify({
+        failure: detail?.mission.failure,
+        plane: detail?.planes.find((plane) => plane.kind === "integration"),
+        lastEvent: detail?.events.at(-1),
+      }),
+    ).toBe("attention_required");
+    const integration = detail?.planes.find((plane) => plane.kind === "integration");
+    expect(integration).toMatchObject({
+      state: "verified",
+      generalPromotionState: "promoted",
+      generalPromotionEvidence: { passed: true, targetType: "promotion" },
+    });
+    expect(detail?.project.protectedHeadCommit).toBe(integration?.headCommit);
+    expect(
+      await gitOutput(detail?.project.repositoryPath ?? "", ["rev-parse", "main"]),
+    ).toBe(integration?.headCommit);
+    expect(detail?.mission.failure).toMatchObject({
+      code: "persistence_error",
+      stage: "agent_workspace_materialization",
+    });
+    await expect(
+      access(path.join(fixture.agent.workspacePath, "scripts", "post-cas.txt")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  }, 30_000);
+
+  it("preserves post-CAS evidence when final completion persistence fails once", async () => {
+    let completionPersistenceArmed = false;
+    let injected = false;
+    const fixture = await createGeneralContractFixture({
+      faultCheckpoint: (checkpoint) => {
+        if (checkpoint === "general_completion_persistence") {
+          completionPersistenceArmed = true;
+        }
+      },
+      persistenceFaultCheckpoint: (stage) => {
+        if (
+          completionPersistenceArmed &&
+          !injected &&
+          stage === "primary_temp_open"
+        ) {
+          injected = true;
+          throw new Error("synthetic one-shot completion persistence failure");
+        }
+      },
+    });
+    const accepted = await fixture.service.submitPrivateContractPrompt({
+      agentId: fixture.agent.id,
+      clientMessageId: "general-completion-persistence-failure",
+      content:
+        'Create `scripts/materialized.txt`. Acceptance: the file contains "durable output".',
+    });
+    await vi.waitFor(
+      () =>
+        expect(
+          fixture.service.missionDetail(accepted.missionId!)?.mission.state,
+        ).toBe("attention_required"),
+      { timeout: 15_000 },
+    );
+    const detail = fixture.service.missionDetail(accepted.missionId!);
+    const integration = detail?.planes.find((plane) => plane.kind === "integration");
+    expect(injected).toBe(true);
+    expect(detail?.mission.failure).toMatchObject({
+      code: "persistence_error",
+      stage: "general_completion_persistence",
+    });
+    expect(integration).toMatchObject({
+      state: "verified",
+      generalPromotionState: "promoted",
+      generalPromotionEvidence: { passed: true, targetType: "promotion" },
+    });
+    expect(detail?.project.protectedHeadCommit).toBe(integration?.headCommit);
+    expect(
+      await readFile(
+        path.join(fixture.agent.workspacePath, "scripts", "materialized.txt"),
+        "utf8",
+      ),
+    ).toBe("durable output\n");
+
+    const restartedStore = new JsonStore(path.join(fixture.caseRoot, "state.json"));
+    await restartedStore.initialize();
+    const restarted = new ShepherdService({
+      store: restartedStore,
+      managedRoot: path.join(fixture.caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(fixture.caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+    });
+    await restarted.initialize();
+    expect(restarted.missionDetail(accepted.missionId!)?.mission.state).toBe(
+      "attention_required",
+    );
+  }, 30_000);
+
+  it("reconciles a general post-CAS crash without claiming workspace materialization", async () => {
+    let releasePostCas!: () => void;
+    let markPostCasReached!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      releasePostCas = resolve;
+    });
+    const reached = new Promise<void>((resolve) => {
+      markPostCasReached = resolve;
+    });
+    const fixture = await createGeneralContractFixture({
+      faultCheckpoint: async (checkpoint, context) => {
+        if (checkpoint !== "promotion_cas_completed" || !context.planeId) return;
+        markPostCasReached();
+        await blocked;
+        throw new Error("synthetic stopped process");
+      },
+    });
+    const accepted = await fixture.service.submitPrivateContractPrompt({
+      agentId: fixture.agent.id,
+      clientMessageId: "general-post-cas-restart",
+      content:
+        'Create `scripts/recovered.txt`. Acceptance: the file contains "recover visibly".',
+    });
+    try {
+      await reached;
+      const restartedStore = new JsonStore(path.join(fixture.caseRoot, "state.json"));
+      await restartedStore.initialize();
+      const restarted = new ShepherdService({
+        store: restartedStore,
+        managedRoot: path.join(fixture.caseRoot, "managed"),
+        agentWorkspaceRoot: path.join(fixture.caseRoot, "agent-workspaces"),
+        verifier: new HostTrustedFixtureVerifier(),
+      });
+      await restarted.initialize();
+      const recovered = restarted.missionDetail(accepted.missionId!);
+      const integration = recovered?.planes.find((plane) => plane.kind === "integration");
+      expect(recovered?.mission).toMatchObject({
+        state: "attention_required",
+        failure: {
+          code: "execution_interrupted",
+          stage: "startup_reconciliation",
+        },
+      });
+      expect(integration).toMatchObject({
+        state: "verified",
+        generalPromotionState: "promoted",
+        generalPromotionEvidence: { passed: true, targetType: "promotion" },
+      });
+      expect(recovered?.project.protectedHeadCommit).toBe(integration?.headCommit);
+      expect(
+        recovered?.events.some(
+          (event) => event.details.classification === "general_contract_post_cas",
+        ),
+      ).toBe(true);
+      await expect(
+        access(path.join(fixture.agent.workspacePath, "scripts", "recovered.txt")),
+      ).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      releasePostCas();
+    }
+    await vi.waitFor(
+      () =>
+        expect(
+          fixture.service.missionDetail(accepted.missionId!)?.mission.state,
+        ).toBe("attention_required"),
+      { timeout: 15_000 },
+    );
+  }, 30_000);
+
+  it("resumes one accepted unbound general draft exactly once on an exact retry", async () => {
+    const fixture = await createGeneralContractFixture();
+    let releaseStart!: () => void;
+    let markStartReached!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      releaseStart = resolve;
+    });
+    const reached = new Promise<void>((resolve) => {
+      markStartReached = resolve;
+    });
+    type StartGeneral = (input: unknown) => Promise<{ missionId: string }>;
+    const internal = fixture.service as unknown as {
+      startGeneralAgentMission: StartGeneral;
+    };
+    const originalStart = internal.startGeneralAgentMission.bind(fixture.service);
+    internal.startGeneralAgentMission = async (input) => {
+      markStartReached();
+      await blocked;
+      return await originalStart(input);
+    };
+    const request = {
+      agentId: fixture.agent.id,
+      clientMessageId: "general-accepted-retry",
+      content:
+        'Create `scripts/resumed.txt`. Acceptance: the file contains "resumed once".',
+    };
+    const interrupted = fixture.service.submitPrivateContractPrompt(request);
+    await reached;
+    expect(fixture.store.snapshot().shepherd.missions).toHaveLength(0);
+    expect(
+      fixture.store.snapshot().shepherd.groupMessages.find(
+        (message) => message.contractAssignment?.preset === "general-contract",
+      )?.contractAssignment,
+    ).toMatchObject({ status: "accepted" });
+
+    const recovered = new ShepherdService({
+      store: fixture.store,
+      managedRoot: path.join(fixture.caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(fixture.caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+    });
+    const resumed = await recovered.submitPrivateContractPrompt(request);
+    expect(resumed).toMatchObject({
+      status: "accepted",
+      missionId: expect.any(String),
+      contractId: expect.any(String),
+    });
+    releaseStart();
+    await expect(interrupted).rejects.toMatchObject({ code: "conflict" });
+    await waitForTerminalMission(recovered, resumed.missionId!);
+    expect(fixture.store.snapshot().shepherd.missions).toHaveLength(1);
+    expect(
+      await readFile(path.join(fixture.agent.workspacePath, "scripts", "resumed.txt"), "utf8"),
+    ).toBe("resumed once\n");
+  }, 30_000);
+
+  it("lets cancellation win while a general promotion is still reverifying", async () => {
+    const verifier = new BlockingPromotionVerifier();
+    const fixture = await createGeneralContractFixture({ verifier });
+    const accepted = await fixture.service.submitPrivateContractPrompt({
+      agentId: fixture.agent.id,
+      clientMessageId: "general-cancel-reverification",
+      content:
+        'Create `scripts/cancelled.txt`. Acceptance: the file contains "never promote".',
+    });
+    await verifier.entered;
+    const plane = fixture.service
+      .missionDetail(accepted.missionId!)
+      ?.planes.find((item) => item.generalPromotionState === "reverifying");
+    expect(plane).toBeDefined();
+    await fixture.service.cancelMission(accepted.missionId!);
+    expect(verifier.cancelledIds).toEqual([plane?.id]);
+    expect(fixture.service.missionDetail(accepted.missionId!)?.mission.state).toBe(
+      "cancelled",
+    );
+    await expect(
+      access(path.join(fixture.agent.workspacePath, "scripts", "cancelled.txt")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
   }, 30_000);
 
   it("assigns user-created role Agents to opposite auth transport contracts", async () => {

@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import path from "node:path";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { AUTH_TOKEN, repositoryRoot, startTestApp } from "./support/test-app.mjs";
 
 let app;
@@ -65,7 +65,7 @@ async function assertShepherdShellContained(page) {
 }
 
 test.beforeEach(async () => {
-  app = await startTestApp();
+  app = await startTestApp({ agentRuntimeConfigured: true });
 });
 
 test.afterEach(async () => {
@@ -86,14 +86,34 @@ test("user-created Agents receive visible typed contracts and produce competing 
   const frontendRoute = page.getByLabel("Route through Shepherd");
   await frontendRoute.focus();
   await expect(frontendRoute).toBeFocused();
-  await frontendRoute.check();
+  await expect(frontendRoute).toBeChecked();
   await page.getByRole("link", { name: /My Generalist Agent/u }).click();
-  await expect(page.getByLabel("Route through Shepherd")).toHaveCount(0);
+  await expect(page.getByLabel("Route through Shepherd")).toBeChecked();
+  await page.getByLabel("Route through Shepherd").uncheck();
   await expect(page.getByText("Playground ready", { exact: true })).toBeVisible();
-  await expect(page.getByLabel("Message My Generalist Agent")).toBeEnabled();
+  const directComposer = page.getByLabel("Message My Generalist Agent");
+  await expect(directComposer).toBeEnabled();
+  let managedRequests = 0;
+  const observeManagedRequest = (request) => {
+    if (
+      request.method() === "POST" &&
+      /\/api\/shepherd\/agents\/[^/]+\/contracts$/u.test(request.url())
+    ) {
+      managedRequests += 1;
+    }
+  };
+  page.on("request", observeManagedRequest);
+  await directComposer.fill("Reply directly without creating a Shepherd Contract.");
+  const directResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST" &&
+    /\/api\/agents\/[^/]+\/messages$/u.test(response.url()),
+  );
+  await directComposer.press("Enter");
+  expect((await directResponse).status()).toBe(202);
+  expect(managedRequests).toBe(0);
+  page.off("request", observeManagedRequest);
   await page.getByRole("link", { name: /My Frontend Agent/u }).click();
-  await expect(page.getByLabel("Route through Shepherd")).not.toBeChecked();
-  await page.getByLabel("Route through Shepherd").check();
+  await expect(page.getByLabel("Route through Shepherd")).toBeChecked();
   const frontendPrompt =
     "Implement the frontend authentication client using an HttpOnly session cookie.";
   await page.getByLabel("Message My Frontend Agent").fill(frontendPrompt);
@@ -114,8 +134,7 @@ test("user-created Agents receive visible typed contracts and produce competing 
 
   await page.getByRole("link", { name: /My Backend Agent/u }).click();
   const backendRoute = page.getByLabel("Route through Shepherd");
-  await expect(backendRoute).not.toBeChecked();
-  await backendRoute.check();
+  await expect(backendRoute).toBeChecked();
   const backendPrompt =
     "Implement the backend authentication service using a bearer JWT.";
   await page.getByLabel("Message My Backend Agent").fill(backendPrompt);
@@ -125,7 +144,7 @@ test("user-created Agents receive visible typed contracts and produce competing 
   await page.getByLabel("Message My Backend Agent").press("Enter");
   expect((await acceptedResponse).status()).toBe(202);
   const finalState = await waitForCompleted(request);
-  await expect(page.locator(".shepherd-contract-status")).toContainText("is verified");
+  await expect(page.locator(".shepherd-contract-status").last()).toContainText("is verified");
   await page.getByRole("link", { name: /^Shepherd/u }).click();
   await expect(page.locator(".timeline-panel .state-pill")).toContainText("Completed");
   await expect(page.getByLabel("Frontend Agent", { exact: true })).toHaveCount(0);
@@ -171,6 +190,60 @@ test("user-created Agents receive visible typed contracts and produce competing 
   await assertShepherdShellContained(page);
   await page.screenshot({
     path: path.join(screenshotDirectory, `${viewport.width}x${viewport.height}.png`),
+    fullPage: false,
+  });
+});
+
+test("general Agent chat clarifies missing Contract details before verified execution", async ({ page, request }, testInfo) => {
+  test.setTimeout(45_000);
+  const screenshotDirectory = path.join(repositoryRoot, ".tmp", "demo-agent-contract-flow");
+  await mkdir(screenshotDirectory, { recursive: true });
+  await unlock(page);
+  await createAgent(page, "General Delivery Agent", "Generalist");
+  await expect(page.getByLabel("Route through Shepherd")).toBeChecked();
+  await expect(page.getByText("Shepherd route ready", { exact: true })).toBeVisible();
+
+  const composer = page.getByLabel("Message General Delivery Agent");
+  await composer.fill("Build a greeting feature.");
+  const clarificationResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST" && /\/api\/shepherd\/agents\/[^/]+\/contracts$/u.test(response.url()),
+  );
+  await composer.press("Enter");
+  expect((await clarificationResponse).status()).toBe(201);
+  await expect(page.getByText(/Before I create the Execution Contract/u)).toBeVisible();
+  await expect(composer).toBeEnabled();
+  expect((await state(request)).contracts).toHaveLength(0);
+
+  await composer.fill(
+    'Create `scripts/hello.txt`. Acceptance: the file exists and contains "Hello from Shepherd".',
+  );
+  const acceptedResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST" && /\/api\/shepherd\/agents\/[^/]+\/contracts$/u.test(response.url()),
+  );
+  await composer.press("Enter");
+  expect((await acceptedResponse).status()).toBe(202);
+  const finalState = await waitForCompleted(request);
+  const mission = finalState.missions.at(-1);
+  const contract = finalState.contracts.find((item) => item.missionId === mission.id);
+  expect(contract).toMatchObject({
+    state: "verified",
+    expectedArtifacts: [expect.objectContaining({ path: "scripts/hello.txt" })],
+  });
+  await expect(page.locator(".shepherd-contract-status").last()).toContainText("is verified");
+  await expect(page.locator(".page-header .state-pill").first()).toContainText("Ready");
+  await assertNoDocumentOverflow(page);
+  const agentsResponse = await request.get(`${app.baseURL}/api/agents`, { headers: headers() });
+  const agent = (await agentsResponse.json()).agents.find(
+    (item) => item.name === "General Delivery Agent",
+  );
+  expect(
+    await readFile(path.join(app.runRoot, "workspaces", agent.id, "scripts", "hello.txt"), "utf8"),
+  ).toBe("Hello from Shepherd\n");
+  await page.screenshot({
+    path: path.join(
+      screenshotDirectory,
+      `general-${testInfo.project.use.viewport.width}x${testInfo.project.use.viewport.height}.png`,
+    ),
     fullPage: false,
   });
 });

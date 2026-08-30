@@ -68,9 +68,10 @@ export interface ShepherdHttpService {
     clientMessageId: string;
     content: string;
   }): Promise<{
-    status: "awaiting_peer" | "accepted";
+    status: "clarification_required" | "awaiting_peer" | "accepted";
     missionId: string | null;
     contractId: string | null;
+    clarification: string | null;
     message: ProjectGroupMessage;
   }>;
   projectGroupMessages(projectId: string, limit?: number): ProjectGroupMessage[];
@@ -98,10 +99,15 @@ export interface ShepherdHttpService {
 type PublicShepherdProject = Omit<ShepherdProject, "repositoryPath">;
 type PublicPlane = Omit<
   Plane,
-  "worktreePath" | "runtimeSessionFingerprint" | "executionIdentity" | "error"
+  | "worktreePath"
+  | "runtimeSessionFingerprint"
+  | "executionIdentity"
+  | "error"
+  | "generalPromotionEvidence"
 > & {
   runtimeSessionEstablished: boolean;
   error: FailureInfo | null;
+  generalPromotionEvidence?: PublicVerificationEvidence | null;
 };
 export type PublicAgent = Pick<
   Agent,
@@ -219,6 +225,7 @@ const withoutPlanePath = (
     runtimeSessionFingerprint,
     executionIdentity,
     error,
+    generalPromotionEvidence,
     ...publicPlane
   } = plane;
   void worktreePath;
@@ -229,6 +236,14 @@ const withoutPlanePath = (
     diffSummary: safeText(publicPlane.diffSummary, secrets, 1_000),
     error: publicFailure(error, secrets),
     runtimeSessionEstablished: Boolean(runtimeSessionFingerprint),
+    ...(generalPromotionEvidence === undefined
+      ? {}
+      : {
+          generalPromotionEvidence:
+            generalPromotionEvidence === null
+              ? null
+              : toPublicEvidence(generalPromotionEvidence, secrets),
+        }),
   };
 };
 
@@ -408,9 +423,24 @@ const toPublicGroupMessage = (
   secrets: readonly string[],
 ): ProjectGroupMessage => {
   const { requestFingerprint: _requestFingerprint, ...publicMessage } = message;
+  const contractAssignment =
+    message.contractAssignment?.preset === "general-contract"
+      ? {
+          ...message.contractAssignment,
+          acceptanceSummary:
+            message.contractAssignment.acceptanceSummary === null
+              ? null
+              : safeText(message.contractAssignment.acceptanceSummary, secrets, 500),
+          requiredContent:
+            message.contractAssignment.requiredContent === null
+              ? null
+              : safeText(message.contractAssignment.requiredContent, secrets, 200),
+        }
+      : message.contractAssignment;
   return {
     ...publicMessage,
     content: safeText(message.content, secrets, 2_000),
+    ...(contractAssignment === undefined ? {} : { contractAssignment }),
   };
 };
 
@@ -709,7 +739,7 @@ const privateContractPromptBody = z
   .object({
     clientMessageId: safeIdSchema,
     content: z.string().trim().min(1).max(2_000),
-    preset: z.literal("auth-demo-contract"),
+    preset: z.literal("managed-contract"),
   })
   .strict();
 const decimalInteger = (name: string, minimum: number, maximum: number) =>
@@ -980,6 +1010,7 @@ export async function createApp(
         status: accepted.status,
         missionId: accepted.missionId,
         contractId: accepted.contractId,
+        clarification: accepted.clarification,
         message: toPublicGroupMessage(accepted.message, publicSecrets),
         executionMode: config.shepherdExecutionMode,
       });
