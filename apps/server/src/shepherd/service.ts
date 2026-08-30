@@ -904,6 +904,7 @@ export class ShepherdService {
     }
   >();
   private privatePromptTail: Promise<void> = Promise.resolve();
+  private projectGroupMessageTail: Promise<void> = Promise.resolve();
 
   constructor(options: ShepherdServiceOptions) {
     this.store = options.store;
@@ -1363,6 +1364,15 @@ export class ShepherdService {
     projectId: string,
     input: SendProjectGroupMessageInput,
   ): Promise<ProjectGroupMessage> {
+    return await this.serializeProjectGroupMessage(async () =>
+      await this.sendProjectGroupMessageOnce(projectId, input),
+    );
+  }
+
+  private async sendProjectGroupMessageOnce(
+    projectId: string,
+    input: SendProjectGroupMessageInput,
+  ): Promise<ProjectGroupMessage> {
     if (!SAFE_ID.test(projectId) || !SAFE_ID.test(input.clientMessageId)) {
       throw new ShepherdControlError("invalid_input", "Message identity is invalid");
     }
@@ -1533,6 +1543,20 @@ export class ShepherdService {
     const previous = this.privatePromptTail;
     let release!: () => void;
     this.privatePromptTail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+    }
+  }
+
+  private async serializeProjectGroupMessage<T>(operation: () => Promise<T>): Promise<T> {
+    const previous = this.projectGroupMessageTail;
+    let release!: () => void;
+    this.projectGroupMessageTail = new Promise<void>((resolve) => {
       release = resolve;
     });
     await previous;

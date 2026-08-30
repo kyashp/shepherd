@@ -464,6 +464,38 @@ const fullMissionDatabase = (): Database => {
   return database;
 };
 
+const activeContractDatabase = (withManifest: boolean): Database => {
+  const database = fullMissionDatabase();
+  const project = database.shepherd.projects[0]!;
+  const mission = database.shepherd.missions[0]!;
+  const contract = database.shepherd.contracts[0]!;
+  const plane = database.shepherd.planes.find((item) => item.id === contract.planeId)!;
+
+  project.activeMissionId = mission.id;
+  mission.contractIds = [contract.id];
+  mission.collisionIds = [];
+  mission.resolutionIds = [];
+  mission.state = "running";
+  mission.completedAt = null;
+  contract.state = "verifying";
+  contract.verifiedAt = null;
+  contract.completedAt = null;
+  contract.verificationEvidence = [];
+  if (!withManifest) contract.manifest = null;
+  plane.state = "inspecting";
+  plane.verificationEvidenceIds = [];
+  database.shepherd.contracts = [contract];
+  database.shepherd.planes = [plane];
+  database.shepherd.claims = [];
+  database.shepherd.collisions = [];
+  database.shepherd.candidates = [];
+  database.shepherd.events = database.shepherd.events.filter(
+    (event) => event.type === "mission_created",
+  );
+  database.shepherd.groupMessages = [];
+  return database;
+};
+
 const completedNoCollisionDatabase = (): Database => {
   const database = fullMissionDatabase();
   const mission = database.shepherd.missions[0]!;
@@ -700,12 +732,6 @@ describe("Database V2", () => {
     ["too-low Plane concurrency", (database: Database) => ((database.shepherd.settings as { maxConcurrentPlanes: number }).maxConcurrentPlanes = 1)],
     ["too-high Plane concurrency", (database: Database) => ((database.shepherd.settings as { maxConcurrentPlanes: number }).maxConcurrentPlanes = 17)],
     ["malformed event details", (database: Database) => ((database.shepherd.events[0]!.details as Record<string, unknown>).nested = { secret: true })],
-    ["agent summary references an unverified Contract", (database: Database) => {
-      database.shepherd.contracts[0]!.state = "verifying";
-    }],
-    ["agent summary references a Contract without a manifest", (database: Database) => {
-      database.shepherd.contracts[0]!.manifest = null;
-    }],
     ["agent summary uses the wrong sender", (database: Database) => {
       database.agents.push({
         ...database.agents[0]!,
@@ -757,6 +783,31 @@ describe("Database V2", () => {
       expect(String(error)).not.toContain("DATABASE_CANARY_7f3a");
       expect(String(error).length).toBeLessThan(100);
     }
+  });
+
+  it.each([
+    ["unverified Contract with a manifest", true],
+    ["unverified Contract without a manifest", false],
+  ] as const)("rejects an Agent summary for an %s", (_name, withManifest) => {
+    const database = activeContractDatabase(withManifest);
+    expect(loadDatabase(database)).toEqual({ database, migrated: false });
+
+    const contract = database.shepherd.contracts[0]!;
+    database.shepherd.groupMessages.push({
+      id: "forged-agent-summary",
+      projectId: "project-1",
+      missionId: "mission-1",
+      senderType: "agent",
+      senderId: contract.agentId,
+      content: contract.manifest?.summary ?? "Forged summary without a manifest",
+      targetAgentId: contract.agentId,
+      contractId: contract.id,
+      createdAt: completedTimestamp,
+    });
+
+    expect(() => loadDatabase(database)).toThrow(
+      "Unsupported database format: invalid version 2 state",
+    );
   });
 
   it.each([

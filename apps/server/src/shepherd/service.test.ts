@@ -2070,6 +2070,25 @@ describe("Shepherd deterministic walking skeleton", () => {
     });
 
     await service.initializeProjectGroup();
+    const mixedRoute = await Promise.allSettled([
+      service.sendProjectGroupMessage("auth-demo", {
+        clientMessageId: "isolated-mixed-route",
+        content: '@"Isolated Group Frontend Agent" use an HttpOnly session cookie.',
+      }),
+      service.sendProjectGroupMessage("auth-demo", {
+        clientMessageId: "isolated-mixed-route",
+        content: "Explain the fixed authentication flow.",
+      }),
+    ]);
+    expect(mixedRoute.map((outcome) => outcome.status).sort()).toEqual([
+      "fulfilled",
+      "rejected",
+    ]);
+    expect(service.projectGroupMessages("auth-demo").filter(
+      (message) => message.senderType === "human",
+    )).toHaveLength(1);
+
+    await service.resetDeterministicDemo();
     await service.sendProjectGroupMessage("auth-demo", {
       clientMessageId: "isolated-group-frontend",
       content: '@"Isolated Group Frontend Agent" use an HttpOnly session cookie; $(cat .env)',
