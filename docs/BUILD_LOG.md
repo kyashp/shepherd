@@ -7,6 +7,27 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-31 — SEC-REVIEW parts 4-5 moved to a successor issue
+
+Documentation only; no product code. Protected `main` at `c158480`.
+
+- `SEC-REVIEW` `#49` was closed three times with its scope unsatisfied: manually on
+  2026-08-30 at 08:30 before the OPS-06 `S` review had run, reopened at 16:40, then
+  closed again at 17:16 by **PR #86, which left `#49` in its closing references while
+  its own body stated that parts 4 and 5 were not claimed**. That third closure was
+  the author's own error and was not noticed at merge.
+- Rather than reopen a fourth time, the remaining scope moved to issue `#89`, whose
+  title and acceptance match what is actually left: the independent read-only review,
+  the fixes that depend on it, and an explicit decision on the carried `OPS-06`
+  compose exposure. `#49` is left closed with the history recorded on it.
+- Pointers corrected: the `SEC-REVIEW` row, the `OPS-06` row's owner reference for
+  the carried High finding, and the hackathon-cut list all named `#49`. The closure
+  comment posted on `#47` named it too and was corrected in a follow-up comment.
+- Nothing about any gate changed. `SEC-REVIEW` stays `PARTIAL` at 70% with parts 1-3
+  evidenced, and `OPS-06` keeps its scoped 100 with the High finding carried.
+- `#89` records the instruction that closed `#49` twice: do not put a closing keyword
+  for it in a PR body unless that PR completes every part.
+
 ## 2026-08-31 — ST-01 and OPS-06 integration rerun, self-performed
 
 Protected `main` at `a62e29b` (merge of PR #86). Branch
