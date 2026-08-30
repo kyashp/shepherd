@@ -557,6 +557,14 @@ const groupMessageSchema = z
     content: textSchema,
     targetAgentId: nullableIdSchema,
     contractId: nullableIdSchema,
+    contractAssignment: z
+      .object({
+        preset: z.literal("auth-demo-contract"),
+        role: z.enum(["Frontend", "Backend"]),
+        transport: z.enum(["bearer-jwt", "http-only-session-cookie"]),
+      })
+      .strict()
+      .optional(),
     requestFingerprint: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
     createdAt: timestampSchema,
   })
@@ -1414,6 +1422,22 @@ function hasValidReferences(database: DatabaseV2): boolean {
     if (message.targetAgentId && !agents.has(message.targetAgentId)) return false;
     if (message.senderType === "agent" && (!message.senderId || !agents.has(message.senderId))) {
       return false;
+    }
+    if (message.contractAssignment) {
+      const targetAgent = message.targetAgentId
+        ? agents.get(message.targetAgentId)
+        : undefined;
+      if (
+        message.senderType !== "human" ||
+        message.senderId !== null ||
+        !targetAgent ||
+        targetAgent.role !== message.contractAssignment.role ||
+        message.requestFingerprint === undefined ||
+        (message.missionId === null) !== (message.contractId === null) ||
+        (contract !== undefined && contract.agentId !== targetAgent.id)
+      ) {
+        return false;
+      }
     }
   }
 

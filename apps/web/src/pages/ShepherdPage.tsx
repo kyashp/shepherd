@@ -4,7 +4,6 @@ import { navigate } from "../router";
 import { useShepherdPolling } from "../shepherd-hooks";
 import type {
   Agent,
-  AuthTransport,
   ExecutionContract,
   Mission,
   Plane,
@@ -769,24 +768,7 @@ export function ShepherdPage({ agents, search }: { agents: Agent[]; search: stri
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
-  const [frontendAgentId, setFrontendAgentId] = useState<string>("");
-  const [backendAgentId, setBackendAgentId] = useState<string>("");
-  const [frontendTransport, setFrontendTransport] = useState<AuthTransport>("http-only-session-cookie");
-  const [backendTransport, setBackendTransport] = useState<AuthTransport>("bearer-jwt");
   const requestedPlaneId = new URLSearchParams(search).get("plane");
-
-  const frontendAgents = useMemo(
-    () => agents.filter((agent) => agent.role === "Frontend"),
-    [agents],
-  );
-  const backendAgents = useMemo(
-    () => agents.filter((agent) => agent.role === "Backend"),
-    [agents],
-  );
-  const assignedFrontendId = frontendAgentId || frontendAgents[0]?.id || "";
-  const assignedBackendId = backendAgentId || backendAgents[0]?.id || "";
-  const hasUserAssignments = Boolean(assignedFrontendId && assignedBackendId);
-  const collisionReady = frontendTransport !== backendTransport;
 
   const sortedMissions = useMemo(() => [...(state?.missions ?? [])].sort((a, b) =>
     new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
@@ -805,18 +787,6 @@ export function ShepherdPage({ agents, search }: { agents: Agent[]; search: stri
     try {
       const result = await api.sendShepherdMessage(
         intent.trim(),
-        hasUserAssignments
-          ? {
-              frontend: {
-                agentId: assignedFrontendId,
-                transport: frontendTransport,
-              },
-              backend: {
-                agentId: assignedBackendId,
-                transport: backendTransport,
-              },
-            }
-          : undefined,
       );
       setSelectedMissionId(result.missionId);
       setIntent("");
@@ -884,44 +854,9 @@ export function ShepherdPage({ agents, search }: { agents: Agent[]; search: stri
       </div>
 
       <form className="kernel-composer" onSubmit={submitMission}>
-        <fieldset className="mission-assignments" disabled={submitting || Boolean(project?.activeMissionId && mission && !terminalMissionStates.has(mission.state))}>
-          <legend className="sr-only">Execution contract assignments</legend>
-          {hasUserAssignments ? (
-            <div className="mission-assignment-grid">
-              <div className="mission-assignment-group">
-                <label htmlFor="frontend-contract-agent">Frontend Agent</label>
-                <select id="frontend-contract-agent" value={assignedFrontendId} onChange={(event) => setFrontendAgentId(event.target.value)}>
-                  {frontendAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
-                </select>
-                <label className="sr-only" htmlFor="frontend-contract-transport">Frontend authentication transport</label>
-                <select id="frontend-contract-transport" value={frontendTransport} onChange={(event) => setFrontendTransport(event.target.value as AuthTransport)}>
-                  <option value="http-only-session-cookie">HttpOnly session cookie</option>
-                  <option value="bearer-jwt">Bearer JWT</option>
-                </select>
-              </div>
-              <div className="mission-assignment-group">
-                <label htmlFor="backend-contract-agent">Backend Agent</label>
-                <select id="backend-contract-agent" value={assignedBackendId} onChange={(event) => setBackendAgentId(event.target.value)}>
-                  {backendAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
-                </select>
-                <label className="sr-only" htmlFor="backend-contract-transport">Backend authentication transport</label>
-                <select id="backend-contract-transport" value={backendTransport} onChange={(event) => setBackendTransport(event.target.value as AuthTransport)}>
-                  <option value="bearer-jwt">Bearer JWT</option>
-                  <option value="http-only-session-cookie">HttpOnly session cookie</option>
-                </select>
-              </div>
-            </div>
-          ) : (
-            <p>Create one Frontend Agent and one Backend Agent to assign your own identities; otherwise Shepherd uses its managed demo Agents.</p>
-          )}
-          {hasUserAssignments ? (
-            <small className={collisionReady ? "assignment-ready" : "assignment-warning"}>
-              {collisionReady
-                ? "Two incompatible exclusive auth.transport claims will be independently verified before integration."
-                : "Choose different transports to demonstrate a semantic collision."}
-            </small>
-          ) : null}
-        </fieldset>
+        <p className="mission-chat-guidance">
+          Primary demo: open each Frontend and Backend Agent chat and enable <strong>Route through Shepherd</strong>. This composer remains the managed-Agent fallback.
+        </p>
         <label htmlFor="shepherd-intent" className="sr-only">Message Shepherd</label>
         <textarea
           id="shepherd-intent"
@@ -944,7 +879,7 @@ export function ShepherdPage({ agents, search }: { agents: Agent[]; search: stri
               ? "One mutating Mission at a time · cancel or wait before starting another"
               : `Enter to send · polled about every second${lastUpdated ? ` · updated ${formatTime(lastUpdated.toISOString())}` : ""}`}
           </span>
-          <button className="send-button" aria-label="Send Mission" disabled={!intent.trim() || submitting || !collisionReady || Boolean(project?.activeMissionId && mission && !terminalMissionStates.has(mission.state))}>
+          <button className="send-button" aria-label="Send Mission" disabled={!intent.trim() || submitting || Boolean(project?.activeMissionId && mission && !terminalMissionStates.has(mission.state))}>
             {submitting ? <Spinner label="Creating Mission" /> : <Icon name="send" />}
           </button>
         </div>

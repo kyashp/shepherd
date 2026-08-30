@@ -20,6 +20,16 @@ persistence/API boundaries, live isolated Runtime adapter, Agent roles and scope
 authority, cancellation/retry/selection/reset controls, Project Group lifecycle
 storage, and all six requested UI surfaces are implemented.
 
+Reviewed candidate PR #57 (`e1fe067`) improves the primary deterministic demo
+without claiming protected-main integration: users create Frontend and Backend
+Agents, opt each private chat into **Route through Shepherd**, and describe the two
+incompatible transports in their own words. The exact bounded prompts become two
+durable Execution Contract objectives and feed the existing verified
+Plane/collision/resolution/promotion kernel. The former Shepherd Agent/transport
+selectors are removed. Literal checks, the two-viewport browser journey, and
+independent security/UI re-reviews pass; `TASKS.md` records the remaining integration
+gate and keeps the separate Project Group journey open.
+
 This is a strong Track 1 proof of concept, not a full-PRD completion claim. Current
 hackathon-submission completion is **82%**. The core middleware demonstration itself
 is **90% demo-ready** because the primary deterministic journey is functional and
@@ -48,7 +58,7 @@ just the percentage.
 |---|---|---:|
 | Preserved starter platform | Agent create/edit/start/stop/delete, Playground messages, Runs, workspaces, session continuity, persistence, and local container execution remain functional. | 95% |
 | One-command local PoC | The launcher reads `.env`, localizes Docker-default paths, builds the Runtime and application, performs mount/startup checks, and serves the authenticated local UI. | 95% |
-| User-selected specialists | A user can create Frontend and Backend Agents, then assign both identities and opposite typed auth transports to one Mission. The server revalidates role, readiness, authority, and reservation atomically. | 95% |
+| User-selected specialists | Reviewed candidate PR #57 lets a user prompt Frontend and Backend Agents separately in private chat. Server-side bounded transport parsing, restart-safe prompt records and serialized intake bind both exact prompts to one Mission; role, readiness, authority, idempotency and deletion races are revalidated before execution. | 98% candidate; integration pending |
 | Execution Contracts | Shepherd persists and displays Agent, Mission, Plane, objective, dependencies, semantic scope/claims, contextual inputs, scoped authority, artifacts, acceptance profile/checks, manifest path, and timestamps. | 96% |
 | Isolated Planes | Each Contract and candidate executes in its own Git worktree from a trusted immutable base; Agents receive Git-free authority-filtered exports rather than protected repository access. | 94% |
 | Independent verification | Registry-owned, credential-free, no-network checks inspect the exact committed output. Agent-authored manifests cannot self-certify acceptance. | 95% |
@@ -59,7 +69,7 @@ just the percentage.
 | Durable audit and recovery | Typed lifecycle events, redaction, request idempotency, serialized schema-validated persistence, cancellation/reset, restart classification, Plane cleanup, and representative crash recovery are implemented. | 93% |
 | Bounded model assistance | `SHEPHERD_MODEL` may perform one validated advisory semantic review. It cannot verify, choose, execute arbitrary commands, or promote; deterministic logic remains authoritative and degrades explicitly when review fails. | 90% |
 | Middleware observability UI | Contract stream, execution timeline, Plane tree, collision/candidate evidence, Project Group lifecycle, Settings, and private Agent chat expose real backend state rather than static success screens. | 90% |
-| Automated assurance | Final candidate evidence currently includes launcher 3/3, Server 739 passed plus two explicit live skips, Web 18/18, strict production/test type checks, builds, four focused browser journeys at both required viewports, and scoped independent UI/security passes. | 92% |
+| Automated assurance | Final candidate evidence currently includes launcher 3/3, Server 742 passed plus two explicit live skips, Web 18/18, strict production/test type checks, builds, four focused browser journeys at both required viewports, and scoped independent UI/security passes. | 93% |
 
 Confidence is scoped to the recorded deterministic/local evidence. It is not a claim
 that the open exact-head live, final security, stability, and rehearsal gates passed.

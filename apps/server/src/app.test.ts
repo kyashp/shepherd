@@ -413,6 +413,12 @@ const createShepherdService = (
   eventsAfter: () => [event],
   startDeterministicDemo: async () => ({ missionId }),
   startMissionFromMessage: async () => ({ missionId, message: groupMessage }),
+  submitPrivateContractPrompt: async () => ({
+    status: "accepted",
+    missionId,
+    contractId: contract.id,
+    message: groupMessage,
+  }),
   projectGroupMessages: () => [groupMessage],
   sendProjectGroupMessage: async () => groupMessage,
   cancelMission: async () => ({ ...missionDetail.mission, state: "cancelled" }),
@@ -863,6 +869,15 @@ describe("HTTP boundary", () => {
       },
       {
         method: "POST",
+        url: `/api/shepherd/agents/${agentId}/contracts`,
+        payload: {
+          clientMessageId: "private-contract-1",
+          content: "Use an HttpOnly session cookie.",
+          preset: "auth-demo-contract",
+        },
+      },
+      {
+        method: "POST",
         url: `/api/shepherd/missions/${missionId}/cancel`,
         payload: {},
       },
@@ -892,6 +907,23 @@ describe("HTTP boundary", () => {
     }));
     const projectGroupMessages = vi.fn(() => [groupMessage]);
     const sendProjectGroupMessage = vi.fn(async () => groupMessage);
+    const submitPrivateContractPrompt = vi.fn(async () => ({
+      status: "awaiting_peer" as const,
+      missionId: null,
+      contractId: null,
+      message: {
+        ...groupMessage,
+        missionId: null,
+        contractId: null,
+        targetAgentId: agentId,
+        contractAssignment: {
+          preset: "auth-demo-contract" as const,
+          role: "Frontend" as const,
+          transport: "http-only-session-cookie" as const,
+        },
+        requestFingerprint: "f".repeat(64),
+      },
+    }));
     const cancelMission = vi.fn(async () => ({
       ...missionDetail.mission,
       state: "cancelled" as const,
@@ -911,6 +943,7 @@ describe("HTTP boundary", () => {
       service,
       createShepherdService({
         startMissionFromMessage,
+        submitPrivateContractPrompt,
         projectGroupMessages,
         sendProjectGroupMessage,
         cancelMission,
@@ -939,6 +972,36 @@ describe("HTTP boundary", () => {
       content: "Implement the authentication demo",
       preset: "auth-demo",
       clientMessageId: "mission-client-1",
+    });
+
+    const privatePrompt = await app.inject({
+      method: "POST",
+      url: `/api/shepherd/agents/${agentId}/contracts`,
+      payload: {
+        clientMessageId: "private-contract-client-1",
+        content: "Implement frontend auth with an HttpOnly session cookie.",
+        preset: "auth-demo-contract",
+      },
+    });
+    expect(privatePrompt.statusCode).toBe(201);
+    expect(privatePrompt.json()).toMatchObject({
+      status: "awaiting_peer",
+      missionId: null,
+      contractId: null,
+      executionMode: "deterministic",
+      message: {
+        targetAgentId: agentId,
+        contractAssignment: {
+          role: "Frontend",
+          transport: "http-only-session-cookie",
+        },
+      },
+    });
+    expect(privatePrompt.body).not.toContain("requestFingerprint");
+    expect(submitPrivateContractPrompt).toHaveBeenCalledWith({
+      agentId,
+      clientMessageId: "private-contract-client-1",
+      content: "Implement frontend auth with an HttpOnly session cookie.",
     });
 
     const messages = await app.inject({

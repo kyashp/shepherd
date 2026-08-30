@@ -398,6 +398,11 @@ export interface ProjectGroupMessage {
   content: string;
   targetAgentId: string | null;
   contractId: string | null;
+  contractAssignment?: {
+    preset: "auth-demo-contract";
+    role: "Frontend" | "Backend";
+    transport: AuthTransport;
+  };
   createdAt: string;
 }
 
