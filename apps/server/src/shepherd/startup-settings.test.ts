@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadConfig } from "../config.js";
@@ -14,6 +14,8 @@ afterEach(async () => {
 
 async function caseRoot(): Promise<string> {
   const parent = path.resolve(process.cwd(), ".tmp", "startup-settings");
+  // `.tmp` is gitignored, so a clean checkout has no such directory.
+  await mkdir(parent, { recursive: true });
   const root = await mkdtemp(path.join(parent, "case-"));
   roots.push(root);
   return root;
