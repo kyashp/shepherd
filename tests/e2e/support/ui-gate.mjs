@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { copyFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { repositoryRoot } from "./test-app.mjs";
 
@@ -149,6 +149,18 @@ export function uiGateEvidencePath(viewportName, stage) {
   );
 }
 
+export function uiGateReviewedEvidencePath(viewportName, stage) {
+  if (!VIEWPORTS.has(viewportName)) throw new Error(`Unsupported UI gate viewport: ${viewportName}`);
+  return path.join(
+    repositoryRoot,
+    "docs",
+    "ui-review",
+    "ui-gate",
+    viewportName,
+    `${normalizeEvidenceStage(stage)}.png`,
+  );
+}
+
 export async function assertNoDocumentOverflow(page) {
   const geometry = await page.evaluate(() => ({
     document: {
@@ -239,6 +251,7 @@ export async function assertMinimumContrast(locator, minimum) {
 }
 
 export async function assertVisibleFocus(page, locator) {
+  await page.keyboard.press("Tab");
   await locator.focus();
   const result = await locator.evaluate((element) => {
     const style = getComputedStyle(element);
@@ -320,5 +333,10 @@ export async function captureUiGate(page, viewportName, stage) {
   const screenshotPath = uiGateEvidencePath(viewportName, stage);
   await mkdir(path.dirname(screenshotPath), { recursive: true });
   await page.screenshot({ path: screenshotPath, fullPage: true });
+  if (process.env.E2E_UPDATE_EVIDENCE === "true") {
+    const reviewedPath = uiGateReviewedEvidencePath(viewportName, stage);
+    await mkdir(path.dirname(reviewedPath), { recursive: true });
+    await copyFile(screenshotPath, reviewedPath);
+  }
   return screenshotPath;
 }

@@ -19,6 +19,7 @@ import {
   contrastRatio,
   normalizeEvidenceStage,
   uiGateEvidencePath,
+  uiGateReviewedEvidencePath,
 } from "./support/ui-gate.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -77,6 +78,14 @@ test("uiGateEvidencePath puts the normalized stage beneath its viewport evidence
   assert.ok(
     uiGateEvidencePath("1440x900", "08 Shepherd / loading").endsWith(
       path.join(".tmp", "playwright-evidence", "ui-gate", "1440x900", "08-shepherd-loading.png"),
+    ),
+  );
+});
+
+test("uiGateReviewedEvidencePath puts explicit evidence beneath the review corpus", () => {
+  assert.ok(
+    uiGateReviewedEvidencePath("1280x800", "18 Project Group / message").endsWith(
+      path.join("docs", "ui-review", "ui-gate", "1280x800", "18-project-group-message.png"),
     ),
   );
 });
@@ -141,6 +150,7 @@ test("assertScrollOwner rejects vertical overflow that only has a horizontal scr
 });
 
 test("assertVisibleFocus rejects a transparent outline without another focus indicator", async () => {
+  const pressedKeys = [];
   const element = {
     tagName: "BUTTON",
     textContent: "Continue",
@@ -161,8 +171,12 @@ test("assertVisibleFocus rejects a transparent outline without another focus ind
       boxShadow: "none",
     }),
   }, async () => {
-    await assert.rejects(assertVisibleFocus({}, locator), /visible focus indicator/i);
+    await assert.rejects(
+      assertVisibleFocus({ keyboard: { press: async (key) => { pressedKeys.push(key); } } }, locator),
+      /visible focus indicator/i,
+    );
   });
+  assert.deepEqual(pressedKeys, ["Tab"]);
 });
 
 function verifierCreateArgs({ name, source, target = "contract-fixture" }) {

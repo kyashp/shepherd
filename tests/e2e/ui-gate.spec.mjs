@@ -225,7 +225,9 @@ test("covers the clean shell, authentication, Agents, Settings, and not-found st
   await assertMinimumContrast(page.getByRole("heading", { name: "Shepherd", exact: true }), 4.5);
   await assertNoDocumentOverflow(page);
 
-  await page.getByRole("link", { name: "Your Agents", exact: true }).click();
+  const agentsLink = page.getByRole("link", { name: "Your Agents", exact: true });
+  await assertVisibleFocus(page, agentsLink);
+  await agentsLink.press("Enter");
   const agentsRegion = page.getByRole("region", { name: "Agents" });
   await expect(agentsRegion.getByText("No Agents yet", { exact: true })).toBeVisible();
   await assertNoDocumentOverflow(page);
@@ -351,6 +353,8 @@ test("covers the clean shell, authentication, Agents, Settings, and not-found st
   await capture("07-not-found");
   expect(evidencePaths).toHaveLength(7);
 
+  await recoveryLink.press("Enter");
+  await expect(page.getByRole("heading", { name: "Shepherd", exact: true })).toBeVisible();
   await settingsLink.click();
   await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
   const keyboardTablist = page.getByRole("tablist", { name: "Settings sections" });
@@ -698,7 +702,8 @@ test("covers every populated Shepherd surface and exposes full Plane identifiers
 
   for (const name of ["Contracts", "Verification", "Collisions", "Resolution"]) {
     const filter = page.getByRole("button", { name, exact: true });
-    await filter.click();
+    await assertVisibleFocus(page, filter);
+    await filter.press("Enter");
     await expect(filter).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator("article.event-card").first()).toBeVisible();
   }
@@ -715,7 +720,8 @@ test("covers every populated Shepherd surface and exposes full Plane identifiers
   await expect(shortenedPlaneId).toHaveText(`${selectedPlane.id.slice(0, 14)}…`);
   await expect.soft(shortenedPlaneId, "the shortened Plane ID exposes its full value").toHaveAttribute("title", selectedPlane.id);
 
-  await selectedNode.click();
+  await assertVisibleFocus(page, selectedNode);
+  await selectedNode.press("Enter");
   const drawer = page.getByRole("dialog");
   await expect(drawer).toBeVisible();
   await assertSafeUiGateSurface(drawer);
