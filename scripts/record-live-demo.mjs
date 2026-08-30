@@ -37,19 +37,11 @@ const runtimeInstanceId = "shepherd-live-recording";
 const viewport = { width: 1_920, height: 1_080 };
 const preflightOnly = process.argv.slice(2).includes("--preflight-only");
 
-const frontendPrompt = [
-  "Implement the browser authentication client using the security conventions",
-  "and interfaces already present in the frontend workspace.",
-  "Acceptance: frontend authentication tests pass and the implementation reports",
-  "its selected auth.transport claim with independently verifiable evidence.",
-].join(" ");
+const frontendPrompt =
+  "Implement the browser authentication client using the conventions and interfaces already present in your assigned workspace.";
 
-const backendPrompt = [
-  "Implement the authentication service using the deployment conventions and",
-  "interfaces already present in the backend workspace.",
-  "Acceptance: backend authentication tests pass and the implementation reports",
-  "its selected auth.transport claim with independently verifiable evidence.",
-].join(" ");
+const backendPrompt =
+  "Implement the authentication service using the deployment conventions and interfaces already present in your assigned workspace.";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
