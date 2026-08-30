@@ -1034,10 +1034,47 @@ operator-cleanup availability residual; cross-process automatic retry is not cla
   Non-root, read-only/tmpfs, workspace write, private-home denial, listen/connect
   denial, exact version, bounded output/marker and owner cleanup remain mandatory;
   cleanup failure overrides apparent success.
-- **Owner/status:** Fixer / `CANDIDATE PENDING AFFECTED MAC`; **80% scoped**,
-  `T,A,C,S` 4/6. Runner/executor 33/33, adjacent 87 plus one live skip,
-  strict/full checks and security review passed. No live/model call ran. Affected-
-  macOS `L` and Auditor `I` remain pending; this is diagnostic, not compatibility.
+- **Reproduced cause (affected host, this repository's own preflight):** the
+  bounded diagnostics did their job. On the affected host `codex sandbox linux
+  --full-auto` cannot enforce Landlock **per-file** access rights on a host share
+  that reaches the engine through a virtual machine. Holding image, Codex
+  configuration and container flags fixed and varying only the workspace
+  filesystem: ext4 engine volume, image overlayfs and tmpfs all permit writes,
+  while the host share denies them. Inside the sandbox on that share the split is
+  parent-inode versus file-inode — `mkdir`, `rmdir` and `unlink` succeed, while
+  `open()` for read, write, create and truncate all return `EACCES`. The subprobe's
+  first redirection `: > /workspace/.shepherd-sandbox-probe` is therefore denied,
+  the sandbox command exits non-zero outside the mapped probe codes, and the runner
+  reports the catch-all `stage=container_start reason=sandbox_probe_failed`. This
+  is a compatibility mismatch, not a preflight defect: relaxing the gate would boot
+  the server and then hand every Plane an Agent unable to read or write its own
+  workspace.
+- **Second, independent defect (both startup probes):** `scripts/start-local-poc.sh`
+  used `touch` for its bind-mount and Landlock write probes. On exactly the
+  filesystem where Codex then fails, `touch` exits 0 **and creates the file**,
+  because Landlock grants `MAKE_REG` while denying `WRITE_FILE`. Both gates were
+  certifying nothing and handed the failure to the server as an opaque crash. They
+  now write and read back bytes, and the Landlock probe commits through Git.
+- **Observed correction (compatibility):** an opt-in container state volume.
+  `CONTAINER_STATE_ROOT` and `CONTAINER_STATE_VOLUME` are required together and
+  address every mounted root as a subpath of one named volume, a native engine
+  filesystem on every supported host; unset keeps host bind mounts byte-identically.
+  `volume-nocopy` is mandatory, because without it the engine copies the image's own
+  directory metadata over an empty subpath, replacing the non-root owner, and the
+  Runtime loses write access through plain permissions before the sandbox applies.
+  The independent verifier is translated too: left bind-mounted it would turn every
+  mandatory check into an infrastructure error and fail the promotion gate. A source
+  outside the state root throws; it never falls back to a bind mount. Measured on
+  the affected host, the **unmodified** preflight script then returns
+  `SHEPHERD_RUNTIME_PREFLIGHT_OK`, and a containerized non-root control plane
+  creates its workspace, starts the sibling Runtime and reads back what the
+  sandboxed Agent wrote.
+- **Owner/status:** Fixer / `CANDIDATE PENDING AFFECTED-HOST GATE`; cause
+  reproduced and corrected on the affected host, PR #56. Causal tests cover
+  volume-mode mount construction, fail-closed containment, the previously
+  unvalidated shared Agent home, preflight shape, configuration resolution,
+  verifier translation and the executor canonicality assertion. Full startup smoke,
+  E2E harness and Auditor `I` remain pending; no live/model call has run.
 
 ## Confirmed defect inventory
 

@@ -276,7 +276,6 @@ describe("Container Codex runner", () => {
           workspacePath: "/tmp/state",
           prompt: "resume",
           threadId: "thread-1",
-          timeoutMs: 5_000,
         },
         stateConfig(),
       ),
@@ -304,7 +303,6 @@ describe("Container Codex runner", () => {
       workspacePath: "/tmp/state/workspaces/agent-1",
       prompt: "resume",
       threadId: "thread-1",
-      timeoutMs: 5_000,
     };
     expect(buildContainerRunArgs(legacy, stateConfig())).toContain(
       "type=volume,source=launchpad-state,target=/codex-home" +

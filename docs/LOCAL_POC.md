@@ -30,6 +30,43 @@ instance's remaining Runtime containers.
 Force an engine by setting `CONTAINER_ENGINE=docker` or
 `CONTAINER_ENGINE=podman` in `.env`. Colima uses the Docker CLI.
 
+### When the host filesystem reaches the engine through a virtual machine
+
+On a host where the container engine runs inside a virtual machine and shares the
+host filesystem into it, startup stops with:
+
+```
+[local-poc] Codex workspace-write Landlock cannot govern the configured workspace
+```
+
+or, if the server is reached directly, `stage=container_start
+reason=sandbox_probe_failed`. That share cannot carry the Codex sandbox's
+per-file access rights: directory operations succeed while every attempt to open
+a file for reading or writing is denied, so an Agent could not read or write the
+workspace it was given. This is not a credential or Ark failure, and the gate is
+deliberate — Shepherd does not fall back to `danger-full-access`.
+
+Run the container-first profile instead. It keeps every state root on a named
+volume, which is a native engine filesystem on every supported host:
+
+```bash
+LOCAL_POC_STATE_MODE=container-volume ./scripts/start-local-poc.sh
+```
+
+This builds and starts the control plane inside the engine using
+`docker-compose.state-volume.yml`, so it also needs:
+
+- A real `APP_AUTH_TOKEN` of at least 24 characters. The control plane is no
+  longer a loopback server, so an unauthenticated bind is refused. The port is
+  still published to `127.0.0.1` only.
+- Access to the engine socket, which the control plane joins as a supplementary
+  group while remaining non-root. See [`DEVIATIONS.md`](DEVIATIONS.md).
+
+State lives in the `launchpad-state` volume rather than a host directory, so it
+is not browsable from the host file manager; use `docker volume` and
+`docker cp`. Switching modes does not migrate existing state: Plane worktrees
+record absolute paths, so start the volume empty.
+
 ## Preflight and deterministic demo configuration
 
 From the repository root:
@@ -157,7 +194,9 @@ Persistent state defaults to:
 - macOS: `~/.volc-agent-launchpad/`
 - Linux: `.local/`
 
-Set `LOCAL_POC_DATA_ROOT` to use another directory.
+Set `LOCAL_POC_DATA_ROOT` to use another directory, or
+`LOCAL_POC_STATE_MODE=container-volume` to keep all state in the
+`launchpad-state` engine volume instead of on the host.
 
 Each turn mounts only the selected Agent workspace and Codex session directory.
 Default limits are 2 CPUs, 2 GiB memory, 256 processes, dropped capabilities,

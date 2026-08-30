@@ -120,6 +120,18 @@ if [[ "$state_mode" == "container-volume" ]]; then
     log "CONTAINER_STATE_VOLUME must be a valid container volume name."
     exit 2
   fi
+  # The control plane binds every interface inside its container so the published
+  # port reaches it, so it is not a loopback server and the server refuses to
+  # start without a real token. Say so here rather than after a long image build.
+  auth_token="${APP_AUTH_TOKEN:-}"
+  if [[ ${#auth_token} -lt 24 ]] \
+    || [[ "$auth_token" =~ ^([Rr]eplace|[Cc]hange[-_.]?[Mm]e|[Pp]laceholder|[Yy]our[-_.]|[Ee]xample[-_.]) ]]; then
+    log "LOCAL_POC_STATE_MODE=container-volume needs a real APP_AUTH_TOKEN of at"
+    log "least 24 characters, because the control plane is not a loopback server."
+    exit 2
+  fi
+  unset auth_token
+
   log "Preparing the $state_volume state volume for the Agent Runtime."
   "$engine" volume create "$state_volume" >/dev/null
   # The control-plane image runs as uid 1000, and the disposable Runtime runs as
