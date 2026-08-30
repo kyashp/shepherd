@@ -52,4 +52,34 @@ describe("DeterministicFixtureExecutor", () => {
     expect(frontend).toBe(backend);
     expect(frontend).toContain("http-only-session-cookie");
   });
+
+  it("writes only the declared general artifacts and a claim-free manifest", async () => {
+    const root = await mkdtemp(path.join(process.env.TMPDIR ?? ".tmp", "executor-"));
+    const executor = new DeterministicFixtureExecutor();
+    const result = await executor.run({
+      executionId: "general-1",
+      workspacePath: root,
+      operation: {
+        kind: "general_contract",
+        contractId: "contract-general-1",
+        artifactPaths: ["scripts/hello.txt"],
+        requiredContent: "Hello from Shepherd",
+      },
+      timeoutMs: 1_000,
+    });
+    expect(result.changedFiles).toEqual([
+      "scripts/hello.txt",
+      ".shepherd/result.json",
+    ]);
+    expect(await readFile(path.join(root, "scripts/hello.txt"), "utf8")).toBe(
+      "Hello from Shepherd\n",
+    );
+    const manifest = JSON.parse(
+      await readFile(path.join(root, ".shepherd/result.json"), "utf8"),
+    ) as { contractId: string; semanticClaims: unknown[] };
+    expect(manifest).toMatchObject({
+      contractId: "contract-general-1",
+      semanticClaims: [],
+    });
+  });
 });

@@ -7,6 +7,46 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — default general Agent Contract-intake candidate
+
+- Ownership: issue #58, branch `feat/58-general-contract-intake`, stacked draft
+  PR #59 on private-chat PR #57. No protected-main integration is claimed.
+- Shepherd-managed routing is now the default in every Agent chat; the existing
+  toggle remains a direct-Playground escape hatch. The fixed Frontend/Backend auth
+  prompts retain their two-Contract collision path.
+- Other prompts enter a constrained deterministic planner. It accepts 1–8 bounded
+  messages, requires a concrete change, writable project-relative artifact(s), and
+  explicit `Acceptance:` evidence. Missing or authority-incompatible fields produce
+  a durable in-chat clarification and create no Mission, Contract, or Plane.
+- A confirmed draft creates one authority-intersected Contract in a sentinel-bound
+  managed project seeded from a secret-filtered Agent snapshot. The existing
+  Git-free executor/import path, strict manifest ingestion and exact-diff authority
+  check run unchanged. A registry-owned static check independently verifies the
+  declared artifacts; the verified Contract is merged into an integration Plane,
+  independently re-verified, promoted by expected-head compare-and-swap, and only
+  its declared artifacts are synchronized back to the Agent workspace.
+- Causal tests cover planner bounds/normalization/authority, secret-filtered project
+  initialization, verifier policy, symlink-safe artifact sync, deterministic output,
+  clarification idempotency/conflict, absence of premature executable state, final
+  verified lifecycle, promotion and workspace output. Security regressions additionally
+  reject negated/compound Acceptance criteria, retain post-CAS evidence across a
+  one-shot final persistence fault/restart, and roll back an exact journaled policy
+  commit when its Project head was not persisted. The literal `npm run check` passed:
+  launcher 3/3, Server 771 passed plus two opt-in skips, Web 18/18, strict
+  production/test type checks and both builds.
+- Authenticated Playwright passed 6/6 across exact `1280x800` and `1440x900`:
+  unchanged user-created auth collision, default route plus direct opt-out, general
+  clarification and follow-up, verified promotion/workspace output, human-review
+  fallback, stale-Agent-status reconciliation and no document overflow. A first
+  focused E2E run correctly exposed that the fake verifier allowlist lacked the new
+  registry-owned check; adding that exact static check made every rerun pass.
+- No live/model request was made. Independent UI and security re-reviews returned
+  ready with no High/Medium finding; integration against protected `main` remains
+  pending. The final deterministic browser rerun
+  passed 6/6 after the direct-Playground fixture was explicitly configured with its
+  bounded fake Agent Runtime; the direct request returned 202 and emitted no managed
+  Contract request.
+
 ## 2026-08-30 — private Agent-chat Contract candidate
 
 - Ownership: issue #55, branch `feat/55-private-chat-contracts`, draft PR #57;

@@ -263,6 +263,14 @@ export interface Plane {
   changedFiles: string[];
   diffSummary: string;
   verificationEvidenceIds: string[];
+  /** Durable two-phase marker used only by one-Contract general integrations. */
+  generalPromotionState?:
+    | "not_started"
+    | "reverifying"
+    | "promoting"
+    | "promoted"
+    | "failed";
+  generalPromotionEvidence?: VerificationEvidence | null;
   createdAt: IsoTimestamp;
   updatedAt: IsoTimestamp;
   destroyedAt: IsoTimestamp | null;
@@ -459,11 +467,27 @@ export interface ProjectGroupMessage {
   targetAgentId: string | null;
   contractId: string | null;
   /** Trusted metadata for a private Agent-chat prompt awaiting/owning a Contract. */
-  contractAssignment?: {
-    preset: "auth-demo-contract";
-    role: "Frontend" | "Backend";
-    transport: "bearer-jwt" | "http-only-session-cookie";
-  };
+  contractAssignment?:
+    | {
+        preset: "auth-demo-contract";
+        role: "Frontend" | "Backend";
+        transport: "bearer-jwt" | "http-only-session-cookie";
+      }
+    | {
+        preset: "general-contract";
+        role: AgentRole;
+        draftId: string;
+        status: "clarification_required" | "accepted";
+        missingFields: (
+          | "objective"
+          | "expected_artifact"
+          | "acceptance_evidence"
+          | "authority"
+        )[];
+        expectedArtifacts: ExpectedArtifact[];
+        acceptanceSummary: string | null;
+        requiredContent: string | null;
+      };
   /** Server-only durable binding for Mission-creation idempotency. */
   requestFingerprint?: string;
   createdAt: IsoTimestamp;

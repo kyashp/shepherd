@@ -45,6 +45,89 @@ describe("general private-chat Contract planning", () => {
     });
   });
 
+  it("keeps unsupported acceptance prose in clarification instead of weakening it", () => {
+    for (const acceptance of [
+      "npm test passes",
+      "the JSON has the correct shape",
+      "the HTTP endpoint returns 200",
+    ]) {
+      expect(
+        planGeneralContract(
+          [`Create \`scripts/result.txt\`. Acceptance: ${acceptance}.`],
+          authority,
+        ),
+      ).toMatchObject({
+        status: "clarification_required",
+        acceptanceSummary: `${acceptance}.`,
+        requiredContent: null,
+        missingFields: expect.arrayContaining(["acceptance_evidence"]),
+      });
+    }
+  });
+
+  it("rejects an ambiguous literal predicate across multiple artifacts", () => {
+    expect(
+      planGeneralContract(
+        [
+          'Create `scripts/left.txt` and `scripts/right.txt`. Acceptance: the files contain "ready".',
+        ],
+        authority,
+      ),
+    ).toMatchObject({
+      status: "clarification_required",
+      requiredContent: "ready",
+      missingFields: expect.arrayContaining(["acceptance_evidence"]),
+    });
+  });
+
+  it("accepts a strict existence predicate because every declared artifact is checked", () => {
+    expect(
+      planGeneralContract(
+        ["Create `scripts/result.txt`. Acceptance: the file exists and is non-empty."],
+        authority,
+      ),
+    ).toMatchObject({
+      status: "ready",
+      requiredContent: null,
+      missingFields: [],
+    });
+  });
+
+  it("rejects negated or compound acceptance predicates outside the verifier allowlist", () => {
+    for (const acceptance of [
+      "the file must not contain \"secret\"",
+      "the file must not exist",
+      "the file exists and npm test passes",
+      "the file contains \"ready\" and npm test passes",
+      "the file contains \"ready\" and must not contain \"failed\"",
+    ]) {
+      expect(
+        planGeneralContract(
+          [`Create \`scripts/result.txt\`. Acceptance: ${acceptance}.`],
+          authority,
+        ),
+      ).toMatchObject({
+        status: "clarification_required",
+        requiredContent: null,
+        missingFields: expect.arrayContaining(["acceptance_evidence"]),
+      });
+    }
+  });
+
+  it("rejects Acceptance clauses with omitted suffixes, duplicates, or oversized tails", () => {
+    for (const content of [
+      "Create `scripts/result.txt`. Acceptance: the file exists.\nand npm test passes.",
+      "Create `scripts/result.txt`. Acceptance: the file exists. Acceptance: the file contains \"ready\".",
+      `Create \`scripts/result.txt\`. Acceptance: the file exists.${" ".repeat(500)}and npm test passes.`,
+    ]) {
+      expect(planGeneralContract([content], authority)).toMatchObject({
+        status: "clarification_required",
+        requiredContent: null,
+        missingFields: expect.arrayContaining(["acceptance_evidence"]),
+      });
+    }
+  });
+
   it("asks for a concrete objective when the request is only a vague reference", () => {
     expect(planGeneralContract(["Fix it."], authority)).toMatchObject({
       status: "clarification_required",

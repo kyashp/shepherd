@@ -72,20 +72,53 @@ function artifactCandidates(objective: string): string[] {
   return output.slice(0, MAX_ARTIFACTS);
 }
 
-function acceptanceFrom(objective: string): string | null {
-  const explicit = /(?:^|\n|[.!?]\s+)acceptance\s*:\s*([^\n]{1,500})/iu.exec(objective);
-  if (explicit?.[1]) return explicit[1].trim().slice(0, MAX_ACCEPTANCE_LENGTH);
-  return null;
+function acceptanceFrom(objective: string): {
+  summary: string | null;
+  complete: boolean;
+} {
+  const matches = [...objective.matchAll(/\bacceptance\s*:/giu)];
+  const marker = matches.at(-1);
+  if (!marker || marker.index === undefined) {
+    return { summary: null, complete: false };
+  }
+  const tail = objective.slice(marker.index + marker[0].length).trim();
+  return {
+    summary: tail ? tail.slice(0, MAX_ACCEPTANCE_LENGTH) : null,
+    complete:
+      matches.length === 1 &&
+      tail.length >= 1 &&
+      tail.length <= MAX_ACCEPTANCE_LENGTH &&
+      !/[\r\n]/u.test(tail),
+  };
 }
 
 function requiredContentFrom(acceptance: string | null): string | null {
   if (!acceptance) return null;
-  const match =
-    /\b(?:contain|contains|print|prints|return|returns)\b[^"'`\r\n]{0,80}(?:"([^"]{1,200})"|'([^']{1,200})'|`([^`]{1,200})`)/iu.exec(
-      acceptance,
-    );
+  // Match the whole acceptance statement. A supported keyword or literal must
+  // not make an additional, negated, or otherwise unenforceable predicate look
+  // verifiable.
+  const match = /^(?:the\s+(?:file|files|artifact|artifacts)|all\s+(?:files|artifacts)|each\s+(?:file|artifact))\s+(?:(?:must\s+)?contain(?:s)?|(?:must\s+)?exist(?:s)?\s+and\s+(?:must\s+)?contain(?:s)?)\s+(?:"([^"\r\n]{1,200})"|'([^'\r\n]{1,200})'|`([^`\r\n]{1,200})`)[.!?]?$/iu.exec(
+    acceptance,
+  );
   const value = (match?.[1] ?? match?.[2] ?? match?.[3])?.normalize("NFKC").trim();
   return value ? value.slice(0, MAX_REQUIRED_CONTENT_LENGTH) : null;
+}
+
+function acceptanceIsIndependentlyVerifiable(
+  acceptance: string | null,
+  artifactCount: number,
+  requiredContent: string | null,
+): boolean {
+  if (!acceptance || artifactCount < 1) return false;
+  if (requiredContent !== null) {
+    // The bounded verifier currently supports one literal-content predicate.
+    // Requiring one artifact prevents an ambiguous literal from being accepted
+    // merely because it appeared in a different declared output.
+    return artifactCount === 1;
+  }
+  return /^(?:the\s+(?:file|files|artifact|artifacts)|all\s+(?:files|artifacts)|each\s+(?:file|artifact))\s+(?:(?:must\s+)?exist(?:s)?|(?:is|are)\s+present)(?:\s+and\s+(?:(?:is|are)|be|must\s+be)\s+non[\s-]*empty)?[.!?]?$/iu.test(
+    acceptance,
+  );
 }
 
 function hasConcreteObjective(objective: string): boolean {
@@ -159,11 +192,22 @@ export function planGeneralContract(
     description: "Required artifact for the confirmed Agent request",
     required: true,
   }));
-  const acceptanceSummary = acceptanceFrom(objective);
+  const acceptance = acceptanceFrom(objective);
+  const acceptanceSummary = acceptance.summary;
+  const verifiableAcceptance = acceptance.complete ? acceptanceSummary : null;
+  const requiredContent = requiredContentFrom(verifiableAcceptance);
   const missingFields: GeneralContractMissingField[] = [];
   if (!hasConcreteObjective(objective)) missingFields.push("objective");
   if (candidates.length === 0) missingFields.push("expected_artifact");
-  if (!acceptanceSummary) missingFields.push("acceptance_evidence");
+  if (
+    !acceptanceIsIndependentlyVerifiable(
+      verifiableAcceptance,
+      expectedArtifacts.length,
+      requiredContent,
+    )
+  ) {
+    missingFields.push("acceptance_evidence");
+  }
   if (authorityDenied || (candidates.length > 0 && expectedArtifacts.length === 0)) {
     missingFields.push("authority");
   }
@@ -173,7 +217,7 @@ export function planGeneralContract(
     title: titleFrom(objective, expectedArtifacts),
     expectedArtifacts,
     acceptanceSummary,
-    requiredContent: requiredContentFrom(acceptanceSummary),
+    requiredContent,
     missingFields,
     clarification: missingFields.length === 0 ? null : clarificationFor(missingFields),
   };
