@@ -62,19 +62,21 @@ protected-main integration is not claimed.
   creation/policy journaling now begins inside the serialized Store mutation after
   Agent revalidation, so a racing follow-up cannot strand a journal.
 - **Observed checks:** production/test typechecks; focused Agent lifecycle/general
-  Project 27/27, including injected pre-publication and post-rename persistence
-  faults plus the exact follow-up/delete barrier and clean restarts; adjacent
-  API/Shepherd 77/77; literal `npm run check` with launcher 3/3, Server 789 passed
+  Project 29/29, including injected pre-publication and post-rename persistence
+  faults, exact follow-up/delete and direct-run/delete barriers, active-run join,
+  and clean restarts; adjacent API/Shepherd 77/77; literal `npm run check` with
+  launcher 3/3, Server 791 passed
   plus two explicit opt-in skips, Web 18/18, and both
   production builds. Authenticated deterministic Chromium passed 2/2 at 1280x800
   and 1440x900, including two clarification turns, exact 200 deletion, empty Agent
   UI/state, exact filesystem absence and no document/body overflow. All four
   screenshots were inspected. Independent UI review found no High/Medium issue;
   it confirmed the frozen theme/layout and keyboard-operable native lifecycle
-  controls. The first security review's three Medium counterexamples are covered by
-  the corrected 27-test slice; independent re-review and protected-main integration
-  remain pending. The same-OS-user recursive-path swap is retained as a Low residual
-  under the existing single-owner managed-root threat model.
+  controls. Final independent security re-review at `171089b` passed with no High
+  or Medium finding after the direct-run race was also reserved, cancelled and
+  joined causally. Protected-main integration remains pending. The same-OS-user
+  recursive-path swap and Project-journal sudden-power-loss ordering are retained as
+  Low residuals under the existing single-owner local PoC threat/availability model.
 
 ## 2026-08-30 — the launcher selects its own state layout
 

@@ -54,12 +54,12 @@ that limitation is explicit.
   specific conflict message. Run targeted/adjacent/full gates, authenticated
   Playwright at both viewports, security and UI review, then integrate/recheck main.
 - **Status:** **REVIEWED CANDIDATE** on PR #67 / issue #66. Causal lifecycle/project
-  tests pass 27/27, adjacent API/Shepherd 77/77, literal `npm run check` passes
-  launcher 3/3, Server 789 plus two opt-in skips, Web 18/18 and both builds, and the
+  tests pass 29/29, adjacent API/Shepherd 77/77, literal `npm run check` passes
+  launcher 3/3, Server 791 plus two opt-in skips, Web 18/18 and both builds, and the
   browser journey passes 2/2 with no overflow. UI review reports no High/Medium;
-  the first security review's three Medium persistence/race counterexamples now
-  have passing causal restart tests; security re-review and protected-main
-  integration remain.
+  final security review reports PASS/no High or Medium after four causal
+  persistence/race corrections. Same-OS-user pathname swap and sudden-power-loss
+  ordering for the Project journal remain Low. Protected-main integration remains.
 
 ### `TST-24` — Persistence-recovery attention is visible before reconciliation quiesces
 
@@ -1110,7 +1110,7 @@ operator-cleanup availability residual; cross-process automatic retry is not cla
 
 | ID | Evidence class and current failure contract | Minimal-fix boundary | Owner/status |
 |---|---|---|---|
-| `CRUD-01` | Reproduced: clarification-only human drafts created no Contract/Mission/Plane but caused the delete API to return the durable-history 409. Initial review also reproduced pre-/post-publication cleanup splits and a follow-up policy-journal race. | Remove only exact unbound general clarification state; journal Project/workspace cleanup across database publication, reconcile from on-disk truth, serialize project operations, and retain durable-history denial/accepted UI. | **REVIEWED CANDIDATE** on PR #67; all three Medium counterexamples now pass, `S,I` pending |
+| `CRUD-01` | Reproduced: clarification-only human drafts created no Contract/Mission/Plane but caused the delete API to return the durable-history 409. Review also reproduced pre-/post-publication cleanup splits, a follow-up policy-journal race, and a direct-run/delete race. | Remove only exact unbound general clarification state; journal Project/workspace cleanup across database publication, reconcile from on-disk truth, serialize project operations, reserve direct-run lifecycle, and retain durable-history denial/accepted UI. | **REVIEWED CANDIDATE** at `171089b` on PR #67; final security PASS, `I` pending |
 | `F-01` | Source-evidenced: Contract timeout may surface as failure code `unknown` instead of `agent_timeout`. | Typed timeout propagated through Contract/Plane/Agent/Mission/event/API/UI; no message-regex classification. | **RESOLVED + AUDITED** at `83cc1d0`; `T,A,C,S,I` 5/5; 100% scoped |
 | `F-02` | Source-evidenced: Contract runtime errors can become generic `unknown`. | Shared typed stage error only; preserve candidate-specific handling. | **RESOLVED + AUDITED** at `83cc1d0`; `T,A,C,S,I` 5/5; 100% scoped |
 | `F-04` | Source-evidenced: initial Plane creation can fail before durable stage evidence; later mapper is too late. | Evidence on owning Contract/Mission without inventing a successful Plane. | **AUDITED** at `2cef988`; TST-17 closed |
