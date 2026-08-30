@@ -859,6 +859,16 @@ class ContractVerificationInfrastructureError extends Error {
   }
 }
 
+class ContractBoundaryFailureError extends Error {
+  readonly failure: FailureInfo;
+
+  constructor(failure: FailureInfo, message: string) {
+    super(message);
+    this.name = "ContractBoundaryFailureError";
+    this.failure = structuredClone(failure);
+  }
+}
+
 class MissionCancelledError extends Error {
   constructor() {
     super("Mission was cancelled");
@@ -3611,6 +3621,13 @@ export class ShepherdService {
 
   private makeFailure(error: unknown, stage: string, at: string): FailureInfo {
     const raw = error instanceof Error ? error.message : "Unknown failure";
+    if (error instanceof ContractBoundaryFailureError) {
+      return {
+        ...error.failure,
+        message: this.safeText(error.failure.message),
+        at,
+      };
+    }
     if (error instanceof RuntimeExecutionError) {
       const publicMessage = new RuntimeExecutionError(
         error.kind,
@@ -3658,6 +3675,21 @@ export class ShepherdService {
       at,
       retryable: false,
     };
+  }
+
+  private markContractPlaneFailed(
+    database: Database,
+    planeId: string,
+    failure: FailureInfo,
+  ): void {
+    const plane = database.shepherd.planes.find((item) => item.id === planeId);
+    if (!plane) throw new Error("Contract Plane disappeared before failure persistence");
+    replaceById(database.shepherd.planes, {
+      ...plane,
+      state: "failed",
+      error: structuredClone(failure),
+      updatedAt: failure.at,
+    });
   }
 
   private recordEvent(database: Database, input: EventInput): ShepherdEvent {
@@ -5599,9 +5631,15 @@ export class ShepherdService {
           eventActor: SHEPHERD_ACTOR,
           timestamp: failedAt,
           failure,
+          summary: failure.message,
+          details: { failureCode: failure.code, stage: failure.stage },
         });
+        this.markContractPlaneFailed(database, initialPlane.id, failure);
       });
-      throw new Error("Contract result manifest is missing");
+      throw new ContractBoundaryFailureError(
+        failure,
+        "Contract result manifest is missing",
+      );
     }
 
     const manifestPath = path.join(
@@ -5635,10 +5673,18 @@ export class ShepherdService {
             eventActor: SHEPHERD_ACTOR,
             timestamp: failedAt,
             failure,
+            summary: failure.message,
+            details: { failureCode: failure.code, stage: failure.stage },
           },
         );
+        this.markContractPlaneFailed(database, initialPlane.id, failure);
       });
-      throw error;
+      throw new ContractBoundaryFailureError(
+        failure,
+        missing
+          ? "Contract result manifest is missing"
+          : "Contract result manifest could not be safely read",
+      );
     }
     const existingPaths = await existingRegularPaths(
       initialPlane.worktreePath,
@@ -5677,6 +5723,8 @@ export class ShepherdService {
               eventActor: SHEPHERD_ACTOR,
               timestamp: failedAt,
               failure,
+              summary: failure.message,
+              details: { failureCode: failure.code, stage: failure.stage },
             },
           );
         } else {
@@ -5699,11 +5747,15 @@ export class ShepherdService {
               eventActor: SHEPHERD_ACTOR,
               timestamp: failedAt,
               failure,
+              summary: failure.message,
+              details: { failureCode: failure.code, stage: failure.stage },
             },
           );
         }
+        this.markContractPlaneFailed(database, initialPlane.id, failure);
       });
-      throw new Error(
+      throw new ContractBoundaryFailureError(
+        failure,
         `Strict result manifest ingestion failed: ${ingestion.failureCode}`,
       );
     }
@@ -5832,10 +5884,16 @@ export class ShepherdService {
             eventActor: VERIFIER_ACTOR,
             timestamp: verifiedAt,
             failure,
+            summary: failure.message,
+            details: { failureCode: failure.code, stage: failure.stage },
           },
         );
+        this.markContractPlaneFailed(database, plane.id, failure);
       });
-      throw new Error(`Contract ${input.contractId} failed independent verification`);
+      throw new ContractBoundaryFailureError(
+        failure,
+        `Contract ${input.contractId} failed independent verification`,
+      );
     }
     const verifiedTransport = verifiedAuthTransportFact(evidence);
     const claimsCorroborated =
@@ -7082,7 +7140,15 @@ export class ShepherdService {
         const persistedMission = database.shepherd.missions.find(
           (item) => item.id === prepared.missionId,
         );
-        if (!persistedCandidate || !persistedCollision || !persistedMission) {
+        const persistedPlane = database.shepherd.planes.find(
+          (item) => item.id === selectedPlane.id,
+        );
+        if (
+          !persistedCandidate ||
+          !persistedCollision ||
+          !persistedMission ||
+          !persistedPlane
+        ) {
           throw new Error("Promotion records disappeared before failure persistence");
         }
         const failure: FailureInfo = {
@@ -7093,8 +7159,22 @@ export class ShepherdService {
           retryable: false,
         };
         persistedCandidate.promotionState = "failed";
+        persistedCandidate.promotionEvidence = promotion.verificationEvidence
+          ? structuredClone(promotion.verificationEvidence)
+          : null;
         persistedCandidate.failure = failure;
         persistedCandidate.updatedAt = failedAt;
+        if (
+          promotion.verificationEvidence &&
+          !persistedPlane.verificationEvidenceIds.includes(
+            promotion.verificationEvidence.id,
+          )
+        ) {
+          persistedPlane.verificationEvidenceIds.push(
+            promotion.verificationEvidence.id,
+          );
+          persistedPlane.updatedAt = failedAt;
+        }
         persistedCollision.state = "attention_required";
         persistedCollision.updatedAt = failedAt;
         if (persistedMission.state !== "attention_required") {
