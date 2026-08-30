@@ -134,11 +134,16 @@ if (mode !== "recover") {
       privateEntries[name] = [];
     }
   }
-  send({
-    type: "recovered",
-    state,
-    privateEntries,
-    startupError,
-  });
-  process.exit(0);
+  // `process.send` is asynchronous, so exiting on the next line can terminate this
+  // child before the IPC frame is flushed. The parent then never receives
+  // `recovered`, and because the exit code is still 0 its exit handler does not
+  // reject either, so it waits out the whole message timeout for a result that was
+  // computed correctly and simply never left the process. Exit from the flush
+  // callback instead.
+  process.send?.(
+    { type: "recovered", state, privateEntries, startupError },
+    undefined,
+    undefined,
+    () => process.exit(0),
+  );
 }
