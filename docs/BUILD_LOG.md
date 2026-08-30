@@ -7,6 +7,17 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — TST-20 audited; F-05 final stability restored
+
+Exact test-only `cdcfa95` passed Auditor row stress 30/30, service/store 56/56,
+strict test types and literal `npm run check` (launcher 3/3, Server 676 passed plus
+two opt-in skips, Web 17/17, both builds). Rejection observation attaches before the
+gates; unconditional `finally` releases and joins the blocked backend checkpoint,
+then a test-owned store mutation drains the persistence queue before teardown. No
+setImmediate, sleep, retry, timeout increase, suppression, cleanup catch, assertion
+weakening or product edit exists. Hosted Node 22 implementation run `33282600354`
+passed. F-05/TST18/19 scoped 100% is restored pending the final docs-head hosted gate.
+
 ## 2026-08-30 — TST-20 Fixer candidate
 
 The hosted RED returned from the test while its released backend checkpoint and store
