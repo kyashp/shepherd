@@ -1,26 +1,31 @@
 #!/usr/bin/env node
 
 import { spawn, execFile } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
+import { constants } from "node:fs";
 import {
   chmod,
+  link,
   lstat,
   mkdir,
+  open,
   readFile,
   readdir,
   realpath,
   rm,
   stat,
+  unlink,
   writeFile,
 } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
-import { promisify } from "node:util";
+import { parseEnv, promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
 const execFileAsync = promisify(execFile);
-const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
+const scriptPath = fileURLToPath(import.meta.url);
+const scriptDirectory = path.dirname(scriptPath);
 const repositoryRoot = path.resolve(scriptDirectory, "..");
 const envPath = path.join(repositoryRoot, ".env");
 const stateRoot = path.join(repositoryRoot, ".tmp", "live-demo-recording-state");
@@ -32,10 +37,14 @@ const artifactSentinelValue = "Shepherd live demo recording artifacts\n";
 const videoPath = path.join(artifactRoot, "shepherd-live-demo.webm");
 const manifestPath = path.join(artifactRoot, "chapters.json");
 const manifestMarkdownPath = path.join(artifactRoot, "CHAPTERS.md");
+const authorizationRoot = path.join(repositoryRoot, ".tmp", "demo-recordings", ".live-demo-run-guards");
 const serverOutputLimit = 16_384;
 const runtimeInstanceId = "shepherd-live-recording";
 const viewport = { width: 1_920, height: 1_080 };
 const preflightOnly = process.argv.slice(2).includes("--preflight-only");
+const authorizeOnly = process.argv.slice(2).includes("--authorize-only");
+const consumeAuthorizationOnly = process.argv.slice(2).includes("--consume-authorization-only");
+const runIdPattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/u;
 
 const frontendPrompt =
   "Implement the browser authentication client using the conventions and interfaces already present in your assigned workspace.";
@@ -129,30 +138,69 @@ function processEnvironment(overrides = {}) {
   return environment;
 }
 
-async function readConfiguredState() {
-  assert(await exists(envPath), "The ignored .env file is required for the live recording");
-  const program = [
-    "const usable = (value) => typeof value === 'string' && value.trim().length > 0 && !value.trim().startsWith('replace-');",
-    "process.stdout.write(JSON.stringify({",
-    "arkKey: usable(process.env.ARK_API_KEY),",
-    "arkModel: usable(process.env.ARK_MODEL),",
-    "shepherdModel: usable(process.env.SHEPHERD_MODEL),",
-    "}));",
-  ].join("");
+async function gitCommonRoot() {
   const result = await execFileAsync(
-    process.execPath,
-    [`--env-file=${envPath}`, "--input-type=module", "--eval", program],
+    "git",
+    ["rev-parse", "--path-format=absolute", "--git-common-dir"],
     {
       cwd: repositoryRoot,
       env: processEnvironment(),
       encoding: "utf8",
       timeout: 5_000,
-      maxBuffer: 1_024,
+      maxBuffer: 4_096,
     },
   );
-  const configured = JSON.parse(result.stdout);
-  assert(configured.arkKey && configured.arkModel && configured.shepherdModel, "Live recording model configuration is incomplete");
-  return configured;
+  return path.dirname(result.stdout.trim());
+}
+
+export async function readLiveEnvironment(target = envPath) {
+  assert(await exists(target), "The ignored .env file is required for the live recording");
+  const entry = await lstat(target);
+  assert(entry.isFile() || entry.isSymbolicLink(), "The live .env entry is not a regular file or repository symlink");
+  const [canonicalTarget, commonRoot] = await Promise.all([
+    realpath(target),
+    gitCommonRoot(),
+  ]);
+  assert(isStrictChild(commonRoot, canonicalTarget), "The live .env target escaped the repository");
+  const metadata = await stat(canonicalTarget);
+  assert(metadata.isFile(), "The live .env target is not a regular file");
+  if (typeof process.getuid === "function") {
+    assert(metadata.uid === process.getuid(), "The live .env target is not owned by the recording user");
+  }
+  assert((metadata.mode & 0o077) === 0, "The live .env target must be owner-only");
+  assert(metadata.size > 0 && metadata.size <= 65_536, "The live .env target has an unsafe size");
+  const handle = await open(
+    canonicalTarget,
+    constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+  );
+  let contents;
+  try {
+    const opened = await handle.stat();
+    assert(
+      opened.isFile() && opened.dev === metadata.dev && opened.ino === metadata.ino && opened.size === metadata.size,
+      "The live .env target changed during validation",
+    );
+    contents = await handle.readFile({ encoding: "utf8" });
+  } finally {
+    await handle.close();
+  }
+  const parsed = parseEnv(contents);
+  const usable = (value) =>
+    typeof value === "string" &&
+    value === value.trim() &&
+    value.length > 0 &&
+    !value.startsWith("replace-") &&
+    !/\p{Cc}/u.test(value);
+  assert(usable(parsed.ARK_API_KEY), "Live recording Ark key configuration is incomplete");
+  assert(usable(parsed.ARK_MODEL), "Live recording Ark model configuration is incomplete");
+  assert(usable(parsed.SHEPHERD_MODEL), "Live recording Shepherd model configuration is incomplete");
+  const allowed = {
+    ARK_API_KEY: parsed.ARK_API_KEY,
+    ARK_MODEL: parsed.ARK_MODEL,
+    SHEPHERD_MODEL: parsed.SHEPHERD_MODEL,
+  };
+  if (parsed.ARK_BASE_URL !== undefined) allowed.ARK_BASE_URL = parsed.ARK_BASE_URL;
+  return allowed;
 }
 
 async function dockerIds(filters) {
@@ -171,7 +219,7 @@ async function dockerIds(filters) {
 async function preflightDependencies() {
   const nodeMajor = Number(process.versions.node.split(".")[0]);
   assert(Number.isInteger(nodeMajor) && nodeMajor >= 22, "Node.js 22 or newer is required");
-  await readConfiguredState();
+  const liveEnvironment = await readLiveEnvironment();
   await execFileAsync("docker", ["info"], {
     cwd: repositoryRoot,
     env: processEnvironment(),
@@ -188,9 +236,27 @@ async function preflightDependencies() {
   });
   const browser = await chromium.launch({ headless: true, env: processEnvironment() });
   await browser.close();
+  return liveEnvironment;
 }
 
-async function assertExactCommittedHead() {
+async function exactHead() {
+  const result = await execFileAsync(
+    "git",
+    ["rev-parse", "HEAD"],
+    {
+      cwd: repositoryRoot,
+      env: processEnvironment(),
+      encoding: "utf8",
+      timeout: 5_000,
+      maxBuffer: 1_024,
+    },
+  );
+  const head = result.stdout.trim();
+  assert(/^[a-f0-9]{40}$/u.test(head), "Unable to resolve the exact recording commit");
+  return head;
+}
+
+async function assertExactCommittedHead(expectedSha) {
   const result = await execFileAsync(
     "git",
     ["status", "--porcelain=v1", "--untracked-files=normal"],
@@ -203,6 +269,105 @@ async function assertExactCommittedHead() {
     },
   );
   assert(result.stdout.length === 0, "Live recording requires an exact clean committed worktree");
+  const head = await exactHead();
+  if (expectedSha !== undefined) {
+    assert(head === expectedSha, "Live recording HEAD does not match the reviewed commit");
+  }
+  return head;
+}
+
+async function syncDirectory(directory) {
+  const handle = await open(
+    directory,
+    constants.O_RDONLY | (constants.O_DIRECTORY ?? 0),
+  );
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+async function prepareAuthorizationRoot() {
+  const tempRoot = path.join(repositoryRoot, ".tmp");
+  const recordingRoot = path.join(tempRoot, "demo-recordings");
+  await mkdir(recordingRoot, { recursive: true, mode: 0o700 });
+  await assertRealDirectory(tempRoot, repositoryRoot);
+  await assertRealDirectory(recordingRoot, tempRoot);
+  await mkdir(authorizationRoot, { mode: 0o700 }).catch((error) => {
+    if (error?.code !== "EEXIST") throw error;
+  });
+  const canonical = await assertRealDirectory(authorizationRoot, recordingRoot);
+  await chmod(canonical, 0o700);
+  return canonical;
+}
+
+function authorizationInput() {
+  const approvedSha = process.env.LIVE_DEMO_APPROVED_SHA?.trim() ?? "";
+  const runId = process.env.LIVE_DEMO_RUN_ID?.trim() ?? "";
+  assert(/^[a-f0-9]{40}$/u.test(approvedSha), "A reviewed exact live demo SHA is required");
+  assert(runIdPattern.test(runId), "A safe one-shot live demo run ID is required");
+  return { approvedSha, runId };
+}
+
+function authorizationPaths(root, runId) {
+  return {
+    authorized: path.join(root, `run-${runId}.authorized.json`),
+    consumed: path.join(root, `run-${runId}.consumed.json`),
+  };
+}
+
+export async function createRecordingAuthorization() {
+  const input = authorizationInput();
+  await assertExactCommittedHead(input.approvedSha);
+  const root = await prepareAuthorizationRoot();
+  const paths = authorizationPaths(root, input.runId);
+  assert(!(await exists(paths.consumed)), "The one-shot live demo run ID was already consumed");
+  const handle = await open(
+    paths.authorized,
+    constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW,
+    0o600,
+  );
+  try {
+    await handle.writeFile(
+      `${JSON.stringify({ schemaVersion: 1, approvedSha: input.approvedSha, runId: input.runId })}\n`,
+      "utf8",
+    );
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  await syncDirectory(root);
+}
+
+export async function consumeRecordingAuthorization() {
+  const input = authorizationInput();
+  await assertExactCommittedHead(input.approvedSha);
+  const root = await prepareAuthorizationRoot();
+  const paths = authorizationPaths(root, input.runId);
+  assert(!(await exists(paths.consumed)), "The one-shot live demo run ID was already consumed");
+  const handle = await open(
+    paths.authorized,
+    constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+  );
+  try {
+    const metadata = await handle.stat();
+    assert(metadata.isFile() && metadata.size > 0 && metadata.size <= 512, "Live demo authorization is invalid");
+    const parsed = JSON.parse(await handle.readFile({ encoding: "utf8" }));
+    assert(
+      parsed.schemaVersion === 1 &&
+        parsed.approvedSha === input.approvedSha &&
+        parsed.runId === input.runId &&
+        Object.keys(parsed).length === 3,
+      "Live demo authorization does not match this invocation",
+    );
+  } finally {
+    await handle.close();
+  }
+  await link(paths.authorized, paths.consumed);
+  await syncDirectory(root);
+  await unlink(paths.authorized);
+  await syncDirectory(root);
 }
 
 async function waitForExit(child, timeoutMs) {
@@ -222,6 +387,11 @@ async function waitForExit(child, timeoutMs) {
 
 async function stopProcessGroup(child) {
   if (child.exitCode !== null || child.signalCode !== null) return;
+  if (!Number.isSafeInteger(child.pid) || child.pid <= 1) {
+    child.kill("SIGKILL");
+    await waitForExit(child, 5_000);
+    return;
+  }
   try {
     process.kill(-child.pid, "SIGINT");
   } catch (error) {
@@ -236,7 +406,12 @@ async function stopProcessGroup(child) {
   await waitForExit(child, 5_000);
 }
 
-async function startLiveApplication(port) {
+export async function startLiveApplication(
+  port,
+  liveEnvironment,
+  authToken,
+  { startupTimeoutMs = 180_000, onSpawn } = {},
+) {
   const runtimeRoot = path.join(stateRoot, "runtime");
   const homeDirectory = path.join(stateRoot, "home");
   const tempDirectory = path.join(stateRoot, "tmp");
@@ -246,12 +421,13 @@ async function startLiveApplication(port) {
     mkdir(tempDirectory, { recursive: true, mode: 0o700 }),
   ]);
   const environment = processEnvironment({
+    ...liveEnvironment,
     HOME: homeDirectory,
     TMPDIR: tempDirectory,
     HOST: "127.0.0.1",
     PORT: String(port),
     LOG_LEVEL: "warn",
-    APP_AUTH_TOKEN: "",
+    APP_AUTH_TOKEN: authToken,
     LOCAL_POC_STATE_MODE: "host-bind",
     LOCAL_POC_DATA_ROOT: runtimeRoot,
     RUNTIME_INSTANCE_ID: runtimeInstanceId,
@@ -269,7 +445,7 @@ async function startLiveApplication(port) {
   });
   const child = spawn(
     process.execPath,
-    [`--env-file=${envPath}`, path.join(repositoryRoot, "scripts", "start-local-poc-launcher.mjs")],
+    [path.join(repositoryRoot, "scripts", "start-local-poc-launcher.mjs")],
     {
       cwd: repositoryRoot,
       env: environment,
@@ -278,6 +454,7 @@ async function startLiveApplication(port) {
       windowsHide: true,
     },
   );
+  onSpawn?.(child);
   let stdout = "";
   let stderr = "";
   let spawnError;
@@ -285,35 +462,41 @@ async function startLiveApplication(port) {
   child.stderr.on("data", (chunk) => { stderr = appendBounded(stderr, chunk); });
   child.once("error", (error) => { spawnError = error; });
   const baseURL = `http://127.0.0.1:${port}`;
-  const deadline = Date.now() + 180_000;
-  while (Date.now() < deadline) {
-    if (spawnError) throw new Error("Live application process could not start");
-    if (child.exitCode !== null || child.signalCode !== null) {
-      throw new Error("Live application exited during fail-closed startup preflight");
-    }
-    try {
-      const response = await fetch(`${baseURL}/api/health`, { signal: AbortSignal.timeout(750) });
-      if (response.ok) {
-        return {
-          baseURL,
-          child,
-          runtimeRoot,
-          outputSizes: () => ({ stdout: stdout.length, stderr: stderr.length }),
-        };
+  const deadline = Date.now() + startupTimeoutMs;
+  try {
+    while (Date.now() < deadline) {
+      if (spawnError) throw new Error("Live application process could not start");
+      if (child.exitCode !== null || child.signalCode !== null) {
+        throw new Error("Live application exited during fail-closed startup preflight");
       }
-    } catch {
-      // Startup, Runtime image probing, and production build are still in progress.
+      try {
+        const response = await fetch(`${baseURL}/api/health`, { signal: AbortSignal.timeout(750) });
+        if (response.ok) {
+          return {
+            baseURL,
+            child,
+            runtimeRoot,
+            outputSizes: () => ({ stdout: stdout.length, stderr: stderr.length }),
+          };
+        }
+      } catch {
+        // Startup, Runtime image probing, and production build are still in progress.
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
     }
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    throw new Error("Live application did not pass its bounded startup preflight");
+  } catch (error) {
+    await stopProcessGroup(child);
+    throw error;
   }
-  throw new Error("Live application did not pass its bounded startup preflight");
 }
 
-async function apiJson(baseURL, route, options = {}) {
+async function apiJson(baseURL, route, options = {}, authToken = "") {
   const response = await fetch(`${baseURL}${route}`, {
     ...options,
     headers: {
       ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
       ...options.headers,
     },
     signal: AbortSignal.timeout(10_000),
@@ -323,13 +506,17 @@ async function apiJson(baseURL, route, options = {}) {
   return body;
 }
 
-async function verifyLiveStartup(baseURL) {
+async function verifyLiveStartup(baseURL, authToken) {
+  const unauthorized = await fetch(`${baseURL}/api/shepherd/settings`, {
+    signal: AbortSignal.timeout(5_000),
+  });
+  assert(unauthorized.status === 401, "The recording API accepted an unauthenticated mutation surface request");
   const [auth, system, settings] = await Promise.all([
     apiJson(baseURL, "/api/auth"),
-    apiJson(baseURL, "/api/system"),
-    apiJson(baseURL, "/api/shepherd/settings"),
+    apiJson(baseURL, "/api/system", {}, authToken),
+    apiJson(baseURL, "/api/shepherd/settings", {}, authToken),
   ]);
-  assert(auth.required === false, "Recording server must not expose an unlock credential");
+  assert(auth.required === true, "Recording server must enforce its ephemeral access token");
   assert(system.arkConfigured === true, "Ark Runtime was not configured");
   assert(system.codexAvailable === true, "Container Codex Runtime preflight did not pass");
   assert(system.runtimeProvider === "container", "Recording server is not using the container Runtime");
@@ -352,11 +539,11 @@ function missionEntities(state, missionId) {
   };
 }
 
-async function waitForState(baseURL, missionId, predicate, label, timeoutMs = 1_200_000) {
+async function waitForState(baseURL, authToken, missionId, predicate, label, timeoutMs = 1_200_000) {
   const deadline = Date.now() + timeoutMs;
   let latest;
   while (Date.now() < deadline) {
-    const response = await apiJson(baseURL, "/api/shepherd/state");
+    const response = await apiJson(baseURL, "/api/shepherd/state", {}, authToken);
     latest = response.state;
     const entities = missionEntities(latest, missionId);
     if (entities.mission && ["failed", "cancelled", "attention_required"].includes(entities.mission.state)) {
@@ -446,7 +633,7 @@ async function clickFilter(page, name) {
   assert((await button.getAttribute("aria-pressed")) === "true", `The ${name} event filter did not activate`);
 }
 
-async function recordBrowserJourney(baseURL) {
+async function recordBrowserJourney(baseURL, authToken) {
   const rawVideoRoot = path.join(artifactRoot, "raw");
   await mkdir(rawVideoRoot, { recursive: true, mode: 0o700 });
   const browser = await chromium.launch({
@@ -459,6 +646,10 @@ async function recordBrowserJourney(baseURL) {
     deviceScaleFactor: 1,
     recordVideo: { dir: rawVideoRoot, size: viewport },
     reducedMotion: "reduce",
+    extraHTTPHeaders: { Authorization: `Bearer ${authToken}` },
+  });
+  await context.route("**/api/auth", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: '{"required":false}' });
   });
   const page = await context.newPage();
   const video = page.video();
@@ -511,6 +702,7 @@ async function recordBrowserJourney(baseURL) {
 
     await waitForState(
       baseURL,
+      authToken,
       missionId,
       ({ contracts, planes }) => contracts.length === 2 && planes.filter((item) => item.kind === "contract").length === 2,
       "two live Contract Planes",
@@ -522,6 +714,7 @@ async function recordBrowserJourney(baseURL) {
 
     const collisionSnapshot = await waitForState(
       baseURL,
+      authToken,
       missionId,
       ({ contracts, collisions }) => contracts.length === 2 && contracts.every((item) => item.state === "verified") && collisions.length === 1,
       "independent Contract verification and semantic collision",
@@ -556,6 +749,7 @@ async function recordBrowserJourney(baseURL) {
 
     await waitForState(
       baseURL,
+      authToken,
       missionId,
       ({ candidates, planes }) => candidates.length === 2 && planes.filter((item) => item.kind === "resolution").length === 2,
       "two same-base Resolution Planes",
@@ -571,6 +765,7 @@ async function recordBrowserJourney(baseURL) {
 
     const completed = await waitForState(
       baseURL,
+      authToken,
       missionId,
       ({ mission }) => mission.state === "completed",
       "verified selection and protected promotion",
@@ -773,7 +968,7 @@ async function writeManifest(chapters, evidence, video) {
     executionMode: "live",
     runtimeProvider: "container",
     demoMode: true,
-    modelUse: "Four isolated Agent/Candidate turns plus one bounded Shepherd semantic review; no retries are initiated by the recorder.",
+    modelUse: "Five expected requests: four isolated Agent/Candidate turns plus one bounded Shepherd semantic review. Worst case is seven because each of the two candidates may use its single built-in transient retry; the recorder itself initiates no retries.",
     video: {
       file: path.basename(videoPath),
       ...video,
@@ -822,22 +1017,35 @@ async function assertContainerCleanup(dataDirectory) {
 }
 
 async function main() {
+  const modeCount = [preflightOnly, authorizeOnly, consumeAuthorizationOnly].filter(Boolean).length;
+  assert(modeCount <= 1, "Live recording command modes are mutually exclusive");
+  if (authorizeOnly) {
+    await createRecordingAuthorization();
+    process.stdout.write("live_recording_authorization=created\n");
+    return;
+  }
+  if (consumeAuthorizationOnly) {
+    await consumeRecordingAuthorization();
+    process.stdout.write("live_recording_authorization=consumed model_requests=0\n");
+    return;
+  }
   let app;
   let completed = false;
   let resultLine = "";
-  await preflightDependencies();
-  if (!preflightOnly) await assertExactCommittedHead();
+  if (!preflightOnly) await consumeRecordingAuthorization();
+  const liveEnvironment = await preflightDependencies();
+  const authToken = randomBytes(32).toString("base64url");
   await prepareManagedRoot(stateRoot, stateSentinel, stateSentinelValue);
   if (!preflightOnly) await prepareManagedRoot(artifactRoot, artifactSentinel, artifactSentinelValue);
   const port = await reserveLoopbackPort();
   try {
-    app = await startLiveApplication(port);
-    await verifyLiveStartup(app.baseURL);
+    app = await startLiveApplication(port, liveEnvironment, authToken);
+    await verifyLiveStartup(app.baseURL, authToken);
     if (preflightOnly) {
       completed = true;
       resultLine = "live_recording_preflight=passed model_requests=0";
     } else {
-      const journey = await recordBrowserJourney(app.baseURL);
+      const journey = await recordBrowserJourney(app.baseURL, authToken);
       const evidence = assertLiveEvidence(journey.finalSnapshot, journey.missionId);
       const video = await validateVideo(journey.chapters);
       await writeManifest(journey.chapters, evidence, video);
@@ -857,12 +1065,23 @@ async function main() {
   if (resultLine) process.stdout.write(`${resultLine}\n`);
 }
 
+let executedDirectly = false;
 try {
-  await main();
+  if (process.argv[1]) {
+    executedDirectly = (await realpath(path.resolve(process.argv[1]))) === (await realpath(scriptPath));
+  }
 } catch {
-  // Keep failed live attempts diagnosable through retained repository-local state
-  // without allowing an exception stack, private path, provider output, or raw
-  // Runtime diagnostic to cross the terminal boundary.
-  process.stderr.write("live_recording=failed completion_claim=false\n");
-  process.exitCode = 1;
+  executedDirectly = false;
+}
+
+if (executedDirectly) {
+  try {
+    await main();
+  } catch {
+    // Keep failed live attempts diagnosable through retained repository-local state
+    // without allowing an exception stack, private path, provider output, or raw
+    // Runtime diagnostic to cross the terminal boundary.
+    process.stderr.write("live_recording=failed completion_claim=false\n");
+    process.exitCode = 1;
+  }
 }
