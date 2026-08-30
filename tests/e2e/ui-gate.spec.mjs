@@ -390,7 +390,7 @@ test("covers the clean shell, authentication, Agents, Settings, and not-found st
     panels.every((panel) => Boolean(panel.id && panel.ariaLabelledby)),
     "every Settings tabpanel has an id and aria-labelledby",
   ).toBe(true);
-  const selectedTab = initial.find((tab) => tab.ariaSelected === "true");
+  const selectedTab = afterArrowLeft.find((tab) => tab.ariaSelected === "true");
   expect.soft(selectedTab?.ariaControls, "the active tab controls the rendered tabpanel").toBe(panels[0]?.id);
   expect.soft(panels[0]?.ariaLabelledby, "the rendered tabpanel is labelled by the active tab").toBe(selectedTab?.id);
 });

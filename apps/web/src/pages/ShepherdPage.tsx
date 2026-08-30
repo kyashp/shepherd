@@ -645,7 +645,7 @@ function PlaneTree({
         <Icon name="plane" />
         <span className="tree-copy">
           <strong>{agent?.name ?? (candidate ? candidate.targetValue : titleCase(plane.kind))}</strong>
-          <small>{shortId(plane.id, 14)}</small>
+          <small title={plane.id}>{shortId(plane.id, 14)}</small>
         </span>
         <StatePill value={candidate?.selectionState === "selected" ? "selected" : plane.state} />
       </button>

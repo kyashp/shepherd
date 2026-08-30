@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../api";
 import type { ShepherdSettings, SystemInfo } from "../types";
 import { ErrorState, Icon, LoadingPanel, PageHeader, Spinner, StatePill, titleCase } from "../ui";
@@ -11,6 +11,17 @@ const tabs: Array<{ id: SettingsTab; label: string }> = [
   { id: "security", label: "Security" },
   { id: "notifications", label: "Notifications" },
 ];
+
+type SettingsTabKey = "ArrowLeft" | "ArrowRight" | "Home" | "End";
+
+function selectAdjacentTab(current: SettingsTab, key: SettingsTabKey): SettingsTab {
+  if (key === "Home") return tabs[0]?.id ?? current;
+  if (key === "End") return tabs.at(-1)?.id ?? current;
+  const currentIndex = tabs.findIndex((item) => item.id === current);
+  const offset = key === "ArrowRight" ? 1 : -1;
+  const nextIndex = (currentIndex + offset + tabs.length) % tabs.length;
+  return tabs[nextIndex]?.id ?? current;
+}
 
 function SettingRow({
   label,
@@ -111,6 +122,7 @@ export function SettingsPage({ system }: { system: SystemInfo | null }) {
   const [resetting, setResetting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const tabRefs = useRef<Partial<Record<SettingsTab, HTMLButtonElement | null>>>({});
 
   const load = async () => {
     setLoading(true);
@@ -170,18 +182,47 @@ export function SettingsPage({ system }: { system: SystemInfo | null }) {
 
   if (loading && !draft) return <LoadingPanel label="Loading Shepherd settings…" />;
   if (!draft) return <ErrorState message={error ?? "Settings unavailable."} onRetry={() => void load()} />;
+  const hasChanges = settings !== null && JSON.stringify(settings) !== JSON.stringify(draft);
 
   return (
     <div className="page settings-page">
       <PageHeader title="Settings" description="Configure verified Shepherd kernel behavior and system preferences." />
       <form className="settings-panel" onSubmit={save}>
         <div className="settings-tabs" role="tablist" aria-label="Settings sections">
-          {tabs.map((item) => <button type="button" role="tab" aria-selected={tab === item.id} className={tab === item.id ? "active" : ""} key={item.id} onClick={() => setTab(item.id)}>{item.label}</button>)}
+          {tabs.map((item) => (
+            <button
+              type="button"
+              role="tab"
+              id={`settings-tab-${item.id}`}
+              aria-controls={`settings-panel-${item.id}`}
+              aria-selected={tab === item.id}
+              tabIndex={tab === item.id ? 0 : -1}
+              className={tab === item.id ? "active" : ""}
+              key={item.id}
+              ref={(element) => { tabRefs.current[item.id] = element; }}
+              onClick={() => setTab(item.id)}
+              onKeyDown={(event) => {
+                const key = event.key;
+                if (key !== "ArrowLeft" && key !== "ArrowRight" && key !== "Home" && key !== "End") return;
+                event.preventDefault();
+                const nextTab = selectAdjacentTab(item.id, key);
+                setTab(nextTab);
+                tabRefs.current[nextTab]?.focus();
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
         </div>
         {error ? <div className="error-banner" role="alert"><span>{error}</span><button type="button" onClick={() => setError(null)}>×</button></div> : null}
         {notice ? <div className="success-banner" role="status"><Icon name="check" />{notice}</div> : null}
 
-        <div className="settings-body">
+        <div
+          className="settings-body"
+          role="tabpanel"
+          id={`settings-panel-${tab}`}
+          aria-labelledby={`settings-tab-${tab}`}
+        >
           {tab === "general" ? (
             <>
               <SettingRow label="Kernel mode" description="The configured server mode is locked for this running process.">
@@ -237,10 +278,10 @@ export function SettingsPage({ system }: { system: SystemInfo | null }) {
           ) : null}
         </div>
         <footer className="settings-footer">
-          <span>{settings && JSON.stringify(settings) !== JSON.stringify(draft) ? "Unsaved changes" : "All changes saved"}</span>
+          <span>{hasChanges ? "Unsaved changes" : "All changes saved"}</span>
           <div>
-            <button type="button" className="button button-ghost" disabled={!settings || busy} onClick={() => { setDraft(settings); setNotice(null); }}>Discard changes</button>
-            <button className="button button-primary" disabled={busy || !settings || JSON.stringify(settings) === JSON.stringify(draft)}>{busy ? <Spinner /> : "Save settings"}</button>
+            <button type="button" className="button button-ghost" disabled={!settings || busy || !hasChanges} onClick={() => { setDraft(settings); setNotice(null); }}>Discard changes</button>
+            <button className="button button-primary" disabled={busy || !hasChanges}>{busy ? <Spinner /> : "Save settings"}</button>
           </div>
         </footer>
       </form>
