@@ -7,6 +7,64 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — OPS-06 affected-host cause reproduced and corrected
+
+Branch `fix/47-ops-06-container-state-volume`, PR #56, on the affected host
+(macOS, Docker Desktop 29.5.3, LinuxKit 6.12 aarch64, `volc-agent-runtime:local`).
+
+- Reproduced the reported failure from the repository's own generated preflight
+  arguments: `docker create` succeeded, `docker start --attach` exited 49, and the
+  only Runtime stderr was
+  `sh: 1: cannot create /workspace/.shepherd-sandbox-probe: Permission denied`.
+- Isolated the cause by holding image, Codex configuration and container flags
+  fixed and varying only the workspace filesystem. Inside
+  `codex sandbox linux --full-auto`, an ext4 named volume, the image overlayfs and
+  a tmpfs all permitted `: > file`; the macOS host share denied it. On that share
+  `mkdir`, `rmdir` and `unlink` succeeded while `open()` for read, write, create
+  and truncate returned `EACCES`, and the file was left behind by the denied
+  create — Landlock grants `MAKE_REG` there but not `WRITE_FILE`.
+- `strace -f -y` on both a passing and a failing run showed byte-identical
+  `landlock_create_ruleset`, five `landlock_add_rule` calls over the same paths
+  (`/`, `/dev/null`, `/codex-home/memories`, `/workspace`, `/tmp`) and
+  `landlock_restrict_self`, all returning 0. Only the subsequent
+  `openat(AT_FDCWD, "w1", O_WRONLY|O_CREAT|O_TRUNC)` differed: `-1 EACCES` versus a
+  file descriptor. The ruleset is identical; the filesystem cannot enforce it.
+- Confirmed the independent `touch` probe defect: on the same share `touch`
+  exited 0 **and created the file**, while `: >` in the same shell was denied.
+- Verified the correction on the same host. With
+  `--mount type=volume,...,volume-subpath=...,volume-nocopy=true`, workspace read,
+  workspace write and a full `git init`/`add`/`commit` all succeeded inside the
+  sandbox while the private `CODEX_HOME` write stayed denied. The **unmodified**
+  preflight script then printed `codex-cli 0.111.0` and
+  `SHEPHERD_RUNTIME_PREFLIGHT_OK` with exit 0.
+- Established that `volume-nocopy` is mandatory. Without it an empty subpath is
+  served with the image's own `/workspace` ownership: `ls -ldn` reported `0 0`
+  through the mount while the directory on the volume was `10001 10001`, and a
+  plain non-sandbox write was already denied. With `volume-nocopy=true` ownership
+  was preserved and both the plain write and the sandboxed write succeeded.
+- Proved the full loop: a non-root containerized control plane (uid 10001,
+  joined to the engine socket group) created its workspace and private home,
+  derived the state-relative subpaths, started the sibling Runtime container,
+  and read back the file the sandboxed Agent had written.
+- Repository gate on this host is **not green, before or after the change**.
+  Pristine `origin/main` (`c0802e8`) failed `npm run test -w @launchpad/server`
+  with 39 failed / 696 passed; the branch failed with 61 failed / 686 passed.
+  Every failure in both runs is `Test timed out` or a `vi.waitFor` state
+  assertion behind one, and the `main` failure set is a strict subset of the
+  branch set — this machine is too slow to run the suite in parallel with the
+  container engine, not a regression. Run serially
+  (`--no-file-parallelism --maxWorkers=1`), the five heaviest files passed
+  **167/168** on the branch in 434s; the single failure,
+  `expected 'resolving' to be 'attention_required'`, is the same timing flake
+  observed on pristine `main`. `npm run typecheck` and `npm run build` passed.
+  `npm run test:e2e:harness:unit` passed 6/7; the one failure is the documented
+  macOS non-canonical `os.tmpdir()` issue in a fixture this change does not
+  touch, and the fake-container-engine test pinning the read-only bind mount
+  passed. A green full gate on a Linux host remains required before integration.
+- No live or model call ran. The startup smoke for
+  `LOCAL_POC_STATE_MODE=container-volume` remains unrun: that profile is not a
+  loopback server and this host's `APP_AUTH_TOKEN` is a placeholder.
+
 ## 2026-08-30 — protected-main promotion and exact post-merge gate
 
 - PR #52 passed hosted `Node 22 / npm run check` and merged the documentation and
