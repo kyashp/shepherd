@@ -526,6 +526,17 @@ async function recordBrowserJourney(baseURL) {
     chapter.mark("Credential-free independent verification", "Both locally correct Agent outputs pass trusted checks outside the model Runtime.");
     await pause(8_000);
 
+    const reviewEvent = collisionSnapshot.entities.events.find((item) => item.type === "model_review_completed");
+    assert(reviewEvent, "The bounded live Shepherd model review did not complete");
+    assert(!collisionSnapshot.entities.events.some((item) => item.type === "model_review_degraded"), "The live Shepherd model review degraded");
+    await clickFilter(page, "All");
+    const reviewCard = page.locator("article.event-card").filter({ hasText: reviewEvent.summary });
+    await waitForVisible(reviewCard);
+    await reviewCard.scrollIntoViewIfNeeded();
+    await assertNoDocumentOverflow(page);
+    chapter.mark("Bounded advisory Shepherd model review", "The Shepherd model reviews cross-Contract meaning, but its bounded advisory output cannot verify Agents, select a winner, or promote code.");
+    await pause(8_000);
+
     await clickFilter(page, "Collisions");
     const collisionEvent = collisionSnapshot.entities.events.find((item) => item.type === "collision_detected");
     assert(collisionEvent, "Collision event was not persisted");
@@ -619,6 +630,7 @@ function assertLiveEvidence(state, missionId) {
   for (const type of [
     "contract_created",
     "contract_verified",
+    "model_review_completed",
     "collision_detected",
     "candidate_selected",
     "promotion_started",
@@ -627,6 +639,7 @@ function assertLiveEvidence(state, missionId) {
   ]) {
     assert(eventTypes.has(type), `Live evidence is missing ${type}`);
   }
+  assert(!eventTypes.has("model_review_degraded"), "The live Shepherd model reviewer degraded during the recording");
   return {
     missionState: entities.mission.state,
     verifiedContracts: entities.contracts.length,

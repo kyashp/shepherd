@@ -46,6 +46,9 @@ const liveRoot = path.join(repositoryRoot, ".tmp", "shepherd-live-gate");
 const liveRootSentinel = path.join(liveRoot, ".live-gate-root");
 const liveRootSentinelValue = "shepherd live Runtime gate only\n";
 const liveEnabled = process.env.SHEPHERD_LIVE_TEST === "true";
+const liveSequences = process.env.SHEPHERD_LIVE_MISSION_COUNT === "1"
+  ? ([1] as const)
+  : ([1, 2] as const);
 
 interface RecordedLiveRequest {
   executionId: string;
@@ -391,7 +394,7 @@ async function assertNoPrivateExecutionLeaks(
 
 describe.skipIf(!liveEnabled)("Shepherd live Codex Runtime gate", () => {
   it(
-    "completes two fresh Missions with eight isolated sessions and no secret or Runtime leaks",
+    "completes bounded fresh Missions with isolated sessions and no secret or Runtime leaks",
     async () => {
       await prepareLiveRoot();
       const config = liveConfig();
@@ -417,7 +420,7 @@ describe.skipIf(!liveEnabled)("Shepherd live Codex Runtime gate", () => {
       const details: ShepherdMissionDetail[] = [];
 
       try {
-        for (const sequence of [1, 2] as const) {
+        for (const sequence of liveSequences) {
           const caseRoot = path.join(liveRoot, `mission-${sequence}`);
           const managedRoot = path.join(caseRoot, "managed");
           const projectId = `auth-live-${sequence}`;
@@ -560,13 +563,16 @@ describe.skipIf(!liveEnabled)("Shepherd live Codex Runtime gate", () => {
           );
         }
 
-        expect(runner.requests).toHaveLength(8);
-        expect(runner.threadIds).toHaveLength(8);
-        expect(new Set(runner.threadIds).size).toBe(8);
+        const expectedExecutionCount = liveSequences.length * 4;
+        expect(runner.requests).toHaveLength(expectedExecutionCount);
+        expect(runner.threadIds).toHaveLength(expectedExecutionCount);
+        expect(new Set(runner.threadIds).size).toBe(expectedExecutionCount);
         expect(new Set(runner.requests.map((request) => request.executionId)).size).toBe(
-          8,
+          expectedExecutionCount,
         );
-        expect(new Set(runner.requests.map((request) => request.codexHome)).size).toBe(8);
+        expect(new Set(runner.requests.map((request) => request.codexHome)).size).toBe(
+          expectedExecutionCount,
+        );
         expect(
           runner.requests.every(
             (request) =>
@@ -583,8 +589,8 @@ describe.skipIf(!liveEnabled)("Shepherd live Codex Runtime gate", () => {
               : [],
           ),
         );
-        expect(fingerprints).toHaveLength(8);
-        expect(new Set(fingerprints).size).toBe(8);
+        expect(fingerprints).toHaveLength(expectedExecutionCount);
+        expect(new Set(fingerprints).size).toBe(expectedExecutionCount);
         for (const [index, statePath] of statePaths.entries()) {
           const persisted = await readFile(statePath, "utf8");
           expect(persisted).not.toContain("SHEPHERD_EXECUTION_ENVELOPE_V1");
