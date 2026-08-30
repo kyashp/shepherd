@@ -7,6 +7,44 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-31 — `TST-26`: the recovery-process failures were a defect, not host speed
+
+Branch `fix/48-recovery-ipc-flush` from `main` at `e552959`, investigating the five
+`recovery.process.test.ts` failures that this campaign had repeatedly recorded as a
+host-speed timing condition. **That characterisation was wrong.**
+
+- **They reproduce in isolation on an idle machine**: 5/5 fail, 168.75s for five
+  tests, each `Timed out waiting for recovered` with empty stderr. Nothing else was
+  running.
+- **They are not slow.** Raising the message timeout to 400s produced the same
+  timeout. A direct probe of the recover child showed it exits **code 0**, sends
+  **zero** IPC messages, and writes nothing to stderr or stdout.
+- **Cause.** In `test-fixtures/recovery-process.ts` the recover branch called
+  `send({ type: "recovered", ... })` and then `process.exit(0)` on the next line.
+  `process.send` is asynchronous, so the child can terminate before the IPC frame is
+  flushed. The parent never receives the message; and because the exit code is 0, the
+  harness's exit handler — which only rejects on a non-zero code — does not fire
+  either. The test therefore waits out its entire timeout for a result that had been
+  computed correctly and simply never left the process.
+- **Why it looked like host speed.** On a faster host, and in Linux CI, the flush
+  wins the race. The failure is real everywhere; only its probability varies. Two
+  earlier entries in this log attributed these five tests to machine slowness. That
+  attribution is superseded by this entry.
+- **Correction.** Exit from the `process.send` flush callback. No timeout was raised,
+  no sleep added, no assertion weakened.
+- **Defence in depth.** The harness now rejects when a child exits cleanly without
+  ever sending the awaited message. The diagnosis is then in the failure text rather
+  than in an anonymous timeout.
+- **Observed.** With the fix, `recovery.process.test.ts` passes **5/5** and the file
+  drops from 168.75s to 52s. Reverting only the fixture, with the hardened harness in
+  place, fails 5/5 in 48s with `Fixture exited 0/null without sending recovered` —
+  both changes are causal, and the second turns a 168s silent timeout into a 48s
+  named cause. Strict typecheck passed.
+- **Bearing on `STABILITY` (#48).** Its acceptance requires diagnosing and fixing any
+  flake causally rather than excusing it. Five of the seven failures this host
+  produces were this defect. The remaining two are `service.test.ts` cases and have
+  not been investigated here.
+
 ## 2026-08-31 — SEC-REVIEW parts 4-5 moved to a successor issue
 
 Documentation only; no product code. Protected `main` at `c158480`.

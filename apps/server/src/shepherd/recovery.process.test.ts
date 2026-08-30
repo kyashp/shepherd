@@ -57,9 +57,18 @@ function message<T extends Record<string, unknown>>(
     };
     child.on("message", onMessage);
     child.once("exit", (code, signal) => {
+      clearTimeout(timeout);
       if (code !== 0 && signal !== "SIGKILL") {
-        clearTimeout(timeout);
         reject(new Error(`Fixture exited ${code}/${signal}: ${stderr}`));
+      } else if (signal !== "SIGKILL") {
+        // A clean exit without the awaited message is a real failure, not a slow
+        // one. Rejecting here reports the cause immediately instead of spending the
+        // whole timeout and then blaming host speed.
+        reject(
+          new Error(
+            `Fixture exited ${code}/${signal} without sending ${type}: ${stderr}`,
+          ),
+        );
       }
     });
   });
