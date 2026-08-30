@@ -10,32 +10,6 @@ if [[ ! -f "$env_file" ]]; then
   exit 1
 fi
 
-# This profile publishes on every interface: docker-compose.yml binds 0.0.0.0 and
-# maps the port with no address prefix, and the API it exposes performs
-# prompt-triggered command and file execution. The server treats the token as
-# optional so a loopback demo needs no credential, which makes this deploy path the
-# only place left to enforce it. Checked before any engine work so a missing
-# credential cannot start a container first.
-configured_auth_token="$(sed -n 's/^APP_AUTH_TOKEN=//p' "$env_file" | tail -n 1)"
-# Strip CR and surrounding whitespace exactly as the server's schema does before it
-# validates. Without this a CRLF file or a spaces-only value is non-empty to bash
-# yet empty to the server, which would pass the gate and then disable the bearer
-# boundary on a published interface.
-configured_auth_token="${configured_auth_token%%[$'\r']*}"
-configured_auth_token="${configured_auth_token#"${configured_auth_token%%[![:space:]]*}"}"
-configured_auth_token="${configured_auth_token%"${configured_auth_token##*[![:space:]]}"}"
-if [[ -z "$configured_auth_token" ]]; then
-  echo "APP_AUTH_TOKEN must be set in $env_file." >&2
-  echo "This profile publishes the Agent execution API on every interface." >&2
-  exit 1
-fi
-# Same floor as apps/server/src/config.ts and deploy/volcengine/variables.tf, so a
-# deploy cannot be green-lit here and then rejected at container start.
-if (( ${#configured_auth_token} < 24 )) || [[ "$configured_auth_token" == [Rr][Ee][Pp][Ll][Aa][Cc][Ee]-* ]]; then
-  echo "APP_AUTH_TOKEN in $env_file must be 24+ non-placeholder characters." >&2
-  exit 1
-fi
-
 if ! command -v docker >/dev/null 2>&1; then
   echo "Docker Engine 24 or newer is required. Follow the Linux install section in README.md." >&2
   exit 1
@@ -50,6 +24,17 @@ fi
 
 if ! docker compose version >/dev/null 2>&1; then
   echo "The Docker Compose plugin is required (the command must be 'docker compose')." >&2
+  exit 1
+fi
+
+# This profile publishes on every interface: docker-compose.yml binds 0.0.0.0 and
+# maps the port with no address prefix, and the API it exposes performs
+# prompt-triggered command and file execution. The server treats the token as
+# optional so a loopback demo needs no credential, which makes this deploy path the
+# only place left to enforce it. The check resolves the value through Compose
+# itself and applies the server's own rule, so a deploy cannot be approved here and
+# then rejected at container start.
+if ! node scripts/check-deploy-auth-token.mjs "$env_file"; then
   exit 1
 fi
 

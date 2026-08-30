@@ -1,195 +1,95 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { classify, resolveComposeAuthToken } from "./check-deploy-auth-token.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const temporaryDirectories = [];
 
 test.afterEach(async () => {
   await Promise.all(
-    temporaryDirectories.splice(0).map((directory) =>
-      rm(directory, { recursive: true, force: true }),
-    ),
+    temporaryDirectories.splice(0).map((d) => rm(d, { recursive: true, force: true })),
   );
 });
 
-function run(script, environment, cwd) {
-  return new Promise((resolve) => {
-    const child = spawn("bash", [script], {
-      cwd,
-      env: { PATH: process.env.PATH ?? "", HOME: cwd, ...environment },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => (stdout += chunk.toString("utf8")));
-    child.stderr.on("data", (chunk) => (stderr += chunk.toString("utf8")));
-    child.on("close", (code) => resolve({ code, stdout, stderr }));
-  });
+async function envFile(body) {
+  const root = await mkdtemp(path.join(os.tmpdir(), "ecs-auth-"));
+  temporaryDirectories.push(root);
+  const file = path.join(root, ".env.production");
+  await writeFile(file, "ARK_API_KEY=k\nARK_MODEL=m\n" + body, "utf8");
+  return file;
 }
 
-/**
- * Builds a throwaway repository whose `scripts/` holds the real deploy script and
- * whose PATH shadows `docker`, so reaching the engine at all is observable.
- */
-async function fixture(envLines) {
-  const root = await mkdtemp(path.join(os.tmpdir(), "ecs-deploy-"));
-  temporaryDirectories.push(root);
-  const binDirectory = path.join(root, "bin");
-  await Promise.all([mkdir(path.join(root, "scripts")), mkdir(binDirectory)]);
-  const { readFile, writeFile: write, chmod } = await import("node:fs/promises");
-  await write(
-    path.join(root, "scripts", "deploy-existing-ecs.sh"),
-    await readFile(path.join(repositoryRoot, "scripts", "deploy-existing-ecs.sh"), "utf8"),
-  );
-  const dockerLog = path.join(root, "docker-invocations");
-  await write(
-    path.join(binDirectory, "docker"),
-    ["#!/usr/bin/env bash", `printf "%s\\n" "$*" >> "${dockerLog}"`, "exit 0", ""].join("\n"),
-    "utf8",
-  );
-  await chmod(path.join(binDirectory, "docker"), 0o755);
-  await write(path.join(root, ".env.production"), envLines.join("\n") + "\n", "utf8");
-  return { root, binDirectory, dockerLog };
-}
-
-test("the existing-ECS deploy refuses an environment file with no APP_AUTH_TOKEN", async () => {
-  // This profile publishes on every interface (docker-compose.yml binds
-  // 0.0.0.0 with an unprefixed port), and the API it exposes performs
-  // prompt-triggered command and file execution. The sibling Volcengine deploy
-  // script already requires the token; this one must not be the soft path.
-  const { root, binDirectory } = await fixture([
-    "ARK_API_KEY=ecs-key",
-    "ARK_MODEL=ecs-model",
-    "APP_AUTH_TOKEN=",
-  ]);
-
-  const result = await run(
-    path.join(root, "scripts", "deploy-existing-ecs.sh"),
-    { PATH: `${binDirectory}${path.delimiter}${process.env.PATH ?? ""}` },
-    root,
-  );
-
-  assert.notEqual(result.code, 0);
-  assert.match(result.stderr, /APP_AUTH_TOKEN/u);
+// The rule must match apps/server/src/config.ts, or a deploy is approved here and
+// then rejected at container start.
+test("classify applies the server's own token rule", () => {
+  assert.equal(classify(undefined), "empty");
+  assert.equal(classify(""), "empty");
+  assert.equal(classify("   "), "empty");
+  assert.equal(classify("\r"), "empty");
+  assert.equal(classify("has spaces and/slashes are not url safe"), "shape");
+  assert.equal(classify("short"), "weak");
+  assert.equal(classify("replace-me-with-a-real-token"), "weak");
+  assert.equal(classify("REPLACE-ME-WITH-A-REAL-TOKEN-UPPER"), "weak");
+  assert.equal(classify("abcdefghijklmnopqrstuvw"), "weak", "23 characters is below the floor");
+  assert.equal(classify("abcdefghijklmnopqrstuvwx"), "ok", "24 characters is the floor");
+  assert.equal(classify("an-actually-valid-deploy-token-value"), "ok");
 });
 
-test("the existing-ECS deploy refuses before contacting the container engine", async () => {
-  const { root, binDirectory, dockerLog } = await fixture([
-    "ARK_API_KEY=ecs-key",
-    "ARK_MODEL=ecs-model",
-  ]);
+const composeAvailable = (await resolveComposeAuthToken(
+  path.join(repositoryRoot, ".env.example"),
+  path.join(repositoryRoot, "docker-compose.yml"),
+)).status !== "unreadable";
 
-  await run(
-    path.join(root, "scripts", "deploy-existing-ecs.sh"),
-    { PATH: `${binDirectory}${path.delimiter}${process.env.PATH ?? ""}` },
-    root,
-  );
-
-  // A credential check that runs after `docker compose up` would be decoration.
-  const { access } = await import("node:fs/promises");
-  await assert.rejects(access(dockerLog));
-});
-
-test("the existing-ECS deploy refuses a whitespace-only APP_AUTH_TOKEN", async () => {
-  // Bash sees spaces as non-empty, but the server trims before validating, so the
-  // value reaches the container as "" and the bearer hook short-circuits. A guard
-  // that only tests for the empty string therefore lets the exact hole through.
-  const { root, binDirectory, dockerLog } = await fixture([
-    "ARK_API_KEY=ecs-key",
-    "ARK_MODEL=ecs-model",
-    "APP_AUTH_TOKEN=   ",
-  ]);
-
-  const result = await run(
-    path.join(root, "scripts", "deploy-existing-ecs.sh"),
-    { PATH: `${binDirectory}${path.delimiter}${process.env.PATH ?? ""}` },
-    root,
-  );
-
-  assert.notEqual(result.code, 0);
-  assert.match(result.stderr, /APP_AUTH_TOKEN/u);
-  const { access } = await import("node:fs/promises");
-  await assert.rejects(access(dockerLog));
-});
-
-test("the existing-ECS deploy refuses a CRLF environment file with an empty token", async () => {
-  // `cp .env.example .env.production` then editing on a Windows host leaves CRLF,
-  // so the captured value is a lone carriage return: non-empty to bash, empty to
-  // the server.
-  const root = await mkdtemp(path.join(os.tmpdir(), "ecs-deploy-crlf-"));
-  temporaryDirectories.push(root);
-  const binDirectory = path.join(root, "bin");
-  const { readFile, chmod } = await import("node:fs/promises");
-  await Promise.all([mkdir(path.join(root, "scripts")), mkdir(binDirectory)]);
-  await writeFile(
-    path.join(root, "scripts", "deploy-existing-ecs.sh"),
-    await readFile(path.join(repositoryRoot, "scripts", "deploy-existing-ecs.sh"), "utf8"),
-  );
-  const dockerLog = path.join(root, "docker-invocations");
-  await writeFile(
-    path.join(binDirectory, "docker"),
-    ["#!/usr/bin/env bash", `printf "%s\n" "$*" >> "${dockerLog}"`, "exit 0", ""].join("\n"),
-    "utf8",
-  );
-  await chmod(path.join(binDirectory, "docker"), 0o755);
-  await writeFile(
-    path.join(root, ".env.production"),
-    "ARK_API_KEY=ecs-key\r\nARK_MODEL=ecs-model\r\nAPP_AUTH_TOKEN=\r\n",
-    "utf8",
-  );
-
-  const result = await run(
-    path.join(root, "scripts", "deploy-existing-ecs.sh"),
-    { PATH: `${binDirectory}${path.delimiter}${process.env.PATH ?? ""}` },
-    root,
-  );
-
-  assert.notEqual(result.code, 0);
-  assert.match(result.stderr, /APP_AUTH_TOKEN/u);
-  const { access } = await import("node:fs/promises");
-  await assert.rejects(access(dockerLog));
-});
-
-test("the existing-ECS deploy refuses a token the server itself would reject", async () => {
-  // The script must apply the same floor as apps/server/src/config.ts and
-  // deploy/volcengine/variables.tf, or it green-lights a deploy that then dies at
-  // container start.
-  for (const token of ["short", "replace-with-a-long-token-value"]) {
-    const { root, binDirectory } = await fixture([
-      "ARK_API_KEY=ecs-key",
-      "ARK_MODEL=ecs-model",
-      `APP_AUTH_TOKEN=${token}`,
-    ]);
-
-    const result = await run(
-      path.join(root, "scripts", "deploy-existing-ecs.sh"),
-      { PATH: `${binDirectory}${path.delimiter}${process.env.PATH ?? ""}` },
-      root,
+// These shapes all defeat a shell parse of the environment file while Compose
+// resolves them to an empty or unusable value. Resolving through Compose is the
+// only way the check and the container agree.
+test("Compose resolution rejects every shape a shell parse would approve", {
+  skip: composeAvailable ? false : "docker compose unavailable",
+}, async () => {
+  const cases = [
+    ["a later `export` line blanking the value", "APP_AUTH_TOKEN=a-genuine-looking-token-value\nexport APP_AUTH_TOKEN=\n"],
+    ["a later indented line blanking the value", "APP_AUTH_TOKEN=a-genuine-looking-token-value\n  APP_AUTH_TOKEN=\n"],
+    ["a quoted run of spaces", 'APP_AUTH_TOKEN="                      "\n'],
+    ["an undefined interpolation", "APP_AUTH_TOKEN=${UNDEFINED_LONG_VARIABLE_NAME_PAD}\n"],
+    ["a trailing comment padding the line length", "APP_AUTH_TOKEN= # padding-past-24-chars-here\n"],
+    ["a CRLF empty value", "APP_AUTH_TOKEN=\r\n"],
+  ];
+  for (const [name, body] of cases) {
+    const { status } = await resolveComposeAuthToken(
+      await envFile(body),
+      path.join(repositoryRoot, "docker-compose.yml"),
     );
-
-    assert.notEqual(result.code, 0, `expected ${token} to be refused`);
-    assert.match(result.stderr, /APP_AUTH_TOKEN/u);
+    assert.notEqual(status, "ok", `expected ${name} to be refused`);
   }
 });
 
-test("the existing-ECS deploy accepts a configured APP_AUTH_TOKEN", async () => {
-  const { root, binDirectory } = await fixture([
-    "ARK_API_KEY=ecs-key",
-    "ARK_MODEL=ecs-model",
-    "APP_AUTH_TOKEN=an-explicitly-configured-deploy-token",
-  ]);
-
-  const result = await run(
-    path.join(root, "scripts", "deploy-existing-ecs.sh"),
-    { PATH: `${binDirectory}${path.delimiter}${process.env.PATH ?? ""}` },
-    root,
+test("Compose resolution strips quotes before applying the floor", {
+  skip: composeAvailable ? false : "docker compose unavailable",
+}, async () => {
+  const quoted = await resolveComposeAuthToken(
+    await envFile('APP_AUTH_TOKEN="abcdefghijklmnopqrstuvw"\n'),
+    path.join(repositoryRoot, "docker-compose.yml"),
   );
+  // A shell parse counts the quotes and sees 25 characters; Compose delivers 23.
+  assert.equal(quoted.status, "weak");
 
-  // It may still stop later for unrelated host reasons; it must not stop here.
-  assert.doesNotMatch(result.stderr, /APP_AUTH_TOKEN/u);
+  const placeholder = await resolveComposeAuthToken(
+    await envFile('APP_AUTH_TOKEN="replace-me-with-a-real-token"\n'),
+    path.join(repositoryRoot, "docker-compose.yml"),
+  );
+  assert.equal(placeholder.status, "weak");
+});
+
+test("Compose resolution accepts a genuine token", {
+  skip: composeAvailable ? false : "docker compose unavailable",
+}, async () => {
+  const { status } = await resolveComposeAuthToken(
+    await envFile("APP_AUTH_TOKEN=an-actually-valid-deploy-token-value\n"),
+    path.join(repositoryRoot, "docker-compose.yml"),
+  );
+  assert.equal(status, "ok");
 });
