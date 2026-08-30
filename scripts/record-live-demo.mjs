@@ -857,4 +857,12 @@ async function main() {
   if (resultLine) process.stdout.write(`${resultLine}\n`);
 }
 
-await main();
+try {
+  await main();
+} catch {
+  // Keep failed live attempts diagnosable through retained repository-local state
+  // without allowing an exception stack, private path, provider output, or raw
+  // Runtime diagnostic to cross the terminal boundary.
+  process.stderr.write("live_recording=failed completion_claim=false\n");
+  process.exitCode = 1;
+}
