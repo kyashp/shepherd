@@ -7,6 +7,26 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — F-06/TST-21 correction blocked by TST-22 marker lifecycle
+
+Auditor fast-forwarded exact corrected candidate
+`f65681aa48a3bfd384d36fc9320ea63e045d3261` only on the audit ownership branch.
+Store passed 43/43; the selected persistence/journal/Plane slice passed 21/21; and
+the previously order-sensitive initial Plane-unwind attention row passed 20/20, so
+no causal lifecycle or fault-seam-reset defect reproduced there.
+
+The recovery-intent open/stat/read/close boundary is now fixed and cause-free, but
+the temp-marker protocol remains Medium-blocked. Auditor changed only the existing
+double-fault test's recovery instance for a causal probe: same-instance recovery
+failed database and journal rows 2/2 with `cleanup_pending`. The in-memory pass
+removes the temp without its marker, then marker scanning rejects the missing temp.
+Independent security re-review also confirmed unhandled crash prefixes: marker
+publication failure can leave an unmarked full-state temp; temp removal followed by
+marker removal failure or a partial marker can permanently block restart. The probe
+edit was reverted byte-clean. TST-22 records the required idempotent state-machine
+boundary. No product commit was pushed to `mock-main`; full/hosted/live/UI/model
+gates were not claimed after the Medium blocker.
+
 ## 2026-08-30 — TST-21 Fixer candidate
 
 The correction closes recovery intent open/stat/read/close operational faults as

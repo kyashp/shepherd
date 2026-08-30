@@ -28,6 +28,36 @@ that limitation is explicit.
 
 ## Immediate queue
 
+### `TST-22` — Cleanup markers do not form a crash-safe retry protocol
+
+- **Evidence class:** independent causal RED and security re-review of corrected
+  F-06/TST-21 candidate `f65681aa48a3bfd384d36fc9320ea63e045d3261`.
+  Reusing the exact double-fault fixture with the same `JsonStore` instance failed
+  2/2 (database and journal) with fixed `cleanup_pending` instead of completing
+  exact cleanup.
+- **Failure contract:** after a normal temp-unlink failure records a marker,
+  same-instance initialization deletes the tracked temp first but leaves its marker;
+  marker scanning then rejects the missing temp indefinitely. A crash during marker
+  creation/write/sync/close/directory-sync can leave an unmarked full-database temp
+  that restart ignores. Temp deletion followed by marker-unlink failure, or a partial
+  marker, also has no safe completion path. Repetitions can accumulate sensitive
+  serialized-state temps or permanently block startup.
+- **Minimal correction:** implement one idempotent crash-safe state machine for exact
+  managed temp+marker cleanup. Accept every prefix of marker publication and
+  temp/marker removal on same-instance retry and restart, preserve the original
+  primary error, and converge without deleting unrelated files. Add narrow fault
+  checkpoints for marker open/write/sync/close/publication/directory sync and both
+  removals; do not weaken containment, no-follow, owner/mode/size, fixed errors, or
+  the representative F-06 recovery scope.
+- **Acceptance:** database and journal matrices cover every cleanup prefix plus
+  primary double/triple faults, immediate same-instance retry and two restarts.
+  Exact pairs disappear durably; missing/partial markers, hostile symlinks and
+  unrelated matching-looking files remain safe and cannot brick recovery. No raw
+  secret/path/errno reaches startup/log/store/API surfaces; repeated fault/restart
+  creates no accumulation. Re-run TST-21/F-06, Plane-unwind stress, adjacent/full/
+  security and hosted gates.
+- **Status:** **OPEN / Fixer READY.** Corrected candidate remains unintegrated.
+
 ### `TST-21` — Recovery-journal reads and temp cleanup are not closed boundaries
 
 - **Evidence class:** independent source/security audit of unintegrated F-06
@@ -57,12 +87,13 @@ that limitation is explicit.
   reconciliation, concurrent mutation/event lock, service/API/reload/security,
   literal `npm run check`, and hosted Node 22. Unix/macOS errors must not be
   swallowed; any Windows exception must remain narrowly platform-gated.
-- **Status:** **FIXER CANDIDATE / Auditor pending.** Four recovery read-operation
+- **Status:** four recovery read-operation
   faults return fixed cause-free `recovery_intent_read` evidence. Primary and journal
   file-sync plus unlink double faults preserve the primary outcome and retain one
   exact UUID temp plus a durable cleanup marker. Restart requires fixed marker
   content/name, no-symlink, owner, mode and stage-specific size validation. A hostile marker symlink fails
-  closed without touching its outside canary.
+  closed without touching its outside canary, but the cleanup protocol is
+  **BLOCKED by TST-22**. F-06 remains unintegrated.
 
 ### `TST-20` — Fail-fast verifier sibling persists after test-root teardown
 
