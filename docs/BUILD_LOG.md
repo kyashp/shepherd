@@ -7,6 +7,18 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`HANDOVER.md`](HANDOVER.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — TST-20 Fixer candidate
+
+The hosted RED returned from the test while its released backend checkpoint and store
+queue were not owned through teardown. The test-only correction attaches Mission
+rejection observation immediately, always releases and joins the exact backend
+checkpoint lifecycle, and then awaits a test-owned no-op `store.mutate` sentinel.
+The prior `setImmediate` timing assumption is removed. The exact fail-fast/no-sibling-
+verifier/state/no-promotion row passed 20/20 locally; hosted Auditor evidence remains
+pending. No product, timeout, retry, cleanup suppression or assertion change was made.
+The service/store slice passed 56/56 and two literal local gates each passed launcher
+3/3, Server 676 passed plus two opt-in skips, Web 17/17 and both builds.
+
 ## 2026-08-30 — F-05 implementation green; final hosted blocked by TST-20
 
 Implementation hosted run `33281977834` passed exact `f8d7f71`. Final docs-head run

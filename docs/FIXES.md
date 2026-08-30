@@ -48,8 +48,11 @@ that limitation is explicit.
 - **Acceptance:** preserve hosted RED; exact row stress and full suite under
   contention; assert no pending sibling/store work before teardown; strict/full and
   two exact-head hosted Node 22 gates pass with F-03/TST03/04 unchanged.
-- **Status:** **OPEN / test lifecycle blocker.** F-05 implementation hosted run
-  `33281977834` passed, but final docs-head I failed.
+- **Status:** **FIXER CANDIDATE / hosted Auditor pending.** The exact row now observes
+  rejection immediately, releases and joins the backend checkpoint lifecycle in
+  `finally`, and awaits a test-owned store sentinel after expected late work before
+  teardown. The row passed 20/20 locally without sleeps, retries, suppression,
+  timeout changes or production edits.
 
 ### `TST-19` — Integration identity is checked only after merge mutation
 

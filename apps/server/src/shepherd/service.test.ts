@@ -2601,6 +2601,10 @@ describe("Shepherd deterministic walking skeleton", () => {
     const backendReleased = new Promise<void>((resolve) => {
       releaseBackend = resolve;
     });
+    let markBackendLifecycleExited!: () => void;
+    const backendLifecycleExited = new Promise<void>((resolve) => {
+      markBackendLifecycleExited = resolve;
+    });
     const service = new ShepherdService({
       store,
       managedRoot: path.join(caseRoot, "managed"),
@@ -2612,21 +2616,34 @@ describe("Shepherd deterministic walking skeleton", () => {
           context.contractId?.includes("back")
         ) {
           markBackendReady();
-          await backendReleased;
+          try {
+            await backendReleased;
+          } finally {
+            markBackendLifecycleExited();
+          }
         }
       },
     });
 
     const run = service.runDeterministicDemo();
-    await backendReady;
-    await expect(run).rejects.toThrow(
-      "Contract independent verification infrastructure failed",
+    const runOutcome = run.then(
+      () => ({ error: null }),
+      (error: unknown) => ({ error }),
     );
-    expect(verifier.targetIds).toHaveLength(1);
-    expect(verifier.targetIds[0]).toContain("front");
-
-    releaseBackend();
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    try {
+      await backendReady;
+      const { error } = await runOutcome;
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toBe(
+        "Contract independent verification infrastructure failed",
+      );
+      expect(verifier.targetIds).toHaveLength(1);
+      expect(verifier.targetIds[0]).toContain("front");
+    } finally {
+      releaseBackend();
+      await backendLifecycleExited;
+      await store.mutate(() => undefined);
+    }
     expect(verifier.targetIds).toHaveLength(1);
     const missionId = service.state().missions.at(-1)?.id;
     const detail = service.missionDetail(missionId ?? "missing");
