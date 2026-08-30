@@ -198,6 +198,12 @@ Trusted server code owns schemas, state transitions, scope intersection, actual 
   bridge access to call the configured provider. Its generated shell policy inherits
   no credential, and startup proves sandboxed spawned code cannot listen or connect.
 - The verifier receives no model/API key, application token, Codex session, Docker socket, unrelated host environment, or network.
+- In `container-volume` mode the control plane itself is given the container engine
+  socket, which is equivalent to control of the engine; the verifier boundary above
+  is unchanged. Every Agent and verifier mount becomes a subpath of one named
+  volume, containment is asserted against the canonical path so a symlink cannot
+  redirect it, and an escaping source throws instead of reverting to a bind mount.
+  Recorded as an accepted deviation in `docs/DEVIATIONS.md`.
 - Browser and model inputs select trusted identifiers; neither can provide host paths or executable commands.
 - `.shepherd/result.json` is the sole Agent-written control artifact exception and is never promoted.
 - Unsafe or ambiguous outcomes stop in an evidenced non-green state.
@@ -292,8 +298,10 @@ Real secrets belong only in ignored `.env`.
 | `ARK_MODEL` | Coding Agent model. |
 | `SHEPHERD_MODEL` | Bounded planning/advisory-review model; defaults to `ARK_MODEL` when empty. When its configuration passes the adapter-aligned readiness gate, Mission orchestration injects one advisory review after verified Contract integration. |
 | `ARK_BASE_URL` | Responses-compatible API root. |
-| `APP_AUTH_TOKEN` | Optional shared bearer boundary. Empty, the default, disables the check and the server starts on any bind; any configured token is enforced on every `/api/` route. Set one whenever the server is reachable beyond the local machine. |
+| `APP_AUTH_TOKEN` | Optional shared bearer boundary. Empty, the default, disables the check and the server starts on any bind; any configured token is enforced on every `/api/` route with a length-checked constant-time comparison, and must be 24+ non-placeholder URL-safe characters so a configured boundary is a real one. Set one whenever the server is reachable beyond the local machine; `scripts/deploy-existing-ecs.sh` requires it because that profile publishes on every interface. |
 | `RUNTIME_PROVIDER` | Starter Agent runtime (`local-process` or `container`); Shepherd verification always uses its independent container boundary. |
+| `CONTAINER_STATE_ROOT` | Optional. With `CONTAINER_STATE_VOLUME`, addresses every mounted state root as a subpath of one named volume instead of a host bind mount, so the Agent sandbox can govern its workspace on a host whose filesystem reaches the engine through a virtual machine. Required together; a half-configured pair fails at startup, and a source outside the root throws rather than falling back to a bind mount. |
+| `CONTAINER_STATE_VOLUME` | Optional. Name of that volume. Mounts are emitted with `volume-nocopy=true`, without which the engine serves an empty subpath using the image's own `/workspace` ownership and the Runtime loses write access before the sandbox is applied. |
 | `SHEPHERD_ROOT` | Sentinel-guarded managed fixture repositories and Plane worktrees; defaults below `APP_DATA_DIR`. |
 | `SHEPHERD_CODEX_HOME_ROOT` | Sentinel-guarded parent for one private, ephemeral live-Plane `CODEX_HOME` per execution; must be inside `APP_DATA_DIR` and separate from shared Agent and managed Shepherd roots. |
 | `SHEPHERD_EXECUTION_MODE` | `auto`, `live`, or `deterministic`. `auto` selects live only with usable Ark configuration plus the container Runtime; explicit live fails closed otherwise. |

@@ -751,7 +751,7 @@ describe("HTTP boundary", () => {
 
   it("protects API routes with the configured shared token", async () => {
     const app = await createApp(
-      loadConfig({ NODE_ENV: "test", APP_AUTH_TOKEN: "a-strong-test-token" }),
+      loadConfig({ NODE_ENV: "test", APP_AUTH_TOKEN: "a-strong-bounded-test-token" }),
       service,
       createShepherdService(),
     );
@@ -761,7 +761,7 @@ describe("HTTP boundary", () => {
     const allowed = await app.inject({
       method: "GET",
       url: "/api/agents",
-      headers: { authorization: "Bearer a-strong-test-token" },
+      headers: { authorization: "Bearer a-strong-bounded-test-token" },
     });
     expect(allowed.statusCode).toBe(200);
 
@@ -773,7 +773,7 @@ describe("HTTP boundary", () => {
     const shepherdAllowed = await app.inject({
       method: "GET",
       url: "/api/shepherd/state",
-      headers: { authorization: "Bearer a-strong-test-token" },
+      headers: { authorization: "Bearer a-strong-bounded-test-token" },
     });
     expect(shepherdAllowed.statusCode).toBe(200);
     await app.close();

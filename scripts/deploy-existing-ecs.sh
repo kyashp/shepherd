@@ -10,6 +10,19 @@ if [[ ! -f "$env_file" ]]; then
   exit 1
 fi
 
+# This profile publishes on every interface: docker-compose.yml binds 0.0.0.0 and
+# maps the port with no address prefix, and the API it exposes performs
+# prompt-triggered command and file execution. The server treats the token as
+# optional so a loopback demo needs no credential, which makes this deploy path the
+# only place left to enforce it. Checked before any engine work so a missing
+# credential cannot start a container first.
+configured_auth_token="$(sed -n 's/^APP_AUTH_TOKEN=//p' "$env_file" | tail -n 1)"
+if [[ -z "$configured_auth_token" ]]; then
+  echo "APP_AUTH_TOKEN must be set in $env_file." >&2
+  echo "This profile publishes the Agent execution API on every interface." >&2
+  exit 1
+fi
+
 if ! command -v docker >/dev/null 2>&1; then
   echo "Docker Engine 24 or newer is required. Follow the Linux install section in README.md." >&2
   exit 1
