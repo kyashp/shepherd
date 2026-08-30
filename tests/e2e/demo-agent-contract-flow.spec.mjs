@@ -115,14 +115,19 @@ test("user-created Agents receive visible typed contracts and produce competing 
   await page.getByRole("link", { name: /My Frontend Agent/u }).click();
   await expect(page.getByLabel("Route through Shepherd")).toBeChecked();
   const frontendPrompt =
-    "Implement the frontend authentication client using an HttpOnly session cookie.";
+    "Implement the browser authentication client using the conventions and interfaces already present in your assigned workspace.";
   await page.getByLabel("Message My Frontend Agent").fill(frontendPrompt);
   const waitingResponse = page.waitForResponse((response) =>
     response.request().method() === "POST" && /\/api\/shepherd\/agents\/[^/]+\/contracts$/u.test(response.url()),
   );
   await page.getByLabel("Message My Frontend Agent").press("Enter");
   expect((await waitingResponse).status()).toBe(201);
-  await expect(page.getByText(/Prompt captured and validated as http-only-session-cookie/u)).toBeVisible();
+  await expect(page.getByText(/value is deferred until independently verified implementation evidence/u)).toBeVisible();
+  const deferredState = await state(request);
+  expect(deferredState.contracts).toHaveLength(0);
+  expect(deferredState.groupMessages.find(
+    (message) => message.contractAssignment?.preset === "auth-demo-contract",
+  )?.contractAssignment.transport).toBeNull();
   await assertNoDocumentOverflow(page);
   await page.screenshot({
     path: path.join(
@@ -136,7 +141,7 @@ test("user-created Agents receive visible typed contracts and produce competing 
   const backendRoute = page.getByLabel("Route through Shepherd");
   await expect(backendRoute).toBeChecked();
   const backendPrompt =
-    "Implement the backend authentication service using a bearer JWT.";
+    "Implement the authentication service using the deployment conventions and interfaces already present in your assigned workspace.";
   await page.getByLabel("Message My Backend Agent").fill(backendPrompt);
   const acceptedResponse = page.waitForResponse((response) =>
     response.request().method() === "POST" && /\/api\/shepherd\/agents\/[^/]+\/contracts$/u.test(response.url()),
@@ -156,9 +161,22 @@ test("user-created Agents receive visible typed contracts and produce competing 
   const frontend = agents.find((agent) => agent.name === "My Frontend Agent");
   const backend = agents.find((agent) => agent.name === "My Backend Agent");
   expect(contracts).toEqual(expect.arrayContaining([
-    expect.objectContaining({ agentId: frontend.id, objective: frontendPrompt }),
-    expect.objectContaining({ agentId: backend.id, objective: backendPrompt }),
+    expect.objectContaining({
+      agentId: frontend.id,
+      objective: frontendPrompt,
+      declaredClaimKeys: ["auth.transport"],
+      contextualInputs: [expect.objectContaining({ name: "Scoped Frontend conventions" })],
+    }),
+    expect.objectContaining({
+      agentId: backend.id,
+      objective: backendPrompt,
+      declaredClaimKeys: ["auth.transport"],
+      contextualInputs: [expect.objectContaining({ name: "Scoped Backend conventions" })],
+    }),
   ]));
+  expect(finalState.claims.filter((claim) => claim.missionId === mission.id).map((claim) => claim.value)).toEqual(
+    expect.arrayContaining(["http-only-session-cookie", "bearer-jwt"]),
+  );
   expect(finalState.candidates.filter((candidate) => candidate.missionId === mission.id)).toEqual(expect.arrayContaining([
     expect.objectContaining({ targetValue: "http-only-session-cookie", selectionState: "selected", promotionState: "promoted" }),
     expect.objectContaining({ targetValue: "bearer-jwt", selectionState: "rejected" }),
@@ -171,8 +189,8 @@ test("user-created Agents receive visible typed contracts and produce competing 
   const visibleContract = frontendCard.getByLabel("Agent execution contract");
   for (const text of [
     "My Frontend Agent",
-    "HttpOnly session cookie",
     "auth.transport",
+    "Scoped Frontend conventions",
     "src/frontend/**",
     "src/frontend/auth.json",
     "auth-frontend",

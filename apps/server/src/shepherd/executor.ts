@@ -1,9 +1,11 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { RunUsage } from "../types.js";
 import type { ContractResultManifest } from "./domain.js";
 import {
   AUTH_CLAIM_KEY,
+  AUTH_BACKEND_CONTEXT_PATH,
+  AUTH_FRONTEND_CONTEXT_PATH,
   BEARER_TRANSPORT,
   clientReadableForTransport,
   COOKIE_TRANSPORT,
@@ -15,11 +17,13 @@ export type DeterministicOperation =
       kind: "frontend_contract";
       contractId: string;
       targetTransport?: AuthTransport;
+      deriveTransportFromScopedContext?: boolean;
     }
   | {
       kind: "backend_contract";
       contractId: string;
       targetTransport?: AuthTransport;
+      deriveTransportFromScopedContext?: boolean;
     }
   | {
       kind: "resolution_candidate";
@@ -89,6 +93,37 @@ function authValue(transport: AuthTransport) {
   };
 }
 
+async function transportFromScopedContext(
+  workspacePath: string,
+  role: "Frontend" | "Backend",
+): Promise<AuthTransport> {
+  const relativePath =
+    role === "Frontend" ? AUTH_FRONTEND_CONTEXT_PATH : AUTH_BACKEND_CONTEXT_PATH;
+  const parsed = JSON.parse(
+    await readFile(resolveInside(workspacePath, relativePath), "utf8"),
+  ) as Record<string, unknown>;
+  if (
+    role === "Frontend" &&
+    parsed.surface === "browser-client" &&
+    parsed.requestConvention === "include ambient browser credentials" &&
+    parsed.credentialVisibility ===
+      "credential material must not be readable by client JavaScript"
+  ) {
+    return COOKIE_TRANSPORT;
+  }
+  if (
+    role === "Backend" &&
+    parsed.surface === "stateless-api" &&
+    parsed.deploymentConvention ===
+      "requests may land on any horizontally scaled instance" &&
+    parsed.credentialIngress ===
+      "signed request-carried claims arrive in the Authorization header"
+  ) {
+    return BEARER_TRANSPORT;
+  }
+  throw new Error("Scoped authentication context is missing or unsupported");
+}
+
 export class DeterministicFixtureExecutor implements ShepherdExecutor {
   readonly kind = "deterministic_fixture" as const;
   private readonly active = new Map<string, AbortController>();
@@ -104,7 +139,9 @@ export class DeterministicFixtureExecutor implements ShepherdExecutor {
       switch (request.operation.kind) {
         case "frontend_contract":
           {
-            const transport = request.operation.targetTransport ?? BEARER_TRANSPORT;
+            const transport = request.operation.deriveTransportFromScopedContext
+              ? await transportFromScopedContext(request.workspacePath, "Frontend")
+              : request.operation.targetTransport ?? BEARER_TRANSPORT;
           return await this.writeContract(
             request.workspacePath,
             request.operation.contractId,
@@ -117,7 +154,9 @@ export class DeterministicFixtureExecutor implements ShepherdExecutor {
           }
         case "backend_contract":
           {
-            const transport = request.operation.targetTransport ?? COOKIE_TRANSPORT;
+            const transport = request.operation.deriveTransportFromScopedContext
+              ? await transportFromScopedContext(request.workspacePath, "Backend")
+              : request.operation.targetTransport ?? COOKIE_TRANSPORT;
           return await this.writeContract(
             request.workspacePath,
             request.operation.contractId,

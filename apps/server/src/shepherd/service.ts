@@ -20,6 +20,7 @@ import {
   AUTH_PROJECT_PROFILE_ID,
   BEARER_TRANSPORT,
   COOKIE_TRANSPORT,
+  authTransportForRoleContext,
   verifiedAuthTransportFact,
   type AuthTransport,
 } from "./auth-fixture.js";
@@ -526,6 +527,8 @@ export interface DeterministicDemoOptions {
     frontend: string;
     backend: string;
   };
+  /** Internal: claim values come from role-scoped repository context, not prompts. */
+  deferClaimValues?: boolean;
   /** Durable private-chat records atomically bound when the Mission is created. */
   privatePromptRecords?: {
     frontend: PrivateContractPromptRecord;
@@ -627,7 +630,7 @@ interface PrivateContractPromptRecord {
   content: string;
   agentId: string;
   role: "Frontend" | "Backend";
-  transport: AuthTransport;
+  transport: AuthTransport | null;
   createdAt: string;
 }
 
@@ -685,6 +688,7 @@ interface PreparedMission extends PreparedProjectMission {
   backendContractId: string;
   frontendTransport: AuthTransport;
   backendTransport: AuthTransport;
+  deferClaimValues: boolean;
 }
 
 interface PreparedGeneralMission extends PreparedProjectMission {
@@ -1816,6 +1820,9 @@ export class ShepherdService {
           });
         });
       }
+      if (frontend.transport === null || backend.transport === null) {
+        throw new Error("Project Group Contract transport metadata was deferred unexpectedly");
+      }
       let started: { missionId: string };
       try {
         started = await this.startDeterministicDemo({
@@ -1921,9 +1928,11 @@ export class ShepherdService {
     const authTransport = authTransportFromPrivatePrompt(content);
     const mentionsAuthDemoTransport =
       /\b(?:http[\s-]*only|cookie|bearer|jwt)\b/iu.test(content);
+    const describesAuthWork =
+      /\b(?:auth|authentication|credential|identity|session)\b/iu.test(content);
     const isConciseAuthDemoPrompt =
       (agent.role === "Frontend" || agent.role === "Backend") &&
-      (authTransport !== null || mentionsAuthDemoTransport) &&
+      (describesAuthWork || authTransport !== null || mentionsAuthDemoTransport) &&
       !/\bacceptance\s*:/iu.test(content) &&
       !content.includes("`");
     if (isConciseAuthDemoPrompt) {
@@ -1941,7 +1950,6 @@ export class ShepherdService {
         throw new ShepherdControlError("invalid_input", "Contract prompt identity is invalid");
       }
       const content = normalizedPrivatePrompt(input.content);
-      const transport = transportFromPrivatePrompt(content);
       const initial = this.store.snapshot();
       const agent = initial.agents.find((item) => item.id === input.agentId);
       if (!agent) {
@@ -1954,6 +1962,16 @@ export class ShepherdService {
         );
       }
       const role = agent.role;
+      const requestedTransport = authTransportFromPrivatePrompt(content);
+      const mentionsTransport =
+        /\b(?:http[\s-]*only|cookie|bearer|jwt)\b/iu.test(content);
+      if (mentionsTransport && requestedTransport === null) {
+        throw new ShepherdControlError(
+          "invalid_input",
+          "Name no authentication transport, or name exactly one supported transport",
+        );
+      }
+      const transport = requestedTransport ?? authTransportForRoleContext(role);
       const messageId =
         "group-private-" +
         createHash("sha256")
@@ -1966,7 +1984,7 @@ export class ShepherdService {
           agentId: input.agentId,
           role,
           content,
-          transport,
+          transport: requestedTransport,
         }), "utf8")
         .digest("hex");
       const existing = initial.shepherd.groupMessages.find(
@@ -1979,7 +1997,7 @@ export class ShepherdService {
           existing.targetAgentId !== input.agentId ||
           existing.contractAssignment?.preset !== "auth-demo-contract" ||
           existing.contractAssignment.role !== role ||
-          existing.contractAssignment.transport !== transport
+          existing.contractAssignment.transport !== requestedTransport
         ) {
           throw new ShepherdControlError(
             "idempotency_conflict",
@@ -2037,7 +2055,7 @@ export class ShepherdService {
         content,
         agentId: input.agentId,
         role,
-        transport,
+        transport: requestedTransport,
         createdAt,
       };
       if (!peer) {
@@ -2089,7 +2107,7 @@ export class ShepherdService {
             contractAssignment: {
               preset: "auth-demo-contract",
               role,
-              transport,
+              transport: requestedTransport,
             },
             requestFingerprint: fingerprint,
             createdAt,
@@ -2110,7 +2128,10 @@ export class ShepherdService {
       ) {
         throw new Error("Pending private Contract prompt is missing trusted metadata");
       }
-      if (peer.contractAssignment.transport === transport) {
+      const peerTransport =
+        peer.contractAssignment.transport ??
+        authTransportForRoleContext(oppositeRole);
+      if (peerTransport === transport) {
         throw new ShepherdControlError(
           "invalid_input",
           "The Frontend and Backend prompts must request incompatible transports for this collision demo",
@@ -2178,7 +2199,7 @@ export class ShepherdService {
             contractAssignment: {
               preset: "auth-demo-contract",
               role,
-              transport,
+              transport: requestedTransport,
             },
             requestFingerprint: fingerprint,
             createdAt,
@@ -2193,8 +2214,12 @@ export class ShepherdService {
             "Integrate the independently prompted Frontend and Backend authentication Contracts and resolve any verified semantic collision.",
           frontendAgentId: frontend.agentId,
           backendAgentId: backend.agentId,
-          frontendTransport: frontend.transport,
-          backendTransport: backend.transport,
+          frontendTransport:
+            frontend.transport ?? authTransportForRoleContext(frontend.role),
+          backendTransport:
+            backend.transport ?? authTransportForRoleContext(backend.role),
+          deferClaimValues:
+            frontend.transport === null && backend.transport === null,
           contractPrompts: {
             frontend: frontend.content,
             backend: backend.content,
@@ -2961,6 +2986,7 @@ export class ShepherdService {
           collision.leftContractId === sourceContracts[1].id
             ? collision.leftClaim.value as AuthTransport
             : collision.rightClaim.value as AuthTransport,
+        deferClaimValues: false,
       };
       const selectedAt = this.timestamp();
       await this.store.mutate((database) => {
@@ -3964,15 +3990,20 @@ export class ShepherdService {
     const backendObjective = options.contractPrompts
       ? normalizedPrivatePrompt(options.contractPrompts.backend)
       : `Configure the required backend authentication artifact with exactly transport "${backendTransport}" and clientReadableCredential ${String(backendTransport === BEARER_TRANSPORT)}.`;
-    if (
-      options.contractPrompts &&
-      (transportFromPrivatePrompt(frontendObjective) !== frontendTransport ||
-        transportFromPrivatePrompt(backendObjective) !== backendTransport)
-    ) {
-      throw new ShepherdControlError(
-        "invalid_input",
-        "Private Contract prompts do not match their trusted transport assignments",
-      );
+    if (options.contractPrompts) {
+      const prescribedFrontend = authTransportFromPrivatePrompt(frontendObjective);
+      const prescribedBackend = authTransportFromPrivatePrompt(backendObjective);
+      if (
+        (prescribedFrontend !== null && prescribedFrontend !== frontendTransport) ||
+        (prescribedBackend !== null && prescribedBackend !== backendTransport) ||
+        (options.deferClaimValues === true &&
+          (prescribedFrontend !== null || prescribedBackend !== null))
+      ) {
+        throw new ShepherdControlError(
+          "invalid_input",
+          "Private Contract prompts do not match their trusted transport assignments",
+        );
+      }
     }
     const contractPromptRecords = options.privatePromptRecords ?? options.groupPromptRecords;
     if (contractPromptRecords) {
@@ -3993,8 +4024,13 @@ export class ShepherdService {
         contractPromptRecords.backend.role !== "Backend" ||
         contractPromptRecords.frontend.agentId !== options.frontendAgentId ||
         contractPromptRecords.backend.agentId !== options.backendAgentId ||
-        contractPromptRecords.frontend.transport !== frontendTransport ||
-        contractPromptRecords.backend.transport !== backendTransport ||
+        (contractPromptRecords.frontend.transport !== null &&
+          contractPromptRecords.frontend.transport !== frontendTransport) ||
+        (contractPromptRecords.backend.transport !== null &&
+          contractPromptRecords.backend.transport !== backendTransport) ||
+        (options.deferClaimValues === true &&
+          (contractPromptRecords.frontend.transport !== null ||
+            contractPromptRecords.backend.transport !== null)) ||
         (options.privatePromptRecords &&
           (contractPromptRecords.frontend.content !== frontendObjective ||
             contractPromptRecords.backend.content !== backendObjective))
@@ -4316,6 +4352,14 @@ export class ShepherdService {
           title: "Implement frontend authentication transport",
           objective: frontendObjective,
           artifactPath: "src/frontend/auth.json",
+          contextualInputs: [
+            {
+              name: "Scoped Frontend conventions",
+              value:
+                "Existing browser requests include ambient credentials while credential material remains unavailable to client JavaScript.",
+              sourceContractId: null,
+            },
+          ],
           authority: frontendContractAuthority,
           acceptanceChecks: [frontendCheck()],
           createdAt,
@@ -4327,6 +4371,14 @@ export class ShepherdService {
           title: "Implement backend authentication transport",
           objective: backendObjective,
           artifactPath: "src/backend/auth.json",
+          contextualInputs: [
+            {
+              name: "Scoped Backend conventions",
+              value:
+                "Stateless API requests may land on any instance and carry signed claims in the Authorization header.",
+              sourceContractId: null,
+            },
+          ],
           authority: backendContractAuthority,
           acceptanceChecks: [backendCheck()],
           createdAt,
@@ -4418,6 +4470,7 @@ export class ShepherdService {
       backendContractId,
       frontendTransport,
       backendTransport,
+      deferClaimValues: options.deferClaimValues === true,
     };
   }
 
@@ -4508,6 +4561,7 @@ export class ShepherdService {
     title: string;
     objective: string;
     artifactPath: string;
+    contextualInputs: ExecutionContract["contextualInputs"];
     authority: ScopedAuthority;
     acceptanceChecks: AcceptanceCheck[];
     createdAt: string;
@@ -4518,7 +4572,7 @@ export class ShepherdService {
       agentId: input.agentId,
       title: input.title,
       objective: input.objective,
-      contextualInputs: [],
+      contextualInputs: structuredClone(input.contextualInputs),
       dependencyIds: [],
       semanticScopes: ["authentication"],
       declaredClaimKeys: [AUTH_CLAIM_KEY],
@@ -4900,7 +4954,9 @@ export class ShepherdService {
         operation: {
           kind: "frontend_contract",
           contractId: prepared.frontendContractId,
-          targetTransport: prepared.frontendTransport,
+          ...(prepared.deferClaimValues
+            ? { deriveTransportFromScopedContext: true }
+            : { targetTransport: prepared.frontendTransport }),
         },
       },
       {
@@ -4908,7 +4964,9 @@ export class ShepherdService {
         operation: {
           kind: "backend_contract",
           contractId: prepared.backendContractId,
-          targetTransport: prepared.backendTransport,
+          ...(prepared.deferClaimValues
+            ? { deriveTransportFromScopedContext: true }
+            : { targetTransport: prepared.backendTransport }),
         },
       },
     ];

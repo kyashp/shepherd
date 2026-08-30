@@ -1650,7 +1650,7 @@ describe("Shepherd deterministic walking skeleton", () => {
     expect(result.mission.state).toBe("completed");
   }, 30_000);
 
-  it("pairs idempotent private Agent-chat prompts into one verified Mission", async () => {
+  it("defers neutral private auth prompts until scoped context and verification establish claims", async () => {
     const caseRoot = await makeCaseRoot();
     const store = new JsonStore(path.join(caseRoot, "state.json"));
     await store.initialize();
@@ -1698,9 +1698,9 @@ describe("Shepherd deterministic walking skeleton", () => {
       verifier: new HostTrustedFixtureVerifier(),
     });
     const frontendPrompt =
-      "Implement the frontend authentication client using an HttpOnly session cookie.";
+      "Implement the browser authentication client using the conventions and interfaces already present in your assigned workspace.";
     const backendPrompt =
-      "Implement the backend authentication service using a bearer JWT.";
+      "Implement the authentication service using the deployment conventions and interfaces already present in your assigned workspace.";
 
     await expect(service.submitPrivateContractPrompt({
       agentId: frontendAgent.id,
@@ -1722,7 +1722,7 @@ describe("Shepherd deterministic walking skeleton", () => {
         targetAgentId: frontendAgent.id,
         contractAssignment: {
           role: "Frontend",
-          transport: COOKIE_TRANSPORT,
+          transport: null,
         },
       },
     });
@@ -1768,11 +1768,19 @@ describe("Shepherd deterministic walking skeleton", () => {
         agentId: frontendAgent.id,
         objective: frontendPrompt,
         state: "verified",
+        declaredClaimKeys: ["auth.transport"],
+        contextualInputs: [
+          expect.objectContaining({ name: "Scoped Frontend conventions" }),
+        ],
       }),
       expect.objectContaining({
         agentId: backendAgent.id,
         objective: backendPrompt,
         state: "verified",
+        declaredClaimKeys: ["auth.transport"],
+        contextualInputs: [
+          expect.objectContaining({ name: "Scoped Backend conventions" }),
+        ],
       }),
     ]));
     const promptMessages = store.snapshot().shepherd.groupMessages.filter(
@@ -1788,6 +1796,12 @@ describe("Shepherd deterministic walking skeleton", () => {
     expect(detail?.collisions).toEqual([
       expect.objectContaining({ key: "auth.transport" }),
     ]);
+    expect(detail?.claims.map((claim) => [claim.contractId, claim.value])).toEqual(
+      expect.arrayContaining([
+        [expect.any(String), COOKIE_TRANSPORT],
+        [expect.any(String), BEARER_TRANSPORT],
+      ]),
+    );
   }, 30_000);
 
   it("replies to an unmentioned Project Group message without starting work", async () => {

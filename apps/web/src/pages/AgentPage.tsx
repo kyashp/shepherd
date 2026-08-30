@@ -287,7 +287,9 @@ export function AgentPage({
                         : contract
                         ? <>Contract <Link href="/shepherd">{shortId(contract.id, 16)}</Link> is {contract.state.replaceAll("_", " ")}. Open Shepherd for its Plane, independent evidence, and protected promotion.</>
                         : assignment.preset === "auth-demo-contract"
-                          ? <>Prompt captured and validated as <strong>{assignment.transport}</strong>. Prompt the {agent.role === "Frontend" ? "Backend" : "Frontend"} Agent in its private chat to start the Mission.</>
+                          ? assignment.transport === null
+                            ? <>Prompt captured. The Contract requires <strong>auth.transport</strong>, but its value is deferred until independently verified implementation evidence. Prompt the {agent.role === "Frontend" ? "Backend" : "Frontend"} Agent in its private chat to start the Mission.</>
+                            : <>Prompt captured and validated as <strong>{assignment.transport}</strong>. Prompt the {agent.role === "Frontend" ? "Backend" : "Frontend"} Agent in its private chat to start the Mission.</>
                           : <>The Contract draft is confirmed and queued for isolated execution.</>}
                     </div>
                   </article>

@@ -13,6 +13,10 @@ export const AUTH_BACKEND_CHECK_ID = "backend-contract" as const;
 export const AUTH_BACKEND_PROFILE_ID = "auth-backend" as const;
 export const AUTH_PROJECT_CHECK_ID = "project-security" as const;
 export const AUTH_PROJECT_PROFILE_ID = "auth-project-security" as const;
+export const AUTH_FRONTEND_CONTEXT_PATH =
+  "context/frontend-auth-conventions.json" as const;
+export const AUTH_BACKEND_CONTEXT_PATH =
+  "context/backend-auth-conventions.json" as const;
 
 export type AuthTransport =
   | typeof BEARER_TRANSPORT
@@ -49,6 +53,26 @@ const fixtureFiles = (
     ) + "\n",
   "policy.json":
     JSON.stringify({ allowClientReadableCredential }, null, 2) + "\n",
+  [AUTH_FRONTEND_CONTEXT_PATH]:
+    JSON.stringify(
+      {
+        surface: "browser-client",
+        requestConvention: "include ambient browser credentials",
+        credentialVisibility: "credential material must not be readable by client JavaScript",
+      },
+      null,
+      2,
+    ) + "\n",
+  [AUTH_BACKEND_CONTEXT_PATH]:
+    JSON.stringify(
+      {
+        surface: "stateless-api",
+        deploymentConvention: "requests may land on any horizontally scaled instance",
+        credentialIngress: "signed request-carried claims arrive in the Authorization header",
+      },
+      null,
+      2,
+    ) + "\n",
   "src/.gitkeep": "",
   "checks/frontend.cjs": [
     "const assert = require('node:assert/strict');",
@@ -99,6 +123,12 @@ export async function writeAuthCollisionFixture(
 
 export function clientReadableForTransport(transport: AuthTransport): boolean {
   return transport === BEARER_TRANSPORT;
+}
+
+export function authTransportForRoleContext(
+  role: "Frontend" | "Backend",
+): AuthTransport {
+  return role === "Frontend" ? COOKIE_TRANSPORT : BEARER_TRANSPORT;
 }
 
 /**
