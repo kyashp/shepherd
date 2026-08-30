@@ -7,6 +7,31 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — issue #43 integrated verification
+
+PR #75 merged to protected `main` as
+`fbc937fed21ad4441e24ab301f591fe5aa03a025`; issue #43 closed and GitHub
+removed the remote feature branch. The required integrated verification ran in
+the clean issue worktree detached at that exact SHA before the docs-only
+closeout branch was created.
+
+- `git diff` found no tree difference between reviewed candidate `66e0c0e` and
+  merge `fbc937f`, so the independent security/UI audit and re-review apply to
+  the integrated bytes with no remaining Critical, Important or Minor finding.
+- Fresh literal `npm run check` passed: launcher 3/3, Server 808 passed plus
+  three explicit skips, Web 20/20, all production/test-source typechecks and
+  both builds. The PR's `Required checks` and `Node 22 / npm run check` hosted
+  jobs also completed successfully before merge.
+- Fresh integrated Chromium passed the real-service unauthorized-diff journey
+  2/2 at `1280x800` and `1440x900`, including durable reload, typed visible
+  denial, unchanged stored and actual protected heads, zero Candidates,
+  integration Planes or promotion, keyboard focus/activation, bounded public
+  evidence and no document/body overflow.
+- The four reviewed E2E-04 screenshot hashes remain unchanged. No live Runtime,
+  model call, credential, product, CSS, schema, dependency or protected-branch
+  mutation ran during closeout. Candidate-time unrelated harness limitations
+  remain recorded in the preceding entry rather than being reclassified.
+
 ## 2026-08-30 — FM-01 integrated verification and event-evidence follow-up
 
 PR #72 merged to `main` as `2e4058107311170ab12cadc6a6d283aeaefef895`.
