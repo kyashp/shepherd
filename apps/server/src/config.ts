@@ -78,7 +78,11 @@ const envSchema = z.object({
   SHEPHERD_DEMO_MODE: booleanEnvironmentValue.default(false),
   SHEPHERD_AUTO_RESOLUTION: booleanEnvironmentValue.default(true),
   SHEPHERD_DELETE_COMPLETED_PLANES: booleanEnvironmentValue.default(false),
-  SHEPHERD_MAX_PARALLEL_PLANES: z.coerce.number().int().min(1).max(16).default(4),
+  // Floor and default match the persisted settings schema, `updateSettings` and
+  // the API, all of which require at least 2. Accepting 1 here would green-light a
+  // value that fails validation on its first write, and a default of 4 would make
+  // the persisted default unreachable for an operator who never sets the variable.
+  SHEPHERD_MAX_PARALLEL_PLANES: z.coerce.number().int().min(2).max(16).default(2),
   SHEPHERD_CONTRACT_TIMEOUT_MS: z.coerce
     .number()
     .int()

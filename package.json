@@ -22,6 +22,8 @@
     "test:e2e:starter-kit:evidence": "E2E_UPDATE_EVIDENCE=true npm run test:e2e:starter-kit",
     "test:e2e:shepherd-hero": "npm run test:e2e:harness:unit && PLAYWRIGHT_BROWSERS_PATH=.tmp/playwright-browsers playwright test --config=playwright.config.ts tests/e2e/shepherd-hero.spec.mjs",
     "test:e2e:shepherd-hero:evidence": "E2E_UPDATE_EVIDENCE=true npm run test:e2e:shepherd-hero",
+    "test:e2e:shepherd-performance": "npm run test:e2e:harness:unit && PLAYWRIGHT_BROWSERS_PATH=.tmp/playwright-browsers playwright test --config=playwright.config.ts tests/e2e/shepherd-performance.spec.mjs",
+    "test:e2e:shepherd-performance:evidence": "E2E_UPDATE_EVIDENCE=true npm run test:e2e:shepherd-performance",
     "check": "npm run typecheck && npm run test && npm run build",
     "poc": "node --env-file-if-exists=.env ./scripts/start-local-poc-launcher.mjs",
     "test:shepherd:live": "SHEPHERD_LIVE_TEST=true node --env-file=.env ./node_modules/vitest/vitest.mjs run --config apps/server/vitest.config.ts apps/server/src/shepherd/live-runtime.integration.test.ts --no-file-parallelism --maxWorkers=1 --bail=1 --retry=0 --testTimeout=1800000 --hookTimeout=120000",

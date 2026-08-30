@@ -74,7 +74,10 @@ async function makeCaseRoot(): Promise<string> {
   return root;
 }
 
-async function removeServiceCaseRoot(root: string): Promise<void> {
+async function removeServiceCaseRoot(
+  root: string,
+  hooks: { beforeEntryChmod?: (entry: string) => Promise<void> } = {},
+): Promise<void> {
   let rootStat: Awaited<ReturnType<typeof lstat>>;
   try {
     rootStat = await lstat(root);
@@ -123,7 +126,13 @@ async function removeServiceCaseRoot(root: string): Promise<void> {
         }
         await makeDeletable(entry);
       } else if (!entryStat.isSymbolicLink()) {
-        await chmod(entry, 0o600);
+        await hooks.beforeEntryChmod?.(entry);
+        try {
+          await chmod(entry, 0o600);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+          throw error;
+        }
       }
     }
   };
@@ -296,6 +305,49 @@ class ObservedConcurrentExecutor implements ShepherdExecutor {
     } finally {
       this.active -= 1;
     }
+  }
+
+  async cancel(executionId: string): Promise<boolean> {
+    return await this.inner.cancel(executionId);
+  }
+}
+
+class CandidateExecutionIntervalExecutor implements ShepherdExecutor {
+  readonly kind = "deterministic_fixture" as const;
+  private readonly inner = new DeterministicFixtureExecutor();
+  private releaseCandidates!: () => void;
+  private readonly candidatesReleased: Promise<void>;
+  candidateStarts: string[] = [];
+  candidateCompletes: string[] = [];
+
+  constructor() {
+    this.candidatesReleased = new Promise<void>((resolve) => {
+      this.releaseCandidates = resolve;
+    });
+  }
+
+  async waitForBothCandidates(): Promise<void> {
+    const deadline = Date.now() + 3_000;
+    while (Date.now() < deadline) {
+      if (this.candidateStarts.length === 2) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error("both candidate executions did not start before the bounded deadline");
+  }
+
+  release(): void {
+    this.releaseCandidates();
+  }
+
+  async run(request: ShepherdExecutionRequest): Promise<ShepherdExecutionResult> {
+    if (request.operation.kind !== "resolution_candidate") {
+      return await this.inner.run(request);
+    }
+    this.candidateStarts = [...this.candidateStarts, new Date().toISOString()];
+    await this.candidatesReleased;
+    const result = await this.inner.run(request);
+    this.candidateCompletes = [...this.candidateCompletes, new Date().toISOString()];
+    return result;
   }
 
   async cancel(executionId: string): Promise<boolean> {
@@ -2273,6 +2325,20 @@ describe("Shepherd deterministic walking skeleton", () => {
     await expect(removeServiceCaseRoot(caseRoot)).resolves.toBeUndefined();
   });
 
+  it("tolerates a managed file disappearing after cleanup lstat and before chmod", async () => {
+    const caseRoot = await makeCaseRoot();
+    const disappearingFile = path.join(caseRoot, "managed", "candidate.ts");
+    await mkdir(path.dirname(disappearingFile), { recursive: true });
+    await writeFile(disappearingFile, "candidate\n", "utf8");
+    await expect(
+      removeServiceCaseRoot(caseRoot, {
+        beforeEntryChmod: async (entry) => {
+          if (entry === disappearingFile) await rm(disappearingFile);
+        },
+      }),
+    ).resolves.toBeUndefined();
+  });
+
   it("refuses to clean a root outside its allocated test fixture", async () => {
     const externalRoot = await mkdtemp(path.join(repositoryTestRoot, "external-"));
     await writeFile(path.join(externalRoot, "preserve.txt"), "preserve\n", "utf8");
@@ -2680,6 +2746,37 @@ describe("Shepherd deterministic walking skeleton", () => {
     await expect(access(path.join(managedRoot, "projects"))).rejects.toMatchObject({
       code: "ENOENT",
     });
+  });
+
+  it("PERF-01 proves real scheduled candidate executor intervals overlap before release", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const executor = new CandidateExecutionIntervalExecutor();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      executor,
+    });
+
+    const { missionId } = await startTrackedTestMission(service);
+    try {
+      await executor.waitForBothCandidates();
+      expect(executor.candidateStarts).toHaveLength(2);
+      expect(executor.candidateCompletes).toEqual([]);
+      expect(executor.candidateStarts.every((timestamp) => Number.isFinite(Date.parse(timestamp)))).toBe(true);
+    } finally {
+      executor.release();
+    }
+    await waitForTerminalMission(service, missionId, 25_000);
+    expect(service.missionDetail(missionId)?.mission.state).toBe("completed");
+    expect(executor.candidateCompletes).toHaveLength(2);
+    expect(executor.candidateCompletes.every((timestamp) => Number.isFinite(Date.parse(timestamp)))).toBe(true);
+    expect(Math.max(...executor.candidateStarts.map(Date.parse))).toBeLessThanOrEqual(
+      Math.min(...executor.candidateCompletes.map(Date.parse)),
+    );
   });
 
   it("rejects a second live Mission when the protected head moved externally", async () => {

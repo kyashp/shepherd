@@ -7,6 +7,47 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — ST-01 startup settings composed into the service
+
+Branch `fix/44-st-01-startup-settings`, PR #73, against `main` at `07f4202`. No
+live or model call ran.
+
+- `SHEPHERD_AUTO_RESOLUTION` and `SHEPHERD_MAX_PARALLEL_PLANES` were parsed by
+  `loadConfig` and then discarded: `ShepherdServiceOptions` had no field for either
+  and the only production construction passed neither. The gap was invisible in E2E
+  because the harness sets values equal to the persisted defaults.
+- Both options are now declared, passed from resolved configuration, and applied by
+  the pristine-store seeding block. Seeding applies only while the persisted value
+  is still the factory default, so an operator change away from that default
+  survives restart. **Stated limit, now asserted by a test rather than only
+  commented:** an operator who sets the value back TO the factory default is
+  indistinguishable from one who never chose it, and startup configuration seeds
+  over that choice on the next restart while the store is still pristine. Removing
+  the limit needs a persisted "changed by operator" marker, which is a schema change
+  beyond this correction.
+- **Stated behaviour change.** `SHEPHERD_MAX_PARALLEL_PLANES` moves from
+  `min(1).default(4)` to `min(2).default(2)`. A host that sets `1` previously booted
+  because the value was discarded; it now fails at `loadConfig`. That is deliberate:
+  `database-schema.ts`, `updateSettings` and the API all require at least 2, so once
+  composition works a `1` would fail on its first seed write, and a parse-time error
+  is the honest place for it. A host that never set the variable moves from a
+  nominal 4 to 2, which is the value it actually ran with before, since the parsed
+  number never reached the service. `.env.example` shipped `4` and is aligned to `2`
+  so the documented template matches the schema default.
+- Eight causal tests in `apps/server/src/shepherd/startup-settings.test.ts`. Each
+  verified by mutating the guard it covers: dropping both options from `index.ts`,
+  disabling the seeding branch, removing the still-at-default guard so an operator
+  value is clobbered, and restoring the `min(1)`/`default(4)` schema all turn their
+  tests red.
+- An earlier hosted run failed on this branch with `ENOENT` from `mkdtemp`: the test
+  allocated case roots under `.tmp/startup-settings` without creating it, and `.tmp`
+  is gitignored, so a clean checkout had no such directory. It passed locally only
+  because that directory had been created by hand. Corrected in the test; production
+  code was unaffected and the same run passed 809 other tests.
+- Local full-suite figures from this host are not recorded as evidence: the run
+  spanned a branch switch and observed a mixed tree. The hosted exact-head gate is
+  the evidence for this branch.
+
 ## 2026-08-30 — issue #43 integrated verification
 
 PR #75 merged to protected `main` as
@@ -5056,3 +5097,121 @@ Auditor, security and hosted integration evidence.
   execution, and failed after 35 seconds with `Contract result manifest is missing`.
   No retry was made. This is separate Agent-output reliability work and means neither
   this candidate nor `LIVE-01` claims an exact-head live Mission pass.
+
+## 2026-08-30 — PERF-01 Worker candidate
+
+- **Scope and environment:** this candidate is based on protected-main `baa6b2f`.
+  macOS `26.5.2` (`arm64`), Node `v26.5.0`, npm `11.17.0`, Playwright `1.62.1`,
+  and Chromium `151.0.7922.34` ran the deterministic compiled Server and real
+  Chromium UI. Docker was used only by the separately recorded ContainerVerifier
+  boundary test below.
+- **Bounded RED:** the initial `npm run test:e2e:shepherd-performance` exited 1:
+  each natural-browser run reported `Expected length: 5; Received length: 2` for
+  `verification_started`, proving the old count was not the actual Contract
+  lifecycle. The focused causal test was then deliberately red with
+  `expected ... length of 3 but got 2` after both real scheduled candidate
+  executions arrived at its test-owned gate. The green assertion is exactly two;
+  it releases in `finally`, so the red case cannot strand a Mission. This removed
+  the non-causal verifier gate rather than adding timeout, retry, product, or UI
+  behavior.
+- **Natural timing, one clean sample per viewport:** the ungated path measured the
+  earliest of exactly two `contract_started` events, emitted after both initial
+  `createContractPlane` calls return, as a conservative two-Plane-ready upper
+  bound; it does not call raw `Plane.createdAt` a worktree-complete boundary. It
+  also measured earliest `verification_started` to latest `verification_passed`
+  (exactly two of each), persisted collision → visible, and collision →
+  `promotion_completed`. At `1280x800`: 339 ms accepted → two-Plane-ready, 230 ms
+  Mission → two-Plane-ready, 334 ms verification, 391 ms persisted collision →
+  visible (PRD limit `<=1.5s`), 2,083 ms collision → promotion complete, and
+  3,848 ms total. At `1440x900`: 412 ms, 257 ms, 320 ms, 74 ms, 2,187 ms, and
+  4,167 ms respectively.
+- **Instrumented concurrency proof (not a timing measurement):** the focused
+  `ShepherdService` test owns a wrapper around the deterministic executor. It
+  gates only `resolution_candidate` calls, records ISO start/completion times
+  without prompts, paths, or IDs, waits up to three seconds for exactly two real
+  scheduler arrivals, asserts no completion before release, then asserts two
+  parseable completions and `max(start) <= min(complete)`. Its bounded rejection
+  still enters `finally` to release background work. It passed 1/1 (62 filtered)
+  after the causal RED.
+  This test-owned injection is separate from the ungated browser path, so gate
+  delay cannot enter the natural timing samples.
+- **Verifier lifecycle and isolation evidence:** the natural browser run asserts
+  eleven unique container names, each exact `create → start → complete → remove`
+  sequence, and an empty fixture container directory. Its run ledger records every
+  `create` request as `network=none` and `readOnly=true`; those are fixture command
+  records, not enforcement proof. Enforcement is separately observed with
+  `npx vitest run --config apps/server/vitest.config.ts apps/server/src/shepherd/verifier.container.test.ts -t "proves cleared secrets, no network, and a read-only candidate mount"`:
+  1 passed, 8 skipped. That real ContainerVerifier boundary test rejects network
+  access and candidate-mount writes and confirms its cleared environment. Neither
+  check detects package downloads, so none are claimed.
+- **Observed GREEN and screenshots:**
+  `npm run test:e2e:shepherd-performance:evidence` passed build, harness 7/7, and
+  Chromium 2/2. It intentionally uses the ordinary Playwright config, so this spec
+  remains included in the full browser harness. The reproducible evidence command
+  wrote the passing collision-visible and final-promotion screenshots at both
+  required viewports under `docs/ui-review/perf-01/1280x800/` and
+  `docs/ui-review/perf-01/1440x900/` (`01-collision-visible.png` and
+  `02-promotion-completed.png` in each); both required states were visually
+  inspected. `node --test tests/e2e/harness.test.mjs` also passed 7/7.
+- **CI teardown-race RED/GREEN:** hosted Node 22 run `33316746584` exposed a
+  test-cleanup race after 805 passing tests: a managed temporary disappeared
+  after `lstat` and before `chmod`, which raised `ENOENT`. A deterministic
+  regression now removes a fixture at that exact boundary and reproduced the
+  same failure 1/1 before the fix. Cleanup tolerates only `ENOENT` from that
+  entry `chmod`; sentinel, containment, symlink, permission, and all other
+  failures remain strict. The focused regression passed 1/1, the complete
+  `service.test.ts` file passed 64/64, and a literal `npm run check` passed
+  launcher 3/3, Server 810 passed plus three opt-in skips, Web 20/20, all
+  workspace/test-source typechecks, and both builds.
+- **Limitations:** local deterministic-fixture evidence is not a live-model
+  capacity measurement, hosted integrated rerun, package-download proof, or the
+  three clean rehearsals owned by `DEMO-REHEARSAL`. Gate `I` remains pending an
+  independent protected-main audit. The prior hosted failure is preserved above;
+  the corrected commit still requires a fresh hosted run.
+
+## 2026-08-30 — PERF-01 protected-main integration audit
+
+- **Integrated identity:** protected `origin/main`
+  `b193e5745661735c44e581ccdc10f2a1ce4692dc` is PR #77's merge commit; its
+  direct second parent is the reviewed correction
+  `332071d37295517721eb1360c501a6746535f5db`. The detached audit worktree was
+  clean before and after verification.
+- **Focused causal checks:** the exact cleanup-race regression passed 1/1 with
+  63 filtered tests, and the actual scheduled candidate-executor overlap proof
+  passed 1/1 with 63 filtered tests.
+- **Integrated browser evidence:** the ordinary non-evidence performance command
+  passed build, harness 7/7, and Chromium 2/2 using the existing pinned read-only
+  browser cache. It did not download/copy/symlink a browser or set
+  `E2E_UPDATE_EVIDENCE`; tracked screenshots remained byte-identical. At
+  `1280x800`: conservative two-Plane-ready 323 ms, verification 303 ms,
+  persisted event → visible 488 ms, collision → promotion complete 2,073 ms,
+  and 3,712 ms total. At `1440x900`: 334 ms, 334 ms, 476 ms, 2,044 ms, and
+  3,680 ms respectively. Both event-visibility samples satisfy the PRD
+  `<=1.5s` limit.
+- **Full and hosted gates:** a literal `npm run check` passed all production and
+  test-source typechecks, launcher 3/3, Server 810 passed with three explicit
+  skips, Web 20/20, and both builds. Hosted exact-main run `33318509842` passed
+  `Node 22 / npm run check` in 2m54s.
+- **Audit result:** independent Auditor returned READY with no Critical or
+  Important findings. PERF-01 gates `B` and `I` are passed. This remains
+  deterministic evidence, not a live-model capacity measurement,
+  package-download proof, or the three clean rehearsals owned by
+  `DEMO-REHEARSAL`.
+
+## 2026-08-30 — CHAT-03 protected-main reconciliation
+
+- The issue #81 candidate was merged locally with protected `origin/main`
+  `9696c6d`. The only textual conflict was the append-only `BUILD_LOG.md`; both the
+  CHAT-03 and protected-main PERF-01 histories are retained. Startup-settings,
+  performance, architecture, fixtures and screenshots from main were accepted
+  byte-for-byte; product files merged automatically.
+- Focused intake/startup/composition coverage passed 33/33. Literal
+  `npm run check` passed all production/test type checks, launcher 5/5, Server 842
+  passed with two explicit live skips, Web 20/20, and both production builds.
+- Combined authenticated Chromium passed 10/10 at 1280×800 and 1440×900. The
+  issue #81 clarification, lifecycle and human-review journeys remained green;
+  the integrated performance journey completed in 2,343/2,388 ms with persisted
+  collision visibility in 157/101 ms.
+- `git diff --check` and conflict-marker checks passed. No live request was repeated;
+  the earlier exact live result-manifest failure remains an explicit `LIVE-01`
+  limitation rather than being hidden by the deterministic integration result.
