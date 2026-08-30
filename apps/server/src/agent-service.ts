@@ -211,7 +211,7 @@ export class AgentService {
 
   async updateAgent(id: string, input: UpdateAgentInput): Promise<Agent> {
     const current = this.getAgent(id);
-    if (current.status === "busy") {
+    if (current.status === "busy" || current.currentContractId) {
       throw new HttpError(409, "Stop the active run before editing this Agent");
     }
     const updated = await this.store.mutate((database) => {
@@ -219,7 +219,7 @@ export class AgentService {
       if (!agent) {
         throw new HttpError(404, "Agent not found");
       }
-      if (agent.status === "busy") {
+      if (agent.status === "busy" || agent.currentContractId) {
         throw new HttpError(409, "Stop the active run before editing this Agent");
       }
       if (input.name !== undefined) agent.name = input.name.trim();
@@ -354,6 +354,9 @@ export class AgentService {
       }
       if (storedAgent.status === "busy") {
         throw new HttpError(409, "This Agent is already running");
+      }
+      if (storedAgent.currentContractId) {
+        throw new HttpError(409, "Shepherd is currently using this Agent");
       }
       database.runs.push(run);
       database.messages.push(message);

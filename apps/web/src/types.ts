@@ -185,6 +185,12 @@ export interface VerificationEvidence {
   summary: string;
 }
 
+export interface ExpectedArtifact {
+  path: string;
+  description: string;
+  required: boolean;
+}
+
 export interface ExecutionContract {
   id: string;
   missionId: string;
@@ -200,11 +206,7 @@ export interface ExecutionContract {
   semanticScopes: string[];
   declaredClaimKeys: string[];
   authority: ScopedAuthority;
-  expectedArtifacts: Array<{
-    path: string;
-    description: string;
-    required: boolean;
-  }>;
+  expectedArtifacts: ExpectedArtifact[];
   acceptance: {
     checks: AcceptanceCheck[];
     objectiveTieBreakers: string[];
@@ -250,6 +252,13 @@ export interface Plane {
   changedFiles: string[];
   diffSummary: string;
   verificationEvidenceIds: string[];
+  generalPromotionState?:
+    | "not_started"
+    | "reverifying"
+    | "promoting"
+    | "promoted"
+    | "failed";
+  generalPromotionEvidence?: VerificationEvidence | null;
   createdAt: string;
   updatedAt: string;
   destroyedAt: string | null;
@@ -398,11 +407,27 @@ export interface ProjectGroupMessage {
   content: string;
   targetAgentId: string | null;
   contractId: string | null;
-  contractAssignment?: {
-    preset: "auth-demo-contract";
-    role: "Frontend" | "Backend";
-    transport: AuthTransport;
-  };
+  contractAssignment?:
+    | {
+        preset: "auth-demo-contract";
+        role: "Frontend" | "Backend";
+        transport: AuthTransport;
+      }
+    | {
+        preset: "general-contract";
+        role: AgentRole;
+        draftId: string;
+        status: "clarification_required" | "accepted";
+        missingFields: (
+          | "objective"
+          | "expected_artifact"
+          | "acceptance_evidence"
+          | "authority"
+        )[];
+        expectedArtifacts: ExpectedArtifact[];
+        acceptanceSummary: string | null;
+        requiredContent: string | null;
+      };
   createdAt: string;
 }
 
