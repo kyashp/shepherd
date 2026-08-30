@@ -1239,13 +1239,16 @@ export class ShepherdService {
 
   /**
    * Startup configuration seeds a setting only while the persisted value is still
-   * the factory default, so an operator change survives every later restart.
+   * the factory default, so an operator change away from that default survives
+   * every later restart.
    *
-   * Known limit: an operator who explicitly sets the factory default is
+   * Known limit: an operator who sets the value back TO the factory default is
    * indistinguishable from one who never touched it, because the settings record
-   * carries no "changed by operator" marker. Seeding then still applies. The
+   * carries no "changed by operator" marker, and startup configuration will seed
+   * over that choice on the next restart while the store is still pristine. The
    * alternative — never seeding — would leave the documented startup variables
-   * inert, which is the defect this closes.
+   * inert, which is the defect this closes. Removing the limit needs a persisted
+   * marker, which is a schema change beyond this correction.
    */
   private seedsAutoResolution(settings: ShepherdSettings): boolean {
     return (

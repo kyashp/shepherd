@@ -68,6 +68,22 @@ describe("startup settings composition", () => {
     expect(restarted.settings().autoResolution).toBe(false);
     expect(restarted.settings().maxConcurrentPlanes).toBe(3);
   });
+  it("re-seeds when an operator sets the value back to the factory default", async () => {
+    // Documented limit, asserted so it is a known behaviour rather than a surprise:
+    // with no "changed by operator" marker, choosing the factory default is
+    // indistinguishable from never choosing, and startup config seeds over it while
+    // the store is still pristine. Removing this needs a schema change.
+    const root = await caseRoot();
+    const first = await service(root, { maxConcurrentPlanes: 5 });
+    await first.initialize();
+    expect(first.settings().maxConcurrentPlanes).toBe(5);
+    await first.updateSettings({ maxConcurrentPlanes: 2 });
+
+    const restarted = await service(root, { maxConcurrentPlanes: 5 });
+    await restarted.initialize();
+
+    expect(restarted.settings().maxConcurrentPlanes).toBe(5);
+  });
 });
 
 describe("startup settings boundaries", () => {
@@ -99,7 +115,8 @@ describe("production composition", () => {
     expect(start).toBeGreaterThan(-1);
     const close = /^\);|^\}\);/mu.exec(source.slice(start));
     expect(close).not.toBeNull();
-    return source.slice(start, start + (close?.index ?? 0)).replace(/\/\/[^\n]*/gu, "");
+    return source.slice(start, start + (close?.index ?? 0)).replace(/\/\/[^\n]*/gu, "")
+      .replace(/\/\*[\s\S]*?\*\//gu, "");
   }
 
   it("passes the startup auto-resolution setting to the Shepherd service", async () => {
