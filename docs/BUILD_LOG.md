@@ -7,6 +7,36 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — FM-01 deterministic failure matrix candidate
+
+Branch `feat/42-fm-01-failure-matrix`, implementation `051b32a`, draft PR #72.
+This is candidate evidence for issue #42; protected-main integration and audit are
+not claimed.
+
+- **RED:** the first six-case run passed only the existing objective-tie path. Four
+  missing/malformed/omitted-key/acceptance cases persisted `unknown` at Mission
+  level, and failed final re-verification omitted its promotion evidence.
+- **Correction:** known Contract-boundary failures now retain the exact fixed code
+  and stage on Mission, Contract, Plane and bounded event details. Final failed
+  promotion evidence is retained on the selected Candidate and linked from its
+  Plane; the database admits this only for a promotion-stage
+  `final_reverification_failure` while retaining target, diff, mandatory-profile
+  and Plane-link invariants.
+- **Causal evidence:** `failure-matrix.test.ts` passed 6/6 without sleeps, retries,
+  network or model calls. Each case verifies service state, durable reload, public
+  Mission/events API, absence of `promotion_completed`, stored protected-head
+  immutability and the repository's actual Git HEAD.
+- **Adjacent evidence:** database, service, Git promotion and recovery passed
+  181/181. Server production and test-source TypeScript checks passed.
+- **Literal gate:** the pre-push hook reached Server 806 passed plus three explicit
+  skips, with two failures in the pre-existing parallel-only interrupted-policy
+  cleanup rows in `general-project.test.ts`. The same failures were observed before
+  FM-01 edits; the file passes 8/8 in isolation. The hook-created staged
+  `policy.json` artifact was cleared, and only the documented hook was skipped for
+  the branch push. `C` remains pending rather than inferred.
+- No UI, dependency, live Runtime, model, credential or protected-branch change
+  ran. UI evidence remains assigned to the dependent E2E rows.
+
 ## 2026-08-30 — issue #41 audited Project Group journey candidate
 
 Branch `feat/41-project-group-journey`, draft PR #64. This is candidate evidence;
