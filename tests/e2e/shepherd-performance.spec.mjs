@@ -102,6 +102,8 @@ test("measures the ungated real browser judge path", async ({ page, request }, t
   const events = completed.events.filter((event) => event.missionId === missionId);
   const contractPlanes = completed.planes.filter((plane) => plane.missionId === missionId && plane.kind === "contract");
   expect(contractPlanes).toHaveLength(2);
+  const contractStarts = events.filter((event) => event.type === "contract_started");
+  expect(contractStarts).toHaveLength(2);
   const verificationStarts = events.filter((event) => event.type === "verification_started");
   const verificationPasses = events.filter((event) => event.type === "verification_passed");
   expect(verificationStarts).toHaveLength(2);
@@ -110,7 +112,7 @@ test("measures the ungated real browser judge path", async ({ page, request }, t
   const missionCreatedAt = timestamp(events, "mission_created");
   const collisionAt = timestamp(events, "collision_detected");
   const promotionCompletedAt = timestamp(events, "promotion_completed");
-  const latestContractPlaneCreatedAt = Math.max(...contractPlanes.map((plane) => Date.parse(plane.createdAt)));
+  const earliestContractStartedAt = Math.min(...contractStarts.map((event) => Date.parse(event.timestamp)));
   const earliestVerificationStartedAt = Math.min(...verificationStarts.map((event) => Date.parse(event.timestamp)));
   const latestVerificationPassedAt = Math.max(...verificationPasses.map((event) => Date.parse(event.timestamp)));
   const containerDirectory = path.join(app.runRoot, "home", ".fake-container-engine");
@@ -119,5 +121,5 @@ test("measures the ungated real browser judge path", async ({ page, request }, t
   await expect(page.locator(".timeline-panel .state-pill")).toHaveText("Completed");
   await capture(page, testInfo, "02-promotion-completed");
 
-  console.log(`[PERF-01] ${JSON.stringify({ viewport: testInfo.project.use.viewport, acceptedToPlaneCreationMs: latestContractPlaneCreatedAt - acceptedAt, planeCreationFromMissionMs: latestContractPlaneCreatedAt - missionCreatedAt, verificationMs: latestVerificationPassedAt - earliestVerificationStartedAt, persistedEventToVisibleMs: eventToVisibleMs, collisionToPromotionCompletedMs: promotionCompletedAt - collisionAt, totalDemoMs: promotionCompletedAt - missionCreatedAt })}`);
+  console.log(`[PERF-01] ${JSON.stringify({ viewport: testInfo.project.use.viewport, acceptedToTwoPlaneReadyMs: earliestContractStartedAt - acceptedAt, twoPlaneReadyFromMissionMs: earliestContractStartedAt - missionCreatedAt, verificationMs: latestVerificationPassedAt - earliestVerificationStartedAt, persistedEventToVisibleMs: eventToVisibleMs, collisionToPromotionCompletedMs: promotionCompletedAt - collisionAt, totalDemoMs: promotionCompletedAt - missionCreatedAt })}`);
 });

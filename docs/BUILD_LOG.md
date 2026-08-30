@@ -4924,14 +4924,17 @@ Auditor, security and hosted integration evidence.
   it releases in `finally`, so the red case cannot strand a Mission. This removed
   the non-causal verifier gate rather than adding timeout, retry, product, or UI
   behavior.
-- **Natural timing, one clean sample per viewport:** the ungated path measured
-  actual Contract Plane `createdAt`, earliest `verification_started` to latest
-  `verification_passed` (exactly two of each), persisted collision → visible, and
-  collision → `promotion_completed`. At `1280x800`: 277 ms accepted → latest Plane
-  creation, 166 ms Mission → latest Plane creation, 320 ms verification, 356 ms
-  persisted collision → visible (PRD limit `<=1.5s`), 2,035 ms collision →
-  promotion complete, and 3,816 ms total. At `1440x900`: 263 ms, 168 ms, 321 ms,
-  403 ms, 2,228 ms, and 4,005 ms respectively.
+- **Natural timing, one clean sample per viewport:** the ungated path measured the
+  earliest of exactly two `contract_started` events, emitted after both initial
+  `createContractPlane` calls return, as a conservative two-Plane-ready upper
+  bound; it does not call raw `Plane.createdAt` a worktree-complete boundary. It
+  also measured earliest `verification_started` to latest `verification_passed`
+  (exactly two of each), persisted collision → visible, and collision →
+  `promotion_completed`. At `1280x800`: 339 ms accepted → two-Plane-ready, 230 ms
+  Mission → two-Plane-ready, 334 ms verification, 391 ms persisted collision →
+  visible (PRD limit `<=1.5s`), 2,083 ms collision → promotion complete, and
+  3,848 ms total. At `1440x900`: 412 ms, 257 ms, 320 ms, 74 ms, 2,187 ms, and
+  4,167 ms respectively.
 - **Instrumented concurrency proof (not a timing measurement):** the focused
   `ShepherdService` test owns a wrapper around the deterministic executor. It
   gates only `resolution_candidate` calls, records ISO start/completion times
@@ -4950,14 +4953,14 @@ Auditor, security and hosted integration evidence.
   access and candidate-mount writes and confirms its cleared environment. Neither
   check detects package downloads, so none are claimed.
 - **Observed GREEN and screenshots:**
-  `npm run test:e2e:shepherd-performance:evidence` passed build, harness 8/8, and
+  `npm run test:e2e:shepherd-performance:evidence` passed build, harness 7/7, and
   Chromium 2/2. It intentionally uses the ordinary Playwright config, so this spec
   remains included in the full browser harness. The reproducible evidence command
   wrote the passing collision-visible and final-promotion screenshots at both
   required viewports under `docs/ui-review/perf-01/1280x800/` and
   `docs/ui-review/perf-01/1440x900/` (`01-collision-visible.png` and
   `02-promotion-completed.png` in each); both required states were visually
-  inspected. `node --test tests/e2e/harness.test.mjs` also passed 8/8.
+  inspected. `node --test tests/e2e/harness.test.mjs` also passed 7/7.
 - **Limitations:** local deterministic-fixture evidence is not a live-model
   capacity measurement, hosted integrated rerun, package-download proof, or the
   three clean rehearsals owned by `DEMO-REHEARSAL`. Gate `I` remains pending an
