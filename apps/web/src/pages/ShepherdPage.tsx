@@ -714,7 +714,16 @@ function AttentionControls({
   const tied = state.candidates.filter((candidate) =>
     candidate.missionId === mission.id && candidate.selectionState === "tied" && candidate.executionState === "passed",
   );
-  if (tied.length === 0 && mission.state !== "attention_required") return null;
+  const failedContract = state.contracts.find(
+    (contract) => contract.missionId === mission.id && contract.failure !== null,
+  );
+  const causalFailure = failedContract?.failure ?? mission.failure;
+  const missionFailed = mission.state === "failed";
+  const unauthorized = causalFailure?.code === "unauthorized_file_change";
+  const promotionStarted = state.events.some(
+    (event) => event.missionId === mission.id && event.type === "promotion_started",
+  );
+  if (tied.length === 0 && mission.state !== "attention_required" && !missionFailed) return null;
   const select = async (candidate: ResolutionCandidate) => {
     if (!window.confirm(`Select the verified future “${candidate.targetValue}” for trusted promotion?`)) return;
     setBusyId(candidate.id);
@@ -732,10 +741,18 @@ function AttentionControls({
     <section className="attention-panel" aria-labelledby="attention-title">
       <Icon name="alert" />
       <div>
-        <span className="eyebrow">Internal human-review ticket</span>
-        <h2 id="attention-title">{tied.length > 0 ? "Verified candidates are objectively tied" : "Mission needs attention"}</h2>
-        <span className="attention-ticket-ref">Reference {ticketId} · durable attention_required</span>
-        <p>{mission.attentionReason ?? mission.failure?.message ?? "Inspect the preserved evidence before deciding what happens next."}</p>
+        <span className="eyebrow">{missionFailed ? "Shepherd safety stop" : "Internal human-review ticket"}</span>
+        <h2 id="attention-title">
+          {tied.length > 0
+            ? "Verified candidates are objectively tied"
+            : unauthorized
+              ? "Unauthorized changes denied"
+              : missionFailed
+                ? "Mission stopped without promotion"
+                : "Mission needs attention"}
+        </h2>
+        <span className="attention-ticket-ref">Reference {ticketId} · durable {mission.state}</span>
+        <p>{mission.attentionReason ?? causalFailure?.message ?? "Inspect the preserved evidence before deciding what happens next."}</p>
         {error ? <div className="field-error" role="alert">{error}</div> : null}
         {tied.length > 0 ? (
           <div className="tie-options">
@@ -749,6 +766,13 @@ function AttentionControls({
                 </button>
               </div>
             ))}
+          </div>
+        ) : missionFailed && causalFailure ? (
+          <div className="collision-links" aria-label="Mission failure evidence">
+            <span>{titleCase(causalFailure.code)}</span>
+            <span>{titleCase(causalFailure.stage)}</span>
+            {failedContract ? <span title={failedContract.id}>{shortId(failedContract.id, 16)} · {titleCase(failedContract.state)}</span> : null}
+            <span>{promotionStarted ? "Protected promotion stopped" : "Protected promotion not started"}</span>
           </div>
         ) : (
           <div className="collision-links">

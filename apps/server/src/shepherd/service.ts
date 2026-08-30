@@ -7235,7 +7235,11 @@ export class ShepherdService {
               attentionReason: promotion.reason,
               failure,
               summary: "Promotion failed after final gate evaluation",
-              details: { reason: promotion.reason },
+              details: {
+                reason: promotion.reason,
+                failureCode: failure.code,
+                stage: failure.stage,
+              },
             },
           );
           this.appendServerGroupMessage(database, {
