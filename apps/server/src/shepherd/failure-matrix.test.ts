@@ -610,6 +610,20 @@ describe("FM-01 deterministic failure matrix", () => {
         planeId: selected?.planeId,
       }),
     );
+    expect(result.detail.events).toContainEqual(
+      expect.objectContaining({
+        type: "mission_state_changed",
+        missionId: result.detail.mission.id,
+        summary: "Promotion failed after final gate evaluation",
+        details: expect.objectContaining({
+          from: "resolving",
+          to: "attention_required",
+          reason: "final_reverification_failure",
+          failureCode: "final_reverification_failure",
+          stage: "promotion",
+        }),
+      }),
+    );
     expect(
       result.detail.events.some((event) => event.type === "promotion_completed"),
     ).toBe(false);
@@ -648,6 +662,20 @@ describe("FM-01 deterministic failure matrix", () => {
       expect.objectContaining({
         type: "promotion_started",
         candidateId: selected?.id,
+      }),
+    );
+    expect(result.apiEvents).toContainEqual(
+      expect.objectContaining({
+        type: "mission_state_changed",
+        missionId: result.detail.mission.id,
+        summary: "Promotion failed after final gate evaluation",
+        details: expect.objectContaining({
+          from: "resolving",
+          to: "attention_required",
+          reason: "final_reverification_failure",
+          failureCode: "final_reverification_failure",
+          stage: "promotion",
+        }),
       }),
     );
   }, 30_000);
