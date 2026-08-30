@@ -25,6 +25,7 @@ import { JsonStore, type PersistenceFaultStage } from "../store.js";
 import type { Agent, Database } from "../types.js";
 import { WorkspaceManager } from "../workspace.js";
 import {
+  AUTH_ARTIFACT_INTERFACE_DESCRIPTION,
   BEARER_TRANSPORT,
   COOKIE_TRANSPORT,
 } from "./auth-fixture.js";
@@ -1691,10 +1692,12 @@ describe("Shepherd deterministic walking skeleton", () => {
     await workspaces.create(frontendAgent);
     await workspaces.create(backendAgent);
     await store.mutate((database) => database.agents.push(frontendAgent, backendAgent));
+    const executor = new SessionTrackingExecutor();
     const service = new ShepherdService({
       store,
       managedRoot: path.join(caseRoot, "managed"),
       agentWorkspaceRoot,
+      executor,
       verifier: new HostTrustedFixtureVerifier(),
     });
     const frontendPrompt =
@@ -1740,6 +1743,7 @@ describe("Shepherd deterministic walking skeleton", () => {
       store,
       managedRoot: path.join(caseRoot, "managed"),
       agentWorkspaceRoot,
+      executor,
       verifier: new HostTrustedFixtureVerifier(),
     });
     const backendInput = {
@@ -1772,6 +1776,10 @@ describe("Shepherd deterministic walking skeleton", () => {
         contextualInputs: [
           expect.objectContaining({ name: "Scoped Frontend conventions" }),
         ],
+        expectedArtifacts: [expect.objectContaining({
+          path: "src/frontend/auth.json",
+          description: AUTH_ARTIFACT_INTERFACE_DESCRIPTION,
+        })],
       }),
       expect.objectContaining({
         agentId: backendAgent.id,
@@ -1781,8 +1789,32 @@ describe("Shepherd deterministic walking skeleton", () => {
         contextualInputs: [
           expect.objectContaining({ name: "Scoped Backend conventions" }),
         ],
+        expectedArtifacts: [expect.objectContaining({
+          path: "src/backend/auth.json",
+          description: AUTH_ARTIFACT_INTERFACE_DESCRIPTION,
+        })],
       }),
     ]));
+    const contractRequests = executor.requests.filter(
+      (request) =>
+        request.operation.kind === "frontend_contract" ||
+        request.operation.kind === "backend_contract",
+    );
+    expect(contractRequests).toHaveLength(2);
+    for (const request of contractRequests) {
+      expect("targetTransport" in request.operation).toBe(false);
+      expect(request.operation).toMatchObject({ deriveTransportFromScopedContext: true });
+      const envelope = JSON.parse(request.prompt.slice(request.prompt.indexOf("\n") + 1));
+      const objective = envelope.payload.contract.objective as string;
+      expect([frontendPrompt, backendPrompt]).toContain(objective);
+      expect(objective).not.toMatch(/cookie|jwt/iu);
+      expect(envelope.payload.contract.expectedArtifacts).toEqual([
+        expect.objectContaining({ description: AUTH_ARTIFACT_INTERFACE_DESCRIPTION }),
+      ]);
+      expect(envelope.executionRules).toEqual(expect.arrayContaining([
+        expect.stringContaining("exact output interface"),
+      ]));
+    }
     const promptMessages = store.snapshot().shepherd.groupMessages.filter(
       (message) => message.contractAssignment?.preset === "auth-demo-contract",
     );

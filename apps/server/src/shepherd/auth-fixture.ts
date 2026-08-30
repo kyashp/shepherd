@@ -17,6 +17,8 @@ export const AUTH_FRONTEND_CONTEXT_PATH =
   "context/frontend-auth-conventions.json" as const;
 export const AUTH_BACKEND_CONTEXT_PATH =
   "context/backend-auth-conventions.json" as const;
+export const AUTH_ARTIFACT_INTERFACE_DESCRIPTION =
+  'JSON object with exactly two properties: "transport" (one of "bearer-jwt" or "http-only-session-cookie") and "clientReadableCredential" (boolean). The boolean must be true for "bearer-jwt" and false for "http-only-session-cookie". Infer the transport from the assigned role scoped context and repository conventions.' as const;
 
 export type AuthTransport =
   | typeof BEARER_TRANSPORT
@@ -59,6 +61,16 @@ const fixtureFiles = (
         surface: "browser-client",
         requestConvention: "include ambient browser credentials",
         credentialVisibility: "credential material must not be readable by client JavaScript",
+        artifactInterface: {
+          path: "src/frontend/auth.json",
+          exactProperties: ["transport", "clientReadableCredential"],
+          transportValues: [BEARER_TRANSPORT, COOKIE_TRANSPORT],
+          clientReadableCredentialType: "boolean",
+          clientReadableCredentialByTransport: {
+            [BEARER_TRANSPORT]: true,
+            [COOKIE_TRANSPORT]: false,
+          },
+        },
       },
       null,
       2,
@@ -69,6 +81,16 @@ const fixtureFiles = (
         surface: "stateless-api",
         deploymentConvention: "requests may land on any horizontally scaled instance",
         credentialIngress: "signed request-carried claims arrive in the Authorization header",
+        artifactInterface: {
+          path: "src/backend/auth.json",
+          exactProperties: ["transport", "clientReadableCredential"],
+          transportValues: [BEARER_TRANSPORT, COOKIE_TRANSPORT],
+          clientReadableCredentialType: "boolean",
+          clientReadableCredentialByTransport: {
+            [BEARER_TRANSPORT]: true,
+            [COOKIE_TRANSPORT]: false,
+          },
+        },
       },
       null,
       2,

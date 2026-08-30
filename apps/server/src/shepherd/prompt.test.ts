@@ -93,6 +93,12 @@ describe("Shepherd execution prompt envelopes", () => {
       schema: { schemaVersion: 1, contractId: expect.any(String) },
     });
     expect(envelope.executionRules.join(" ")).toContain("smallest coherent change");
+    expect(envelope.executionRules.join(" ")).toContain(
+      "expected artifact path and description as an exact output interface",
+    );
+    expect(envelope.executionRules.join(" ")).toContain(
+      "readable trusted acceptance check",
+    );
     expect(envelope.executionRules.join(" ")).toContain("Do not claim success");
     expect(envelope.executionRules.join(" ")).toContain(".git/**");
   });

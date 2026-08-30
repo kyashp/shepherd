@@ -2,7 +2,9 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  AUTH_BACKEND_CONTEXT_PATH,
   AUTH_FACT_PREFIX,
+  AUTH_FRONTEND_CONTEXT_PATH,
   BEARER_TRANSPORT,
   clientReadableForTransport,
   COOKIE_TRANSPORT,
@@ -52,6 +54,28 @@ describe("authentication collision fixture", () => {
     expect(policy.allowClientReadableCredential).toBe(false);
     expect(await readFile(path.join(root, "checks/project-security.cjs"), "utf8"))
       .toContain("credential exposure violates project policy");
+
+    for (const contextPath of [AUTH_FRONTEND_CONTEXT_PATH, AUTH_BACKEND_CONTEXT_PATH]) {
+      const context = JSON.parse(
+        await readFile(path.join(root, contextPath), "utf8"),
+      ) as {
+        artifactInterface: {
+          exactProperties: string[];
+          transportValues: string[];
+          clientReadableCredentialType: string;
+          clientReadableCredentialByTransport: Record<string, boolean>;
+        };
+      };
+      expect(context.artifactInterface).toMatchObject({
+        exactProperties: ["transport", "clientReadableCredential"],
+        transportValues: [BEARER_TRANSPORT, COOKIE_TRANSPORT],
+        clientReadableCredentialType: "boolean",
+        clientReadableCredentialByTransport: {
+          [BEARER_TRANSPORT]: true,
+          [COOKIE_TRANSPORT]: false,
+        },
+      });
+    }
   });
 
   it("flips the objective invariant without naming a winner", async () => {

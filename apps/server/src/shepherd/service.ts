@@ -16,6 +16,7 @@ import {
   AUTH_FRONTEND_PROFILE_ID,
   AUTH_BACKEND_CHECK_ID,
   AUTH_BACKEND_PROFILE_ID,
+  AUTH_ARTIFACT_INTERFACE_DESCRIPTION,
   AUTH_PROJECT_CHECK_ID,
   AUTH_PROJECT_PROFILE_ID,
   BEARER_TRANSPORT,
@@ -4580,7 +4581,7 @@ export class ShepherdService {
       expectedArtifacts: [
         {
           path: input.artifactPath,
-          description: "Authentication transport configuration",
+          description: AUTH_ARTIFACT_INTERFACE_DESCRIPTION,
           required: true,
         },
       ],
