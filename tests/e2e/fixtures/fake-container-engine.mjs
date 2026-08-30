@@ -33,7 +33,7 @@ function ensureState() {
 
 function record(operation, details = {}) {
   ensureState();
-  const line = JSON.stringify({ operation, ...details });
+  const line = JSON.stringify({ operation, timestamp: new Date().toISOString(), ...details });
   if (Buffer.byteLength(line, "utf8") > 4_096) fail("ledger entry exceeded bound");
   appendFileSync(ledgerPath, `${line}\n`, { encoding: "utf8", mode: 0o600 });
 }
@@ -125,9 +125,11 @@ function parseCreate(input) {
 }
 
 function gateFor(metadata) {
-  if (!existsSync(path.join(gateRoot, "enabled"))) return null;
-  if (metadata.target.startsWith("contract-")) return "contracts";
-  if (metadata.target.startsWith("candidate-") && metadata.check === "checks/frontend.cjs") {
+  const allGatesEnabled = existsSync(path.join(gateRoot, "enabled"));
+  const candidateGateEnabled = allGatesEnabled || existsSync(path.join(gateRoot, "candidates-enabled"));
+  if (!allGatesEnabled && !candidateGateEnabled) return null;
+  if (allGatesEnabled && metadata.target.startsWith("contract-")) return "contracts";
+  if (candidateGateEnabled && metadata.target.startsWith("candidate-") && metadata.check === "checks/frontend.cjs") {
     return metadata.occurrence === 1 ? "candidates" : metadata.occurrence === 2 ? "promotion" : null;
   }
   return null;

@@ -119,6 +119,40 @@ test("fake container engine accepts only the bounded independent-verifier protoc
   }
 });
 
+test("fake container candidate-only gate timestamps and holds only candidate verification", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "shepherd-fake-candidate-gate-"));
+  const home = path.join(root, "home");
+  const project = path.join(root, "project");
+  const checks = path.join(project, "checks");
+  const environment = { HOME: home, PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin" };
+  const gateDirectory = path.join(home, ".fake-container-engine", "gates");
+  const contractName = "shepherd-verify-contract-fixture-gate";
+  const candidateName = "shepherd-verify-candidate-fixture-gate";
+  try {
+    await mkdir(checks, { recursive: true });
+    await writeFile(path.join(checks, "frontend.cjs"), "process.stdout.write('verified')", "utf8");
+    await mkdir(gateDirectory, { recursive: true });
+    await writeFile(path.join(gateDirectory, "candidates-enabled"), "enabled", "utf8");
+    await execFileAsync(fakeContainerEngine, verifierCreateArgs({ name: contractName, source: project }), { encoding: "utf8", env: environment });
+    await execFileAsync(fakeContainerEngine, verifierCreateArgs({ name: candidateName, source: project, target: "candidate-fixture" }), { encoding: "utf8", env: environment });
+
+    await execFileAsync(fakeContainerEngine, ["start", "--attach", contractName], { encoding: "utf8", env: environment });
+    const candidateStart = execFileAsync(fakeContainerEngine, ["start", "--attach", candidateName], { encoding: "utf8", env: environment });
+    await new Promise((resolve) => setTimeout(resolve, 75));
+    const blockedLedger = (await readFile(path.join(home, ".fake-container-engine", "ledger.jsonl"), "utf8"))
+      .trim().split("\n").map((line) => JSON.parse(line));
+    assert.equal(blockedLedger.filter((entry) => entry.operation === "start" && entry.target === "candidate-fixture").length, 1);
+    assert.equal(blockedLedger.some((entry) => entry.operation === "complete" && entry.target === "candidate-fixture"), false);
+    assert.ok(blockedLedger.every((entry) => Number.isFinite(Date.parse(entry.timestamp))), "every fixture ledger entry has a parseable timestamp");
+
+    await writeFile(path.join(gateDirectory, "candidates.release"), "released", "utf8");
+    await candidateStart;
+  } finally {
+    await writeFile(path.join(gateDirectory, "candidates.release"), "released", "utf8").catch(() => undefined);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("isolated harness starts the authenticated real app and cleans up", async () => {
   const ambientArkCanary = "ambient-ark-key-must-not-cross-process-boundary";
   const previousArkKey = process.env.ARK_API_KEY;

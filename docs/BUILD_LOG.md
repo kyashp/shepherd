@@ -4907,3 +4907,43 @@ Auditor, security and hosted integration evidence.
   A second literal gate passed with the same counts. Independent
   Auditor/security/hosted evidence remains. No live/model/network/UI-design call
   ran.
+
+## 2026-08-30 — PERF-01 Worker candidate
+
+- **Scope and method:** `npm run test:e2e:shepherd-performance` builds the Web and
+  Server artifacts, runs the seven isolated-harness unit checks, then runs the
+  deterministic compiled service in Chromium at `1280x800` and `1440x900`. The
+  browser creates the normal two-Contract Mission and waits for the persisted
+  collision event to render. A fixture-only candidate verifier gate holds both
+  independent verifier starts long enough to prove they overlap, then releases
+  them and promotion without changing product timing or authority.
+- **Environment:** macOS 26.5.2 (`arm64`), Node `26.5.0`, npm `11.17.0`, and
+  Playwright `1.62.1`; the deterministic fixture invokes no Docker daemon, model,
+  provider, package download, or network request during the measured journey.
+- **RED evidence:** the first new-spec run failed at both viewports because the
+  existing all-stage fixture gate also held Contract verification, so neither
+  candidate verifier could start. The candidate-only gate correction exposed the
+  second missing release: the Mission remained `resolving` because the same fixture
+  gates promotion's second candidate verification occurrence. Releasing that exact
+  gate in the test and teardown made the original measurement pass without a
+  product, timeout, retry, or assertion change.
+- **Sample:** one clean real-browser sample per required viewport (n=2), on
+  protected-main base `baa6b2f`: persisted collision → visible was 908 ms and
+  861 ms (both within the PRD `<=1.5s` limit); Plane creation from Mission was
+  225 ms and 228 ms; Contract verification through collision was 1,424 ms and
+  1,358 ms; candidate verifier starts were 35 ms and 39 ms apart while both
+  stayed active; collision → promotion start was 1,368 ms and 1,275 ms; total
+  Mission time was 3,690 ms and 3,550 ms.
+- **Observed command:** passed: harness 8/8; Chromium 2/2. The test prints each
+  bounded metric line, fails the event-to-visible limit, and releases both gates
+  during teardown to preserve cleanup. The new fixture ledger timestamp and
+  candidate-only gate are test-only instrumentation; product/UI/runtime behavior
+  is unchanged. It also asserts the exact 11 verifier create/complete/remove
+  lifecycle rows; every create has `network=none` and `readOnly=true`. This is
+  no-network verifier-fixture evidence only; it does not independently detect
+  package downloads outside that constrained fixture. `playwright.config.ts`
+  intentionally includes this spec in the full browser harness; its adjacent
+  fixture unit checks also passed 8/8.
+- **Limitations:** this is local deterministic-fixture evidence, not a live-model
+  capacity measure, hosted integrated rerun, or the three clean rehearsals owned
+  by `DEMO-REHEARSAL`. Gate `I` remains pending independent protected-main audit.
