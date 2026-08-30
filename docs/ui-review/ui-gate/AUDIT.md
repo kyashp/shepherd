@@ -4,12 +4,12 @@
 
 - Issue: [#45](https://github.com/kyashp/shepherd/issues/45), `UI-GATE`
 - Branch: `test/45-ui-gate`
-- Rendered product head: `bbc7c81` (includes current `origin/main` through merge `a4f24a0`)
+- Rendered current-main candidate: `d41613b` (causal UI fixes at `bbc7c81`, refreshed through `origin/main` `0ed41dd`)
 - Audit date: 2026-08-31
 - Runtime: Node.js 24.16.0
 - Browser: Google Chrome for Testing 151.0.7922.34, Playwright, one worker
 - Viewports: 1280x800 and 1440x900
-- Reviewed corpus: 36 PNGs, 18 named stages per viewport, 3,228,269 bytes total
+- Reviewed corpus: 36 PNGs, 18 named stages per viewport, 3,229,473 bytes total
 - Evidence command: `E2E_UPDATE_EVIDENCE=true node node_modules/@playwright/test/cli.js test tests/e2e/ui-gate.spec.mjs --workers=1`
 - Ordinary-run boundary: screenshots remain under `.tmp/playwright-evidence/ui-gate/`; only the explicit environment value `true` copies them into this reviewed directory.
 
@@ -19,7 +19,7 @@ The explicit evidence run passed 12/12 tests. Every PNG is non-empty, has its de
 
 | Gate | Candidate status | What is and is not claimed |
 | --- | --- | --- |
-| `C` candidate checks | Local UI-gate, adjacent Web tests, strict Web typecheck, and Web/Server builds passed; exact final-commit hosted CI is pending. | Local evidence is green, but the candidate is not complete until the final pushed commit is green in hosted CI. |
+| `C` candidate checks | Local UI-gate, adjacent Web tests, strict Web typecheck, and Web/Server builds passed. Hosted run `33329417868` passed on evidence commit `38ac907`; an exact post-main-refresh head check is pending. | The candidate is not complete until the final pushed commit is green in hosted CI. |
 | `B` browser evidence | Automated Chromium journeys passed at both exact viewports and all 36 images were inspected against `docs/UI.jpeg`. | The product browser path is directly observed. A separate live inspection through the in-app browser was unavailable because no browser session was connected. |
 | `U` independent usability | Pending. | This implementation-owner review is not an independent approval. |
 | `I` final integration | Pending. | The corpus must be regenerated and the gate rerun on the exact protected-main integration head. |

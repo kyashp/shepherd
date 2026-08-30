@@ -7,6 +7,45 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-31 — UI-GATE reviewable candidate and current-main refresh
+
+Issue #45 / draft PR #87 on `test/45-ui-gate`. Causal UI fixes are at
+`bbc7c81`; the reviewed current-main candidate is merge `d41613b`, which includes
+protected `origin/main` `0ed41dd`. No live/model request ran.
+
+- The real-server Playwright matrix covers all six PRD UI surfaces plus adjacent
+  authentication, Agents, Settings, and not-found states at `1280x800` and
+  `1440x900`. The explicit one-worker evidence run on `d41613b` passed 12/12 and
+  produced exactly 36 non-empty PNGs with the declared dimensions and a bounded
+  total of 3,229,473 bytes under `docs/ui-review/ui-gate/`.
+- Preserved REDs measured muted-copy contrast at 4.15:1 and 3.87:1, found 5px of
+  long-Agent document Y overflow at 1280x800, and exposed no-op Settings Discard,
+  incomplete Settings tab keyboard/relationships, inaccessible full Plane IDs,
+  and Project Group mentions enabled before initialization without a non-color
+  unavailable cue. The smallest page/CSS corrections made each causal assertion
+  green without changing API, persistence, dependency, runtime, or security scope.
+- Keyboard-modality assertions activate sidebar/recovery links, Contract filters,
+  and Plane nodes with Enter; Settings and drawer tabs use arrows/Home/End;
+  Escape closes the labelled non-modal drawer and restores opener focus. Named
+  internal panes own overflow, two 1,900-character unbroken group messages wrap,
+  and bounded DOM/API/log canary scans pass without echoing a matched value.
+- Web tests passed 20/20. Strict Web production and test-source typechecks passed.
+  Web production build transformed 41 modules and Server production build passed.
+  Adjacent two-viewport browser journeys passed 8/8. `git diff --check` passed.
+- The local Node harness is not green and is not reported as one: Windows
+  reproduced `spawn EFTYPE`, with 15/19 passing and the four process-spawn/server
+  cases failing. Hosted Node 22 run `33329417868` passed literal `npm run check`
+  in 2m54s on evidence commit `38ac907`; the post-current-main documentation and
+  evidence head still requires its own hosted result.
+- All 36 screenshots were reviewed against `docs/UI.jpeg`. No High/Medium visual
+  defect remained. `AUDIT.md` records the compact 25px desktop mention-chip target
+  exception, 1280x800 Create-form scroll depth, focused drawer capture position,
+  no connected in-app browser session, and no manual screen-reader claim.
+
+Candidate browser gate `B` is passed. Exact-final-head `C`, independent `U`, and
+protected-main `I` remain pending; this implementation-owner record is not an
+independent audit.
+
 ## 2026-08-31 — `TST-26`: the recovery-process failures were a defect, not host speed
 
 Branch `fix/48-recovery-ipc-flush` from `main` at `e552959`, investigating the five
