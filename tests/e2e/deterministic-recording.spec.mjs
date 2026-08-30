@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import assert from "node:assert/strict";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { DeterministicFixtureExecutor } from "../../apps/server/dist/shepherd/executor.js";
 import { ShepherdService } from "../../apps/server/dist/shepherd/service.js";
@@ -22,10 +22,12 @@ const FRONTEND_PROMPT =
 const BACKEND_PROMPT =
   "Implement the authentication service using the deployment conventions and interfaces already present in your assigned workspace.";
 const RECORDING_CANARY = "DETERMINISTIC-RECORDING-CANARY-MUST-NOT-LEAK";
+const RECORDING_PAUSE_SCALE = process.env.DEMO_RECORDING_FAST === "true" ? 0.01 : 1;
 
 let app;
 const chapters = [];
 let recordingStartedAt = 0;
+let chromiumSession;
 
 const headers = () => ({ Authorization: `Bearer ${AUTH_TOKEN}` });
 
@@ -81,14 +83,28 @@ async function assertSafe1080p(page) {
 }
 
 async function chapter(page, title, narration, pauseMs = 10_000) {
+  const effectivePauseMs = Math.max(100, Math.round(pauseMs * RECORDING_PAUSE_SCALE));
+  const sidebar = page.locator(".sidebar");
+  await sidebar.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  expect(await sidebar.evaluate((element) => element.scrollTop)).toBe(0);
   await assertSafe1080p(page);
   const startSeconds = Number(((Date.now() - recordingStartedAt) / 1000).toFixed(3));
-  chapters.push({ title, startSeconds, narration, pauseSeconds: pauseMs / 1000 });
+  chapters.push({ title, startSeconds, narration, pauseSeconds: effectivePauseMs / 1000 });
   await page.screenshot({
     path: path.join(FRAME_DIRECTORY, `${String(chapters.length).padStart(2, "0")}-${title.toLowerCase().replace(/[^a-z0-9]+/gu, "-")}.png`),
     fullPage: false,
   });
-  await page.waitForTimeout(pauseMs);
+  await page.waitForTimeout(effectivePauseMs);
+}
+
+async function setPresentationScale(page, scale) {
+  chromiumSession ??= await page.context().newCDPSession(page);
+  await chromiumSession.send("Emulation.setPageScaleFactor", {
+    pageScaleFactor: scale,
+  });
+  await page.waitForTimeout(500);
 }
 
 class UnauthorizedContractExecutor {
@@ -145,6 +161,7 @@ test.afterEach(async () => {
 
 test("records the complete implicit-context deterministic hero and denial", async ({ page, request }) => {
   test.setTimeout(480_000);
+  await rm(FRAME_DIRECTORY, { recursive: true, force: true });
   await mkdir(FRAME_DIRECTORY, { recursive: true });
   app = await startTestApp({ agentRuntimeConfigured: true });
   const video = page.video();
@@ -205,23 +222,29 @@ test("records the complete implicit-context deterministic hero and denial", asyn
   await frontendCard.getByText("View evidence", { exact: true }).click();
   await expect(frontendCard.getByLabel("Agent execution contract")).toContainText("Scoped Frontend conventions");
   await expect(frontendCard.getByLabel("Agent execution contract")).toContainText("auth.transport");
+  await frontendCard.scrollIntoViewIfNeeded();
+  await setPresentationScale(page, 1.5);
   await chapter(
     page,
     "frontend-contract",
     "Show the neutral objective, exact authority, expected artifact, scoped convention source, acceptance profile, and deferred claim key.",
     15_000,
   );
+  await setPresentationScale(page, 1);
   await frontendCard.locator("summary").click();
 
   const backendCard = page.locator("article.event-card").filter({ hasText: "Created Implement backend authentication transport" });
   await backendCard.getByText("View evidence", { exact: true }).click();
   await expect(backendCard.getByLabel("Agent execution contract")).toContainText("Scoped Backend conventions");
+  await backendCard.scrollIntoViewIfNeeded();
+  await setPresentationScale(page, 1.5);
   await chapter(
     page,
     "backend-contract",
     "The Backend Agent receives a different bounded context, without being told what value to choose.",
     15_000,
   );
+  await setPresentationScale(page, 1);
   await backendCard.locator("summary").click();
 
   const claims = snapshot.claims.filter((claim) => claim.missionId === mission.id);
@@ -264,12 +287,38 @@ test("records the complete implicit-context deterministic hero and denial", asyn
     expect.objectContaining({ targetValue: "http-only-session-cookie", executionState: "passed", selectionState: "selected" }),
     expect.objectContaining({ targetValue: "bearer-jwt", executionState: "failed", selectionState: "rejected" }),
   ]));
+  const selectedCandidate = snapshot.candidates.find((candidate) => candidate.selectionState === "selected");
+  const rejectedCandidate = snapshot.candidates.find((candidate) => candidate.selectionState === "rejected");
+  assert.ok(selectedCandidate);
+  assert.ok(rejectedCandidate);
+  const selectedPlaneButton = page.locator("button.tree-node").filter({ hasText: selectedCandidate.targetValue });
+  await selectedPlaneButton.scrollIntoViewIfNeeded();
+  await selectedPlaneButton.click();
+  const drawer = page.getByRole("dialog");
+  await expect(drawer).toContainText(selectedCandidate.strategy);
+  await expect(drawer.getByRole("tab", { name: "Candidate verification" })).toHaveAttribute("aria-selected", "true");
   await chapter(
     page,
     "objective-candidate-decision",
-    "The same objective checks select the passing cookie future and retain the failed bearer future as evidence.",
+    "Open the selected future's independent evidence: the same objective checks select the passing cookie candidate.",
     15_000,
   );
+  await page.keyboard.press("Escape");
+  await expect(drawer).toHaveCount(0);
+
+  const rejectedPlaneButton = page.locator("button.tree-node").filter({ hasText: rejectedCandidate.targetValue });
+  await rejectedPlaneButton.scrollIntoViewIfNeeded();
+  await rejectedPlaneButton.click();
+  await expect(drawer).toContainText(rejectedCandidate.strategy);
+  await expect(drawer).toContainText("Failed");
+  await chapter(
+    page,
+    "rejected-future-evidence",
+    "The incompatible future remains inspectable with its failed project-invariant evidence instead of disappearing.",
+    13_000,
+  );
+  await page.keyboard.press("Escape");
+  await expect(drawer).toHaveCount(0);
 
   await page.getByRole("button", { name: "All", exact: true }).click();
   await expect(page.locator(".timeline-panel .state-pill")).toHaveText("Completed");
@@ -312,9 +361,9 @@ test("records the complete implicit-context deterministic hero and denial", asyn
     title: "closing",
     startSeconds: Number(((Date.now() - recordingStartedAt) / 1000).toFixed(3)),
     narration: "Close with: contract, isolate, verify, detect, speculate, and promote.",
-    pauseSeconds: 8,
+    pauseSeconds: 8 * RECORDING_PAUSE_SCALE,
   });
-  await page.waitForTimeout(8_000);
+  await page.waitForTimeout(Math.max(100, Math.round(8_000 * RECORDING_PAUSE_SCALE)));
   const persisted = await app.persistedState();
   expect(persisted).not.toContain(AUTH_TOKEN);
   expect(persisted).not.toContain(RECORDING_CANARY);

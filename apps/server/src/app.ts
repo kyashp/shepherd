@@ -181,7 +181,7 @@ export type PublicShepherdMissionDetail = Omit<
 export type PublicAgentRun = Omit<AgentRun, "prompt">;
 
 const filesystemPathPattern =
-  /(?:[A-Za-z]:[\\/]|\/)(?:[^\s\\/]+[\\/])*[^\s,;:)}\]'"`]*/gu;
+  /(?:[A-Za-z]:[\\/]|(?<![A-Za-z0-9])\/)(?:[^\s\\/]+[\\/])*[^\s,;:)}\]'"`]*/gu;
 
 const safeText = (
   value: string,

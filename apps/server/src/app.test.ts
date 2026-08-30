@@ -462,6 +462,22 @@ const createShepherdService = (
 });
 
 describe("HTTP boundary", () => {
+  it("preserves human-readable check ratios while redacting absolute paths", () => {
+    const state = createShepherdState();
+    state.events = [
+      {
+        ...state.events[0]!,
+        summary: "Candidate passed 3/3 mandatory checks; 0/0 optional checks at /tmp/private/result.json",
+      },
+    ];
+
+    const publicState = toPublicShepherdState(state, []);
+
+    expect(publicState.events[0]?.summary).toBe(
+      "Candidate passed 3/3 mandatory checks; 0/0 optional checks at [PATH]",
+    );
+  });
+
   it("redacts derived general Contract fields and Plane promotion evidence independently", () => {
     const state = createShepherdState();
     state.groupMessages = [
