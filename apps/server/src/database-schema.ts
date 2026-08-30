@@ -566,7 +566,7 @@ const groupMessageSchema = z
           .object({
             preset: z.literal("auth-demo-contract"),
             role: z.enum(["Frontend", "Backend"]),
-            transport: z.enum(["bearer-jwt", "http-only-session-cookie"]),
+            transport: z.enum(["bearer-jwt", "http-only-session-cookie"]).nullable(),
           })
           .strict(),
         z

@@ -411,7 +411,7 @@ export interface ProjectGroupMessage {
     | {
         preset: "auth-demo-contract";
         role: "Frontend" | "Backend";
-        transport: AuthTransport;
+        transport: AuthTransport | null;
       }
     | {
         preset: "general-contract";

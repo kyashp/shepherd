@@ -471,7 +471,8 @@ export interface ProjectGroupMessage {
     | {
         preset: "auth-demo-contract";
         role: "Frontend" | "Backend";
-        transport: "bearer-jwt" | "http-only-session-cookie";
+        /** Null until execution evidence establishes the deferred claim value. */
+        transport: "bearer-jwt" | "http-only-session-cookie" | null;
       }
     | {
         preset: "general-contract";
