@@ -95,6 +95,88 @@ test("the existing-ECS deploy refuses before contacting the container engine", a
   await assert.rejects(access(dockerLog));
 });
 
+test("the existing-ECS deploy refuses a whitespace-only APP_AUTH_TOKEN", async () => {
+  // Bash sees spaces as non-empty, but the server trims before validating, so the
+  // value reaches the container as "" and the bearer hook short-circuits. A guard
+  // that only tests for the empty string therefore lets the exact hole through.
+  const { root, binDirectory, dockerLog } = await fixture([
+    "ARK_API_KEY=ecs-key",
+    "ARK_MODEL=ecs-model",
+    "APP_AUTH_TOKEN=   ",
+  ]);
+
+  const result = await run(
+    path.join(root, "scripts", "deploy-existing-ecs.sh"),
+    { PATH: `${binDirectory}${path.delimiter}${process.env.PATH ?? ""}` },
+    root,
+  );
+
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, /APP_AUTH_TOKEN/u);
+  const { access } = await import("node:fs/promises");
+  await assert.rejects(access(dockerLog));
+});
+
+test("the existing-ECS deploy refuses a CRLF environment file with an empty token", async () => {
+  // `cp .env.example .env.production` then editing on a Windows host leaves CRLF,
+  // so the captured value is a lone carriage return: non-empty to bash, empty to
+  // the server.
+  const root = await mkdtemp(path.join(os.tmpdir(), "ecs-deploy-crlf-"));
+  temporaryDirectories.push(root);
+  const binDirectory = path.join(root, "bin");
+  const { readFile, chmod } = await import("node:fs/promises");
+  await Promise.all([mkdir(path.join(root, "scripts")), mkdir(binDirectory)]);
+  await writeFile(
+    path.join(root, "scripts", "deploy-existing-ecs.sh"),
+    await readFile(path.join(repositoryRoot, "scripts", "deploy-existing-ecs.sh"), "utf8"),
+  );
+  const dockerLog = path.join(root, "docker-invocations");
+  await writeFile(
+    path.join(binDirectory, "docker"),
+    ["#!/usr/bin/env bash", `printf "%s\n" "$*" >> "${dockerLog}"`, "exit 0", ""].join("\n"),
+    "utf8",
+  );
+  await chmod(path.join(binDirectory, "docker"), 0o755);
+  await writeFile(
+    path.join(root, ".env.production"),
+    "ARK_API_KEY=ecs-key\r\nARK_MODEL=ecs-model\r\nAPP_AUTH_TOKEN=\r\n",
+    "utf8",
+  );
+
+  const result = await run(
+    path.join(root, "scripts", "deploy-existing-ecs.sh"),
+    { PATH: `${binDirectory}${path.delimiter}${process.env.PATH ?? ""}` },
+    root,
+  );
+
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, /APP_AUTH_TOKEN/u);
+  const { access } = await import("node:fs/promises");
+  await assert.rejects(access(dockerLog));
+});
+
+test("the existing-ECS deploy refuses a token the server itself would reject", async () => {
+  // The script must apply the same floor as apps/server/src/config.ts and
+  // deploy/volcengine/variables.tf, or it green-lights a deploy that then dies at
+  // container start.
+  for (const token of ["short", "replace-with-a-long-token-value"]) {
+    const { root, binDirectory } = await fixture([
+      "ARK_API_KEY=ecs-key",
+      "ARK_MODEL=ecs-model",
+      `APP_AUTH_TOKEN=${token}`,
+    ]);
+
+    const result = await run(
+      path.join(root, "scripts", "deploy-existing-ecs.sh"),
+      { PATH: `${binDirectory}${path.delimiter}${process.env.PATH ?? ""}` },
+      root,
+    );
+
+    assert.notEqual(result.code, 0, `expected ${token} to be refused`);
+    assert.match(result.stderr, /APP_AUTH_TOKEN/u);
+  }
+});
+
 test("the existing-ECS deploy accepts a configured APP_AUTH_TOKEN", async () => {
   const { root, binDirectory } = await fixture([
     "ARK_API_KEY=ecs-key",

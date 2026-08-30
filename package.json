@@ -14,7 +14,7 @@
     "dev": "concurrently -n server,web -c cyan,magenta \"npm run dev -w @launchpad/server\" \"npm run dev -w @launchpad/web\"",
     "build": "npm run build -w @launchpad/web && npm run build -w @launchpad/server",
     "typecheck": "npm run typecheck --workspaces --if-present && npm run typecheck:tests -w @launchpad/server && npm run typecheck:tests -w @launchpad/web",
-    "test": "node --test scripts/start-local-poc-launcher.test.mjs && npm run test -w @launchpad/server && npm run test -w @launchpad/web",
+    "test": "node --test scripts/start-local-poc-launcher.test.mjs scripts/deploy-existing-ecs.test.mjs && npm run test -w @launchpad/server && npm run test -w @launchpad/web",
     "test:e2e:install": "PLAYWRIGHT_BROWSERS_PATH=.tmp/playwright-browsers playwright install chromium",
     "test:e2e:harness:unit": "npm run build && node --test tests/e2e/harness.test.mjs",
     "test:e2e:harness": "npm run test:e2e:harness:unit && PLAYWRIGHT_BROWSERS_PATH=.tmp/playwright-browsers playwright test --config=playwright.config.ts",
