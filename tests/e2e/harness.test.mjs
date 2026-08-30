@@ -12,10 +12,47 @@ import {
   repositoryRoot,
   startTestApp,
 } from "./support/test-app.mjs";
+import {
+  contrastRatio,
+  normalizeEvidenceStage,
+  uiGateEvidencePath,
+} from "./support/ui-gate.mjs";
 
 const execFileAsync = promisify(execFile);
 const fakeCodex = path.join(repositoryRoot, "tests/e2e/fixtures/fake-codex.mjs");
 const fakeContainerEngine = path.join(repositoryRoot, "tests/e2e/fixtures/fake-container-engine.mjs");
+
+test("contrastRatio preserves the high contrast of white against the Shepherd surface", () => {
+  assert.ok(contrastRatio("#ffffff", "#111827") > 15);
+});
+
+test("contrastRatio keeps the Shepherd lavender above the non-text threshold", () => {
+  assert.ok(contrastRatio("#8773e8", "#0b1020") >= 3);
+});
+
+test("contrastRatio accepts computed rgb and rgba colors", () => {
+  assert.ok(contrastRatio("rgb(255, 255, 255)", "rgba(17, 24, 39, 1)") > 15);
+});
+
+test("normalizeEvidenceStage produces an ASCII kebab-case evidence filename", () => {
+  assert.equal(normalizeEvidenceStage("08 Shepherd / loading"), "08-shepherd-loading");
+});
+
+test("uiGateEvidencePath puts the normalized stage beneath its viewport evidence directory", () => {
+  assert.ok(
+    uiGateEvidencePath("1440x900", "08 Shepherd / loading").endsWith(
+      path.join(".tmp", "playwright-evidence", "ui-gate", "1440x900", "08-shepherd-loading.png"),
+    ),
+  );
+});
+
+test("normalizeEvidenceStage rejects punctuation-only stages before they can name an evidence file", () => {
+  assert.throws(() => normalizeEvidenceStage("... / !!!"), /evidence stage/i);
+});
+
+test("uiGateEvidencePath rejects unsupported viewport names", () => {
+  assert.throws(() => uiGateEvidencePath("800x600", "shepherd"), /viewport/i);
+});
 
 function verifierCreateArgs({ name, source, target = "contract-fixture" }) {
   return [
