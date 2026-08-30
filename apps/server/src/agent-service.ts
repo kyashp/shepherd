@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { AppConfig } from "./config.js";
 import { isArkConfigured, isShepherdModelReviewConfigured } from "./config.js";
 import { HttpError, RunCancelledError } from "./errors.js";
-import { JsonStore } from "./store.js";
+import { JsonStore, PersistenceBoundaryError } from "./store.js";
 import { normalizeScopedAuthority } from "./shepherd/authority.js";
 import {
   beginGeneralProjectDeletion,
@@ -204,6 +204,9 @@ export class AgentService {
   async initialize(): Promise<void> {
     await this.store.initialize();
     await this.workspaces.initialize();
+    await this.workspaces.reconcileArchiveDeletions(
+      new Set(this.store.snapshot().agents.map((agent) => agent.id)),
+    );
     for (const agent of this.store.snapshot().agents) {
       await this.workspaces.assertManagedWorkspace(agent);
     }
@@ -307,7 +310,10 @@ export class AgentService {
     }
     await this.cancelExecution(id);
     let journaledProjectId: string | null = null;
+    let workspaceJournaled = false;
     try {
+      await this.workspaces.beginArchiveDeletion(agent);
+      workspaceJournaled = true;
       const deletion = await this.store.mutate(async (database) => {
         const currentAgent = database.agents.find((item) => item.id === id);
         if (!currentAgent) {
@@ -327,7 +333,6 @@ export class AgentService {
           );
           journaledProjectId = assessment.clarificationProjectId;
         }
-        await this.workspaces.archive(currentAgent);
         database.agents = database.agents.filter((item) => item.id !== id);
         database.messages = database.messages.filter((item) => item.agentId !== id);
         database.runs = database.runs.filter((item) => item.agentId !== id);
@@ -367,16 +372,33 @@ export class AgentService {
           }
         }
       }
+      await this.workspaces.completeArchiveDeletion(id);
       return { deleted: true };
     } catch (error) {
-      if (journaledProjectId) {
+      if (error instanceof PersistenceBoundaryError) {
+        throw new HttpError(
+          500,
+          "Agent deletion persistence is uncertain; restart to reconcile safely",
+        );
+      }
+      if (workspaceJournaled || journaledProjectId) {
+        const durableAgentIds = new Set(
+          this.store.snapshot().agents.map((item) => item.id),
+        );
         const durableProjectIds = new Set(
           this.store.snapshot().shepherd.projects.map((project) => project.id),
         );
-        await reconcileGeneralProjectDeletions(
-          this.config.shepherdRoot,
-          durableProjectIds,
-        ).catch(() => undefined);
+        await Promise.all([
+          workspaceJournaled
+            ? this.workspaces.reconcileArchiveDeletions(durableAgentIds)
+            : Promise.resolve(),
+          journaledProjectId
+            ? reconcileGeneralProjectDeletions(
+                this.config.shepherdRoot,
+                durableProjectIds,
+              )
+            : Promise.resolve(),
+        ]).catch(() => undefined);
       }
       throw error;
     }

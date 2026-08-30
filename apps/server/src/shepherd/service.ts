@@ -2360,19 +2360,7 @@ export class ShepherdService {
       }
       const createdAt = this.timestamp();
       let project: ManagedGeneralAgentProject | null = null;
-      const durableProjectBefore = initial.shepherd.projects.find(
-        (item) => item.id === projectId,
-      );
-      const creationJournaled = !durableProjectBefore;
-      if (creationJournaled) {
-        await beginGeneralProjectCreation(this.managedRoot, projectId);
-      } else {
-        await beginGeneralProjectPolicyUpdate(
-          this.managedRoot,
-          projectId,
-          durableProjectBefore.protectedHeadCommit,
-        );
-      }
+      let projectJournal: "creation" | "policy" | null = null;
       const message = await this.store.mutate(async (database) => {
         const currentAgent = database.agents.find((item) => item.id === agent.id);
         if (
@@ -2397,6 +2385,17 @@ export class ShepherdService {
           throw new ShepherdControlError("conflict", "Contract clarification changed concurrently");
         }
         const existingProject = database.shepherd.projects.find((item) => item.id === projectId);
+        if (existingProject) {
+          await beginGeneralProjectPolicyUpdate(
+            this.managedRoot,
+            projectId,
+            existingProject.protectedHeadCommit,
+          );
+          projectJournal = "policy";
+        } else {
+          await beginGeneralProjectCreation(this.managedRoot, projectId);
+          projectJournal = "creation";
+        }
         project = await initializeGeneralAgentProject({
           managedRoot: this.managedRoot,
           projectId,
@@ -2414,11 +2413,11 @@ export class ShepherdService {
             ? { expectedHead: existingProject.protectedHeadCommit }
             : {}),
         });
-        if (durableProjectBefore) {
+        if (existingProject) {
           await recordGeneralProjectPolicyUpdate(
             this.managedRoot,
             projectId,
-            durableProjectBefore.protectedHeadCommit,
+            existingProject.protectedHeadCommit,
             project.headCommit,
           );
         }
@@ -2456,10 +2455,12 @@ export class ShepherdService {
           createdAt,
         });
       });
-      if (creationJournaled) {
+      if (projectJournal === "creation") {
         await completeGeneralProjectCreation(this.managedRoot, projectId);
-      } else {
+      } else if (projectJournal === "policy") {
         await completeGeneralProjectPolicyUpdate(this.managedRoot, projectId);
+      } else {
+        throw new Error("General Contract project journal was not created");
       }
       if (plan.status === "clarification_required") {
         return {
