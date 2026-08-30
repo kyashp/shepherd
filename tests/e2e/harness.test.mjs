@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { access, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -35,7 +35,8 @@ function verifierCreateArgs({ name, source, target = "contract-fixture" }) {
 }
 
 test("fake Codex fixture implements bounded deterministic version, run, and resume", async () => {
-  const workspace = await mkdtemp(path.join(os.tmpdir(), "shepherd-fake-codex-"));
+  const temporaryRoot = await realpath(os.tmpdir());
+  const workspace = await mkdtemp(path.join(temporaryRoot, "shepherd-fake-codex-"));
   try {
     const version = await execFileAsync(fakeCodex, ["--version"], { encoding: "utf8" });
     assert.equal(version.stdout, "codex-cli 0.111.0\n");
