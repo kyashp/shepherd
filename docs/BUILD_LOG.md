@@ -60,6 +60,11 @@ below. No live or model call ran; no Mission was started.
   that were not on the exact head. Corrected from the evidence above.
   `docs/FIXES.md` carried the same stale `CANDIDATE PENDING AFFECTED-HOST GATE`
   wording for `OPS-06` and was corrected with it.
+- **Issue split.** `#47` bundled `OPS-06` and `LIVE-01`, which need different
+  hosts, so neither could close. `LIVE-01` moved to issue `#65` with the probe
+  evidence above; `#47` is re-scoped to `OPS-06` only and remains closeable on this
+  host once `A` and `S` land. `main` has since advanced to `a1f1fcc` (PR #62); the
+  evidence in this entry is scoped to `b80af11` and is not restated for that head.
 - **Not claimed.** The `A` and `S` gates for `OPS-06` remain open. `A` is missing
   the verifier composition at `apps/server/src/index.ts:77-78`, the launcher
   probe/fallback selection, and the verifier fail-closed branch. `S` is unmet and

@@ -2,10 +2,13 @@
 
 **Canonical implementation branch:** protected `main`.
 
-**Latest verified integration:** PR #56 merge `b80af11` on protected `main`. That
-head also carries PR #57 merge `cd82ec4` (private-chat Contracts) and PR #60 merge
-`39cd800` (architecture document). The hosted exact-head gate on `b80af11` is run
-`33300759535`. Exact post-integration evidence is recorded in `BUILD_LOG.md`.
+**Latest verified integration:** PR #56 merge `b80af11` on protected `main`, the
+head this reconciliation was measured against. That head also carries PR #57 merge
+`cd82ec4` (private-chat Contracts) and PR #60 merge `39cd800` (architecture
+document); the hosted exact-head gate on it is run `33300759535`. `main` has since
+advanced to PR #62 merge `a1f1fcc`, which carries no rerun evidence yet, so every
+`I` claim below is scoped to the SHA it names. Exact post-integration evidence is
+recorded in `BUILD_LOG.md`.
 
 **Audited:** 2026-08-30, Asia/Singapore
 
@@ -81,8 +84,10 @@ the hackathon cut, not removed from the PRD.
 - **Advertised controls ([issue #44](https://github.com/kyashp/shepherd/issues/44)):**
   `ST-01`; settings shown in the demo must causally compose.
 - **Judge evidence:** `UI-GATE` ([#45](https://github.com/kyashp/shepherd/issues/45)),
-  `PERF-01` ([#46](https://github.com/kyashp/shepherd/issues/46)), `LIVE-01` and the
-  remaining `OPS-06` host gate ([#47](https://github.com/kyashp/shepherd/issues/47)),
+  `PERF-01` ([#46](https://github.com/kyashp/shepherd/issues/46)), the remaining
+  `OPS-06` host gate ([#47](https://github.com/kyashp/shepherd/issues/47)) and
+  `LIVE-01` ([#65](https://github.com/kyashp/shepherd/issues/65), split out of #47
+  because it cannot run on the affected host),
   `STABILITY` ([#48](https://github.com/kyashp/shepherd/issues/48)), `SEC-REVIEW`
   ([#49](https://github.com/kyashp/shepherd/issues/49)), and `DEMO-REHEARSAL`
   ([#50](https://github.com/kyashp/shepherd/issues/50)). `OPS-06` also requires a
@@ -258,7 +263,7 @@ without an open issue/PR are not active ownership claims.
 | `CI-01` | 0.1, 16, 17 | **AUDITED** at workflow `cda2446`; hosted run `33259565232` succeeded | `required-checks.yml` uses supported official checkout/setup-node actions, Node 22, lockfile-backed npm cache, `npm ci`, Docker availability, and literal `npm run check`; it triggers every PR, pushes to protected `main`, and merge-queue `checks_requested`. Token permission is only `contents: read`; checkout credentials are not persisted; no `.env`, secrets, artifacts, privileged actions, or live/model path is configured. Independent local validation passed Docker 29.7.2 and launcher 3/3 plus server 555/555 with one opt-in skip. Hosted Node 22.23.2/npm 10.9.8 and Docker client/server 28.0.4 passed locked install, launcher 3/3, server 551 passed/5 environment-gated skips, typechecks, 40-module web build and server build. Stable job check: `Node 22 / npm run check`. Administrator must require that check on protected `main`; this external rule change is not performed by agents. `C,I`. | **100% scoped**; `C,I` passed (2/2); audited |
 | `SEC-REVIEW` | 0.3, 13, 17 | `BLOCKED` by feature freeze; [issue #49](https://github.com/kyashp/shepherd/issues/49) | Repository/store/prompt/API/DOM canary scan, five invariant mutation evidence, artifact/debug/bypass audit, then independent read-only security review and fixes. `C,S,I`. | **45%**; 0/3; not audited |
 | `STABILITY` | 16 Phase 9B | `BLOCKED` by deterministic feature freeze; [issue #48](https://github.com/kyashp/shepherd/issues/48) | Literal full suite passes five consecutive times; fix flakiness by cause, never sleeps/weakened assertions. `C,I`. | **0%**; 0/2; not audited |
-| `LIVE-01` | 16 Phase 3/7/8 | `BLOCKED` by host capability, not by code; [issue #47](https://github.com/kyashp/shepherd/issues/47) | Reviewer sub-gate is satisfied: command attempt two made exactly one external request and completed with two bounded findings while deterministic outcome/security/cleanup stayed green. Current live Shepherd Mission and legacy continuity remain required. Reproduced on the affected host at `b80af11`: a plain write to a host-share bind mount inside the Runtime succeeds while the identical write under `codex sandbox linux --full-auto` is denied, so `test:shepherd:live` — which pins `CONTAINER_STATE_ROOT`/`CONTAINER_STATE_VOLUME` to `undefined` and bind-mounts `.tmp/shepherd-live-gate` — would fail at `stage=container_start reason=sandbox_probe_failed` and consume the no-retry allowance for no evidence. The gate needs a Linux host, or a code change making it volume-aware, which is outside an `L` run. `L,S,I`. | **55%**; 1/3; not audited |
+| `LIVE-01` | 16 Phase 3/7/8 | `BLOCKED` by host capability, not by code; [issue #65](https://github.com/kyashp/shepherd/issues/65), split out of #47 | Reviewer sub-gate is satisfied: command attempt two made exactly one external request and completed with two bounded findings while deterministic outcome/security/cleanup stayed green. Current live Shepherd Mission and legacy continuity remain required. Reproduced on the affected host at `b80af11`: a plain write to a host-share bind mount inside the Runtime succeeds while the identical write under `codex sandbox linux --full-auto` is denied, so `test:shepherd:live` — which pins `CONTAINER_STATE_ROOT`/`CONTAINER_STATE_VOLUME` to `undefined` and bind-mounts `.tmp/shepherd-live-gate` — would fail at `stage=container_start reason=sandbox_probe_failed` and consume the no-retry allowance for no evidence. The gate needs a Linux host, or a code change making it volume-aware, which is outside an `L` run. `L,S,I`. | **55%**; 1/3; not audited |
 | `DEMO-REHEARSAL` | 14–15, 16 Phase 8 | `BLOCKED` by all demo-critical rows; [issue #50](https://github.com/kyashp/shepherd/issues/50) | Three clean reset-to-completion judge flows under three minutes, including clean no-op reset and initialized reset; second machine/state if genuinely available. `B,S,I`. | **0%**; 0/3; not audited |
 
 ## P2 — feature freeze deliverables
