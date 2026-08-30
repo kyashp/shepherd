@@ -47,6 +47,9 @@ services:
       SHEPHERD_CODEX_HOME_ROOT: /app/state/data/shepherd-codex-homes
       CODEX_SANDBOX_MODE: ${CODEX_SANDBOX_MODE:-workspace-write}
       RUNTIME_INSTANCE_ID: ${RUNTIME_INSTANCE_ID:-default}
+      # Pinned from the caller's resolved value, not re-read from env_file, so the
+      # token the launcher validated is exactly the token the server receives.
+      APP_AUTH_TOKEN: ${APP_AUTH_TOKEN:?APP_AUTH_TOKEN must be set}
       # The image's `node` user, which owns the volume. Disposable Runtime
       # containers run as the same non-root identity so the control plane can
       # still reconcile and remove what they wrote.

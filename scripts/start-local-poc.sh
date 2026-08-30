@@ -131,6 +131,9 @@ if [[ "$state_mode" == "container-volume" ]]; then
     exit 2
   fi
   unset auth_token
+  # Handed to the control plane explicitly so the validated token is the one the
+  # server receives, rather than a different value re-read from the env file.
+  export APP_AUTH_TOKEN
 
   log "Preparing the $state_volume state volume for the Agent Runtime."
   "$engine" volume create "$state_volume" >/dev/null

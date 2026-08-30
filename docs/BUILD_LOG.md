@@ -61,9 +61,34 @@ Branch `fix/47-ops-06-container-state-volume`, PR #56, on the affected host
   macOS non-canonical `os.tmpdir()` issue in a fixture this change does not
   touch, and the fake-container-engine test pinning the read-only bind mount
   passed. A green full gate on a Linux host remains required before integration.
-- No live or model call ran. The startup smoke for
-  `LOCAL_POC_STATE_MODE=container-volume` remains unrun: that profile is not a
-  loopback server and this host's `APP_AUTH_TOKEN` is a placeholder.
+- Ran the default `host-bind` launch on the affected host after the probe
+  correction. It now stops at startup with
+  `Codex workspace-write Landlock cannot govern the configured workspace in the
+  hardened non-root Runtime`, naming `LOCAL_POC_STATE_MODE=container-volume`,
+  instead of passing a false gate and crashing later inside the server. The
+  mount-and-write probe passed in the same run, which is the expected split: a
+  plain write to the host share succeeds while the Landlock-governed write does
+  not.
+- Ran the `container-volume` startup smoke on the affected host with a one-off
+  token supplied in the environment; the repository `.env` was not modified. The
+  first attempt exposed a real wiring defect: the launcher validated its resolved
+  `APP_AUTH_TOKEN` while the control plane re-read a different value from
+  `env_file`, so the container crash-looped on
+  `APP_AUTH_TOKEN must be a non-placeholder token`. Corrected by pinning
+  `APP_AUTH_TOKEN` in the compose `environment:` block from the caller's resolved
+  value and exporting it from the launcher, so the validated token is the token
+  the server receives.
+- After that correction the profile came up on the first try: both preflight
+  probes passed in volume mode, the control-plane image built, and
+  `GET /api/health` returned `{"ok":true,"service":"volc-agent-launchpad"}` with
+  the port published to `127.0.0.1` only. Resolved configuration inside the
+  running container was `executionMode: "live"`, `runtimeProvider: "container"`,
+  `containerStateRoot: /app/state`, `codexSandboxMode: workspace-write`. Live mode
+  means `CodexShepherdExecutor.preflight()` ran and passed inside the server —
+  the exact call that previously threw
+  `Live Shepherd Runtime preflight failed (stage=container_start
+  reason=sandbox_probe_failed)`. The smoke volume was removed afterwards.
+- No live or model call ran; no Mission was started.
 
 ## 2026-08-30 — protected-main promotion and exact post-merge gate
 
