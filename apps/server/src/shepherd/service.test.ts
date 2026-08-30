@@ -327,12 +327,21 @@ class CandidateExecutionIntervalExecutor implements ShepherdExecutor {
   }
 
   async waitForBothCandidates(): Promise<void> {
-    const deadline = Date.now() + 3_000;
-    while (Date.now() < deadline) {
+    const firstCandidateDeadline = Date.now() + 15_000;
+    while (Date.now() < firstCandidateDeadline) {
+      if (this.candidateStarts.length >= 1) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    if (this.candidateStarts.length === 0) {
+      throw new Error("candidate execution did not start before the setup deadline");
+    }
+
+    const pairDeadline = Date.now() + 3_000;
+    while (Date.now() < pairDeadline) {
       if (this.candidateStarts.length === 2) return;
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    throw new Error("both candidate executions did not start before the bounded deadline");
+    throw new Error("second candidate execution did not start within the bounded pair deadline");
   }
 
   release(): void {

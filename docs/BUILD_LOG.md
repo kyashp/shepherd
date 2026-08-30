@@ -5215,3 +5215,15 @@ Auditor, security and hosted integration evidence.
 - `git diff --check` and conflict-marker checks passed. No live request was repeated;
   the earlier exact live result-manifest failure remains an explicit `LIVE-01`
   limitation rather than being hidden by the deterministic integration result.
+- Hosted `Pull request checks` run `33319816809` then preserved a causal RED: under
+  heavy suite contention, PERF-01 spent its three-second candidate-pair deadline on
+  earlier Mission setup and failed before both candidates arrived, while independent
+  hosted run `33319816797` passed the same repository head. The test-only correction
+  gives pre-candidate setup its own bounded 15-second allowance and starts the
+  unchanged three-second concurrency deadline only when the first real candidate
+  reaches the executor. Product scheduling, timeouts and retry behavior are
+  unchanged; a sequential scheduler still fails the pair deadline and releases the
+  existing gate through `finally`. The preserved row passed 10/10 consecutive
+  focused repetitions; the post-correction literal gate passed launcher 5/5,
+  Server 842 passed with two explicit live skips, Web 20/20, all strict typechecks
+  and both builds.
