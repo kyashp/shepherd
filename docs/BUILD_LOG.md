@@ -7,6 +7,49 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-31 — ST-01 and OPS-06 integration rerun, self-performed
+
+Protected `main` at `a62e29b` (merge of PR #86). Branch
+`docs/44-47-integration-rerun`. No live or model call ran.
+
+- **This rerun was performed by the author of the implementations under test.**
+  `docs/TASKS.md` reserves `AUDITED` for independent end-to-end evidence and defines
+  the `I` gate as a rerun by the auditor. Neither row is marked `AUDITED` on the
+  strength of this entry, and an independent rerun is still owed for both.
+- **Hosted exact-head gate.** Run `33324819058` on `a62e29b`, literal
+  `npm run check` on `ubuntu-latest` / Node 22: success. This is the primary
+  evidence, and it is platform-independent of the notes below.
+- **Local gate on the same SHA.** `npm run typecheck` passed. Launcher and deploy
+  script tests 9/9. Web 20/20. Both production builds passed. The server suite run
+  serially reported **837 passed, 7 failed, 2 skipped** across 34 files.
+- **On those 7 local failures.** A second serial run on the same SHA reproduced the
+  identical set — 837 passed, 7 failed, 2 skipped, same tests — so this is a stable
+  host condition rather than a varying draw. Enumerated: five in
+  `recovery.process.test.ts` (the four SIGKILL-checkpoint cases and the
+  update-ref/read-tree fail-closed case), and two in `service.test.ts` (the `PERF-01`
+  scheduled-interval case and the `cancels tracked attention-required Missions`
+  case). Every one is a timing failure — `Timed out waiting for recovered`,
+  `Test timed out in 5000ms`, and the recorded
+  `expected 'resolving' to be 'attention_required'` `vi.waitFor` flake. No assertion
+  failure of substance appears in either run. The same commit passes the full suite
+  on Linux in CI, and this host's documented inability to run the suite green —
+  recorded since the OPS-06 work, where pristine `main` itself failed 39 and the
+  branch 61, all timeouts — is the standing explanation. No local figure in this
+  entry is offered as a pass.
+- **Targeted surfaces on the same head passed**: the ST-01, composition,
+  verifier-container, codex-executor, app and config suites together 149/149, plus
+  the 9/9 script tests. These are the rows' own surfaces and are unaffected by the
+  suite-wide timing condition.
+- **A stale claim corrected.** The OPS-06 row still said the carried High finding had
+  "no open owner" because `SEC-REVIEW` was closed. `#49` was reopened on 2026-08-31,
+  so the row now names it as the owner.
+- **Why the independent rerun still matters for OPS-06.** The `SEC-REVIEW` boundary
+  audit found `SEC-01`, an authentication bypass reachable by percent-encoding the
+  `/api/` prefix, on the same `APP_AUTH_TOKEN` boundary this row's `S` gate covers.
+  The author of that gate had worked beside the hook repeatedly without noticing it,
+  and the first correction offered for it silently widened an exemption. Both were
+  caught by someone else looking.
+
 ## 2026-08-31 — SEC-REVIEW parts 1-3, and an authentication bypass found and fixed
 
 Branch `audit/49-sec-review-evidence` from `main` at `bd9b093`; hosted exact-head
