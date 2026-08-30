@@ -7,6 +7,41 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-30 — protected-main hackathon integration candidate
+
+- Base: campaign integration merge `005a51e02ab39a995803b4ed3717ee0ee55cae6c`,
+  which contains the independently reviewed user-selected Contract flow from PR #40.
+  Branch `docs/hackathon-main-integration` was pushed before edits.
+- Active contribution instructions now target protected `main`, require immediate
+  issue assignment/comment plus an early remote branch, and provide the replacement
+  navigation path after intentional removal of `HANDOVER.md`. `AGENTS.md`,
+  `CLAUDE.md`, `CONTRIBUTING.md`, `TASKS.md`, and the active Fixer rules all freeze
+  visual design and define “minimal” as a complete functionality-preserving fix.
+- `SHEPHERD.md` now inventories implemented Track 1 backend capabilities, separates
+  current evidence from open gates, links the today-feasible work, and records the
+  dated internal assessment: 82% hackathon completion, 90% core demo readiness,
+  85/100 weighted rubric score, 74/100 current winning confidence, and 91/100
+  novelty confidence. The deductions and the dependency/rubric weighting method are
+  explicit; no official-judge or guaranteed-win claim is made.
+- Read-only GitHub audit found only two stale open issues. #35 (MR-02) and #36
+  (CI-01) were closed as completed with their integrated evidence; none was deleted.
+  Unassigned, dependency-aware issues #41–#51 now cover only the minimum
+  hackathon-ready cut and carry `hackathon-ready` plus `priority:P0` labels.
+- The manual runbook now creates/selects user Frontend and Backend Agents, displays
+  both complete Contracts, explains source versus competing Resolution Planes, and
+  verifies the internal human-review ticket. Project Group's unfinished behavior
+  remains explicitly open.
+- `docs/PRD.md` remained byte-identical at SHA-256
+  `478ca55f201b52ba75c5c2134e0eef9d8ded4eb74f6a35d32062927413a70ced`.
+  All local Markdown links resolved across 15 files and `git diff --check` passed.
+- Literal `npm run check` passed on the candidate: launcher 3/3; Server 739 passed
+  plus two explicit opt-in skips; Web 18/18; strict production/test type checks and
+  both builds passed. Neither `actionlint` nor the Ruby YAML fallback exists in this
+  environment, so no local parser pass is claimed for the one-line workflow trigger
+  removal; the hosted required check remains the merge gate.
+- No product source, runtime, schema, dependency, secret, live/model request, or UI
+  implementation changed in this documentation/workflow candidate.
+
 ## 2026-08-30 — user-selected Agent Contract demo candidate
 
 - Base: `mock-main` at `6fddb0e84608a8614f745bcfdcd92b091e4f7fdf`.

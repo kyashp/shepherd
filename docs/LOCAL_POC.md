@@ -64,26 +64,38 @@ Use a fresh disposable data root for rehearsal. Start with
 
 ### 1. Positive Shepherd Mission
 
-1. Open **Shepherd** and confirm the empty Contract stream, waiting timeline, empty
-   Plane Tree, and visible Mission composer.
-2. Submit this intent once:
+1. Open **Settings → General → Reset demo state**. The reset preserves ordinary
+   Launchpad Agents.
+2. Create `Frontend Auth Agent` with role/preset **Frontend**, then create
+   `Backend Auth Agent` with role/preset **Backend**. Both must be ready.
+3. Open **Shepherd**. Select those two Agents, choose **HttpOnly session cookie**
+   for the frontend and **Bearer JWT** for the backend, and confirm the composer
+   warns that the two exclusive claims are incompatible.
+4. Submit this intent once:
 
    ```text
    Implement the authentication demo and resolve any incompatible frontend and backend assumptions using independently verified evidence.
    ```
 
-3. Wait for `completed`. Verify the visible sequence: Mission and two Contracts →
+5. Wait for `completed`. Verify the visible sequence: Mission and two Contracts →
    isolated Contract Planes → independent verification → integration → the
    `auth.transport` semantic collision → two resolution candidates → independently
    passing cookie candidate and rejected bearer candidate → final re-verification →
    protected promotion → Mission completion.
-4. Exercise **All**, **Contracts**, **Verification**, **Collisions**, and
+6. In the Contract stream, open **View evidence** for both source Contracts. Confirm
+   the complete bounded definitions show the chosen Agent/ID, objective and exact
+   transport, Mission/Plane, dependencies, semantic scope and claim, contextual
+   inputs, readable/writable/forbidden authority, expected artifact, acceptance
+   check/profile, manifest path, and timestamps alongside existing evidence.
+7. Exercise **All**, **Contracts**, **Verification**, **Collisions**, and
    **Resolution** filters. No view may expose a secret, absolute host path, raw model
    prompt/output, session identifier, or unbounded verifier output.
-5. Inspect the timeline, expand the collision, and open each Plane Tree detail.
+8. Inspect the timeline, expand the collision, and open each Plane Tree detail.
    Confirm short Git evidence, changed files, state, and verification evidence are
-   visible and that the drawer can be closed.
-6. Repeat visual checks at `1280x800` and `1440x900`. The document itself must not
+   visible and that the drawer can be closed. Explain that the source Agent Planes
+   do not compete: the cookie and bearer **Resolution Planes** compete after both
+   verified source outputs are combined into the same integration commit.
+9. Repeat visual checks at `1280x800` and `1440x900`. The document itself must not
    scroll horizontally or vertically; only designated panes may scroll. Compare the
    hierarchy and theme with [`UI.jpeg`](UI.jpeg).
 
@@ -92,8 +104,10 @@ Use a fresh disposable data root for rehearsal. Start with
 1. Open **Settings → General → Reset demo state** and confirm the result.
 2. Under **Execution**, change one timeout and **Maximum parallel Planes**, save,
    refresh, and confirm the values round-trip; then restore them.
-3. Disable **Automatic resolution**, save, and start the same Mission again.
-4. At `attention_required`, only an independently passing candidate may offer
+3. Disable **Automatic resolution**, save, and start the same Mission again with
+   the two preserved user-created Agents.
+4. At `attention_required`, confirm the internal human-review ticket shows the full
+   durable collision/Mission reference. Only an independently passing candidate may offer
    **Select verified future**. Select it and confirm completion through the same
    promotion gate. Restore **Automatic resolution** afterward.
 5. Notification controls must remain visibly **Unavailable/Reserved**, disabled,

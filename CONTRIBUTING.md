@@ -28,9 +28,10 @@ docker compose config
 
 ## Pull requests
 
-- Claim one TASKS item through a GitHub issue before editing. If that issue
-  already has an active owner, branch, or draft PR, choose another task.
-- Create a branch from current `origin/mock-main`, push it immediately, and open a
+- Claim one TASKS item through a GitHub issue **immediately**: assign yourself when
+  permitted and comment with the intended branch and primary owned files. If that
+  issue already has an active owner, branch, or draft PR, choose another task.
+- Create a branch from current `origin/main`, push it immediately, and open a
   linked draft PR. Dependent work targets the branch below it in a short true stack.
 - Keep one concern per PR and include its tests in the same PR. Do not create a
   separate "tests later" layer for behavior introduced by the PR.
@@ -41,11 +42,13 @@ docker compose config
 - Every PR requires independent review. A confidence below 100 remains marked
   for review; scoped 100 still requires the normal reviewer gate.
 - Material trust-boundary/security changes require independent security review.
-- Material UI changes require browser evidence at 1280x800 and 1440x900 plus
-  independent UI review, while preserving the existing Launchpad visual system.
-- Merge only through reviewed PRs into `mock-main` after relevant checks pass, then
-  rerun the scoped post-merge smoke there. Only the integrator promotes the completed
-  campaign to protected `main`.
+- The accepted UI is frozen. Do not redesign or restyle it. Touch UI only when a
+  required functional state, broken interaction, or accessibility defect cannot be
+  fixed elsewhere; preserve the existing system and run both viewport/UI gates.
+- A minimal correction must still preserve the complete intended functionality. Do
+  not remove, hide, disable, stub, or weaken behavior merely to reduce the diff.
+- Merge only through reviewed PRs into protected `main` after relevant checks pass,
+  then let the integrator run the scoped post-merge smoke there.
 - Update English documentation and `.env.example` when configuration changes.
 - Use GitHub Flavored Markdown and relative repository links.
 - Never commit credentials, local state, workspaces, build output, or Terraform
