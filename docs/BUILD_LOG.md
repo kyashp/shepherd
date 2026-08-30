@@ -4910,40 +4910,59 @@ Auditor, security and hosted integration evidence.
 
 ## 2026-08-30 — PERF-01 Worker candidate
 
-- **Scope and method:** `npm run test:e2e:shepherd-performance` builds the Web and
-  Server artifacts, runs the eight isolated-harness unit checks, then runs the
-  deterministic compiled service in Chromium at `1280x800` and `1440x900`. The
-  browser creates the normal two-Contract Mission and waits for the persisted
-  collision event to render. A fixture-only candidate verifier gate holds both
-  independent verifier starts long enough to prove they overlap, then releases
-  them and promotion without changing product timing or authority.
-- **Environment:** macOS 26.5.2 (`arm64`), Node `26.5.0`, npm `11.17.0`, and
-  Playwright `1.62.1`; the deterministic fixture invokes no Docker daemon, model,
-  provider, package download, or network request during the measured journey.
-- **RED evidence:** the first new-spec run failed at both viewports because the
-  existing all-stage fixture gate also held Contract verification, so neither
-  candidate verifier could start. The candidate-only gate correction exposed the
-  second missing release: the Mission remained `resolving` because the same fixture
-  gates promotion's second candidate verification occurrence. Releasing that exact
-  gate in the test and teardown made the original measurement pass without a
-  product, timeout, retry, or assertion change.
-- **Sample:** one clean real-browser sample per required viewport (n=2), on
-  protected-main base `baa6b2f`: persisted collision → visible was 820 ms and
-  1,041 ms (both within the PRD `<=1.5s` limit); Plane creation from Mission was
-  222 ms and 216 ms; Contract verification through collision was 1,278 ms and
-  1,415 ms; candidate verifier starts were 33 ms and 56 ms apart while both
-  stayed active; collision → promotion start was 1,242 ms and 1,632 ms; total
-  Mission time was 3,427 ms and 4,090 ms.
-- **Observed command:** passed: harness 8/8; Chromium 2/2. The test prints each
-  bounded metric line, fails the event-to-visible limit, and releases both gates
-  during teardown to preserve cleanup. The new fixture ledger timestamp and
-  candidate-only gate are test-only instrumentation; product/UI/runtime behavior
-  is unchanged. It also asserts the exact 11 verifier create/complete/remove
-  lifecycle rows; every create has `network=none` and `readOnly=true`. This is
-  no-network verifier-fixture evidence only; it does not independently detect
-  package downloads outside that constrained fixture. `playwright.config.ts`
-  intentionally includes this spec in the full browser harness; its adjacent
-  fixture unit checks also passed 8/8.
-- **Limitations:** this is local deterministic-fixture evidence, not a live-model
-  capacity measure, hosted integrated rerun, or the three clean rehearsals owned
-  by `DEMO-REHEARSAL`. Gate `I` remains pending independent protected-main audit.
+- **Scope and environment:** this candidate is based on protected-main `baa6b2f`.
+  macOS `26.5.2` (`arm64`), Node `v26.5.0`, npm `11.17.0`, Playwright `1.62.1`,
+  and Chromium `151.0.7922.34` ran the deterministic compiled Server and real
+  Chromium UI. Docker was used only by the separately recorded ContainerVerifier
+  boundary test below.
+- **Bounded RED:** the initial `npm run test:e2e:shepherd-performance` exited 1:
+  each natural-browser run reported `Expected length: 5; Received length: 2` for
+  `verification_started`, proving the old count was not the actual Contract
+  lifecycle. The focused causal test was then deliberately red with
+  `expected ... length of 3 but got 2` after both real scheduled candidate
+  executions arrived at its test-owned gate. The green assertion is exactly two;
+  it releases in `finally`, so the red case cannot strand a Mission. This removed
+  the non-causal verifier gate rather than adding timeout, retry, product, or UI
+  behavior.
+- **Natural timing, one clean sample per viewport:** the ungated path measured
+  actual Contract Plane `createdAt`, earliest `verification_started` to latest
+  `verification_passed` (exactly two of each), persisted collision → visible, and
+  collision → `promotion_completed`. At `1280x800`: 277 ms accepted → latest Plane
+  creation, 166 ms Mission → latest Plane creation, 320 ms verification, 356 ms
+  persisted collision → visible (PRD limit `<=1.5s`), 2,035 ms collision →
+  promotion complete, and 3,816 ms total. At `1440x900`: 263 ms, 168 ms, 321 ms,
+  403 ms, 2,228 ms, and 4,005 ms respectively.
+- **Instrumented concurrency proof (not a timing measurement):** the focused
+  `ShepherdService` test owns a wrapper around the deterministic executor. It
+  gates only `resolution_candidate` calls, records ISO start/completion times
+  without prompts, paths, or IDs, waits for exactly two real scheduler arrivals,
+  asserts no completion before release, then asserts two parseable completions and
+  `max(start) <= min(complete)`. It passed 1/1 (62 filtered) after the causal RED.
+  This test-owned injection is separate from the ungated browser path, so gate
+  delay cannot enter the natural timing samples.
+- **Verifier lifecycle and isolation evidence:** the natural browser run asserts
+  eleven unique container names, each exact `create → start → complete → remove`
+  sequence, and an empty fixture container directory. Its run ledger records every
+  `create` request as `network=none` and `readOnly=true`; those are fixture command
+  records, not enforcement proof. Enforcement is separately observed with
+  `npx vitest run --config apps/server/vitest.config.ts apps/server/src/shepherd/verifier.container.test.ts -t "proves cleared secrets, no network, and a read-only candidate mount"`:
+  1 passed, 8 skipped. That real ContainerVerifier boundary test rejects network
+  access and candidate-mount writes and confirms its cleared environment. Neither
+  check detects package downloads, so none are claimed.
+- **Observed GREEN and screenshots:**
+  `npm run test:e2e:shepherd-performance:evidence` passed build, harness 8/8, and
+  Chromium 2/2. It intentionally uses the ordinary Playwright config, so this spec
+  remains included in the full browser harness. The reproducible evidence command
+  wrote the passing collision-visible and final-promotion screenshots at both
+  required viewports under `docs/ui-review/perf-01/1280x800/` and
+  `docs/ui-review/perf-01/1440x900/` (`01-collision-visible.png` and
+  `02-promotion-completed.png` in each); both required states were visually
+  inspected. `node --test tests/e2e/harness.test.mjs` also passed 8/8.
+- **Limitations:** local deterministic-fixture evidence is not a live-model
+  capacity measurement, hosted integrated rerun, package-download proof, or the
+  three clean rehearsals owned by `DEMO-REHEARSAL`. Gate `I` remains pending an
+  independent protected-main audit. A final literal `npm run check` passed all
+  workspace and test-source typechecks, plus launcher 3/3, then remained in the
+  unrelated server Vitest suite for 72 seconds and was stopped; no unrelated
+  general-project/full-harness failure or check behavior was changed by this
+  candidate.

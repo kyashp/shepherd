@@ -303,6 +303,51 @@ class ObservedConcurrentExecutor implements ShepherdExecutor {
   }
 }
 
+class CandidateExecutionIntervalExecutor implements ShepherdExecutor {
+  readonly kind = "deterministic_fixture" as const;
+  private readonly inner = new DeterministicFixtureExecutor();
+  private readonly bothCandidatesStarted: Promise<void>;
+  private releaseCandidates!: () => void;
+  private readonly candidatesReleased: Promise<void>;
+  candidateStarts: string[] = [];
+  candidateCompletes: string[] = [];
+
+  constructor() {
+    this.bothCandidatesStarted = new Promise<void>((resolve) => {
+      this.resolveBothCandidatesStarted = resolve;
+    });
+    this.candidatesReleased = new Promise<void>((resolve) => {
+      this.releaseCandidates = resolve;
+    });
+  }
+
+  private resolveBothCandidatesStarted!: () => void;
+
+  async waitForBothCandidates(): Promise<void> {
+    await this.bothCandidatesStarted;
+  }
+
+  release(): void {
+    this.releaseCandidates();
+  }
+
+  async run(request: ShepherdExecutionRequest): Promise<ShepherdExecutionResult> {
+    if (request.operation.kind !== "resolution_candidate") {
+      return await this.inner.run(request);
+    }
+    this.candidateStarts.push(new Date().toISOString());
+    if (this.candidateStarts.length === 2) this.resolveBothCandidatesStarted();
+    await this.candidatesReleased;
+    const result = await this.inner.run(request);
+    this.candidateCompletes.push(new Date().toISOString());
+    return result;
+  }
+
+  async cancel(executionId: string): Promise<boolean> {
+    return await this.inner.cancel(executionId);
+  }
+}
+
 class SessionTrackingExecutor implements ShepherdExecutor {
   readonly kind = "codex_ephemeral" as const;
   private readonly inner = new DeterministicFixtureExecutor();
@@ -2618,6 +2663,37 @@ describe("Shepherd deterministic walking skeleton", () => {
     await expect(access(path.join(managedRoot, "projects"))).rejects.toMatchObject({
       code: "ENOENT",
     });
+  });
+
+  it("PERF-01 proves real scheduled candidate executor intervals overlap before release", async () => {
+    const caseRoot = await makeCaseRoot();
+    const store = new JsonStore(path.join(caseRoot, "state.json"));
+    await store.initialize();
+    const executor = new CandidateExecutionIntervalExecutor();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      executor,
+    });
+
+    const { missionId } = await startTrackedTestMission(service);
+    try {
+      await executor.waitForBothCandidates();
+      expect(executor.candidateStarts).toHaveLength(2);
+      expect(executor.candidateCompletes).toEqual([]);
+      expect(executor.candidateStarts.every((timestamp) => Number.isFinite(Date.parse(timestamp)))).toBe(true);
+    } finally {
+      executor.release();
+    }
+    await waitForTerminalMission(service, missionId, 25_000);
+    expect(service.missionDetail(missionId)?.mission.state).toBe("completed");
+    expect(executor.candidateCompletes).toHaveLength(2);
+    expect(executor.candidateCompletes.every((timestamp) => Number.isFinite(Date.parse(timestamp)))).toBe(true);
+    expect(Math.max(...executor.candidateStarts.map(Date.parse))).toBeLessThanOrEqual(
+      Math.min(...executor.candidateCompletes.map(Date.parse)),
+    );
   });
 
   it("rejects a second live Mission when the protected head moved externally", async () => {
