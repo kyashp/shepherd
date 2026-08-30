@@ -27,6 +27,17 @@ if ! docker compose version >/dev/null 2>&1; then
   exit 1
 fi
 
+# This profile publishes on every interface: docker-compose.yml binds 0.0.0.0 and
+# maps the port with no address prefix, and the API it exposes performs
+# prompt-triggered command and file execution. The server treats the token as
+# optional so a loopback demo needs no credential, which makes this deploy path the
+# only place left to enforce it. The check resolves the value through Compose
+# itself and applies the server's own rule, so a deploy cannot be approved here and
+# then rejected at container start.
+if ! node scripts/check-deploy-auth-token.mjs "$env_file"; then
+  exit 1
+fi
+
 mkdir -p data workspaces codex-home
 if [[ "$(stat -c '%u:%g' data)" != "1000:1000" ]] \
   || [[ "$(stat -c '%u:%g' workspaces)" != "1000:1000" ]] \

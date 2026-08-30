@@ -62,6 +62,16 @@ const envSchema = z.object({
     .trim()
     .max(128)
     .regex(/^[A-Za-z0-9._~-]*$/, "APP_AUTH_TOKEN must use URL-safe characters")
+    // Empty stays valid on every bind: that is the documented loopback default and
+    // the bearer boundary is simply disabled. A token that IS configured turns the
+    // boundary on and is reported as required, so it has to be a real credential
+    // rather than the placeholder this repository shipped in `.env.example`. The
+    // same rule is already enforced in `deploy/volcengine/variables.tf`.
+    .refine(
+      (value) =>
+        value.length === 0 || (value.length >= 24 && !/^replace-/iu.test(value)),
+      "A configured APP_AUTH_TOKEN must be 24+ non-placeholder characters",
+    )
     .optional(),
   ARK_API_KEY: z.string().optional(),
   ARK_MODEL: z.string().optional(),

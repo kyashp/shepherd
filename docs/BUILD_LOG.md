@@ -251,6 +251,47 @@ protected-main integration is not claimed.
   joined causally. Protected-main integration remains pending. The same-OS-user
   recursive-path swap and Project-journal sudden-power-loss ordering are retained as
   Low residuals under the existing single-owner local PoC threat/availability model.
+## 2026-08-30 — the deploy guard is resolved through Compose, not re-parsed
+
+Branches `fix/47-ops-06-auth-boundary` (PR #69) and `test/47-ops-06-adjacent-coverage`
+(PR #68), against `main` at `07f4202`. No live or model call ran.
+
+- **The shell guard was the wrong mechanism, not merely buggy.** Adversarial review
+  found six environment-file shapes where `sed -n 's/^APP_AUTH_TOKEN=//p'` reads a
+  valid token while Docker Compose resolves the variable to empty or absent, so the
+  deploy was approved and the container then started with the bearer boundary
+  disabled on the `0.0.0.0` bind this profile publishes. Reproduced directly: a file
+  whose valid line is followed by `export APP_AUTH_TOKEN=` gives `sed` the token and
+  `docker compose config` `APP_AUTH_TOKEN: ""`. `sed` does not implement compose-go's
+  handling of `export`, leading whitespace, quoting, escape sequences, multi-line
+  values or `${VAR}` interpolation, and every divergence is a chance to approve a
+  token the container never receives. Three further shapes passed the guard and then
+  aborted the container at startup, contradicting the guard's own stated guarantee.
+- **Correction.** `scripts/check-deploy-auth-token.mjs` resolves the value through
+  `docker compose config --format json` — Compose's own parser, with
+  `LAUNCHPAD_ENV_FILE` set as the deploy script sets it — and applies the same rule
+  as `apps/server/src/config.ts`: trim, URL-safe shape, 24-character floor, no
+  `replace-` placeholder. `scripts/deploy-existing-ecs.sh` delegates to it. Because
+  the check and the container now read one parser and one rule, neither the bypass
+  class nor the approved-then-rejected class remains.
+- **Observed against the real Compose parser** on this host: the `export` override,
+  the indented override, a quoted run of spaces, an undefined interpolation, a
+  trailing comment padding the line length, and a CRLF empty value all resolve to
+  refusal; a quoted 23-character token and a quoted `replace-` placeholder resolve
+  to `weak` where a shell parse counted the quotes and passed; a genuine 36-character
+  token resolves to `ok`. Tests 4/4. Causality checked by mutation: removing the
+  24-character floor fails 2 cases, removing the trim fails 1.
+- **Ledger.** `PR #63` merged ahead of both evidence branches and left the OPS-06 row
+  claiming `T,A,C,S,I` while neither was integrated. Both branches now carry the same
+  row text, which claims neither `A` nor `S` until its PR is an ancestor of
+  `origin/main`; identical text on both sides also removes the merge conflict the two
+  earlier, differing corrections created. The two should land back-to-back and both
+  gates be flipped in one follow-up.
+- **Still not closed.** The High finding remains partly open: this guards the deploy
+  script, while `README` still documents `docker compose up --build` and
+  `docker compose --env-file .env.production up -d` against the same unguarded
+  `docker-compose.yml`. Carried into `SEC-REVIEW`.
+
 ## 2026-08-30 — OPS-06 `A` and `S` gates, and a corrected reconciliation
 
 Protected `main` advanced to `f900656` (PR #71) while this reconciliation branch was
