@@ -75,8 +75,9 @@ workspaces/Codex sessions, and real model execution remain available.
 
 ## Architecture
 
-Open the latest editable source in diagrams.net:
-[Shepherd — Track 1 Architecture (`.drawio`)](docs/assets/Shepherd_TechJam_Track1_Architecture.drawio).
+![Shepherd multi-agent kernel architecture from API boundary through protected promotion](docs/assets/Shepherd_TechJam_Track1_Architecture.png)
+
+[Open the latest editable Draw.io source](docs/assets/Shepherd_TechJam_Track1_Architecture.drawio).
 
 The React application talks only to the Fastify control plane. Trusted server code
 owns schema validation, authority intersection, lifecycle state, Git inspection,
@@ -437,6 +438,7 @@ and Agent workspaces.
 ## Hackathon artifacts
 
 - [Interface reference](docs/UI.jpeg)
+- [Rendered architecture diagram](docs/assets/Shepherd_TechJam_Track1_Architecture.png)
 - [Latest editable architecture diagram](docs/assets/Shepherd_TechJam_Track1_Architecture.drawio)
 - [Agent Playground screenshot](docs/assets/playground.jpg)
 - [Create Agent screenshot](docs/assets/create-agent.jpg)
