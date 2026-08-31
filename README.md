@@ -441,23 +441,6 @@ state because it still contains infrastructure identifiers and network metadata.
 `terraform -chdir=deploy/volcengine destroy` removes the ECS instance, system disk,
 and Agent workspaces.
 
-## Honest limitations and future work
-
-- The application is a single-user PoC with a shared optional bearer token and a
-  single-process JSON store; it is not production IAM or tenant isolation.
-- The deterministic authentication Mission is the strongest complete judge flow.
-  General private-chat Contract intake is bounded to explicit, authority-contained
-  project work; it is not unrestricted natural-language orchestration.
-- Project Group lifecycle and routing exist, but remaining action/reply and
-  end-to-end journey work is tracked under the `GC-*`/`E2E-03` rows.
-- Notification preferences are visibly reserved/unavailable; no notification
-  delivery integration is claimed.
-- Arbitrary dependency-wave scheduling, trusted duration estimates, and broader
-  failure/restart journeys remain tracked PRD work.
-- Deterministic local evidence does not substitute for the separately authorized
-  external Ark gate, independent UI/security review, or timed demo rehearsals.
-  Consult [TASKS.md](docs/TASKS.md) before making a readiness claim.
-
 ## Documentation
 
 - [Current task ledger and completion cut](docs/TASKS.md)
