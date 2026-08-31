@@ -8,17 +8,16 @@ clean Git merge cannot see, executes competing resolutions in isolated Git world
 and promotes only an independently verified result.
 
 > [!IMPORTANT]
-> The [product requirements](docs/PRD.md) define the required behavior. Use the
-> [task ledger](docs/TASKS.md) for current implementation status and remaining
-> work, the [release test report](docs/SHEPHERD_TEST_REPORT.md) for exact observed
-> evidence, and the [Local POC guide](docs/LOCAL_POC.md) for the full runbook.
+> This README is the self-contained product overview, operating guide, and
+> validation entry point. The retained Hackathon v2 source sections are linked
+> under [Hackathon artifacts](#hackathon-artifacts).
 
 > [!WARNING]
 > This is a single-user proof of concept, not a production identity or multi-tenant
 > isolation system. Shepherd enforces scoped authority around its managed projects,
 > but the shared bearer token is not user identity, the JSON store is single-process,
 > and ordinary containers are not a hardened tenant boundary. Do not use production
-> data or credentials. See [SECURITY.md](SECURITY.md).
+> data or credentials.
 
 ## The problem
 
@@ -55,19 +54,14 @@ when automatic resolution cannot choose uniquely.
 
 ## Product tour
 
-### Verified promotion
+### Shepherd Mission Control
 
 The Contract stream, execution timeline, semantic collision, competing Resolution
 Planes, retained loser, and promoted winner all come from persisted server state.
-
-![Shepherd Mission Control showing a completed Mission, resolved auth.transport collision, and selected verified future](docs/ui-review/perf-01/1440x900/02-promotion-completed.png)
-
-### Fail-closed authority
-
 Changes outside an Execution Contract's writable scope are rejected with durable
 evidence, and protected promotion never starts.
 
-![Shepherd Mission Control showing an authority-denied Mission with retained Contract evidence](docs/ui-review/e2e-04/1440x900/02-denial-evidence.png)
+![Shepherd interface reference covering Mission Control, Agents, Project Groups, and Settings](docs/UI.jpeg)
 
 ### Preserved Agent Launchpad
 
@@ -113,9 +107,6 @@ Each live turn receives only its selected workspace or authority-filtered Plane
 export and its own Codex session directory. It does not receive the protected Git
 repository or verifier credentials. The deterministic mode exercises the same
 kernel without an external model request.
-
-See the validated [one-page architecture and detailed trust-boundary diagrams](docs/ARCHITECTURE.md)
-and the [as-built Shepherd design](docs/SHEPHERD.md).
 
 ## Quickstart: deterministic judge flow
 
@@ -206,7 +197,7 @@ create two resolution futures after integration.
    promotion gate. Restore **Automatic resolution** afterward.
 
 This is the recommended recovery/decision story for a manual demo. The automated
-authority-denial journey shown above is covered separately by the browser suite.
+authority-denial journey is covered separately by the browser suite.
 
 ### 5. Stop and resume
 
@@ -221,8 +212,7 @@ Codex sessions, and Shepherd evidence.
 
 Run `./scripts/start-local-poc.sh` again to continue. The default `auto` state mode
 falls back to the `launchpad-state` volume when a VM-backed host share cannot enforce
-the Codex sandbox's per-file access rights. See the
-[Local POC guide](docs/LOCAL_POC.md#when-the-host-filesystem-reaches-the-engine-through-a-virtual-machine).
+the Codex sandbox's per-file access rights.
 
 ## Preserved live Agent flow
 
@@ -250,8 +240,8 @@ human-decision or authority-denial evidence.
 ## Container engine options
 
 Set `CONTAINER_ENGINE=podman` in `.env` to force Podman. Colima uses
-`CONTAINER_ENGINE=docker` because it exposes the Docker CLI. For a clean Linux host,
-follow the [rootless Podman setup](docs/LOCAL_POC.md#rootless-podman-on-linux).
+`CONTAINER_ENGINE=docker` because it exposes the Docker CLI. On a clean Linux host,
+use a rootless Podman service and ensure its user socket is available to the launcher.
 
 Resource limits are controlled with `CONTAINER_CPU_LIMIT`,
 `CONTAINER_MEMORY_LIMIT`, and `CONTAINER_PIDS_LIMIT`. The defaults are 2 CPUs,
@@ -371,9 +361,9 @@ endpoint and consumes real capacity. Run it only with explicit authorization. Ne
 attach raw prompts, model output, credentials, session identifiers, or private paths
 to issues or reports.
 
-For exact tested commits, environment, counts, coverage, failures, and explicit
-evidence gaps, read the [release test report](docs/SHEPHERD_TEST_REPORT.md) and
-[historical build log](docs/BUILD_LOG.md).
+When publishing results, record the exact tested commit, environment, pass counts,
+coverage, failures, and any evidence gaps. Do not present an earlier run as evidence
+for a newer tree.
 
 ## Optional cloud deployment
 
@@ -441,21 +431,21 @@ state because it still contains infrastructure identifiers and network metadata.
 `terraform -chdir=deploy/volcengine destroy` removes the ECS instance, system disk,
 and Agent workspaces.
 
-## Documentation
+## Hackathon artifacts
 
-- [Current task ledger and completion cut](docs/TASKS.md)
-- [Shepherd product requirements](docs/PRD.md)
-- [One-page architecture and detailed diagrams](docs/ARCHITECTURE.md)
-- [As-built design and trust boundaries](docs/SHEPHERD.md)
-- [Release test report](docs/SHEPHERD_TEST_REPORT.md)
-- [Local POC and complete manual runbook](docs/LOCAL_POC.md)
-- [Track 1 TechJam brief](docs/TECHJAM.md)
-- [Accepted deviations and environment constraints](docs/DEVIATIONS.md)
-- [Reproduced defects and corrections](docs/FIXES.md)
-- [Historical build evidence](docs/BUILD_LOG.md)
-- [Hackathon extension guide](docs/HACKATHON_EXTENSION_GUIDE.md)
-- [Security policy](SECURITY.md)
-- [Contributing](CONTRIBUTING.md)
+- [Interface reference](docs/UI.jpeg)
+- [Agent Playground screenshot](docs/assets/playground.jpg)
+- [Create Agent screenshot](docs/assets/create-agent.jpg)
+- [Hackathon v2 skeleton](docs/hackathon-v2-skeleton.xml)
+- [Section 1](docs/hackathon-v2-section-1.xml)
+- [Section 2](docs/hackathon-v2-section-2.xml)
+- [Section 3](docs/hackathon-v2-section-3.xml)
+- [Section 4](docs/hackathon-v2-section-4.xml)
+- [Section 5](docs/hackathon-v2-section-5.xml)
+- [Section 6](docs/hackathon-v2-section-6.xml)
+- [Section 7](docs/hackathon-v2-section-7.xml)
+- [Section 8](docs/hackathon-v2-section-8.xml)
+- [Section 9](docs/hackathon-v2-section-9.xml)
 
 ## License
 
