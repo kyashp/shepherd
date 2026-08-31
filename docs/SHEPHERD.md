@@ -10,7 +10,30 @@ task ledger, the task ledger wins. The product requirements remain authoritative
 [`docs/BUILD_LOG.md`](BUILD_LOG.md) is immutable historical evidence for the commit
 and phase named in each entry.
 
-## Hackathon status snapshot
+## Current release-readiness snapshot
+
+Protected `main` is currently `f935fdb`. Issue #96 / draft PR #97 is an
+exact-main release-remediation candidate; its tested product commit is `223a5fe`.
+The candidate passes the literal repository check, an enforced 80% coverage gate,
+48/48 functional browser flows across exact `1280x800` and `1440x900` viewports,
+pinned Docker Terraform validation, dependency audit, and the exact-tree zero-spend
+live Runtime preflight. Exact commands, counts, coverage, failures, and limitations
+are in [`SHEPHERD_TEST_REPORT.md`](SHEPHERD_TEST_REPORT.md).
+
+The candidate removes the previously documented macOS host-share blocker from the
+live test harness by using a named state volume and a non-root controller that
+builds the current tree. The external Ark inference itself has not been executed in
+this audit because it sends repository-derived prompts and code to the configured
+provider and requires separate informed approval in the execution environment.
+Independent UI review (#45), independent security review (#89), hosted PR checks,
+protected-main integration, and three complete demo rehearsals also remain explicit
+evidence gaps; none is inferred from the local green matrix.
+
+### Historical 2026-08-30 snapshot (retained)
+
+The estimates and candidate identities below record the earlier campaign state for
+historical context. They are not the current release verdict; `TASKS.md` and the
+test report above are authoritative.
 
 The canonical delivery branch is protected `main`. PR #53 promoted the verified
 campaign through protected review at merge `5ccd0f1`; that exact merge passed the
@@ -301,7 +324,8 @@ Real secrets belong only in ignored `.env`.
 | `ARK_MODEL` | Coding Agent model. |
 | `SHEPHERD_MODEL` | Bounded planning/advisory-review model; defaults to `ARK_MODEL` when empty. When its configuration passes the adapter-aligned readiness gate, Mission orchestration injects one advisory review after verified Contract integration. |
 | `ARK_BASE_URL` | Responses-compatible API root. |
-| `APP_AUTH_TOKEN` | Optional shared bearer boundary. Empty, the default, disables the check and the server starts on any bind; any configured token is enforced on every `/api/` route with a length-checked constant-time comparison, and must be 24+ non-placeholder URL-safe characters so a configured boundary is a real one. Set one whenever the server is reachable beyond the local machine; `scripts/deploy-existing-ecs.sh` requires it because that profile publishes on every interface. |
+| `APP_AUTH_TOKEN` | Optional shared bearer boundary for loopback-only development. Empty permits only loopback Host values, no cross-origin browser Origin, and CLI-style no-Origin loopback requests. A public bind fails startup without a 24+ non-placeholder URL-safe token. Any configured token is enforced on every protected `/api/` route with a length-checked constant-time comparison. |
+| `PUBLIC_BIND_ADDR` | Optional explicit public listener address used by Compose/deployment profiles. It participates in the same fail-closed public-bind/token check as `HOST`; it cannot be used to publish a tokenless service. |
 | `RUNTIME_PROVIDER` | Starter Agent runtime (`local-process` or `container`); Shepherd verification always uses its independent container boundary. |
 | `CONTAINER_STATE_ROOT` | Optional. With `CONTAINER_STATE_VOLUME`, addresses every mounted state root as a subpath of one named volume instead of a host bind mount, so the Agent sandbox can govern its workspace on a host whose filesystem reaches the engine through a virtual machine. Required together; a half-configured pair fails at startup, and a source outside the root throws rather than falling back to a bind mount. |
 | `CONTAINER_STATE_VOLUME` | Optional. Name of that volume. Mounts are emitted with `volume-nocopy=true`, without which the engine serves an empty subpath using the image's own `/workspace` ownership and the Runtime loses write access before the sandbox is applied. |
@@ -328,5 +352,5 @@ No configured secret value is documented, persisted into Shepherd state, sent to
 - `docs/LOCAL_POC.md` — startup, troubleshooting, and exact manual demo runbook.
 - `docs/TECHJAM.md` — Track 1 competition context, judging, and deliverables.
 - `docs/ui-review/` — inspected UI evidence by viewport and journey.
-- `docs/SHEPHERD_ARCHITECTURE.md` — generated after the implementation freezes.
-- `docs/SHEPHERD_TEST_REPORT.md` — generated from final executed suites.
+- `docs/ARCHITECTURE.md` — integrated as-built component/trust-boundary diagram.
+- `docs/SHEPHERD_TEST_REPORT.md` — exact candidate commands, failures, results, and limitations.

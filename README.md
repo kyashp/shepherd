@@ -359,6 +359,7 @@ disposable copy so generated provider files never dirty the checkout.
 - [Shepherd product requirements](docs/PRD.md)
 - [Shepherd design and trust boundaries](docs/SHEPHERD.md)
 - [Architecture](docs/ARCHITECTURE.md)
+- [Release test report](docs/SHEPHERD_TEST_REPORT.md)
 - [Local POC](docs/LOCAL_POC.md)
 - [Track 1 TechJam brief](docs/TECHJAM.md)
 - [Hackathon extension guide](docs/HACKATHON_EXTENSION_GUIDE.md)

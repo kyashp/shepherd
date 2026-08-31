@@ -2,16 +2,14 @@
 
 **Canonical implementation branch:** protected `main`.
 
-**Latest verified integration:** PR #76 merge `baa6b2f` on protected `main`; hosted
-exact-head gate run `33309739989` passed. That head carries, among others, PR #56
-merge `b80af11` (OPS-06 compatibility), PR #57 merge `cd82ec4` (private-chat
-Contracts), PR #62 merge `a1f1fcc` (general Contract intake), PR #64 (issue #41
-Project Group), PR #71 merge `f900656` (`TST-25`) and PR #72/#75 (`FM-01`,
-`UI-01`/`E2E-04`). This ledger moves faster than any single reconciliation, so
-each `I` claim below is scoped to the SHA it names rather than to this line.
-Exact post-integration evidence is in `BUILD_LOG.md`.
+**Latest protected-main integration:** `f935fdb` (PR #95), including the issue #48
+stability campaign and issue #89 High remediations. Issue #96 / draft PR #97 is an
+exact-main release-readiness candidate based on that SHA; its tested product head is
+`223a5fe`. Candidate evidence is not an `I` claim until protected-main integration
+and the hosted rerun complete. Exact observations are in `BUILD_LOG.md` and
+`SHEPHERD_TEST_REPORT.md`.
 
-**Audited:** 2026-08-30, Asia/Singapore
+**Reconciled:** 2026-08-31, Asia/Singapore
 
 **Requirement authority:** [`PRD.md`](PRD.md)
 
@@ -146,21 +144,25 @@ scrolling.
 
 | Check | Observed result | Verdict |
 |---|---|---|
-| Environment | Node `24.17.0`; npm `11.17.0`; Git `2.43.0`; Docker client/server `29.7.2` | Recorded |
+| Environment | Node `26.5.0`; npm `11.17.0`; Playwright `1.62.1`; Docker client/server `29.6.1` | Recorded for issue #96 candidate |
 | Workspace typecheck | Both server and web passed during `npm run check` | Pass |
-| Launcher tests | 3/3 passed | Pass |
-| Server suite | Hosted exact-head gate on integrated `f900656`: literal `npm run check` passed (run `33305530655`). Local serial rerun on this affected host at `b80af11`: 745 passed, 6 failed, 6 skipped | Pass hosted; the local failures are the recorded affected-host timing condition, not regressions. No count is claimed for an unmerged candidate branch |
+| Root script/deploy tests | 26/26 passed | Pass |
+| Server suite | Candidate `223a5fe`: 856 passed, 3 explicit opt-in skips | Pass candidate |
+| Web unit suite | 20/20 passed | Pass candidate |
 | Persistence/recovery closeout | `TST-23` 20/20; `TST-24` 30/30; Store 70/70; combined boundary 133/133 | Pass |
 | Production build | Web and server production builds passed | Pass |
-| Dependency audit | 0 vulnerabilities across 251 dependencies | Pass |
+| Coverage | Server 86.15/80.05/91.46/88.03%; browser 88.50/80.18/87.64/92.37% (statements/branches/functions/lines) | Pass; all four metrics >=80% and every production file required |
+| Dependency audit | `npm audit --json`: 0 vulnerabilities | Pass |
 | Script syntax | `bash -n` launcher and Node launcher syntax passed | Pass |
-| Deterministic browser hero | `E2E-02` audited across 52 stage/viewport observations with 26 unique final screenshot hashes | Pass for that scoped journey |
-| Hosted exact-head gate | GitHub Actions run `33300759535` on exact head `b80af11` succeeded; every step green on `ubuntu-latest` / Node 22 | Pass |
-| Remaining browser/live/model gates | Listed below; no broader completion is implied | Pending |
+| Full browser matrix | 48/48: 24 functional flows at both `1280x800` and `1440x900` | Pass candidate; independent `U` remains |
+| Terraform | Pinned Terraform `1.9.8` plus Volcengine provider `0.0.58` initialized and validated a disposable copy | Pass candidate |
+| Live Runtime preflight | Exact-tree Runtime/controller build, non-root controller, named volume/socket, one test discovered, cleanup | Pass candidate; zero model requests |
+| Hosted exact-head gate | PR #97 checks | Pending |
+| External live/model gate | Requires explicit informed approval to send repository-derived prompts/code to configured Ark | Not run |
 
-No model request was made during the final persistence/recovery closeout. Earlier
-bounded live evidence remains attached to its exact task rows; it is not generalized
-to the open `LIVE-01` gate.
+No model request was made during the issue #96 release audit. Earlier bounded live
+evidence remains attached to its exact task rows; it is not generalized to the open
+external portion of `LIVE-01`.
 
 ## Integration and external ownership holds — do not assign
 
@@ -249,6 +251,18 @@ without an open issue/PR are not active ownership claims.
 
 ## P1 — browser, cross-surface and assurance gates
 
+**Issue #96 candidate overlay (not yet integrated):** PR #97 extends the existing
+rows without rewriting their protected-main audit history. `UI-GATE` passes an
+expanded 48/48 matrix at both required viewports, including Agent edit hydration,
+Settings recovery, full CRUD/lifecycle, runtime-contract and error-state coverage;
+independent `U` remains. `SEC-REVIEW` candidate fixes bound durable retention,
+make Agent creation atomic, protect tokenless loopback/same-origin access, refuse a
+public bind without a token, and remove runtime credentials from Terraform
+input/cloud-init/state; the required independent part-5 review remains. `LIVE-01`
+now has a passing exact-tree named-volume Docker preflight on the affected host; the
+external provider turn remains unexecuted pending informed approval for sending
+repository-derived payloads to Ark. `I` remains pending for every candidate claim.
+
 | ID | PRD ref | Status / dependencies | Required acceptance | Confidence; gates passed; audit |
 |---|---|---|---|---|
 | `UI-03` | 0.4, 11.1–11.2, 11.7 | **AUDITED** at integrated implementation `83954f7`; hosted closeout restored by `TST-03` at `0b1c401` | Create Agent's transparent preset radios inherited global viewport-wide input sizing, expanding document width to 2299/1280 and 2579/1440. The integrated correction bounds only the hidden radio box and adds a theme-matched visible card focus outline. Auditor independently passed focused Chromium 2/2, full browser 4/4 and harness unit 2/2 at both required viewports; document/body X/Y, exact neutralized 1x1 boxes, accessible group/names, Generalist default, one Tab stop, arrow focus/selection, visible 2px outline, all label clicks and exactly one checked radio passed. Regenerated screenshot hashes matched the committed images; visual review preserved layout/theme. Integrated local check passed. Hosted run `33262227553` passed after the unrelated schedule-sensitive TST-03 fixture was corrected without touching UI code. | **100% scoped**; `T,C,B,U,I` passed (5/5); audited |
@@ -278,11 +292,11 @@ without an open issue/PR are not active ownership claims.
 
 | ID | PRD ref | Status / dependencies | Required acceptance | Confidence; gates passed; audit |
 |---|---|---|---|---|
-| `DEL-01` | 16 Phase 9A | `BLOCKED` by feature freeze; [issue #51](https://github.com/kyashp/shepherd/issues/51) | Create `SHEPHERD_ARCHITECTURE.md` from as-built code with locally validated Mermaid and one judge-facing diagram. | **0%**; 0/2; not audited |
-| `DEL-02` | 16 Phase 9C | `BLOCKED` by all tests; [issue #51](https://github.com/kyashp/shepherd/issues/51) | Create `SHEPHERD_TEST_REPORT.md` from exact final commands, failures, repeated runs, browser/container/live scope and limitations. | **0%**; 0/2; not audited |
-| `DEL-03` | 16 Phase 9D | `BLOCKED` by freeze; [issue #51](https://github.com/kyashp/shepherd/issues/51) | Finish README problem/pitch/setup/demo/tests/security/limitations without removing starter setup; every claim links to evidence. | **30%**; 0/2; not audited |
-| `DEL-04` | 0.1, 16 Phase 9E | **PARTIALLY AUDITED** at `5a38d37`; final pass [issue #51](https://github.com/kyashp/shepherd/issues/51) | The canonical navigation is `TASKS.md` → PRD/as-built/runbook/evidence documents. The stale handover is removed, PRD-required ledgers are retained, and all current links resolve. Reconcile `SHEPHERD.md`, `DEVIATIONS.md`, `BUILD_LOG.md`, `LOCAL_POC.md`, `TECHJAM.md`, this ledger, and `FIXES.md` again after final product evidence. | **75% overall**; consolidation `C,I` passed and independent docs review passed; final frozen-state audit pending |
-| `DEL-05` | 16 Phase 9E, 17 | `BLOCKED` by all work; [issue #51](https://github.com/kyashp/shepherd/issues/51) | Final dead/debug/duplicate/artifact/refactor/security review. Refactor only named proven debt with behavior locked; run final `C,B,S,L,I`. | **0%**; 0/5; not audited |
+| `DEL-01` | 16 Phase 9A | **INTEGRATED** as [`ARCHITECTURE.md`](ARCHITECTURE.md) at `39cd800` via PR #60; [issue #51](https://github.com/kyashp/shepherd/issues/51) was prematurely closed after this one deliverable | As-built one-page architecture and judge-facing Mermaid were rendered and validated. The filename differs from the older prospective name, but all current links use the integrated path. | **100% implementation/integration**; independent final package review not claimed |
+| `DEL-02` | 16 Phase 9C | **CANDIDATE** on [PR #97](https://github.com/kyashp/shepherd/pull/97) | [`SHEPHERD_TEST_REPORT.md`](SHEPHERD_TEST_REPORT.md) records the exact base/product head, commands, failures, counts, coverage, browser/container/Terraform scope, and explicit live/review/integration limitations. | **90%**; `C` passed, hosted/integrated `I` pending; not audited |
+| `DEL-03` | 16 Phase 9D | **CANDIDATE** on [PR #97](https://github.com/kyashp/shepherd/pull/97) | README now documents reproducible coverage/Terraform validation, credential-safe Terraform deployment, and links the exact report without removing starter setup. | **75%**; final frozen-state/independent review pending |
+| `DEL-04` | 0.1, 16 Phase 9E | **RECONCILIATION CANDIDATE** on [PR #97](https://github.com/kyashp/shepherd/pull/97); prior consolidation audited at `5a38d37` | `TASKS.md`, `SHEPHERD.md`, `LOCAL_POC.md`, `FIXES.md`, `BUILD_LOG.md`, README and the test report distinguish protected-main, candidate, live-external, independent-review and rehearsal evidence. | **90% overall**; final protected-main/independent audit pending |
+| `DEL-05` | 16 Phase 9E, 17 | **PARTIAL CANDIDATE** on [PR #97](https://github.com/kyashp/shepherd/pull/97) | Dependency, tracked-secret, generated-artifact, exact-tree Docker, Terraform, coverage and complete browser checks pass. External live inference, independent security/UI review, hosted integration, demo rehearsals and broader optional PRD rows remain. | **60%**; `C,B,S` candidate evidence, `L,U,I` pending; not audited |
 
 ## Count and current verdict
 
@@ -291,12 +305,13 @@ without an open issue/PR are not active ownership claims.
 - **Ready non-overlapping assignments:** `F-07/08`, `F-09`, `FM-01`, `GC-02/05`,
   `ST-01`, `SCH-02`, and `UI-02`, subject to the ownership check above. `PERF-01`
   remains blocked by the completed Project Group and visible-denial journeys.
-- **Presentation-host caveat:** `OPS-06` compatibility is integrated at `b80af11`
-  and the affected-host startup smoke is recorded. The Landlock/host-share cause
-  still holds for any bind-mounted workspace on that host, so `LIVE-01` cannot run
-  there: `test:shepherd:live` pins `CONTAINER_STATE_ROOT`/`CONTAINER_STATE_VOLUME`
-  to `undefined` and therefore bind-mounts its own roots.
-- **Current completion verdict:** **82% of the minimum hackathon-ready cut** and
-  incomplete. The deterministic core is green; issues #41–#51 still require their
-  stated implementation, integration, and audit evidence. Full-PRD completion is a
-  broader target and is not represented by this hackathon percentage.
+- **Presentation-host caveat:** protected `main` still has the historical
+  bind-mounted `LIVE-01` blocker. PR #97 makes the gate volume-aware and its
+  exact-tree zero-spend preflight passes on the affected host. The external Ark
+  request remains a separate consent and evidence boundary.
+- **Current completion verdict:** incomplete. The exact-main candidate closes the
+  deterministic browser, coverage, Terraform, release-harness, identified security
+  and documentation gaps, but independent `U`, hosted/protected-main `I`, external
+  `L`, and three rehearsals remain explicit. The older 82% estimate is retained only
+  in `SHEPHERD.md`'s labelled historical snapshot and is not reused as a current
+  metric.

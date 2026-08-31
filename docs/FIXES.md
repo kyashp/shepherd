@@ -3,7 +3,8 @@
 **Current integration branch:** protected `main`. Historical entries retain the
 branch/SHA on which their evidence was observed.
 
-**Audited:** 2026-08-29, Asia/Singapore
+**Reconciled:** 2026-08-31, Asia/Singapore. Individual rows retain their own audit
+status; this date does not self-certify candidate fixes.
 
 **Task ordering and dependencies:** [`TASKS.md`](TASKS.md)
 
@@ -30,6 +31,46 @@ that limitation is explicit.
    and audit status. Anything below scoped 100% remains review-required.
 
 ## Immediate queue
+
+### `REL-96` — exact-main release audit findings
+
+- **Evidence class:** issue #96 / draft PR #97, based on protected `main`
+  `f935fdb`; tested product commit `223a5fe`.
+- **Browser failures:** the first full matrix passed 34/38. Project Group's
+  controlled composer could lose the character committed in the same turn as a
+  mention action or move its caret; Agent edit could publish a blank/custom draft
+  before presets and Agent state hydrated, then erase edits on a rapid authority
+  toggle. A one-pixel shell footer margin created document scroll, Settings icon
+  buttons lacked explicit accessible names, and the direct Playground choice was
+  not pinned by the regression suite.
+- **Security/durability findings:** durable collections grew without a fixed cap;
+  Agent creation could publish partial state; a tokenless server trusted arbitrary
+  Host/Origin values; a public bind could start without a strong application token;
+  and runtime credentials could enter Terraform variables, cloud-init, plans and
+  state.
+- **Release-harness findings:** the live test forced host bind mounts and could not
+  cross the documented Docker Desktop sandbox boundary; it did not independently
+  build the exact candidate tree. Terraform validation was unavailable on hosts
+  without a local binary, and the repository had no executable coverage provider or
+  enforceable 80% threshold.
+- **Correction/status:** **REMEDIATED CANDIDATE** at `223a5fe` plus the preceding
+  issue #96 commits. Controlled UI actions synchronously commit the latest draft and
+  preserve caret/hydration state without changing the accepted design. Durable
+  publication is capacity-bounded and atomic. Tokenless access is loopback Host plus
+  same-origin Origin only, public binding requires a strong token, and Terraform
+  receives runtime credentials only after apply through a mode-`0600` SSH transfer.
+  The live wrapper builds the exact tree and runs its non-root controller on a named
+  state volume. Coverage and pinned-container Terraform gates are first-class npm
+  scripts.
+- **Observed closure evidence:** literal `npm run check` passed root 26/26, Server
+  856 passed plus 3 opt-in skips, Web 20/20, strict types and both builds. Clean
+  Server coverage is 86.15/80.05/91.46/88.03%; clean browser coverage is
+  88.50/80.18/87.64/92.37% (statements/branches/functions/lines). Full Chromium is
+  48/48 at exact `1280x800` and `1440x900`. Pinned Terraform validation and the
+  exact-tree zero-spend live Docker preflight pass; dependency audit reports zero
+  vulnerabilities. External Ark inference, independent UI/security review,
+  hosted CI and protected-main integration remain explicit gates, so this row is
+  not marked audited or integrated.
 
 ### `TST-30` — Candidate-cleanup fixture races first-use Runtime root adoption
 

@@ -5710,3 +5710,65 @@ Auditor, security and hosted integration evidence.
   focused repetitions; the post-correction literal gate passed launcher 5/5,
   Server 842 passed with two explicit live skips, Web 20/20, all strict typechecks
   and both builds.
+
+## 2026-08-31 — issue #96 exact-main release-readiness remediation
+
+- **Identity and ownership:** branch `fix/96-release-readiness-audit`, draft PR #97,
+  protected-main base `f935fdb5581849f8377f20922e254c55d34e5de0`, tested product
+  commit `223a5fe00f977013d4bf5df6560016a1719c8d11`. Issues #45, #65 and
+  #89 were explicitly taken over because no other PR or branch was active. This is
+  candidate evidence; it is not protected-main integration or independent audit.
+- **Initial failure evidence:** the exact-main Playwright matrix passed 34/38.
+  Reproduced causes included a Project Group controlled-input/caret race, Agent edit
+  hydration/custom-authority data loss, a one-pixel document scroll, and missing
+  explicit Settings icon names. Release review also confirmed unbounded durable
+  collections and partial Agent publication, missing tokenless Host/Origin and
+  public-bind boundaries, a bind-only/non-exact live harness, absent executable
+  coverage/Terraform gates, and Terraform runtime credentials entering the
+  plan/state path.
+- **Corrections:** `2e7c915` bounds durable collections at 10,000, returns bounded
+  `507` capacity failures, makes Agent creation atomic, enforces tokenless loopback
+  Host plus same-origin Origin, and refuses a public bind without a strong token.
+  `69c12de` fixes the controlled composer and caret, labels Settings controls,
+  removes the footer overflow pixel, pins direct-Playground behavior, and improves
+  fake Runtime diagnostics. `223a5fe` fixes Agent edit hydration/rapid-toggle state,
+  expands functional browser coverage, builds exact-tree live Runtime/controller
+  images on a named volume with cleanup, adds executable Server/browser coverage,
+  adds pinned Docker Terraform validation, and transfers runtime credentials only
+  after apply over SSH into a mode-`0600` environment file.
+- **Literal repository gate:** `npm run check` passed root Node tests 26/26, Server
+  856 passed with 3 explicit opt-in skips, Web 20/20, every strict production/test
+  typecheck, and both production builds. No timeout/retry increase, skip, assertion
+  weakening, design change, or dependency vulnerability was used.
+- **Clean coverage gate:** `npm run test:coverage` passed. Server V8 coverage:
+  statements 86.15% (7543/8755), branches 80.05% (5230/6533), functions 91.46%
+  (1446/1581), lines 88.03% (7161/8134). Browser Istanbul coverage: statements
+  88.50% (924/1044), branches 80.18% (862/1075), functions 87.64% (305/348),
+  lines 92.37% (788/853). The checker requires every production file and all four
+  metrics at or above 80%, and restores the ordinary build after instrumentation.
+- **Full browser gate:** ordinary one-worker Chromium passed 48/48: 24 functional
+  flows at both exact `1280x800` and `1440x900`. It covers auth/shell overflow,
+  Agent create/edit/start/stop/delete/sort, preset compatibility, Settings
+  persistence/reset/error recovery, direct Playground, Project Group, successful
+  and denied Shepherd Missions, loading/empty/reconnect/malformed/not-found states,
+  durable restart, verifier/runtime contracts, accessibility contrast and truthful
+  promotion evidence. Natural PERF-01 samples were 4,587 ms and 3,457 ms total,
+  with persisted-event visibility 960 ms and 612 ms respectively.
+- **Terraform and live construction:** `npm run test:terraform` initialized and
+  validated a disposable copy with `hashicorp/terraform:1.9.8` and
+  `volcengine/volcenginecc` 0.0.58: `Success! The configuration is valid.`
+  `npm run test:shepherd:live:preflight` built the exact candidate application and
+  controller, passed both in-image dependency audits, created the named state
+  volume, and discovered exactly the one bounded live integration test under a
+  non-root controller. Temporary containers, images and volume were cleaned by the
+  wrapper. No model request or provider spend occurred.
+- **Security and repository hygiene:** `npm audit --json` reported zero
+  vulnerabilities. `git diff --check`, tracked secret/state/generated-artifact
+  scans and bounded canary checks passed. No environment value, raw prompt/model
+  output, session identifier, Terraform state or provider cache was recorded.
+- **Explicit remaining evidence:** the external Ark turn was not executed because
+  it transmits repository-derived prompts and scoped code to the configured
+  endpoint and the managed executor requires separate informed approval for that
+  transfer. Independent UI gate `U`, issue #89 part-5 security review, hosted PR
+  checks, protected-main integration and the three complete demo rehearsals remain
+  open; local deterministic success is not substituted for any of them.
