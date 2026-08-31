@@ -1132,7 +1132,6 @@ export class PlaneManager {
     );
     await mkdir(snapshotPath, { mode: 0o700 });
     try {
-      const cleanPlaneSource = await this.cleanPlaneSourceAtCommit(exactCommit);
       const copySnapshot = async (sourcePath: string) => {
         await copyValidatedProjectTree(sourcePath, snapshotPath, {
           allowResultManifest: false,
@@ -1140,17 +1139,15 @@ export class PlaneManager {
           readOnly: true,
         });
       };
-      if (cleanPlaneSource) {
-        await copySnapshot(cleanPlaneSource);
-        if (
-          (await this.git.currentHead(cleanPlaneSource)) !== exactCommit ||
-          (await this.git.uncommittedFiles(cleanPlaneSource)).length > 0
-        ) {
-          throw new Error("Plane changed while its verification snapshot was materialized");
-        }
-      } else {
-        await this.withDetachedMaterialization(exactCommit, copySnapshot);
-      }
+      // Always materialize the exact commit. A previous fast path byte-copied a live
+      // Plane worktree whose HEAD matched and which `git status` called clean, but
+      // that cleanliness test does not honour ignore rules, so a Git-ignored file was
+      // invisible to it, to `changedFilesSince`, and to every authority check — while
+      // still being copied here. The mandatory checks then ran against a strict,
+      // agent-controlled superset of the tree being promoted. Materializing the commit
+      // makes the verified tree equal the promoted tree by construction, which is the
+      // property the promotion gate depends on.
+      await this.withDetachedMaterialization(exactCommit, copySnapshot);
       return await use({ commit: exactCommit, path: snapshotPath });
     } finally {
       await this.removePrivateTree(this.canonicalVerificationRoot, snapshotPath);
