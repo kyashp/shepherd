@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type Dispatch, type FormEvent, type SetStateAction } from "react";
+import { flushSync } from "react-dom";
 import { api } from "../api";
 import { Link, navigate } from "../router";
 import type {
@@ -57,22 +58,22 @@ function matchingPreset(agent: Agent, presets: AuthorityPresetDefinition[]): Aut
   ) ?? null;
 }
 
-function AuthorityFields({ form, setForm }: { form: AgentFormState; setForm: (form: AgentFormState) => void }) {
+function AuthorityFields({ form, setForm }: { form: AgentFormState; setForm: Dispatch<SetStateAction<AgentFormState>> }) {
   return (
     <div className="authority-grid">
       <label>
         Read access
-        <textarea rows={4} value={form.readable} onChange={(event) => setForm({ ...form, readable: event.target.value })} placeholder="src/**&#10;docs/**" required />
+        <textarea rows={4} value={form.readable} onChange={(event) => { const readable = event.currentTarget.value; flushSync(() => setForm((current) => ({ ...current, readable }))); }} placeholder="src/**&#10;docs/**" required />
         <small>One project-relative pattern per line.</small>
       </label>
       <label>
         Write access
-        <textarea rows={4} value={form.writable} onChange={(event) => setForm({ ...form, writable: event.target.value })} placeholder="src/frontend/**" required />
+        <textarea rows={4} value={form.writable} onChange={(event) => { const writable = event.currentTarget.value; flushSync(() => setForm((current) => ({ ...current, writable }))); }} placeholder="src/frontend/**" required />
         <small>Must remain within this Agent’s readable scope.</small>
       </label>
       <label>
         Forbidden paths
-        <textarea rows={4} value={form.forbidden} onChange={(event) => setForm({ ...form, forbidden: event.target.value })} placeholder="secrets/**&#10;.env*" />
+        <textarea rows={4} value={form.forbidden} onChange={(event) => { const forbidden = event.currentTarget.value; flushSync(() => setForm((current) => ({ ...current, forbidden }))); }} placeholder="secrets/**&#10;.env*" />
         <small>Forbidden paths always override writable patterns.</small>
       </label>
     </div>
@@ -98,6 +99,7 @@ export function AgentFormPage({
   const [form, setForm] = useState<AgentFormState>(defaultForm);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hydratedAgentId, setHydratedAgentId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -114,7 +116,11 @@ export function AgentFormPage({
   }, []);
 
   useEffect(() => {
-    if (!agent || presetsLoading) return;
+    if (!agent) {
+      setHydratedAgentId(null);
+      return;
+    }
+    if (presetsLoading || hydratedAgentId === agent.id) return;
     const match = matchingPreset(agent, presets);
     const role = agent.role ?? "Generalist";
     const fallback = presets.find((preset) => preset.recommendedRole === role) ?? presets.find((preset) => preset.id === "generalist") ?? null;
@@ -130,26 +136,27 @@ export function AgentFormPage({
       writable: patternsToText(authority.writable),
       forbidden: patternsToText(authority.forbidden),
     });
-  }, [agent, presets, presetsLoading]);
+    setHydratedAgentId(agent.id);
+  }, [agent, hydratedAgentId, presets, presetsLoading]);
 
   const selectedPreset = useMemo(() => presets.find((preset) => preset.id === form.preset) ?? null, [form.preset, presets]);
 
   const changeRole = (role: AgentRole) => {
     const nextPreset = presets.find((preset) => preset.recommendedRole === role);
-    setForm({ ...form, role, ...(nextPreset ? { preset: nextPreset.id } : {}) });
+    setForm((current) => ({ ...current, role, ...(nextPreset ? { preset: nextPreset.id } : {}) }));
   };
 
   const changePreset = (presetId: AuthorityPresetId) => {
     const preset = presets.find((item) => item.id === presetId);
     if (!preset) return;
-    setForm({
-      ...form,
+    setForm((current) => ({
+      ...current,
       preset: presetId,
       role: preset.recommendedRole,
       readable: patternsToText(preset.authority.readable),
       writable: patternsToText(preset.authority.writable),
       forbidden: patternsToText(preset.authority.forbidden),
-    });
+    }));
   };
 
   const submit = async (event: FormEvent) => {
@@ -183,6 +190,7 @@ export function AgentFormPage({
 
   if (loadingAgent) return <LoadingPanel label="Loading Agent configuration…" />;
   if (editing && !agent) return <ErrorState message="Agent not found." />;
+  if (agent && hydratedAgentId !== agent.id) return <LoadingPanel label="Loading Agent configuration…" />;
 
   return (
     <div className="page agent-form-page">
@@ -198,7 +206,7 @@ export function AgentFormPage({
           <div className="form-grid two-column">
             <label>
               Agent name
-              <input autoFocus={!editing} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Backend Agent" required maxLength={80} />
+              <input autoFocus={!editing} value={form.name} onChange={(event) => { const name = event.currentTarget.value; flushSync(() => setForm((current) => ({ ...current, name }))); }} placeholder="Backend Agent" required maxLength={80} />
             </label>
             <label>
               Role
@@ -209,11 +217,11 @@ export function AgentFormPage({
           </div>
           <label>
             Description
-            <textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="What will this Agent be responsible for?" rows={3} maxLength={500} />
+            <textarea value={form.description} onChange={(event) => { const description = event.currentTarget.value; flushSync(() => setForm((current) => ({ ...current, description }))); }} placeholder="What will this Agent be responsible for?" rows={3} maxLength={500} />
           </label>
           <label>
             System instructions
-            <textarea value={form.instructions} onChange={(event) => setForm({ ...form, instructions: event.target.value })} rows={5} maxLength={10_000} />
+            <textarea value={form.instructions} onChange={(event) => { const instructions = event.currentTarget.value; flushSync(() => setForm((current) => ({ ...current, instructions }))); }} rows={5} maxLength={10_000} />
           </label>
           <label>
             Base image / runtime
@@ -246,12 +254,12 @@ export function AgentFormPage({
           ) : null}
           <button className="advanced-toggle" type="button" onClick={() => {
             if (!advanced && selectedPreset) {
-              setForm({
-                ...form,
+              setForm((current) => ({
+                ...current,
                 readable: patternsToText(selectedPreset.authority.readable),
                 writable: patternsToText(selectedPreset.authority.writable),
                 forbidden: patternsToText(selectedPreset.authority.forbidden),
-              });
+              }));
             }
             setAdvanced((value) => !value);
           }} aria-expanded={advanced}>

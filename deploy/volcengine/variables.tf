@@ -48,8 +48,8 @@ variable "repository_url" {
   description = "Public Git URL of this Starter Kit repository."
   type        = string
   validation {
-    condition     = startswith(var.repository_url, "https://")
-    error_message = "repository_url must be an HTTPS URL."
+    condition     = startswith(var.repository_url, "https://") && can(regex("^[^'\\r\\n]+$", var.repository_url))
+    error_message = "repository_url must be an HTTPS URL without shell control characters."
   }
 }
 
@@ -57,31 +57,8 @@ variable "repository_ref" {
   description = "Git branch or tag deployed by cloud-init."
   type        = string
   default     = "main"
-}
-
-variable "ark_api_key" {
-  description = "Volcengine Ark API key. Supplied through TF_VAR_ark_api_key."
-  type        = string
-  sensitive   = true
-}
-
-variable "app_auth_token" {
-  description = "Shared browser/API demo token. Supplied through TF_VAR_app_auth_token."
-  type        = string
-  sensitive   = true
   validation {
-    condition     = length(var.app_auth_token) >= 24 && length(var.app_auth_token) <= 128 && can(regex("^[A-Za-z0-9._~-]+$", var.app_auth_token)) && !startswith(var.app_auth_token, "replace-")
-    error_message = "app_auth_token must contain 24-128 URL-safe, non-placeholder characters."
+    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9._/-]*$", var.repository_ref)) && !strcontains(var.repository_ref, "..")
+    error_message = "repository_ref must be a shell-safe branch or tag without traversal segments."
   }
-}
-
-variable "ark_model" {
-  description = "Ark endpoint/model ID supporting the Responses API."
-  type        = string
-}
-
-variable "ark_base_url" {
-  description = "Ark OpenAI-compatible API base URL."
-  type        = string
-  default     = "https://ark.cn-beijing.volces.com/api/v3"
 }

@@ -14,7 +14,7 @@
     "dev": "concurrently -n server,web -c cyan,magenta \"npm run dev -w @launchpad/server\" \"npm run dev -w @launchpad/web\"",
     "build": "npm run build -w @launchpad/web && npm run build -w @launchpad/server",
     "typecheck": "npm run typecheck --workspaces --if-present && npm run typecheck:tests -w @launchpad/server && npm run typecheck:tests -w @launchpad/web",
-    "test": "node --test scripts/start-local-poc-launcher.test.mjs scripts/deploy-existing-ecs.test.mjs && npm run test -w @launchpad/server && npm run test -w @launchpad/web",
+    "test": "node --test scripts/start-local-poc-launcher.test.mjs scripts/deploy-existing-ecs.test.mjs scripts/deploy-volcengine.test.mjs scripts/run-live-vitest.test.mjs scripts/run-live-runtime-gate.test.mjs scripts/check-web-coverage.test.mjs scripts/validate-terraform.test.mjs && npm run test -w @launchpad/server && npm run test -w @launchpad/web",
     "test:e2e:install": "PLAYWRIGHT_BROWSERS_PATH=.tmp/playwright-browsers playwright install chromium",
     "test:e2e:harness:unit": "npm run build && node --test tests/e2e/harness.test.mjs",
     "test:e2e:harness": "npm run test:e2e:harness:unit && PLAYWRIGHT_BROWSERS_PATH=.tmp/playwright-browsers playwright test --config=playwright.config.ts",
@@ -24,15 +24,22 @@
     "test:e2e:shepherd-hero:evidence": "E2E_UPDATE_EVIDENCE=true npm run test:e2e:shepherd-hero",
     "test:e2e:shepherd-performance": "npm run test:e2e:harness:unit && PLAYWRIGHT_BROWSERS_PATH=.tmp/playwright-browsers playwright test --config=playwright.config.ts tests/e2e/shepherd-performance.spec.mjs",
     "test:e2e:shepherd-performance:evidence": "E2E_UPDATE_EVIDENCE=true npm run test:e2e:shepherd-performance",
+    "test:coverage": "node scripts/run-coverage.mjs",
+    "test:terraform": "node scripts/validate-terraform.mjs",
     "check": "npm run typecheck && npm run test && npm run build",
     "poc": "node --env-file-if-exists=.env ./scripts/start-local-poc-launcher.mjs",
-    "test:shepherd:live": "SHEPHERD_LIVE_TEST=true node --env-file=.env ./node_modules/vitest/vitest.mjs run --config apps/server/vitest.config.ts apps/server/src/shepherd/live-runtime.integration.test.ts --no-file-parallelism --maxWorkers=1 --bail=1 --retry=0 --testTimeout=1800000 --hookTimeout=120000",
-    "test:shepherd:model-review:live": "SHEPHERD_LIVE_TEST=true SHEPHERD_LIVE_MODEL_REVIEW=true node --env-file=.env ./node_modules/vitest/vitest.mjs run --config apps/server/vitest.config.ts apps/server/src/shepherd/live-model-review.integration.test.ts --no-file-parallelism --maxWorkers=1 --bail=1 --retry=0 --testTimeout=600000 --hookTimeout=120000",
+    "test:shepherd:live": "SHEPHERD_LIVE_TEST=true node --env-file=.env scripts/run-live-runtime-gate.mjs",
+    "test:shepherd:live:preflight": "SHEPHERD_LIVE_TEST=true node scripts/run-live-runtime-gate.mjs list",
+    "test:shepherd:live:list": "node scripts/run-live-vitest.mjs runtime list",
+    "test:shepherd:model-review:live": "node --env-file=.env scripts/run-live-vitest.mjs model-review",
+    "test:shepherd:model-review:live:list": "node scripts/run-live-vitest.mjs model-review list",
     "start": "npm run start -w @launchpad/server"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",
+    "@vitest/coverage-v8": "4.1.10",
     "concurrently": "^9.2.1",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vite-plugin-istanbul": "7.1.0"
   }
 }

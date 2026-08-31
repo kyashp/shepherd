@@ -285,20 +285,26 @@ cp deploy/volcengine/terraform.tfvars.example \
   deploy/volcengine/terraform.tfvars
 export VOLCENGINE_ACCESS_KEY=your-access-key
 export VOLCENGINE_SECRET_KEY=your-secret-key
+export VOLCENGINE_SSH_PRIVATE_KEY=/absolute/path/to/the-matching-private-key.pem
+# Optional when the image does not use Ubuntu's default account:
+export VOLCENGINE_SSH_USER=ubuntu
 ./scripts/deploy-volcengine.sh
 ```
 
 Set Ark values only in `.env.production` and region/zone/image/instance/key/CIDR/
 repository values in `terraform.tfvars`. Provide Volcengine account credentials only
 through the current shell; never give account AK/SK values to an Agent Runtime.
-After Terraform prints `app_url`, allow cloud-init several minutes and inspect it
-with `cloud-init status --wait` and `/var/log/cloud-init-output.log` over SSH.
+Terraform provisions only infrastructure and public repository metadata. The deploy
+script waits for `cloud-init status --wait`, copies the ignored `.env.production`
+over SSH, installs it as root-owned mode `0600`, and then starts the application.
+Runtime credentials therefore do not enter Terraform variables, plans, state,
+cloud-init, or instance user data.
 
 Use a dedicated test instance. Never commit `.env.production`, Terraform variables
-or state, Ark keys, or Volcengine account credentials. The PoC places the Ark key in
-Terraform user data/state; production requires managed secrets and encrypted remote
-state. `terraform -chdir=deploy/volcengine destroy` removes the ECS instance, system
-disk, and Agent workspaces—back up required code and data first.
+or state, Ark keys, SSH keys, or Volcengine account credentials. Protect Terraform
+state because it still contains infrastructure identifiers and network metadata.
+`terraform -chdir=deploy/volcengine destroy` removes the ECS instance, system disk,
+and Agent workspaces—back up required code and data first.
 
 ## Configuration
 
@@ -338,9 +344,14 @@ boundaries.
 
 ```bash
 npm run check
-terraform fmt -check -recursive deploy/volcengine
+npm run test:coverage
+npm run test:terraform
 docker compose config
 ```
+
+`npm run test:terraform` uses local Terraform when available and otherwise the
+pinned `hashicorp/terraform:1.9.8` image. It formats, initializes, and validates a
+disposable copy so generated provider files never dirty the checkout.
 
 ## Documentation
 

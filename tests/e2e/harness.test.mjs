@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { access, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -10,6 +10,7 @@ import {
   isPortOpen,
   prepareHarnessRoot,
   repositoryRoot,
+  resolveExecutable,
   startTestApp,
 } from "./support/test-app.mjs";
 import {
@@ -25,6 +26,26 @@ import {
 const execFileAsync = promisify(execFile);
 const fakeCodex = path.join(repositoryRoot, "tests/e2e/fixtures/fake-codex.mjs");
 const fakeContainerEngine = path.join(repositoryRoot, "tests/e2e/fixtures/fake-container-engine.mjs");
+
+test("resolveExecutable finds bare commands only through absolute PATH entries", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shepherd-executable-"));
+  const executable = path.join(directory, "fixture-codex");
+  try {
+    await writeFile(executable, "#!/bin/sh\nexit 0\n", "utf8");
+    await chmod(executable, 0o700);
+    await assert.doesNotReject(access(executable));
+    assert.equal(
+      await resolveExecutable("fixture-codex", `${directory}${path.delimiter}relative-bin`),
+      executable,
+    );
+    await assert.rejects(
+      resolveExecutable(path.join(directory, "missing-codex"), directory),
+      /Executable is not available/u,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 async function withBrowserGlobals({ document, getComputedStyle }, run) {
   const descriptors = new Map(

@@ -31,6 +31,7 @@ import type {
 } from "../types.js";
 import { BEARER_TRANSPORT, COOKIE_TRANSPORT } from "./auth-fixture.js";
 import { CodexShepherdExecutor } from "./codex-executor.js";
+import { resolveLiveRuntimeLayout } from "./live-runtime-gate.js";
 import type { ShepherdMissionDetail } from "./service.js";
 import {
   AUTH_BACKEND_PROFILE_ID,
@@ -42,7 +43,8 @@ import { ContainerVerifier, TrustedCheckRegistry } from "./verifier.js";
 
 const execFileAsync = promisify(execFile);
 const repositoryRoot = fileURLToPath(new URL("../../../../", import.meta.url));
-const liveRoot = path.join(repositoryRoot, ".tmp", "shepherd-live-gate");
+const liveLayout = resolveLiveRuntimeLayout(process.env, repositoryRoot);
+const liveRoot = liveLayout.liveRoot;
 const liveRootSentinel = path.join(liveRoot, ".live-gate-root");
 const liveRootSentinelValue = "shepherd live Runtime gate only\n";
 const liveEnabled = process.env.SHEPHERD_LIVE_TEST === "true";
@@ -122,9 +124,15 @@ async function entryExists(target: string): Promise<boolean> {
 }
 
 async function prepareLiveRoot(): Promise<void> {
-  const expectedRelative = path.join(".tmp", "shepherd-live-gate");
-  if (path.relative(repositoryRoot, liveRoot) !== expectedRelative) {
-    throw new Error("Live gate root is not the exact repository-local target");
+  if (liveLayout.containerStateRoot) {
+    if (!isStrictChild(liveLayout.containerStateRoot, liveRoot)) {
+      throw new Error("Live gate root escaped the wrapper-provided state volume");
+    }
+  } else {
+    const expectedRelative = path.join(".tmp", "shepherd-live-gate");
+    if (path.relative(repositoryRoot, liveRoot) !== expectedRelative) {
+      throw new Error("Live gate root is not the exact repository-local target");
+    }
   }
   if (await entryExists(liveRoot)) {
     const metadata = await lstat(liveRoot);
@@ -135,7 +143,8 @@ async function prepareLiveRoot(): Promise<void> {
       throw new Error("Live gate root sentinel mismatch");
     }
     const canonicalRoot = await realpath(liveRoot);
-    if (!isStrictChild(repositoryRoot, canonicalRoot)) {
+    const cleanupRoot = liveLayout.containerStateRoot ?? repositoryRoot;
+    if (!isStrictChild(cleanupRoot, canonicalRoot)) {
       throw new Error("Live gate cleanup target escaped the repository");
     }
     await rm(canonicalRoot, { recursive: true, force: true });
@@ -157,15 +166,12 @@ function liveConfig(): AppConfig {
   return loadConfig({
     ...process.env,
     HOST: "127.0.0.1",
-    APP_DATA_DIR: path.join(liveRoot, "data"),
-    AGENT_WORKSPACE_ROOT: path.join(liveRoot, "agent-workspaces"),
-    CODEX_HOME: path.join(liveRoot, "shared-codex-home"),
-    SHEPHERD_ROOT: path.join(liveRoot, "managed"),
-    SHEPHERD_CODEX_HOME_ROOT: path.join(
-      liveRoot,
-      "data",
-      "shepherd-codex-homes",
-    ),
+    PUBLIC_BIND_ADDR: "127.0.0.1",
+    APP_DATA_DIR: liveLayout.dataDirectory,
+    AGENT_WORKSPACE_ROOT: liveLayout.workspaceRoot,
+    CODEX_HOME: liveLayout.codexHome,
+    SHEPHERD_ROOT: liveLayout.shepherdRoot,
+    SHEPHERD_CODEX_HOME_ROOT: liveLayout.shepherdCodexHomeRoot,
     SHEPHERD_EXECUTION_MODE: "live",
     SHEPHERD_DEMO_MODE: "true",
     RUNTIME_PROVIDER: "container",
@@ -179,10 +185,8 @@ function liveConfig(): AppConfig {
     CONTAINER_MEMORY_LIMIT: "1g",
     CONTAINER_PIDS_LIMIT: "128",
     CONTAINER_USER: `${uid}:${gid}`,
-    // This gate pins its own roots outside any state volume, so the state-volume
-    // settings a `.env` may carry must not reach it through the spread above.
-    CONTAINER_STATE_ROOT: undefined,
-    CONTAINER_STATE_VOLUME: undefined,
+    CONTAINER_STATE_ROOT: liveLayout.containerStateRoot,
+    CONTAINER_STATE_VOLUME: liveLayout.containerStateVolume,
     NODE_ENV: "test",
   });
 }
