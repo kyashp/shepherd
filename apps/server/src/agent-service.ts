@@ -1,4 +1,8 @@
 import { randomUUID } from "node:crypto";
+import {
+  appendWithinDurableCapacity,
+  assertWithinDurableCapacity,
+} from "./collection-capacity.js";
 import type { AppConfig } from "./config.js";
 import { isArkConfigured, isShepherdModelReviewConfigured } from "./config.js";
 import { HttpError, RunCancelledError } from "./errors.js";
@@ -194,6 +198,7 @@ export class AgentService {
   private readonly activeExecutions = new Map<string, Promise<void>>();
   private readonly cancellationRequests = new Set<string>();
   private readonly deletionReservations = new Set<string>();
+  private pendingAgentCreations = 0;
 
   constructor(
     private readonly config: AppConfig,
@@ -260,9 +265,21 @@ export class AgentService {
       createdAt: timestamp,
       updatedAt: timestamp,
     };
-    await this.workspaces.create(agent);
-    await this.store.mutate((database) => database.agents.push(agent));
-    return agent;
+    assertWithinDurableCapacity(
+      this.store.snapshot().agents,
+      this.pendingAgentCreations + 1,
+      "Agent",
+    );
+    this.pendingAgentCreations += 1;
+    try {
+      await this.workspaces.create(agent);
+      await this.store.mutate((database) =>
+        appendWithinDurableCapacity(database.agents, [agent], "Agent"),
+      );
+      return agent;
+    } finally {
+      this.pendingAgentCreations -= 1;
+    }
   }
 
   async updateAgent(id: string, input: UpdateAgentInput): Promise<Agent> {
@@ -511,8 +528,8 @@ export class AgentService {
       if (storedAgent.currentContractId) {
         throw new HttpError(409, "Shepherd is currently using this Agent");
       }
-      database.runs.push(run);
-      database.messages.push(message);
+      appendWithinDurableCapacity(database.runs, [run], "Agent run");
+      appendWithinDurableCapacity(database.messages, [message], "Agent message");
       const snapshot = structuredClone(storedAgent);
       storedAgent.status = "busy";
       storedAgent.lastError = null;
@@ -592,14 +609,14 @@ export class AgentService {
         storedRun.output = result.output;
         storedRun.usage = result.usage;
         storedRun.completedAt = completedAt;
-        database.messages.push({
+        appendWithinDurableCapacity(database.messages, [{
           id: randomUUID(),
           agentId: agent.id,
           runId: run.id,
           role: "assistant",
           content: result.output,
           createdAt: completedAt,
-        });
+        }], "Agent message");
         agent.status = "ready";
         agent.codexThreadId = result.threadId;
         agent.lastError = null;

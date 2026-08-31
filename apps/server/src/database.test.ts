@@ -631,6 +631,28 @@ describe("Database V2", () => {
     expect(() => shepherdEventsAfter(database, -1)).toThrow("non-negative");
   });
 
+  it("refuses an event beyond durable capacity without consuming its cursor", () => {
+    const database = emptyDatabase(timestamp);
+    for (let index = 0; index < 10_000; index += 1) {
+      appendShepherdEvent(database, {
+        ...eventInput(`event-${index}`),
+        id: `event-${index}`,
+      });
+    }
+
+    expect(() =>
+      appendShepherdEvent(database, {
+        ...eventInput("overflow"),
+        id: "event-overflow",
+      }),
+    ).toThrow(expect.objectContaining({
+      name: "DurableCapacityError",
+      statusCode: 507,
+    }));
+    expect(database.shepherd.events).toHaveLength(10_000);
+    expect(database.shepherd.nextEventSequence).toBe(10_001);
+  });
+
   it("accepts reset-created event gaps without reusing a polling cursor", () => {
     const database = emptyDatabase(timestamp);
     appendShepherdEvent(database, { ...eventInput("one"), missionId: null });

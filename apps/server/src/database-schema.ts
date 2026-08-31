@@ -1,6 +1,7 @@
 import { z } from "zod";
 import path from "node:path";
 import type { DatabaseV1, DatabaseV2 } from "./types.js";
+import { MAX_DURABLE_COLLECTION_ITEMS } from "./collection-capacity.js";
 import { normalizeRepoPath, normalizeRepoPattern } from "./shepherd/authority.js";
 import {
   AUTH_BACKEND_CHECK_ID,
@@ -15,7 +16,7 @@ import {
   assertSafeGitBranch,
 } from "./shepherd/git-client.js";
 
-const MAX_COLLECTION_ITEMS = 10_000;
+const MAX_COLLECTION_ITEMS = MAX_DURABLE_COLLECTION_ITEMS;
 const MAX_ID_LENGTH = 200;
 const MAX_PATH_LENGTH = 4_096;
 const MAX_TEXT_LENGTH = 1_048_576;

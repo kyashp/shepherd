@@ -197,6 +197,59 @@ describe("Agent lifecycle", () => {
     expect(service.listAgents()).toHaveLength(0);
   });
 
+  it("refuses Agent admission at durable capacity without creating an orphan workspace", async () => {
+    const service = await makeService();
+    const first = await service.createAgent({ name: "Capacity sentinel" });
+    const internals = service as unknown as { store: JsonStore };
+    await internals.store.mutate((database) => {
+      database.agents.push(
+        ...Array.from({ length: 9_999 }, (_, index) => ({
+          ...structuredClone(first),
+          id: `capacity-agent-${index}`,
+          name: `Capacity Agent ${index}`,
+          workspacePath: path.join(path.dirname(first.workspacePath), `capacity-agent-${index}`),
+        })),
+      );
+    });
+    const workspaceNamesBefore = await readdir(path.dirname(first.workspacePath));
+
+    await expect(service.createAgent({ name: "One Agent too many" })).rejects.toMatchObject({
+      name: "DurableCapacityError",
+      statusCode: 507,
+    });
+    expect(service.listAgents()).toHaveLength(10_000);
+    expect(await readdir(path.dirname(first.workspacePath))).toEqual(workspaceNamesBefore);
+  });
+
+  it("reserves the final durable Agent slot across concurrent admissions", async () => {
+    const service = await makeService();
+    const first = await service.createAgent({ name: "Capacity sentinel" });
+    const internals = service as unknown as { store: JsonStore };
+    await internals.store.mutate((database) => {
+      database.agents.push(
+        ...Array.from({ length: 9_998 }, (_, index) => ({
+          ...structuredClone(first),
+          id: `concurrent-capacity-agent-${index}`,
+          name: `Concurrent Capacity Agent ${index}`,
+          workspacePath: path.join(
+            path.dirname(first.workspacePath),
+            `concurrent-capacity-agent-${index}`,
+          ),
+        })),
+      );
+    });
+
+    const results = await Promise.allSettled([
+      service.createAgent({ name: "Final slot contender A" }),
+      service.createAgent({ name: "Final slot contender B" }),
+    ]);
+
+    expect(results.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
+    expect(results.filter(({ status }) => status === "rejected")).toHaveLength(1);
+    expect(service.listAgents()).toHaveLength(10_000);
+    expect(await readdir(path.dirname(first.workspacePath))).toHaveLength(3);
+  });
+
   it("preserves an Agent and workspace while a private Contract prompt references it", async () => {
     const service = await makeService();
     const agent = await service.createAgent({

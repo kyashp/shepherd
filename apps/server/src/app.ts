@@ -4,7 +4,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { timingSafeEqual } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import type { AppConfig } from "./config.js";
+import { isLoopbackHost, type AppConfig } from "./config.js";
 import { HttpError } from "./errors.js";
 import {
   agentAuthorityPreset,
@@ -905,6 +905,31 @@ export async function createApp(
     } catch {
       routedPath = "/api/";
       routedUrl = "/api/";
+    }
+    if (!config.authToken && routedPath.startsWith("/api/")) {
+      const hostHeader = request.headers.host?.trim().toLowerCase() ?? "";
+      let requestHostname = "";
+      try {
+        requestHostname = new URL(`http://${hostHeader}`).hostname;
+      } catch {
+        requestHostname = "";
+      }
+      const originHeader = request.headers.origin;
+      let originAllowed = originHeader === undefined;
+      if (typeof originHeader === "string") {
+        try {
+          const origin = new URL(originHeader);
+          originAllowed =
+            origin.protocol === `${request.protocol}:` &&
+            origin.host.toLowerCase() === hostHeader &&
+            isLoopbackHost(origin.hostname);
+        } catch {
+          originAllowed = false;
+        }
+      }
+      if (!isLoopbackHost(requestHostname) || !originAllowed) {
+        return reply.code(403).send({ error: "Local API origin required" });
+      }
     }
     if (
       !config.authToken ||
