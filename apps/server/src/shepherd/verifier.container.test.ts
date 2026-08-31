@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { watch } from "node:fs";
 import { chmod, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -134,6 +135,49 @@ function result(overrides: Partial<VerifierContainerResult> = {}): VerifierConta
   };
 }
 
+function observeLogEntry(
+  logPath: string,
+  expected: string,
+): { observed: Promise<string>; close: () => void } {
+  const watcher = watch(logPath, { persistent: false });
+  let closed = false;
+  let settled = false;
+  let resolveObserved!: (contents: string) => void;
+  let rejectObserved!: (error: unknown) => void;
+  const observed = new Promise<string>((resolve, reject) => {
+    resolveObserved = resolve;
+    rejectObserved = reject;
+  });
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    watcher.close();
+  };
+  const inspect = async () => {
+    if (settled) return;
+    try {
+      const contents = await readFile(logPath, "utf8");
+      if (!contents.includes(expected)) return;
+      settled = true;
+      close();
+      resolveObserved(contents);
+    } catch (error) {
+      settled = true;
+      close();
+      rejectObserved(error);
+    }
+  };
+  watcher.on("change", () => void inspect());
+  watcher.once("error", (error) => {
+    if (settled) return;
+    settled = true;
+    close();
+    rejectObserved(error);
+  });
+  void inspect();
+  return { observed, close };
+}
+
 function check(input: Partial<AcceptanceCheck> = {}): AcceptanceCheck {
   return {
     id: "check",
@@ -201,17 +245,29 @@ describe("independent verifier contract", () => {
 
   it("keeps cancellation sticky across reserved container creation before start", async () => {
     const fixture = await createPlaneFixture();
+    const observations: Array<{ close: () => void }> = [];
     try {
       const enginePath = path.join(fixture.casePath, "fake-container-engine.mjs");
       const logPath = path.join(fixture.casePath, "engine.log");
+      const releasePath = path.join(fixture.casePath, "release-create");
+      await writeFile(logPath, "", "utf8");
       await writeFile(
         enginePath,
         `#!/usr/bin/env node
-import { appendFileSync } from "node:fs";
+import { appendFileSync, existsSync, watch } from "node:fs";
 const args = process.argv.slice(2);
 appendFileSync(${JSON.stringify(logPath)}, JSON.stringify(args) + "\\n", "utf8");
-if (args[0] === "create" || args[0] === "rm") setTimeout(() => process.exit(0), 150);
-else process.exit(0);
+if (args[0] === "create" && !existsSync(${JSON.stringify(releasePath)})) {
+  const releaseWatcher = watch(${JSON.stringify(fixture.casePath)}, () => {
+    if (!existsSync(${JSON.stringify(releasePath)})) return;
+    releaseWatcher.close();
+    process.exit(0);
+  });
+  if (existsSync(${JSON.stringify(releasePath)})) {
+    releaseWatcher.close();
+    process.exit(0);
+  }
+} else process.exit(0);
 `,
         "utf8",
       );
@@ -225,15 +281,16 @@ else process.exit(0);
         timeoutMs: 1_000,
         maxOutputBytes: 1_024,
       };
+      const createObservation = observeLogEntry(logPath, '["create"');
+      observations.push(createObservation);
       const running = executor.run(invocation);
-      await vi.waitFor(async () =>
-        expect(await readFile(logPath, "utf8")).toContain('["create"'),
-      );
+      await createObservation.observed;
       await expect(executor.cancel("other-target")).resolves.toBe(false);
       await expect(executor.cancel("reserved-target")).resolves.toBe(true);
-      await vi.waitFor(async () =>
-        expect(await readFile(logPath, "utf8")).toContain('["rm"'),
-      );
+      const removeObservation = observeLogEntry(logPath, '["rm"');
+      observations.push(removeObservation);
+      await writeFile(releasePath, "release\n", "utf8");
+      await removeObservation.observed;
       await expect(executor.cancel("reserved-target")).resolves.toBe(true);
       await expect(running).resolves.toMatchObject({
         cancelled: true,
@@ -249,6 +306,7 @@ else process.exit(0);
       const reusedLog = await readFile(logPath, "utf8");
       expect(reusedLog.match(/^\["start"/gmu)).toHaveLength(1);
     } finally {
+      for (const observation of observations) observation.close();
       await destroyPlaneFixture(fixture);
     }
   });
