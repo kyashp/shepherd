@@ -10,8 +10,8 @@
 [draft PR #97](https://github.com/kyashp/shepherd/pull/97)
 
 This report records commands actually observed on the named candidate. It does not
-claim protected-main integration, hosted CI, independent security/UI review, a paid
-provider request, or a complete demo rehearsal.
+claim protected-main integration, independent security/UI review, a paid provider
+request, or a complete demo rehearsal.
 
 ## Environment
 
@@ -36,6 +36,7 @@ provider request, or a complete demo rehearsal.
 | `npm run test:shepherd:live:preflight` | Pass | builds the exact candidate Runtime and non-root controller images, uses a named state volume and engine socket, discovers exactly one live test, and cleans temporary resources; no model request |
 | `npm audit --json` | Pass | 0 vulnerabilities |
 | `git diff --check` and bounded secret scan | Pass | no whitespace error, tracked credential, state, or generated Terraform artifact found |
+| hosted PR workflows at `bb1a1df` | Pass | `Node 22 / npm run check` run `33389614355` in 2m59s; `Required checks` run `33389614223` in 3m01s |
 
 The clean coverage run executes the complete Server suite first, then rebuilds the
 Web app with browser instrumentation and runs 24 Chromium flows. It restores the
@@ -77,8 +78,8 @@ theme and layout were preserved.
 - **Independent review:** issue #45's read-only UI review and issue #89's required
   independent security review cannot be self-certified by the author of this
   remediation. The deterministic UI and security regressions pass locally.
-- **Integration/hosted CI:** PR #97 is based on protected `main`, but this report is
-  candidate evidence until the PR checks pass and an integrator merges it.
+- **Integration:** both hosted candidate workflows pass, but this remains candidate
+  evidence until an integrator merges it and the protected-main rerun passes.
 - **Rehearsal/delivery:** three clean timed demo rehearsals and any genuinely
   available second-machine run remain separate evidence work. This report does not
   infer them from automated tests.

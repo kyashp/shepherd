@@ -157,7 +157,7 @@ scrolling.
 | Full browser matrix | 48/48: 24 functional flows at both `1280x800` and `1440x900` | Pass candidate; independent `U` remains |
 | Terraform | Pinned Terraform `1.9.8` plus Volcengine provider `0.0.58` initialized and validated a disposable copy | Pass candidate |
 | Live Runtime preflight | Exact-tree Runtime/controller build, non-root controller, named volume/socket, one test discovered, cleanup | Pass candidate; zero model requests |
-| Hosted exact-head gate | PR #97 checks | Pending |
+| Hosted candidate gate | PR #97 at `bb1a1df`: `Node 22 / npm run check` run `33389614355` passed in 2m59s; `Required checks` run `33389614223` passed in 3m01s | Pass candidate; protected-main `I` pending |
 | External live/model gate | Requires explicit informed approval to send repository-derived prompts/code to configured Ark | Not run |
 
 No model request was made during the issue #96 release audit. Earlier bounded live
@@ -293,9 +293,9 @@ repository-derived payloads to Ark. `I` remains pending for every candidate clai
 | ID | PRD ref | Status / dependencies | Required acceptance | Confidence; gates passed; audit |
 |---|---|---|---|---|
 | `DEL-01` | 16 Phase 9A | **INTEGRATED** as [`ARCHITECTURE.md`](ARCHITECTURE.md) at `39cd800` via PR #60; [issue #51](https://github.com/kyashp/shepherd/issues/51) was prematurely closed after this one deliverable | As-built one-page architecture and judge-facing Mermaid were rendered and validated. The filename differs from the older prospective name, but all current links use the integrated path. | **100% implementation/integration**; independent final package review not claimed |
-| `DEL-02` | 16 Phase 9C | **CANDIDATE** on [PR #97](https://github.com/kyashp/shepherd/pull/97) | [`SHEPHERD_TEST_REPORT.md`](SHEPHERD_TEST_REPORT.md) records the exact base/product head, commands, failures, counts, coverage, browser/container/Terraform scope, and explicit live/review/integration limitations. | **90%**; `C` passed, hosted/integrated `I` pending; not audited |
+| `DEL-02` | 16 Phase 9C | **CANDIDATE** on [PR #97](https://github.com/kyashp/shepherd/pull/97) | [`SHEPHERD_TEST_REPORT.md`](SHEPHERD_TEST_REPORT.md) records the exact base/product head, commands, failures, counts, coverage, browser/container/Terraform scope, and explicit live/review/integration limitations. | **95%**; `C` and hosted candidate checks passed, protected-main `I` pending; not audited |
 | `DEL-03` | 16 Phase 9D | **CANDIDATE** on [PR #97](https://github.com/kyashp/shepherd/pull/97) | README now documents reproducible coverage/Terraform validation, credential-safe Terraform deployment, and links the exact report without removing starter setup. | **75%**; final frozen-state/independent review pending |
-| `DEL-04` | 0.1, 16 Phase 9E | **RECONCILIATION CANDIDATE** on [PR #97](https://github.com/kyashp/shepherd/pull/97); prior consolidation audited at `5a38d37` | `TASKS.md`, `SHEPHERD.md`, `LOCAL_POC.md`, `FIXES.md`, `BUILD_LOG.md`, README and the test report distinguish protected-main, candidate, live-external, independent-review and rehearsal evidence. | **90% overall**; final protected-main/independent audit pending |
+| `DEL-04` | 0.1, 16 Phase 9E | **RECONCILIATION CANDIDATE** on [PR #97](https://github.com/kyashp/shepherd/pull/97); prior consolidation audited at `5a38d37` | `TASKS.md`, `SHEPHERD.md`, `LOCAL_POC.md`, `FIXES.md`, `BUILD_LOG.md`, README and the test report distinguish protected-main, candidate, live-external, independent-review and rehearsal evidence. | **95% overall**; hosted candidate checks passed, final protected-main/independent audit pending |
 | `DEL-05` | 16 Phase 9E, 17 | **PARTIAL CANDIDATE** on [PR #97](https://github.com/kyashp/shepherd/pull/97) | Dependency, tracked-secret, generated-artifact, exact-tree Docker, Terraform, coverage and complete browser checks pass. External live inference, independent security/UI review, hosted integration, demo rehearsals and broader optional PRD rows remain. | **60%**; `C,B,S` candidate evidence, `L,U,I` pending; not audited |
 
 ## Count and current verdict
@@ -311,7 +311,7 @@ repository-derived payloads to Ark. `I` remains pending for every candidate clai
   request remains a separate consent and evidence boundary.
 - **Current completion verdict:** incomplete. The exact-main candidate closes the
   deterministic browser, coverage, Terraform, release-harness, identified security
-  and documentation gaps, but independent `U`, hosted/protected-main `I`, external
-  `L`, and three rehearsals remain explicit. The older 82% estimate is retained only
+  and documentation gaps, but independent `U`, protected-main `I`, external `L`,
+  and three rehearsals remain explicit. The older 82% estimate is retained only
   in `SHEPHERD.md`'s labelled historical snapshot and is not reused as a current
   metric.

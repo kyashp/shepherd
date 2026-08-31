@@ -5766,9 +5766,12 @@ Auditor, security and hosted integration evidence.
   vulnerabilities. `git diff --check`, tracked secret/state/generated-artifact
   scans and bounded canary checks passed. No environment value, raw prompt/model
   output, session identifier, Terraform state or provider cache was recorded.
+- **Hosted candidate checks:** exact candidate/docs head `bb1a1df` passed
+  `Node 22 / npm run check` run `33389614355` in 2m59s and `Required checks` run
+  `33389614223` in 3m01s.
 - **Explicit remaining evidence:** the external Ark turn was not executed because
   it transmits repository-derived prompts and scoped code to the configured
   endpoint and the managed executor requires separate informed approval for that
-  transfer. Independent UI gate `U`, issue #89 part-5 security review, hosted PR
-  checks, protected-main integration and the three complete demo rehearsals remain
-  open; local deterministic success is not substituted for any of them.
+  transfer. Independent UI gate `U`, issue #89 part-5 security review,
+  protected-main integration and the three complete demo rehearsals remain open;
+  local and hosted candidate success is not substituted for any of them.

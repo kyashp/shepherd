@@ -16,18 +16,19 @@ Protected `main` is currently `f935fdb`. Issue #96 / draft PR #97 is an
 exact-main release-remediation candidate; its tested product commit is `223a5fe`.
 The candidate passes the literal repository check, an enforced 80% coverage gate,
 48/48 functional browser flows across exact `1280x800` and `1440x900` viewports,
-pinned Docker Terraform validation, dependency audit, and the exact-tree zero-spend
-live Runtime preflight. Exact commands, counts, coverage, failures, and limitations
-are in [`SHEPHERD_TEST_REPORT.md`](SHEPHERD_TEST_REPORT.md).
+pinned Docker Terraform validation, dependency audit, the exact-tree zero-spend
+live Runtime preflight, and both hosted PR workflows at `bb1a1df`. Exact commands,
+counts, coverage, failures, and limitations are in
+[`SHEPHERD_TEST_REPORT.md`](SHEPHERD_TEST_REPORT.md).
 
 The candidate removes the previously documented macOS host-share blocker from the
 live test harness by using a named state volume and a non-root controller that
 builds the current tree. The external Ark inference itself has not been executed in
 this audit because it sends repository-derived prompts and code to the configured
 provider and requires separate informed approval in the execution environment.
-Independent UI review (#45), independent security review (#89), hosted PR checks,
-protected-main integration, and three complete demo rehearsals also remain explicit
-evidence gaps; none is inferred from the local green matrix.
+Independent UI review (#45), independent security review (#89), protected-main
+integration, and three complete demo rehearsals also remain explicit evidence gaps;
+none is inferred from the local or hosted candidate matrix.
 
 ### Historical 2026-08-30 snapshot (retained)
 
