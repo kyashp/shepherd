@@ -465,6 +465,7 @@ export type ShepherdFaultCheckpoint =
   | "contract_plane_creation_start"
   | "contract_execution_workspace_ready"
   | "contract_verification_snapshot_ready"
+  | "contract_verification_snapshot_removed"
   | "integration_merge_start"
   | "promotion_ready_for_cas"
   | "promotion_cas_completed"
@@ -5868,27 +5869,51 @@ export class ShepherdService {
     });
 
     if (!plane.headCommit) throw new Error("Contract Plane has no immutable commit");
+    const headCommit = plane.headCommit;
     let evidence: VerificationEvidence;
     try {
-      evidence = this.sanitizeEvidence(
-        await prepared.planeManager.withVerificationSnapshot(
-          plane.headCommit,
-          async (snapshot) => {
-            await this.checkpoint("contract_verification_snapshot_ready", {
-              missionId: prepared.missionId,
-              contractId: input.contractId,
-            });
-            this.ensureMissionRunnable(prepared.missionId);
-            return await this.verifier.verify({
-              targetType: "contract",
-              targetId: input.contractId,
-              planePath: snapshot.path,
-              checks: contract.acceptance.checks,
-              changedFiles: plane.changedFiles,
-            });
-          },
-        ),
-      );
+      let verificationFailed = false;
+      let verificationSnapshotEntered = false;
+      const verifyWithOwnedSnapshot = async (): Promise<VerificationEvidence> => {
+        try {
+          return await prepared.planeManager.withVerificationSnapshot(
+            headCommit,
+            async (snapshot) => {
+              verificationSnapshotEntered = true;
+              await this.checkpoint("contract_verification_snapshot_ready", {
+                missionId: prepared.missionId,
+                contractId: input.contractId,
+              });
+              this.ensureMissionRunnable(prepared.missionId);
+              return await this.verifier.verify({
+                targetType: "contract",
+                targetId: input.contractId,
+                planePath: snapshot.path,
+                checks: contract.acceptance.checks,
+                changedFiles: plane.changedFiles,
+              });
+            },
+          );
+        } catch (error) {
+          verificationFailed = true;
+          throw error;
+        } finally {
+          if (verificationSnapshotEntered) {
+            try {
+              await this.checkpoint("contract_verification_snapshot_removed", {
+                missionId: prepared.missionId,
+                contractId: input.contractId,
+              });
+            } catch (checkpointError) {
+              // The checkpoint is a test-only observer. It cannot replace a
+              // verification failure from snapshot materialization, cleanup, or
+              // the verifier itself.
+              if (!verificationFailed) throw checkpointError;
+            }
+          }
+        }
+      };
+      evidence = this.sanitizeEvidence(await verifyWithOwnedSnapshot());
     } catch (error) {
       if (
         error instanceof MissionCancelledError ||
