@@ -7,6 +7,32 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-31 — UI-GATE protected-main integration evidence
+
+PR #87 merged to protected `main` as
+`cf4dd0fa5886979f2af823efa65fd028dbb03334`; its direct second parent is final
+candidate `adbb7aa25ed464c3c7080bc6c9c29690ce20d18e`, and `git diff` between those
+trees is empty. The source branch had already passed hosted runs `33329742705`
+and `33329742709`.
+
+- An exact `cf4dd0fa` archive ran the real-server UI gate through Playwright
+  Chromium with one worker. All 12/12 tests passed in 35.6s across exact
+  `1280x800` and `1440x900` viewports.
+- The integration run regenerated exactly 36 non-empty PNGs: 18 at 1280x800 and
+  18 at 1440x900, with zero unexpected dimensions and 3,225,044 bytes total.
+  All 18 byte-changed captures were visually re-inspected; no clipping,
+  document overflow, obstruction, or theme regression was found. That exact-main
+  corpus now replaces the candidate corpus under `docs/ui-review/ui-gate/`.
+- Protected-main push run `33329997913` completed successfully on exact
+  `cf4dd0fa`; its `Node 22 / npm run check` job installed locked dependencies and
+  passed the literal repository gate in 2m54s.
+- No live/model request ran. The local Windows Node harness limitation remains
+  `spawn EFTYPE` with 15/19 passing and is not presented as a pass. The hosted
+  Linux gate covers the complete repository check.
+
+UI-GATE gates `C`, `B`, and `I` are passed. Independent usability gate `U`
+remains pending, so issue #45 stays open and the row is not called audited.
+
 ## 2026-08-31 — UI-GATE reviewable candidate and current-main refresh
 
 Issue #45 / draft PR #87 on `test/45-ui-gate`. Causal UI fixes are at
