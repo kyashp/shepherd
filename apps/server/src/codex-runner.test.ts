@@ -25,6 +25,7 @@ describe("Codex runner protocol", () => {
       "--skip-git-repo-check",
       "-C",
       "/tmp/workspace",
+      "--",
       "build a calculator",
     ]);
   });
@@ -39,7 +40,9 @@ describe("Codex runner protocol", () => {
       },
       "workspace-write",
     );
-    expect(args.slice(-3)).toEqual(["resume", "thread-123", "add tests"]);
+    // `--` separates the operands: without it a prompt or thread id beginning with
+    // `-` is parsed by the Codex CLI as an option on the same argv as `--sandbox`.
+    expect(args.slice(-4)).toEqual(["resume", "--", "thread-123", "add tests"]);
   });
 
   it("builds the pinned fresh invocation without placing the prompt in argv", () => {

@@ -173,7 +173,9 @@ describe("Container Codex runner", () => {
       "launchpad-test-instance-agent-unsafe",
     );
     expect(args[0]).toBe("run");
-    expect(args.slice(-3)).toEqual(["resume", "thread-123", "continue"]);
+    // `--` separates the operands so a prompt or thread id beginning with `-` cannot
+    // be parsed as an option on the same argv as `--sandbox`.
+    expect(args.slice(-4)).toEqual(["resume", "--", "thread-123", "continue"]);
     expect(args).toContain(
       "type=bind,src=/tmp/shared-codex-home,dst=/codex-home",
     );

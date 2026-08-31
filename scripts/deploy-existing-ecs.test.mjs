@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { promisify } from "node:util";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -92,4 +94,38 @@ test("Compose resolution accepts a genuine token", {
     path.join(repositoryRoot, "docker-compose.yml"),
   );
   assert.equal(status, "ok");
+});
+
+const execFileAsync = promisify(execFile);
+
+// The module-level tests above import the checker directly, so they cannot see
+// whether its CLI entry point actually runs. It is guarded by a main-module
+// comparison, and that guard is where a silent no-op hides.
+test("the checker CLI refuses an empty token from a directory whose name needs escaping", async () => {
+  const parent = await mkdtemp(path.join(os.tmpdir(), "ecs-cli-"));
+  temporaryDirectories.push(parent);
+  // A space, a hash and a non-ASCII character all percent-encode in a file URL.
+  const awkward = path.join(parent, "My Deploy Repo #1 \u00e9");
+  await mkdir(path.join(awkward, "scripts"), { recursive: true });
+  const { readFile, copyFile } = await import("node:fs/promises");
+  for (const name of ["check-deploy-auth-token.mjs"]) {
+    await copyFile(path.join(repositoryRoot, "scripts", name), path.join(awkward, "scripts", name));
+  }
+  await writeFile(
+    path.join(awkward, "docker-compose.yml"),
+    await readFile(path.join(repositoryRoot, "docker-compose.yml"), "utf8"),
+  );
+  const envFile = path.join(awkward, ".env.production");
+  await writeFile(envFile, "ARK_API_KEY=k\nARK_MODEL=m\nAPP_AUTH_TOKEN=\n", "utf8");
+
+  let code = 0;
+  let stderr = "";
+  try {
+    await execFileAsync(process.execPath, [path.join(awkward, "scripts", "check-deploy-auth-token.mjs"), envFile], { cwd: awkward });
+  } catch (error) {
+    code = error.code ?? 1;
+    stderr = String(error.stderr ?? "");
+  }
+  assert.notEqual(code, 0, "the CLI must refuse, not silently succeed");
+  assert.match(stderr, /APP_AUTH_TOKEN/u);
 });
