@@ -33,6 +33,7 @@ import {
   PlaneAuthorityViolationError,
   PlaneCreationError,
   PlaneManager,
+  PlaneSensitiveContentError,
   UnsafeExecutionWorkspaceError,
 } from "./plane-manager.js";
 import { PromotionGate } from "./promotion-gate.js";
@@ -78,7 +79,9 @@ interface Fixture {
 }
 
 async function createFixture(
-  options: Pick<GitClientOptions, "promotionFaults" | "mergeFaults"> = {},
+  options: Pick<GitClientOptions, "promotionFaults" | "mergeFaults"> & {
+    sensitiveValues?: readonly string[];
+  } = {},
 ): Promise<Fixture> {
   const casePath = path.join(testRoot, "case-" + randomUUID());
   if (!isInside(testRoot, casePath) || casePath === workspace) throw new Error("Unsafe test fixture path");
@@ -97,16 +100,18 @@ async function createFixture(
   await fixtureGit(repositoryPath, ["add", "--", "README.md", "shared.txt"]);
   await fixtureGit(repositoryPath, ["commit", "-m", "fixture base"]);
   const baseCommit = await fixtureGit(repositoryPath, ["rev-parse", "HEAD"]);
+  const { sensitiveValues, ...gitOptions } = options;
   const git = new GitClient(repositoryPath, {
     worktreeRoot: planesRoot,
     protectedBranch: "main",
-    ...options,
+    ...gitOptions,
   });
   const manager = new PlaneManager({
     repositoryPath,
     planesRoot,
     protectedBranch: "main",
     git,
+    ...(sensitiveValues ? { sensitiveValues } : {}),
   });
   await manager.initialize();
   return { casePath, repositoryPath, planesRoot, manager, baseCommit };
@@ -143,6 +148,51 @@ afterAll(async () => {
 });
 
 describe("GitClient and PlaneManager integration", () => {
+  it("rejects configured sensitive bytes before authoring a trusted Plane commit", async () => {
+    const canary = "ark-canary-must-never-enter-git-93821";
+    const fixture = await createFixture({ sensitiveValues: [canary] });
+    try {
+      const plane = await fixture.manager.createPlane({
+        id: "secret-bearing-plane",
+        projectId: "project",
+        missionId: "mission",
+        kind: "contract",
+        contractId: "contract",
+        baseCommit: fixture.baseCommit,
+        purpose: "credential-boundary regression",
+        executionIdentity: "exec-secret-boundary",
+        authority,
+      });
+      await writeFile(
+        path.join(plane.worktreePath, "authorized.ts"),
+        `export const leaked = "${canary}";\n`,
+        "utf8",
+      );
+
+      const failure = await fixture.manager
+        .commitPlane(plane, "Must reject secret-bearing artifact")
+        .catch((error: unknown) => error);
+
+      expect(failure).toBeInstanceOf(PlaneSensitiveContentError);
+      expect((failure as PlaneSensitiveContentError).affectedPaths).toEqual([
+        "authorized.ts",
+      ]);
+      expect((failure as Error).message).not.toContain(canary);
+      expect(await fixtureGit(plane.worktreePath, ["rev-parse", "HEAD"])).toBe(
+        fixture.baseCommit,
+      );
+      await expect(
+        access(path.join(plane.worktreePath, "authorized.ts")),
+      ).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await fixtureGit(fixture.repositoryPath, ["rev-parse", "main"])).toBe(
+        fixture.baseCommit,
+      );
+      await fixture.manager.resetManagedPlanes();
+    } finally {
+      await destroyFixture(fixture);
+    }
+  });
+
   it("rolls back an attached worktree and branch when initial Plane validation fails", async () => {
     const fixture = await createFixture();
     const planeId = "partial-create";
@@ -864,7 +914,10 @@ function evidence(passed: boolean, targetId: string): VerificationEvidence {
   };
 }
 
-async function createCandidate(fixture: Fixture) {
+async function createCandidate(
+  fixture: Fixture,
+  content = "export const winner = true;\n",
+) {
   const plane = await fixture.manager.createResolutionPlane({
     id: "promotion-plane",
     projectId: "project",
@@ -875,7 +928,7 @@ async function createCandidate(fixture: Fixture) {
     executionIdentity: "exec-candidate",
     authority,
   });
-  await writeFile(path.join(plane.worktreePath, "candidate.ts"), "export const winner = true;\n", "utf8");
+  await writeFile(path.join(plane.worktreePath, "candidate.ts"), content, "utf8");
   const committedPlane = await fixture.manager.commitPlane(plane, "Finalize winning candidate");
   const now = new Date().toISOString();
   const candidate: ResolutionCandidate = {
@@ -903,6 +956,52 @@ async function createCandidate(fixture: Fixture) {
 }
 
 describe("PromotionGate integration", () => {
+  it("rejects a configured secret in the exact candidate commit before verification or CAS", async () => {
+    const canary = "ark-canary-must-never-promote-49173";
+    const fixture = await createFixture();
+    try {
+      const { plane, candidate } = await createCandidate(
+        fixture,
+        `export const leaked = "${canary}";\n`,
+      );
+      const verifier = { verify: vi.fn(async () => evidence(true, candidate.id)) };
+      const cas = vi.spyOn(fixture.manager.git, "compareAndSwapFastForward");
+      const gate = new PromotionGate(
+        fixture.manager.git,
+        verifier,
+        async () => ({ allowed: true, reason: null }),
+        fixture.manager,
+        [canary],
+      );
+
+      const result = await gate.promote({
+        candidate,
+        plane,
+        protectedBranch: "main",
+        expectedHead: fixture.baseCommit,
+        checks: [mandatoryCheck],
+        loadPersistedSelectedCandidateId: async () => candidate.id,
+        persistPromotingEvidence: async () => {},
+      });
+
+      expect(result).toMatchObject({
+        promoted: false,
+        reason: "unauthorized_file_change",
+        changedFiles: ["candidate.ts"],
+      });
+      if (result.promoted) throw new Error("Secret-bearing candidate was promoted");
+      expect(result.message).not.toContain(canary);
+      expect(verifier.verify).not.toHaveBeenCalled();
+      expect(cas).not.toHaveBeenCalled();
+      expect(await fixtureGit(fixture.repositoryPath, ["rev-parse", "main"])).toBe(
+        fixture.baseCommit,
+      );
+      await fixture.manager.resetManagedPlanes();
+    } finally {
+      await destroyFixture(fixture);
+    }
+  });
+
   it("re-verifies and atomically fast-forwards the unchanged protected head", async () => {
     const fixture = await createFixture();
     try {

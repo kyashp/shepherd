@@ -392,6 +392,27 @@ class UnauthorizedCandidateExecutor implements ShepherdExecutor {
   }
 }
 
+class SensitiveArtifactExecutor implements ShepherdExecutor {
+  readonly kind = "deterministic_fixture" as const;
+  private readonly inner = new DeterministicFixtureExecutor();
+
+  constructor(private readonly canary: string) {}
+
+  async run(request: ShepherdExecutionRequest): Promise<ShepherdExecutionResult> {
+    const result = await this.inner.run(request);
+    if (request.operation.kind === "frontend_contract") {
+      const artifactPath = path.join(request.workspacePath, "src/frontend/auth.json");
+      const existing = await readFile(artifactPath, "utf8");
+      await writeFile(artifactPath, existing + this.canary, "utf8");
+    }
+    return result;
+  }
+
+  async cancel(executionId: string): Promise<boolean> {
+    return await this.inner.cancel(executionId);
+  }
+}
+
 class ForgedSemanticClaimExecutor implements ShepherdExecutor {
   readonly kind = "deterministic_fixture" as const;
   private readonly inner = new DeterministicFixtureExecutor();
@@ -2780,6 +2801,41 @@ describe("Shepherd deterministic walking skeleton", () => {
     ])).toBe(mission.baseCommit);
     expect(detail?.project.protectedHeadCommit).toBe(mission.baseCommit);
   });
+
+  it("persists a non-disclosing authority denial for secret-bearing Contract output", async () => {
+    const caseRoot = await makeCaseRoot();
+    const canary = "ark-contract-artifact-canary-58302";
+    const storePath = path.join(caseRoot, "state.json");
+    const store = new JsonStore(storePath, { sensitiveValues: [canary] });
+    await store.initialize();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      verifier: new HostTrustedFixtureVerifier(),
+      executor: new SensitiveArtifactExecutor(canary),
+      sensitiveValues: [canary],
+    });
+
+    await expect(service.runDeterministicDemo()).rejects.toThrow(
+      "Scoped authority denied contract changes",
+    );
+    const mission = service.state().missions.at(-1);
+    if (!mission) throw new Error("Sensitive-content Mission was not persisted");
+    const detail = service.missionDetail(mission.id);
+    expect(detail?.contracts).toContainEqual(
+      expect.objectContaining({
+        state: "authority_denied",
+        failure: expect.objectContaining({
+          code: "unauthorized_file_change",
+          stage: "contract_sensitive_content",
+        }),
+      }),
+    );
+    expect(JSON.stringify(detail)).not.toContain(canary);
+    expect(await gitOutput(detail?.project.repositoryPath ?? "", ["rev-parse", "HEAD"]))
+      .toBe(mission.baseCommit);
+  }, 15_000);
 
   it("keeps all-candidate authority failures in attention_required without promotion", async () => {
     const caseRoot = await makeCaseRoot();

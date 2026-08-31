@@ -26,6 +26,12 @@ import {
   assertSafeGitBranch,
   assertSafeProjectPath,
 } from "./git-client.js";
+import {
+  PlaneSensitiveContentError,
+  assertNoSensitiveContent,
+} from "./sensitive-content.js";
+
+export { PlaneSensitiveContentError } from "./sensitive-content.js";
 
 const ROOT_SENTINEL = ".shepherd-plane-root.json";
 const EXECUTION_ROOT = ".execution-workspaces";
@@ -50,6 +56,7 @@ export interface PlaneManagerOptions {
   protectedBranch?: string;
   git?: GitClient;
   now?: () => Date;
+  sensitiveValues?: readonly string[];
   /** Recovery validates persisted ownership and must never mint a new sentinel. */
   createRootSentinel?: boolean;
 }
@@ -531,6 +538,7 @@ export class PlaneManager {
   readonly planesRoot: string;
   readonly git: GitClient;
   private readonly now: () => Date;
+  private readonly sensitiveValues: string[];
   private readonly createRootSentinel: boolean;
   private initialization: Promise<void> | null = null;
   private canonicalRepositoryPath: string | null = null;
@@ -562,6 +570,9 @@ export class PlaneManager {
         protectedBranch,
       });
     this.now = options.now ?? (() => new Date());
+    this.sensitiveValues = [...new Set(options.sensitiveValues ?? [])].filter(
+      (value) => value.length >= 4,
+    );
     this.createRootSentinel = options.createRootSentinel ?? true;
   }
 
@@ -1058,6 +1069,7 @@ export class PlaneManager {
                 .sort(),
             );
           }
+          await this.assertNoSensitiveContent(stagingPath, stagedChanges);
 
           await this.clearTrustedWorktree(plane.worktreePath);
           planeTouched = true;
@@ -1210,6 +1222,23 @@ export class PlaneManager {
     await this.git.stagePaths(plane.worktreePath, paths);
   }
 
+  async assertNoSensitiveContent(
+    directory: string,
+    projectPaths: readonly string[],
+  ): Promise<void> {
+    await this.ensureInitialized();
+    if (!this.canonicalPlanesRoot) throw new Error("Managed Plane root is not initialized");
+    const canonicalDirectory = await realpath(path.resolve(directory));
+    if (!isInside(this.canonicalPlanesRoot, canonicalDirectory)) {
+      throw new Error("Sensitive-content scan escaped the managed Plane root");
+    }
+    await assertNoSensitiveContent(
+      canonicalDirectory,
+      projectPaths,
+      this.sensitiveValues,
+    );
+  }
+
   /**
    * Rebuilds one trusted commit from the immutable Plane base. This strips any
    * Agent-authored commits and guarantees `.shepherd/**` is not integrated.
@@ -1226,6 +1255,14 @@ export class PlaneManager {
       );
     }
     const promotableChanges = authority.integrablePaths;
+    try {
+      await this.assertNoSensitiveContent(plane.worktreePath, promotableChanges);
+    } catch (error) {
+      if (error instanceof PlaneSensitiveContentError) {
+        await this.git.restorePlaneWorktree(plane.worktreePath, plane.baseCommit);
+      }
+      throw error;
+    }
     const headCommit = await this.git.rebuildCommit(
       plane.worktreePath,
       plane.baseCommit,
@@ -1293,6 +1330,19 @@ export class PlaneManager {
       ...integrationPlane,
       headCommit: merged.headCommit,
     });
+    if (merged.conflictFiles.length === 0) {
+      try {
+        await this.assertNoSensitiveContent(updated.worktreePath, updated.changedFiles);
+      } catch (error) {
+        if (error instanceof PlaneSensitiveContentError) {
+          await this.git.restorePlaneWorktree(
+            integrationPlane.worktreePath,
+            integrationPlane.headCommit ?? integrationPlane.baseCommit,
+          );
+        }
+        throw error;
+      }
+    }
     return {
       merged: merged.conflictFiles.length === 0,
       plane: updated,

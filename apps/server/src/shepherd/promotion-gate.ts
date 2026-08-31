@@ -13,6 +13,10 @@ import {
   ProtectedWorktreeSynchronizationError,
   assertFullObjectId,
 } from "./git-client.js";
+import {
+  PlaneSensitiveContentError,
+  assertNoSensitiveContent,
+} from "./sensitive-content.js";
 
 export interface PromotionAuthorityInput {
   plane: Plane;
@@ -125,6 +129,7 @@ export class PromotionGate {
     private readonly verifier: PromotionVerifier,
     private readonly authorityRecheck: PromotionAuthorityRecheck,
     private readonly snapshots: PromotionVerificationSnapshotProvider,
+    private readonly sensitiveValues: readonly string[] = [],
   ) {}
 
   async promote(request: PromotionRequest): Promise<PromotionResult> {
@@ -236,6 +241,11 @@ export class PromotionGate {
           if (snapshot.commit !== candidateHead || snapshot.path === request.plane.worktreePath) {
             throw new Error("Promotion verification snapshot identity is invalid");
           }
+          await assertNoSensitiveContent(
+            snapshot.path,
+            changedFiles,
+            this.sensitiveValues,
+          );
           return await this.verifier.verify({
             targetType: "promotion",
             targetId: request.candidate.id,
@@ -245,7 +255,14 @@ export class PromotionGate {
           });
         },
       );
-    } catch {
+    } catch (error) {
+      if (error instanceof PlaneSensitiveContentError) {
+        return failed({
+          reason: "unauthorized_file_change",
+          message: "Candidate contains configured sensitive content",
+          changedFiles,
+        });
+      }
       return failed({
         reason: "verification_infrastructure_error",
         message: "Final independent verification could not run",

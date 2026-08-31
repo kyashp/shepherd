@@ -96,6 +96,7 @@ import {
   PlaneAuthorityViolationError,
   PlaneCreationError,
   PlaneManager,
+  PlaneSensitiveContentError,
   synchronizeVerifiedArtifacts,
   type ExecutionWorkspace,
 } from "./plane-manager.js";
@@ -1902,6 +1903,7 @@ export class ShepherdService {
       repositoryPath: project.repositoryPath,
       planesRoot: project.planesRoot,
       protectedBranch: project.protectedBranch,
+      sensitiveValues: this.sensitiveValues,
     });
     await planeManager.initialize();
     const existing = database.shepherd.projects.find(
@@ -2963,6 +2965,7 @@ export class ShepherdService {
             : { promotionFaults: this.gitPromotionFaults }),
         }),
         now: this.now,
+        sensitiveValues: this.sensitiveValues,
       });
       await planeManager.initialize();
       const sourceContracts = snapshot.shepherd.contracts.filter(
@@ -3174,6 +3177,7 @@ export class ShepherdService {
           protectedBranch: managedProject.protectedBranch,
         }),
         now: this.now,
+        sensitiveValues: this.sensitiveValues,
       });
       await planeManager.initialize();
       const removedPlanePaths = await planeManager.resetManagedPlanes();
@@ -3282,6 +3286,7 @@ export class ShepherdService {
           ...(this.gitMergeFaults === undefined ? {} : { mergeFaults: this.gitMergeFaults }),
         }),
         now: this.now,
+        sensitiveValues: this.sensitiveValues,
       });
       await planeManager.initialize();
       const createdAt = this.timestamp();
@@ -3670,6 +3675,15 @@ export class ShepherdService {
         code: "worktree_creation_failure",
         message: "Contract Plane worktree could not be created",
         stage: "plane_creation",
+        at,
+        retryable: false,
+      };
+    }
+    if (error instanceof PlaneSensitiveContentError) {
+      return {
+        code: "unauthorized_file_change",
+        message: "Agent output contained configured sensitive content",
+        stage: "sensitive_content",
         at,
         retryable: false,
       };
@@ -4122,6 +4136,7 @@ export class ShepherdService {
         ...(this.gitMergeFaults === undefined ? {} : { mergeFaults: this.gitMergeFaults }),
       }),
       now: this.now,
+      sensitiveValues: this.sensitiveValues,
     });
     await planeManager.initialize();
 
@@ -4654,14 +4669,19 @@ export class ShepherdService {
     const evidence = this.sanitizeEvidence(
       await prepared.planeManager.withVerificationSnapshot(
         integration.headCommit,
-        async (snapshot) =>
-          await this.verifier.verify({
+        async (snapshot) => {
+          await prepared.planeManager.assertNoSensitiveContent(
+            snapshot.path,
+            changedFiles,
+          );
+          return await this.verifier.verify({
             targetType: "promotion",
             targetId: integration.id,
             planePath: snapshot.path,
             checks: [generalContractCheck()],
             changedFiles,
-          }),
+          });
+        },
       ),
     );
     if (!evidence.passed) {
@@ -5389,12 +5409,19 @@ export class ShepherdService {
     contractId: string,
     planeId: string,
     changedPaths: readonly string[],
+    reason: "scope" | "sensitive_content" = "scope",
   ): Promise<never> {
     const deniedAt = this.timestamp();
     const failure: FailureInfo = {
       code: "unauthorized_file_change",
-      message: "Actual changes exceeded the Contract's scoped authority",
-      stage: "contract_authority",
+      message:
+        reason === "sensitive_content"
+          ? "Contract output contained configured sensitive content"
+          : "Actual changes exceeded the Contract's scoped authority",
+      stage:
+        reason === "sensitive_content"
+          ? "contract_sensitive_content"
+          : "contract_authority",
       at: deniedAt,
       retryable: false,
     };
@@ -5615,6 +5642,14 @@ export class ShepherdService {
           input.contractId,
           initialPlane.id,
           error.deniedPaths,
+        );
+      }
+      if (error instanceof PlaneSensitiveContentError) {
+        await this.persistContractAuthorityDenial(
+          input.contractId,
+          initialPlane.id,
+          error.affectedPaths,
+          "sensitive_content",
         );
       }
       throw error;
@@ -6930,11 +6965,19 @@ export class ShepherdService {
         error instanceof RuntimeExecutionError
           ? new RuntimeExecutionError(error.kind, error.timeoutMs)
           : null;
-      candidate.failure = error instanceof AuthorityViolationError
+      candidate.failure =
+        error instanceof AuthorityViolationError ||
+        error instanceof PlaneSensitiveContentError
         ? {
               code: "unauthorized_file_change",
-              message: "Actual Git changes exceeded the candidate's scoped authority",
-              stage: "candidate_authority",
+              message:
+                error instanceof PlaneSensitiveContentError
+                  ? "Candidate output contained configured sensitive content"
+                  : "Actual Git changes exceeded the candidate's scoped authority",
+              stage:
+                error instanceof PlaneSensitiveContentError
+                  ? "candidate_sensitive_content"
+                  : "candidate_authority",
               at: failedAt,
               retryable: false,
             }
@@ -7388,6 +7431,7 @@ export class ShepherdService {
         };
       },
       prepared.planeManager,
+      this.sensitiveValues,
     );
     return await gate.promote({
       candidate,
