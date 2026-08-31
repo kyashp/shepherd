@@ -152,10 +152,6 @@ SHEPHERD_EXECUTION_MODE=deterministic
 SHEPHERD_DEMO_MODE=true
 ```
 
-`APP_AUTH_TOKEN` is optional on loopback. If set, it must contain at least 24
-URL-safe characters and the browser will show an unlock screen. Never source,
-print, screenshot, or commit `.env`; the launcher parses it as data.
-
 ### 2. Start
 
 ```bash
