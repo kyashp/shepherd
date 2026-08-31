@@ -22,7 +22,7 @@
 
 ## Global constraints
 
-- Work only in `/Users/sanje/code/shepherd/.tmp/worktrees/issue-48-stability` on `test/48-stability-campaign`, based on `origin/main@9f8579370247410a5e85df57bb4b6fe219e675b7`.
+- Work only in `/Users/sanje/code/shepherd/.tmp/worktrees/issue-48-stability` on `test/48-stability-campaign`, based on `origin/main@a2a464d6be697ab949b254944b81c355a9be5403` after PR #94 integrated.
 - The issue is assigned to `sanjey99`; ownership is recorded in issue comment `#issuecomment-5472521900`; the branch is already published to `origin`.
 - Recheck issue #48, open pull requests, remote branches, and worktrees before each new file-ownership expansion. Stop if another active owner claims an overlapping file.
 - Keep the accepted UI frozen. This plan does not modify web code or visual evidence.
