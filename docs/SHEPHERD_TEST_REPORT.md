@@ -2,16 +2,18 @@
 
 **Observed:** 2026-08-31, Asia/Singapore
 
-**Protected-main base:** `f935fdb5581849f8377f20922e254c55d34e5de0`
+**Protected-main base before remediation:** `f935fdb5581849f8377f20922e254c55d34e5de0`
 
 **Tested product commit:** `223a5fe00f977013d4bf5df6560016a1719c8d11`
 
-**Candidate:** [issue #96](https://github.com/kyashp/shepherd/issues/96) /
-[draft PR #97](https://github.com/kyashp/shepherd/pull/97)
+**Integrated merge:** `53f252935f63f4bef8a36f17432fecd0de824181`
 
-This report records commands actually observed on the named candidate. It does not
-claim protected-main integration, independent security/UI review, a paid provider
-request, or a complete demo rehearsal.
+**Delivery:** [issue #96](https://github.com/kyashp/shepherd/issues/96) /
+[merged PR #97](https://github.com/kyashp/shepherd/pull/97)
+
+This report records commands actually observed in a clean worktree on the exact
+protected-main merge. It does not claim independent security/UI review, a paid
+provider request, or a complete demo rehearsal.
 
 ## Environment
 
@@ -30,13 +32,13 @@ request, or a complete demo rehearsal.
 | Gate | Result | Scope |
 |---|---:|---|
 | `npm run check` | Pass | root Node tests 26/26; Server 856 passed and 3 explicit opt-in skips; Web 20/20; strict production/test typechecks; Web and Server production builds |
-| `npm run test:coverage` | Pass | Server: 86.15% statements, 80.05% branches, 91.46% functions, 88.03% lines. Browser: 88.50% statements, 80.18% branches, 87.64% functions, 92.37% lines. Every production source file is required; all four thresholds are 80%. |
+| `npm run test:coverage` | Pass | Server: 86.15% statements, 80.05% branches, 91.46% functions, 88.03% lines. Browser: 88.40% statements, 80.00% branches, 87.35% functions, 92.37% lines. Every production source file is required; all four thresholds are 80%. |
 | full Playwright matrix | Pass, 48/48 | 24 functional flows at both `1280x800` and `1440x900`, one worker, normal non-instrumented production build |
 | `npm run test:terraform` | Pass | formats, initializes, and validates a disposable module copy with the pinned Terraform image; working tree is not populated with provider state |
-| `npm run test:shepherd:live:preflight` | Pass | builds the exact candidate Runtime and non-root controller images, uses a named state volume and engine socket, discovers exactly one live test, and cleans temporary resources; no model request |
+| `npm run test:shepherd:live:preflight` | Pass | builds the exact merged Runtime and non-root controller images, uses a named state volume and engine socket, discovers exactly one live test, and cleans temporary resources; no model request |
 | `npm audit --json` | Pass | 0 vulnerabilities |
 | `git diff --check` and bounded secret scan | Pass | no whitespace error, tracked credential, state, or generated Terraform artifact found |
-| hosted PR workflows at `bb1a1df` | Pass | `Node 22 / npm run check` run `33389614355` in 2m59s; `Required checks` run `33389614223` in 3m01s |
+| hosted protected-main workflow | Pass | `Required checks` push run `33396729636` completed successfully on exact merge `53f2529` |
 
 The clean coverage run executes the complete Server suite first, then rebuilds the
 Web app with browser instrumentation and runs 24 Chromium flows. It restores the
@@ -78,8 +80,6 @@ theme and layout were preserved.
 - **Independent review:** issue #45's read-only UI review and issue #89's required
   independent security review cannot be self-certified by the author of this
   remediation. The deterministic UI and security regressions pass locally.
-- **Integration:** both hosted candidate workflows pass, but this remains candidate
-  evidence until an integrator merges it and the protected-main rerun passes.
 - **Rehearsal/delivery:** three clean timed demo rehearsals and any genuinely
   available second-machine run remain separate evidence work. This report does not
   infer them from automated tests.

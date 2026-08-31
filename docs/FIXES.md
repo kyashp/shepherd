@@ -34,8 +34,8 @@ that limitation is explicit.
 
 ### `REL-96` — exact-main release audit findings
 
-- **Evidence class:** issue #96 / draft PR #97, based on protected `main`
-  `f935fdb`; tested product commit `223a5fe`.
+- **Evidence class:** issue #96 / merged PR #97, based on protected `main`
+  `f935fdb`; tested product commit `223a5fe`; integrated as `53f2529`.
 - **Browser failures:** the first full matrix passed 34/38. Project Group's
   controlled composer could lose the character committed in the same turn as a
   mention action or move its caret; Agent edit could publish a blank/custom draft
@@ -53,7 +53,8 @@ that limitation is explicit.
   build the exact candidate tree. Terraform validation was unavailable on hosts
   without a local binary, and the repository had no executable coverage provider or
   enforceable 80% threshold.
-- **Correction/status:** **REMEDIATED CANDIDATE** at `223a5fe` plus the preceding
+- **Correction/status:** **REMEDIATED + INTEGRATED** at protected-main merge
+  `53f2529`, from product head `223a5fe` plus the preceding
   issue #96 commits. Controlled UI actions synchronously commit the latest draft and
   preserve caret/hydration state without changing the accepted design. Durable
   publication is capacity-bounded and atomic. Tokenless access is loopback Host plus
@@ -64,13 +65,13 @@ that limitation is explicit.
   scripts.
 - **Observed closure evidence:** literal `npm run check` passed root 26/26, Server
   856 passed plus 3 opt-in skips, Web 20/20, strict types and both builds. Clean
-  Server coverage is 86.15/80.05/91.46/88.03%; clean browser coverage is
-  88.50/80.18/87.64/92.37% (statements/branches/functions/lines). Full Chromium is
+  Server coverage is 86.15/80.05/91.46/88.03%; exact-merge browser coverage is
+  88.40/80.00/87.35/92.37% (statements/branches/functions/lines). Full Chromium is
   48/48 at exact `1280x800` and `1440x900`. Pinned Terraform validation and the
   exact-tree zero-spend live Docker preflight pass; dependency audit reports zero
-  vulnerabilities. External Ark inference, independent UI/security review,
-  hosted CI and protected-main integration remain explicit gates, so this row is
-  not marked audited or integrated.
+  vulnerabilities. Protected-main workflow run `33396729636` passes on the merge.
+  External Ark inference and independent UI/security review remain explicit gates,
+  so this row is integrated but not independently audited.
 
 ### `TST-30` — Candidate-cleanup fixture races first-use Runtime root adoption
 

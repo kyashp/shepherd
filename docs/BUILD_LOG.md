@@ -5775,3 +5775,38 @@ Auditor, security and hosted integration evidence.
   transfer. Independent UI gate `U`, issue #89 part-5 security review,
   protected-main integration and the three complete demo rehearsals remain open;
   local and hosted candidate success is not substituted for any of them.
+
+## 2026-08-31 — issue #96 protected-main integration closeout
+
+- **Identity:** PR #97 merged to protected `main` as
+  `53f252935f63f4bef8a36f17432fecd0de824181`; final PR head was
+  `14b69f230a043e3cc838ce0cc1c96af9f006047b`. Verification used a clean worktree
+  at the exact merge, not the earlier product or documentation candidate.
+- **Install and repository gate:** `npm ci` installed 264 packages and reported
+  zero vulnerabilities. Literal `npm run check` passed root script/deploy tests
+  26/26, Server 856 passed with 3 explicit opt-in skips, Web 20/20, every strict
+  production/test typecheck, and both production builds.
+- **Clean coverage:** `npm run test:coverage` passed. Server V8 coverage was
+  86.15% statements (7543/8755), 80.05% branches (5230/6533), 91.46% functions
+  (1446/1581), and 88.03% lines (7161/8134). Browser Istanbul coverage was 88.40%
+  statements (923/1044), 80.00% branches (860/1075), 87.35% functions (304/348),
+  and 92.37% lines (788/853). All four metrics and every production file remain
+  enforced; 24 instrumented browser flows passed and the ordinary build was
+  restored.
+- **Full browser matrix:** ordinary one-worker Chromium passed 48/48: 24 functional
+  flows at both exact `1280x800` and `1440x900`. Natural PERF-01 measurements were,
+  respectively, 3,562/3,463 ms total; 566/563 ms persisted event to visible; and
+  1,979/1,877 ms collision to promotion complete. Both visibility samples satisfy
+  the PRD `<=1.5s` bound.
+- **Terraform and live construction:** `npm run test:terraform` passed with pinned
+  Terraform 1.9.8 and Volcengine provider 0.0.58. The exact-tree
+  `npm run test:shepherd:live:preflight` built the merged Runtime/controller, ran
+  the controller non-root with a named volume and engine socket, discovered exactly
+  one live integration test, and cleaned temporary resources. No model request ran.
+- **Hosted integration:** protected-main `Required checks` push run `33396729636`
+  completed successfully on exact merge `53f2529`.
+- **Explicit remaining evidence:** external Ark inference was not executed because
+  it transmits repository-derived prompts and scoped code and consumes live model
+  capacity; it requires separate informed approval. Independent UI gate `U`, issue
+  #89's independent security review, and three complete demo rehearsals remain open.
+  None is inferred from deterministic integration evidence.
