@@ -121,7 +121,7 @@ import {
   transitionContractAndRecord,
   transitionMissionAndRecord,
 } from "./state-machine.js";
-import { selectRunnableContracts } from "./scheduler.js";
+import { allSettledBounded, selectRunnableContracts } from "./scheduler.js";
 import type { VerificationRequest } from "./verifier.js";
 
 const SHEPHERD_ACTOR = {
@@ -801,36 +801,6 @@ function pathsOverlap(left: string, right: string): boolean {
       );
     })()
   );
-}
-
-async function allSettledBounded<T>(
-  inputs: readonly T[],
-  limit: number,
-  operation: (input: T, index: number) => Promise<void>,
-): Promise<PromiseSettledResult<void>[]> {
-  const results = new Array<PromiseSettledResult<void>>(inputs.length);
-  let nextIndex = 0;
-  const worker = async (): Promise<void> => {
-    for (;;) {
-      const index = nextIndex;
-      nextIndex += 1;
-      if (index >= inputs.length) return;
-      const input = inputs[index];
-      if (input === undefined) return;
-      try {
-        await operation(input, index);
-        results[index] = { status: "fulfilled", value: undefined };
-      } catch (reason) {
-        results[index] = { status: "rejected", reason };
-      }
-    }
-  };
-  const workers = Array.from(
-    { length: Math.min(inputs.length, Math.max(1, limit)) },
-    () => worker(),
-  );
-  await Promise.all(workers);
-  return results;
 }
 
 /** Stable UUID-shaped identity accepted by all existing Agent API routes. */

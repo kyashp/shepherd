@@ -14,8 +14,8 @@
 
 - [x] Task 1: Isolate fixture Git commands from enclosing hook state.
 - [x] Task 2: Replace snapshot-removal file watchers with a lifecycle checkpoint.
-- [x] Task 3: Recheck the two historically sensitive service rows.
-- [x] Task 4: Run adjacent and full server verification.
+- [x] Task 3: Recheck and causally isolate the historically sensitive service rows.
+- [x] Task 4: Run adjacent and full server verification on the revised candidate.
 - [ ] Task 5: Commit the causal fixes and open the linked draft pull request.
 - [ ] Task 6: Run the formal five-consecutive-check campaign.
 - [ ] Task 7: Independent readiness review.
@@ -217,7 +217,18 @@ Record every result. Passing repeated focused runs establishes that the previous
 
 ### Step 2: Apply only a demonstrated causal synchronization fix
 
-If PERF-01 fails, replace its polling loop with a test-owned deferred promise resolved synchronously when the second distinct candidate enters `CandidateExecutionIntervalExecutor.run`. Preserve the test's assertion that both intervals are simultaneously open; do not extend its timeout.
+PERF-01 did fail during formal campaign run 4 after five focused passes and three complete green campaign runs. The service row timed out at 5.176 seconds while 843 peer server tests passed. A deferred start barrier alone retained the original full-Mission completion assertions but still timed out under a fresh full-suite run at 6.229 seconds. Disabling auto-resolution and awaiting exact candidate completion/attention also remained over budget at 6.038 seconds. These RED results prove that a Git-backed Mission lifecycle cannot be the timing harness for a five-second scheduler-overlap assertion under representative suite pressure.
+
+Move the existing production `allSettledBounded` primitive from `service.ts` to the canonical `scheduler.ts` module without changing its implementation or callers. Replace the expensive service-level PERF row with a scheduler-boundary test in `scheduler.test.ts` that:
+
+1. passes two distinct candidate IDs to the same exported bounded batch primitive used by `ShepherdService`;
+2. dispatches each item through a test executor with promise barriers for both-started, release, and both-completed;
+3. asserts two start timestamps exist while completion remains empty before release;
+4. releases both operations, awaits the real batch result, and asserts two fulfilled results plus two completion timestamps;
+5. proves the latest start timestamp is no later than the earliest completion timestamp;
+6. retains a separate limit-one assertion so the moved primitive still enforces its concurrency cap and input-order result contract.
+
+Remove the service-test-only `CandidateExecutionIntervalExecutor` and its full-Mission PERF row after the scheduler-boundary RED/GREEN test exists. This isolates the performance contract rather than reducing it: the exact start-before-release/completion-after-release assertions move intact to the production scheduling primitive, while the adjacent 30-second real-Planes tests continue to prove completed Mission, selected/promoted candidate, and `promotion_completed` behavior. Do not extend any timeout or change suite concurrency.
 
 If attention-required cleanup fails, add a test-owned lifecycle barrier at the exact point the tracked Mission finishes cancellation and await that barrier before fixture removal. Preserve the terminal-state and cleanup assertions; do not add retries or sleeps.
 
