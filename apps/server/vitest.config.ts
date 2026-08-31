@@ -13,6 +13,7 @@ process.env.TEMP = repositoryLocalTemp;
 export default defineConfig({
   test: {
     clearMocks: true,
+    fileParallelism: false,
     restoreMocks: true,
     coverage: {
       provider: "v8",
