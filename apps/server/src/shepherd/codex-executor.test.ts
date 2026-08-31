@@ -947,6 +947,10 @@ describe("CodexShepherdExecutor", () => {
       return await originalRun(runnerRequest);
     };
     const liveExecutor = new CodexShepherdExecutor(test.config, OWNER, runner);
+    // Candidate scheduling is concurrent; establish the shared root first so this
+    // fixture isolates cleanup after the runner has received a private home.
+    await expect(liveExecutor.preflight()).resolves.toBeUndefined();
+    expect(runner.preflightCount).toBe(1);
     const fixtureExecutor = new DeterministicFixtureExecutor();
     const routedExecutor: ShepherdExecutor = {
       kind: "deterministic_fixture",

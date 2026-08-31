@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ExecutionContract, Mission } from "./domain.js";
 import {
+  allSettledBounded,
   DagValidationError,
   selectRunnableContracts,
   validateContractDag,
@@ -41,6 +42,14 @@ const runtime = {
   activePlaneCount: 0,
   maxPlaneConcurrency: 4,
 };
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
 
 const errorCode = (run: () => void, code: DagValidationError["code"]) => {
   expect(run).toThrow(DagValidationError);
@@ -97,6 +106,87 @@ describe("validateContractDag", () => {
     const drifted = mission(valid);
     drifted.dependencyEdges = [];
     errorCode(() => validateContractDag(drifted, valid), "dependency_mismatch");
+  });
+});
+
+describe("allSettledBounded", () => {
+  it("starts two candidate executor operations before either completes", async () => {
+    const release = deferred<void>();
+    const bothStarted = deferred<void>();
+    let candidateStarts: Array<{ id: string; timestamp: string }> = [];
+    let candidateCompletes: Array<{ id: string; timestamp: string }> = [];
+    const candidateOperations = [{ id: "candidate-a" }, { id: "candidate-b" }];
+
+    const settled = allSettledBounded(candidateOperations, 2, async (candidate) => {
+      candidateStarts = [
+        ...candidateStarts,
+        { id: candidate.id, timestamp: new Date().toISOString() },
+      ];
+      if (candidateStarts.length === 2) bothStarted.resolve();
+      await release.promise;
+      candidateCompletes = [
+        ...candidateCompletes,
+        { id: candidate.id, timestamp: new Date().toISOString() },
+      ];
+    });
+
+    await bothStarted.promise;
+    expect(candidateStarts).toHaveLength(2);
+    expect(candidateStarts.map(({ id }) => id).toSorted()).toEqual([
+      "candidate-a",
+      "candidate-b",
+    ]);
+    expect(candidateCompletes).toEqual([]);
+    expect(
+      candidateStarts.every(({ timestamp }) => Number.isFinite(Date.parse(timestamp))),
+    ).toBe(true);
+
+    release.resolve();
+    await expect(settled).resolves.toEqual([
+      { status: "fulfilled", value: undefined },
+      { status: "fulfilled", value: undefined },
+    ]);
+    expect(candidateCompletes).toHaveLength(2);
+    expect(candidateCompletes.map(({ id }) => id).toSorted()).toEqual([
+      "candidate-a",
+      "candidate-b",
+    ]);
+    expect(
+      candidateCompletes.every(({ timestamp }) => Number.isFinite(Date.parse(timestamp))),
+    ).toBe(true);
+    const latestStart = Math.max(
+      ...candidateStarts.map(({ timestamp }) => Date.parse(timestamp)),
+    );
+    const earliestCompletion = Math.min(
+      ...candidateCompletes.map(({ timestamp }) => Date.parse(timestamp)),
+    );
+    expect(latestStart).toBeLessThanOrEqual(earliestCompletion);
+  });
+
+  it("honors limit one and preserves input-order results", async () => {
+    const releaseFirst = deferred<void>();
+    const firstStarted = deferred<void>();
+    const secondFailure = new Error("candidate-second-rejected");
+    let started: string[] = [];
+
+    const settled = allSettledBounded(["first", "second"], 1, async (input) => {
+      started = [...started, input];
+      if (input === "first") {
+        firstStarted.resolve();
+        await releaseFirst.promise;
+        return;
+      }
+      throw secondFailure;
+    });
+
+    await firstStarted.promise;
+    expect(started).toEqual(["first"]);
+    releaseFirst.resolve();
+    await expect(settled).resolves.toEqual([
+      { status: "fulfilled", value: undefined },
+      { status: "rejected", reason: secondFailure },
+    ]);
+    expect(started).toEqual(["first", "second"]);
   });
 });
 

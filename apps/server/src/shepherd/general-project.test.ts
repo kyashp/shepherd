@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
-import { access, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { access, mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   beginGeneralProjectCreation,
   beginGeneralProjectDeletion,
@@ -22,6 +22,44 @@ import {
 const execute = promisify(execFile);
 const roots: string[] = [];
 
+async function runFixtureGit(
+  repositoryPath: string,
+  args: readonly string[],
+): Promise<string> {
+  return await new Promise<string>((resolve, reject) => {
+    execFile(
+      "git",
+      ["-C", repositoryPath, ...args],
+      {
+        env: {
+          PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin",
+          HOME: "/nonexistent",
+          LANG: "C",
+          LC_ALL: "C",
+          GIT_CONFIG_NOSYSTEM: "1",
+          GIT_CONFIG_GLOBAL: "/dev/null",
+          GIT_TERMINAL_PROMPT: "0",
+        },
+        encoding: "utf8",
+        timeout: 15_000,
+        maxBuffer: 1_048_576,
+        windowsHide: true,
+      },
+      (error, stdout) => (error ? reject(error) : resolve(stdout.trim())),
+    );
+  });
+}
+
+async function assertFixtureRepositoryIdentity(repositoryPath: string): Promise<void> {
+  const expected = await realpath(repositoryPath);
+  const actual = path.resolve(
+    await runFixtureGit(repositoryPath, ["rev-parse", "--show-toplevel"]),
+  );
+  if (actual !== expected) {
+    throw new Error("Fixture Git command escaped its selected repository");
+  }
+}
+
 async function caseRoot(): Promise<string> {
   const root = await mkdtemp(path.join(process.cwd(), ".tmp-general-project-"));
   roots.push(root);
@@ -29,6 +67,7 @@ async function caseRoot(): Promise<string> {
 }
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
@@ -103,6 +142,51 @@ describe("general Agent managed project", () => {
     await expect(
       synchronizeVerifiedArtifacts(source, hostile, ["src/result.ts"]),
     ).rejects.toThrow(UnsafeExecutionWorkspaceError);
+  });
+
+  it("keeps fixture Git staging inside the selected repository when selectors are poisoned", async () => {
+    const root = await caseRoot();
+    const managedRoot = path.join(root, "managed");
+    const workspace = path.join(root, "workspace");
+    const decoy = path.join(root, "decoy");
+    await mkdir(workspace);
+    await writeFile(path.join(workspace, "README.md"), "safe snapshot\n");
+    const project = await initializeGeneralAgentProject({
+      managedRoot,
+      projectId: "agent-81111111-1111-4111-8111-111111111111",
+      agentWorkspacePath: workspace,
+      expectedArtifacts: ["README.md"],
+      acceptanceSummary: "the file exists and is non-empty",
+      requiredContent: null,
+    });
+    await mkdir(decoy);
+    await runFixtureGit(decoy, ["init", "--initial-branch=main"]);
+    await writeFile(path.join(decoy, "decoy.txt"), "decoy\n");
+    await runFixtureGit(decoy, ["add", "--", "decoy.txt"]);
+    await runFixtureGit(
+      decoy,
+      [
+        "-c",
+        "user.name=Fixture",
+        "-c",
+        "user.email=fixture@local.invalid",
+        "commit",
+        "-m",
+        "decoy",
+      ],
+    );
+    const fixtureOwnedPath = "fixture-owned.txt";
+    await writeFile(path.join(project.repositoryPath, fixtureOwnedPath), "fixture\n");
+
+    vi.stubEnv("GIT_DIR", path.join(decoy, ".git"));
+    vi.stubEnv("GIT_WORK_TREE", decoy);
+
+    await assertFixtureRepositoryIdentity(project.repositoryPath);
+    await runFixtureGit(project.repositoryPath, ["add", "--", fixtureOwnedPath]);
+    expect(
+      await runFixtureGit(project.repositoryPath, ["diff", "--cached", "--name-only"]),
+    ).toContain(fixtureOwnedPath);
+    expect(await runFixtureGit(decoy, ["status", "--porcelain=v1"])).toBe("");
   });
 
   it("removes only a journal-proven orphan after a pre-persistence interruption", async () => {
@@ -262,11 +346,10 @@ describe("general Agent managed project", () => {
       const policyPath = path.join(project.repositoryPath, "policy.json");
       const originalPolicy = await readFile(policyPath, "utf8");
       await beginGeneralProjectPolicyUpdate(managedRoot, projectId, project.headCommit);
+      await assertFixtureRepositoryIdentity(project.repositoryPath);
       await writeFile(policyPath, '{"interrupted":true}\n');
       if (staged) {
-        await execute("git", ["add", "--", "policy.json"], {
-          cwd: project.repositoryPath,
-        });
+        await runFixtureGit(project.repositoryPath, ["add", "--", "policy.json"]);
       }
       await reconcileGeneralProjectPolicyUpdates(
         managedRoot,
@@ -274,9 +357,7 @@ describe("general Agent managed project", () => {
       );
       expect(await readFile(policyPath, "utf8")).toBe(originalPolicy);
       expect(
-        (await execute("git", ["status", "--porcelain=v1"], {
-          cwd: project.repositoryPath,
-        })).stdout,
+        await runFixtureGit(project.repositoryPath, ["status", "--porcelain=v1"]),
       ).toBe("");
     },
   );

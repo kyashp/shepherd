@@ -31,6 +31,70 @@ that limitation is explicit.
 
 ## Immediate queue
 
+### `TST-30` — Candidate-cleanup fixture races first-use Runtime root adoption
+
+- **Evidence class:** full pre-push Server gate on issue #48 candidate `f3a9dc0`.
+  All candidates reached failed/no-promotion state, but none retained the expected
+  sanitized `Agent Runtime execution failed` cleanup result.
+- **Failure contract:** the routed test executor bypasses the production startup
+  recovery path. Concurrent first-use candidates can therefore race private-root
+  sentinel adoption and fail before `runner.run` registers their private homes as
+  cleanup-fault targets. The row then measures setup adoption instead of cleanup.
+- **Correction/status:** **RESOLVED CANDIDATE** at `69d82b4` on PR #93. Call the
+  public executor preflight once and assert it occurred before candidate scheduling;
+  cleanup injection, timeout, and failure/no-promotion assertions are unchanged.
+  The exact row passed 10/10, executor file 72/72, full Server 845/3 skipped before
+  rebase, and the formal current-main campaign passed five literal gates at
+  `10c95da`. Integration audit remains pending.
+
+### `TST-29` — PERF-01 overlap proof spends its budget on full Mission setup
+
+- **Evidence class:** formal issue #48 run 4 on `bd77952` timed out at 5.176s
+  after three complete green gates. A promise start barrier still failed at 6.229s;
+  an `autoResolution:false` candidate-completion variant failed at 6.038s.
+- **Failure contract:** the assertion is about bounded scheduler overlap, but the
+  five-second row builds a complete Git-backed Mission before reaching that
+  boundary. Under suite pressure the setup consumes the timing budget even when
+  candidate scheduling is correct.
+- **Correction/status:** **RESOLVED CANDIDATE** at `f3a9dc0` on PR #93. Move the
+  existing byte-equivalent `allSettledBounded` primitive to the canonical scheduler
+  module and prove two-start-before-release, completion-after-release, limit-one,
+  rejection, and input-order behavior directly. Adjacent 30-second real-Plane tests
+  retain completed-Mission, selection, promotion, and `promotion_completed`
+  coverage. No product timeout/concurrency/retry changed. Formal campaign 5/5 at
+  `10c95da`; integration audit remains pending.
+
+### `TST-28` — F-03 snapshot cleanup is observed through OS file watchers
+
+- **Evidence class:** issue #48 reproduced the previously logged fail-fast sibling
+  cleanup instability while the test relied on `fs.watch` to notice removal.
+- **Failure contract:** the watcher is an extra OS resource and a lossy proxy for a
+  service-owned lifecycle boundary. Under full-suite contention it can miss the
+  removal or contribute descriptor pressure even though the snapshot owner's
+  `finally` is correct.
+- **Correction/status:** **RESOLVED CANDIDATE** at `682d7d9` on PR #93. The existing
+  optional fault-checkpoint seam emits one exact
+  `contract_verification_snapshot_removed` checkpoint only after owned cleanup
+  settles; both F-03 variants await the matching Mission/Contract checkpoint and
+  still require `lstat -> ENOENT`. A failing observer cannot mask the primary
+  verifier error. Both rows passed five consecutive focused repetitions and the
+  formal campaign passed 5/5 at `10c95da`; integration audit remains pending.
+
+### `TST-27` — Fixture Git inherits outer repository selector variables
+
+- **Evidence class:** controlled RED on issue #48. With outer `GIT_DIR` and
+  `GIT_WORK_TREE` set, the general-project fixture helper followed the decoy index;
+  the surrounding Shepherd repository could receive staged fixture paths.
+- **Failure contract:** `git -C` does not override explicit repository selectors.
+  Raw `execFile("git", ...)` inherited the enclosing hook/session environment, so
+  a nested test could mutate the wrong index before asserting its repository.
+- **Correction/status:** **RESOLVED CANDIDATE** at `682d7d9` on PR #93. Fixture Git
+  receives only PATH plus fixed locale/noninteractive/no-config values, never ambient
+  selector variables, and destructive fixture setup first proves the selected
+  repository's real top level. The hostile-selector/decoy regression passed, the
+  normal pre-push gate no longer redirected staging, and the formal campaign passed
+  5/5 at `10c95da`. Integration audit remains pending.
+
 ### `CRUD-01` — Clarification drafts permanently block Agent deletion
 
 - **Evidence class:** reproduced on `origin/main` and preserved as a causal service

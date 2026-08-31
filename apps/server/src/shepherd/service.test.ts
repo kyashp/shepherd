@@ -12,7 +12,6 @@ import {
   rm,
   stat,
   symlink,
-  watch,
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
@@ -305,58 +304,6 @@ class ObservedConcurrentExecutor implements ShepherdExecutor {
     } finally {
       this.active -= 1;
     }
-  }
-
-  async cancel(executionId: string): Promise<boolean> {
-    return await this.inner.cancel(executionId);
-  }
-}
-
-class CandidateExecutionIntervalExecutor implements ShepherdExecutor {
-  readonly kind = "deterministic_fixture" as const;
-  private readonly inner = new DeterministicFixtureExecutor();
-  private releaseCandidates!: () => void;
-  private readonly candidatesReleased: Promise<void>;
-  candidateStarts: string[] = [];
-  candidateCompletes: string[] = [];
-
-  constructor() {
-    this.candidatesReleased = new Promise<void>((resolve) => {
-      this.releaseCandidates = resolve;
-    });
-  }
-
-  async waitForBothCandidates(): Promise<void> {
-    const firstCandidateDeadline = Date.now() + 15_000;
-    while (Date.now() < firstCandidateDeadline) {
-      if (this.candidateStarts.length >= 1) break;
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-    if (this.candidateStarts.length === 0) {
-      throw new Error("candidate execution did not start before the setup deadline");
-    }
-
-    const pairDeadline = Date.now() + 3_000;
-    while (Date.now() < pairDeadline) {
-      if (this.candidateStarts.length === 2) return;
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-    throw new Error("second candidate execution did not start within the bounded pair deadline");
-  }
-
-  release(): void {
-    this.releaseCandidates();
-  }
-
-  async run(request: ShepherdExecutionRequest): Promise<ShepherdExecutionResult> {
-    if (request.operation.kind !== "resolution_candidate") {
-      return await this.inner.run(request);
-    }
-    this.candidateStarts = [...this.candidateStarts, new Date().toISOString()];
-    await this.candidatesReleased;
-    const result = await this.inner.run(request);
-    this.candidateCompletes = [...this.candidateCompletes, new Date().toISOString()];
-    return result;
   }
 
   async cancel(executionId: string): Promise<boolean> {
@@ -678,9 +625,14 @@ function returnedContractInfrastructureEvidence(
   };
 }
 
+interface CapturedContractSnapshot {
+  contractId: string;
+  snapshotPath: string;
+}
+
 class ContractInfrastructureEvidenceVerifier extends HostTrustedFixtureVerifier {
-  readonly siblingSnapshotCaptured: Promise<string>;
-  private markSiblingSnapshotCaptured!: (snapshotPath: string) => void;
+  readonly siblingSnapshotCaptured: Promise<CapturedContractSnapshot>;
+  private markSiblingSnapshotCaptured!: (capture: CapturedContractSnapshot) => void;
   readonly siblingReturned: Promise<void>;
   private markSiblingReturned!: () => void;
   private readonly siblingReleased: Promise<void>;
@@ -692,7 +644,7 @@ class ContractInfrastructureEvidenceVerifier extends HostTrustedFixtureVerifier 
     private readonly privatePath: string,
   ) {
     super();
-    this.siblingSnapshotCaptured = new Promise<string>((resolve) => {
+    this.siblingSnapshotCaptured = new Promise<CapturedContractSnapshot>((resolve) => {
       this.markSiblingSnapshotCaptured = resolve;
     });
     this.siblingReturned = new Promise<void>((resolve) => {
@@ -708,7 +660,10 @@ class ContractInfrastructureEvidenceVerifier extends HostTrustedFixtureVerifier 
   ): Promise<VerificationEvidence> {
     if (request.targetType !== "contract") return await super.verify(request);
     if (!request.targetId.includes("front")) {
-      this.markSiblingSnapshotCaptured(request.planePath);
+      this.markSiblingSnapshotCaptured({
+        contractId: request.targetId,
+        snapshotPath: request.planePath,
+      });
     }
     await this.contractPair.arrive();
     if (request.targetId.includes("front")) {
@@ -780,8 +735,8 @@ class TwoArrivalBarrier {
 }
 
 class SnapshotTrackingContractThrowingVerifier extends HostTrustedFixtureVerifier {
-  readonly siblingSnapshotCaptured: Promise<string>;
-  private markSiblingSnapshotCaptured!: (snapshotPath: string) => void;
+  readonly siblingSnapshotCaptured: Promise<CapturedContractSnapshot>;
+  private markSiblingSnapshotCaptured!: (capture: CapturedContractSnapshot) => void;
   readonly siblingReturned: Promise<void>;
   private markSiblingReturned!: () => void;
   private readonly siblingReleased: Promise<void>;
@@ -793,7 +748,7 @@ class SnapshotTrackingContractThrowingVerifier extends HostTrustedFixtureVerifie
     private readonly privatePath: string,
   ) {
     super();
-    this.siblingSnapshotCaptured = new Promise<string>((resolve) => {
+    this.siblingSnapshotCaptured = new Promise<CapturedContractSnapshot>((resolve) => {
       this.markSiblingSnapshotCaptured = resolve;
     });
     this.siblingReturned = new Promise<void>((resolve) => {
@@ -811,7 +766,10 @@ class SnapshotTrackingContractThrowingVerifier extends HostTrustedFixtureVerifie
       return await super.verify(request);
     }
     if (!request.targetId.includes("front")) {
-      this.markSiblingSnapshotCaptured(request.planePath);
+      this.markSiblingSnapshotCaptured({
+        contractId: request.targetId,
+        snapshotPath: request.planePath,
+      });
     }
     await this.contractPair.arrive();
     if (request.targetId.includes("front")) {
@@ -1086,26 +1044,6 @@ async function settleWithin<T>(promise: Promise<T>, timeoutMs = 5_000): Promise<
     ]);
   } finally {
     if (timeout) clearTimeout(timeout);
-  }
-}
-
-async function waitForOwnedPathRemoval(targetPath: string): Promise<void> {
-  const parent = path.dirname(targetPath);
-  const targetName = path.basename(targetPath);
-  const watcher = watch(parent);
-  try {
-    for await (const event of watcher) {
-      if (event.filename !== targetName) continue;
-      try {
-        await lstat(targetPath);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-        throw error;
-      }
-    }
-    throw new Error("Owned verification snapshot watcher ended before cleanup");
-  } finally {
-    await watcher.return?.();
   }
 }
 
@@ -2757,37 +2695,6 @@ describe("Shepherd deterministic walking skeleton", () => {
     });
   });
 
-  it("PERF-01 proves real scheduled candidate executor intervals overlap before release", async () => {
-    const caseRoot = await makeCaseRoot();
-    const store = new JsonStore(path.join(caseRoot, "state.json"));
-    await store.initialize();
-    const executor = new CandidateExecutionIntervalExecutor();
-    const service = new ShepherdService({
-      store,
-      managedRoot: path.join(caseRoot, "managed"),
-      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
-      verifier: new HostTrustedFixtureVerifier(),
-      executor,
-    });
-
-    const { missionId } = await startTrackedTestMission(service);
-    try {
-      await executor.waitForBothCandidates();
-      expect(executor.candidateStarts).toHaveLength(2);
-      expect(executor.candidateCompletes).toEqual([]);
-      expect(executor.candidateStarts.every((timestamp) => Number.isFinite(Date.parse(timestamp)))).toBe(true);
-    } finally {
-      executor.release();
-    }
-    await waitForTerminalMission(service, missionId, 25_000);
-    expect(service.missionDetail(missionId)?.mission.state).toBe("completed");
-    expect(executor.candidateCompletes).toHaveLength(2);
-    expect(executor.candidateCompletes.every((timestamp) => Number.isFinite(Date.parse(timestamp)))).toBe(true);
-    expect(Math.max(...executor.candidateStarts.map(Date.parse))).toBeLessThanOrEqual(
-      Math.min(...executor.candidateCompletes.map(Date.parse)),
-    );
-  });
-
   it("rejects a second live Mission when the protected head moved externally", async () => {
     const caseRoot = await makeCaseRoot();
     const store = new JsonStore(path.join(caseRoot, "state.json"));
@@ -3035,7 +2942,7 @@ describe("Shepherd deterministic walking skeleton", () => {
     ).toBe(true);
   });
 
-  it("terminalizes Contract verification infrastructure failures without promotion or sensitive diagnostics", async () => {
+  it("terminalizes Contract verification infrastructure failures without promotion or sensitive diagnostics and removes the sibling verification snapshot after F-03", async () => {
     const caseRoot = await makeCaseRoot();
     const canary = "F03-CANARY-verifier-secret-443322";
     const privatePath = path.join(caseRoot, "private-verifier-diagnostic.txt");
@@ -3046,12 +2953,28 @@ describe("Shepherd deterministic walking skeleton", () => {
       canary,
       privatePath,
     );
+    let expectedMissionId: string | null = null;
+    let expectedSiblingContractId: string | null = null;
+    let markSiblingSnapshotRemoved!: () => void;
+    const siblingSnapshotRemoved = new Promise<void>((resolve) => {
+      markSiblingSnapshotRemoved = resolve;
+    });
+    let snapshotRemovalOutcome: Promise<void> | undefined;
     const service = new ShepherdService({
       store,
       managedRoot: path.join(caseRoot, "managed"),
       agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
       verifier,
       sensitiveValues: [canary],
+      faultCheckpoint: (checkpoint, context) => {
+        if (
+          checkpoint === "contract_verification_snapshot_removed" &&
+          context.missionId === expectedMissionId &&
+          context.contractId === expectedSiblingContractId
+        ) {
+          markSiblingSnapshotRemoved();
+        }
+      },
     });
 
     const run = service.runDeterministicDemo();
@@ -3060,10 +2983,16 @@ describe("Shepherd deterministic walking skeleton", () => {
       (reason: unknown) => ({ status: "rejected" as const, reason }),
     );
     let siblingSnapshotRoot = "";
-    let snapshotRemoved: Promise<void> | undefined;
     let thrownMessage = "";
     try {
-      siblingSnapshotRoot = path.resolve(await verifier.siblingSnapshotCaptured);
+      const siblingCapture = await verifier.siblingSnapshotCaptured;
+      siblingSnapshotRoot = path.resolve(siblingCapture.snapshotPath);
+      expectedMissionId = service.state().missions.at(-1)?.id ?? null;
+      expectedSiblingContractId = siblingCapture.contractId;
+      if (!expectedMissionId) {
+        throw new Error("F-03 Mission did not persist before verifier capture");
+      }
+      snapshotRemovalOutcome = settleWithin(siblingSnapshotRemoved);
       expect(path.basename(siblingSnapshotRoot)).toMatch(/^verify-/u);
       expect(path.basename(path.dirname(siblingSnapshotRoot))).toBe(
         ".trusted-verification",
@@ -3080,18 +3009,15 @@ describe("Shepherd deterministic walking skeleton", () => {
       thrownMessage = (outcome.reason as Error).message;
       await expect(access(siblingSnapshotRoot)).resolves.toBeUndefined();
 
-      snapshotRemoved = settleWithin(
-        waitForOwnedPathRemoval(siblingSnapshotRoot),
-      );
       verifier.releaseSibling();
       await verifier.siblingReturned;
-      await snapshotRemoved;
+      await snapshotRemovalOutcome;
     } finally {
       verifier.releaseSibling();
       await Promise.allSettled([
         run,
         verifier.siblingReturned,
-        ...(snapshotRemoved ? [snapshotRemoved] : []),
+        ...(snapshotRemovalOutcome ? [snapshotRemovalOutcome] : []),
       ]);
     }
     await expect(access(siblingSnapshotRoot)).rejects.toMatchObject({ code: "ENOENT" });
@@ -3193,7 +3119,7 @@ describe("Shepherd deterministic walking skeleton", () => {
     );
   }, 30_000);
 
-  it("terminalizes returned Contract verification infrastructure evidence", async () => {
+  it("terminalizes returned Contract verification infrastructure evidence and removes the sibling verification snapshot after F-03", async () => {
     const caseRoot = await makeCaseRoot();
     const canary = "F03-RETURNED-CANARY-775533";
     const privatePath = path.join(caseRoot, "private-returned-diagnostic.txt");
@@ -3201,12 +3127,28 @@ describe("Shepherd deterministic walking skeleton", () => {
     const store = new JsonStore(storePath, { sensitiveValues: [canary] });
     await store.initialize();
     const verifier = new ContractInfrastructureEvidenceVerifier(canary, privatePath);
+    let expectedMissionId: string | null = null;
+    let expectedSiblingContractId: string | null = null;
+    let markSiblingSnapshotRemoved!: () => void;
+    const siblingSnapshotRemoved = new Promise<void>((resolve) => {
+      markSiblingSnapshotRemoved = resolve;
+    });
+    let snapshotRemovalOutcome: Promise<void> | undefined;
     const service = new ShepherdService({
       store,
       managedRoot: path.join(caseRoot, "managed"),
       agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
       verifier,
       sensitiveValues: [canary],
+      faultCheckpoint: (checkpoint, context) => {
+        if (
+          checkpoint === "contract_verification_snapshot_removed" &&
+          context.missionId === expectedMissionId &&
+          context.contractId === expectedSiblingContractId
+        ) {
+          markSiblingSnapshotRemoved();
+        }
+      },
     });
 
     const run = service.runDeterministicDemo();
@@ -3215,10 +3157,16 @@ describe("Shepherd deterministic walking skeleton", () => {
       (reason: unknown) => ({ status: "rejected" as const, reason }),
     );
     let siblingSnapshotRoot = "";
-    let snapshotRemoved: Promise<void> | undefined;
     let thrownMessage = "";
     try {
-      siblingSnapshotRoot = path.resolve(await verifier.siblingSnapshotCaptured);
+      const siblingCapture = await verifier.siblingSnapshotCaptured;
+      siblingSnapshotRoot = path.resolve(siblingCapture.snapshotPath);
+      expectedMissionId = service.state().missions.at(-1)?.id ?? null;
+      expectedSiblingContractId = siblingCapture.contractId;
+      if (!expectedMissionId) {
+        throw new Error("F-03 Mission did not persist before verifier capture");
+      }
+      snapshotRemovalOutcome = settleWithin(siblingSnapshotRemoved);
       expect(path.basename(siblingSnapshotRoot)).toMatch(/^verify-/u);
       expect(path.basename(path.dirname(siblingSnapshotRoot))).toBe(
         ".trusted-verification",
@@ -3235,16 +3183,15 @@ describe("Shepherd deterministic walking skeleton", () => {
       thrownMessage = (outcome.reason as Error).message;
       await expect(access(siblingSnapshotRoot)).resolves.toBeUndefined();
 
-      snapshotRemoved = settleWithin(waitForOwnedPathRemoval(siblingSnapshotRoot));
       verifier.releaseSibling();
       await verifier.siblingReturned;
-      await snapshotRemoved;
+      await snapshotRemovalOutcome;
     } finally {
       verifier.releaseSibling();
       await Promise.allSettled([
         run,
         verifier.siblingReturned,
-        ...(snapshotRemoved ? [snapshotRemoved] : []),
+        ...(snapshotRemovalOutcome ? [snapshotRemovalOutcome] : []),
       ]);
     }
     await expect(access(siblingSnapshotRoot)).rejects.toMatchObject({ code: "ENOENT" });

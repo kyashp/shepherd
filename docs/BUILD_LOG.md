@@ -7,6 +7,58 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-31 — STABILITY candidate passed five consecutive literal gates
+
+Issue [#48](https://github.com/kyashp/shepherd/issues/48), draft
+[PR #93](https://github.com/kyashp/shepherd/pull/93). The immutable campaign
+candidate was `10c95da098755c513a5908615313b030bd866391`, rebased directly on
+integrated feature-freeze `origin/main@a2a464d6be697ab949b254944b81c355a9be5403`
+after PR #94 merged. Local HEAD, remote branch, and `origin/main` were checked
+before, between, and after the runs; all stayed exact and the worktree stayed
+clean. No live/model request ran.
+
+The earlier `bd77952` sequence remains invalid: its first three checks passed,
+then run 4 exposed the five-second Git-backed PERF-01 harness timeout. The count
+was reset to zero before any correction. The completed candidate contains four
+causal stability fixes:
+
+- fixture Git commands use an allowlisted child environment and prove nested
+  repository identity, so inherited outer `GIT_DIR` / `GIT_WORK_TREE` selectors
+  cannot redirect staging or commits;
+- F-03 snapshot-removal tests join an exact post-cleanup service checkpoint and
+  retain the final `ENOENT` assertion instead of consuming OS file watchers;
+- the unchanged production `allSettledBounded` primitive is exported from the
+  scheduler module and its overlap/cap/order contracts are tested directly,
+  avoiding a full Git-backed Mission inside a five-second timing assertion;
+- the candidate-cleanup fixture performs the executor's public preflight before
+  concurrent candidates, so first-use sentinel adoption cannot replace the
+  cleanup failure that the row is intended to assert.
+
+### Formal candidate campaign
+
+Each row below is one separate, literal `npm run check` invocation. The terminal
+retained the Server start and the next Web start as wall-clock markers, the exact
+Server duration, and the final process exit; it did not print a whole-command
+start timestamp, so none is invented here. All four workspace/test-source
+typechecks passed on every run. The three Server skips are the unchanged documented
+opt-in rows. Both production builds passed and no warning was observed.
+
+| Run | Result / exit | Server → Web start (SGT) | launcher / deploy | Server | Web | Types / builds | Warnings | candidate / base |
+|---:|---|---|---:|---:|---:|---|---|---|
+| 1 | PASS / 0 | 10:50:15 → 10:52:44 | 12/12 | 846 passed / 3 skipped; 149.16s | 20/20 | 4/4 / 2/2 | none | `10c95da` / `a2a464d` |
+| 2 | PASS / 0 | 10:53:37 → 10:56:03 | 12/12 | 846 passed / 3 skipped; 145.77s | 20/20 | 4/4 / 2/2 | none | `10c95da` / `a2a464d` |
+| 3 | PASS / 0 | 10:56:34 → 10:58:59 | 12/12 | 846 passed / 3 skipped; 144.00s | 20/20 | 4/4 / 2/2 | none | `10c95da` / `a2a464d` |
+| 4 | PASS / 0 | 10:59:26 → 11:01:52 | 12/12 | 846 passed / 3 skipped; 145.19s | 20/20 | 4/4 / 2/2 | none | `10c95da` / `a2a464d` |
+| 5 | PASS / 0 | 11:02:21 → 11:04:39 | 12/12 | 846 passed / 3 skipped; 137.87s | 20/20 | 4/4 / 2/2 | none | `10c95da` / `a2a464d` |
+
+The same exact candidate also passed both required hosted checks: `Required
+checks` run `33351880563` in 2m51s and `Node 22 / npm run check` run
+`33351880571` in 2m55s. No sleep, timeout/retry increase, hidden worker, skip,
+suppression, or weakened assertion was introduced. This establishes candidate
+gate `C`; the documentation-only evidence descendant, integrator review/merge,
+and fresh protected-main gate remain required for `I`. The issue is not closed by
+this candidate record.
+
 ## 2026-08-31 — UI-GATE protected-main integration evidence
 
 PR #87 merged to protected `main` as
