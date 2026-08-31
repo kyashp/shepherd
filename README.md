@@ -9,8 +9,9 @@ and promotes only an independently verified result.
 
 > [!IMPORTANT]
 > This README is the self-contained product overview, operating guide, and
-> validation entry point. The retained Hackathon v2 source sections are linked
-> under [Hackathon artifacts](#hackathon-artifacts).
+> validation entry point for the 31 August Track 1 brief. Shepherd is a
+> team-designed middleware capability; the brief permits teams to adapt, combine,
+> or invent middleware rather than select a prescribed sub-track.
 
 > [!WARNING]
 > This is a single-user proof of concept, not a production identity or multi-tenant
@@ -35,6 +36,22 @@ Contract -> Execute -> Verify -> Detect Collision
 
 The UI is Mission Control for that kernel. It displays durable backend evidence; it
 does not invent success state in the browser.
+
+## Track 1 fit
+
+Shepherd is **multi-Agent coordination and safety middleware**. Its trusted backend
+turns delegated Agent work into one controlled transaction: scope the work, isolate
+execution, verify claims, detect a semantic collision, evaluate competing futures,
+and promote only the independently verified winner. That behavior executes through
+Fastify, Git worktrees, disposable Runtime containers, a credential-free verifier,
+durable state, and protected-head compare-and-swap—not as a static UI simulation.
+
+| Track 1 criterion | Shepherd evidence |
+| --- | --- |
+| End-to-end middleware behavior (40%) | Playground prompt -> Contract -> isolated Plane -> independent verification -> semantic collision -> Resolution Planes -> protected promotion. |
+| Technical design and integration (25%) | One trusted control-plane boundary, typed contracts/events, authority intersection, immutable base commits, and an extensible `AgentRunner`/verifier split. |
+| Verification and robustness (20%) | Success, rejection, denial, cancellation, recovery, redaction, cleanup, protected-head race, real-container, and browser regressions with enforced 80% coverage. |
+| Demo and reproducibility (15%) | One-command local startup, the timed demo below, editable one-page architecture, explicit external-live gate, and documented limitations. |
 
 ## Three primitives
 
@@ -156,6 +173,25 @@ SHEPHERD_DEMO_MODE=true
 The first run installs dependencies, builds the Runtime image, selects the
 available container engine, validates the workspace boundary, and serves the app at
 <http://localhost:3000>.
+
+### Three-minute Track 1 demo
+
+Start the app and create the two demo Agents before the timed presentation, or use
+the brief's allowed **select an Agent** path. The submitted presentation follows
+this same complete scenario:
+
+| Time | Required journey | What to show |
+| --- | --- | --- |
+| 0:00-0:25 | Problem and lifecycle state | Select the ready Frontend and Backend Agents; state the risk: locally valid work can still be semantically incompatible. |
+| 0:25-0:55 | Invoke real Agent tasks | Route the cookie frontend and bearer backend prompts through Shepherd from their Playgrounds. |
+| 0:55-1:25 | Real backend/Runtime action | Show persisted Contracts, isolated Git Planes, changed files, commit evidence, and credential-free verifier results. |
+| 1:25-2:05 | Middleware and failure evidence | Open the clean textual integration and `auth.transport` collision; show that the bearer future fails while protected HEAD remains unchanged. |
+| 2:05-2:35 | Recovery and promotion | Show both same-base Resolution Planes, the verified cookie winner, final re-verification, and compare-and-swap promotion. |
+| 2:35-3:00 | Continued control | Inspect the retained loser/evidence, Project Group summary, and current Agent states; close with one limitation and next step from below. |
+
+The semantic collision and rejected bearer future are the required controlled
+failure case. The selected cookie future demonstrates recovery, and the final view
+shows that the platform remains understandable and controllable afterward.
 
 ### 3. Run the primary Shepherd Mission
 
@@ -442,6 +478,25 @@ state because it still contains infrastructure identifiers and network metadata.
 `terraform -chdir=deploy/volcengine destroy` removes the ECS instance, system disk,
 and Agent workspaces.
 
+## Limitations and next steps
+
+- **Identity:** the shared bearer token protects a demo boundary but is not a human
+  or per-Agent identity system. The next step is per-user ownership plus scoped,
+  time-bound Agent delegation and revocation.
+- **Isolation:** ordinary containers, a mounted engine socket in volume mode, and a
+  credential-free verifier are strong POC boundaries, not hardened multi-tenant
+  isolation. A production path should use a dedicated sandbox service or stronger
+  VM boundary with explicit outbound policy.
+- **Durability:** the bounded JSON store is atomic for one process but is not a
+  concurrent transactional database. The next step is a transactional event store
+  with scheduler leases and multi-process recovery.
+- **Model dependence:** deterministic mode proves the complete middleware path
+  without Ark; live Agent and live Shepherd gates depend on the configured external
+  endpoint, its capacity, and explicit authorization for repository-derived input.
+- **Decision scope:** deterministic collision rules and final verification own
+  promotion. The optional model reviewer is advisory only; expanding collision
+  types requires new typed claims and causal tests, not model-only judgment.
+
 ## Hackathon artifacts
 
 - [Interface reference](docs/UI.jpeg)
@@ -449,16 +504,6 @@ and Agent workspaces.
 - [Latest editable architecture diagram](docs/assets/Shepherd_TechJam_Track1_Architecture.drawio)
 - [Agent Playground screenshot](docs/assets/playground.jpg)
 - [Create Agent screenshot](docs/assets/create-agent.jpg)
-- [Hackathon v2 skeleton](docs/hackathon-v2-skeleton.xml)
-- [Section 1](docs/hackathon-v2-section-1.xml)
-- [Section 2](docs/hackathon-v2-section-2.xml)
-- [Section 3](docs/hackathon-v2-section-3.xml)
-- [Section 4](docs/hackathon-v2-section-4.xml)
-- [Section 5](docs/hackathon-v2-section-5.xml)
-- [Section 6](docs/hackathon-v2-section-6.xml)
-- [Section 7](docs/hackathon-v2-section-7.xml)
-- [Section 8](docs/hackathon-v2-section-8.xml)
-- [Section 9](docs/hackathon-v2-section-9.xml)
 
 ## License
 
