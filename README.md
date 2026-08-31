@@ -343,7 +343,9 @@ npm audit --json
 ```
 
 - `npm run check` runs strict production and test-source typechecks, root script
-  tests, Server/Web tests, and production builds.
+  tests, Server/Web tests, and production builds. Server test files run serially
+  so process, filesystem, and real-container cases cannot starve one another's
+  causal time budgets.
 - `npm run test:coverage` enforces at least 80% statements, branches, functions,
   and lines for both Server and browser-owned Web source, with every production
   source file present.
