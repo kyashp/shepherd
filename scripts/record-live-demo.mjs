@@ -966,7 +966,7 @@ function assertLiveEvidence(state, missionId) {
   const eventTypes = new Set(entities.events.map((item) => item.type));
   for (const type of [
     "contract_created",
-    "contract_verified",
+    "verification_passed",
     "model_review_completed",
     "collision_detected",
     "candidate_selected",
