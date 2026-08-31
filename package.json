@@ -26,6 +26,7 @@
     "test:e2e:shepherd-performance:evidence": "E2E_UPDATE_EVIDENCE=true npm run test:e2e:shepherd-performance",
     "test:coverage": "node scripts/run-coverage.mjs",
     "test:terraform": "node scripts/validate-terraform.mjs",
+    "test:shepherd:container": "SHEPHERD_REQUIRE_CONTAINER_TESTS=true npm exec --workspace @launchpad/server -- vitest run src/shepherd/service.container.test.ts",
     "check": "npm run typecheck && npm run test && npm run build",
     "poc": "node --env-file-if-exists=.env ./scripts/start-local-poc-launcher.mjs",
     "test:shepherd:live": "SHEPHERD_LIVE_TEST=true node --env-file=.env scripts/run-live-runtime-gate.mjs",
