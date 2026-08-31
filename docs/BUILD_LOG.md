@@ -7,6 +7,70 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-31 — UI-GATE protected-main integration evidence
+
+PR #87 merged to protected `main` as
+`cf4dd0fa5886979f2af823efa65fd028dbb03334`; its direct second parent is final
+candidate `adbb7aa25ed464c3c7080bc6c9c29690ce20d18e`, and `git diff` between those
+trees is empty. The source branch had already passed hosted runs `33329742705`
+and `33329742709`.
+
+- An exact `cf4dd0fa` archive ran the real-server UI gate through Playwright
+  Chromium with one worker. All 12/12 tests passed in 35.6s across exact
+  `1280x800` and `1440x900` viewports.
+- The integration run regenerated exactly 36 non-empty PNGs: 18 at 1280x800 and
+  18 at 1440x900, with zero unexpected dimensions and 3,225,044 bytes total.
+  All 18 byte-changed captures were visually re-inspected; no clipping,
+  document overflow, obstruction, or theme regression was found. That exact-main
+  corpus now replaces the candidate corpus under `docs/ui-review/ui-gate/`.
+- Protected-main push run `33329997913` completed successfully on exact
+  `cf4dd0fa`; its `Node 22 / npm run check` job installed locked dependencies and
+  passed the literal repository gate in 2m54s.
+- No live/model request ran. The local Windows Node harness limitation remains
+  `spawn EFTYPE` with 15/19 passing and is not presented as a pass. The hosted
+  Linux gate covers the complete repository check.
+
+UI-GATE gates `C`, `B`, and `I` are passed. Independent usability gate `U`
+remains pending, so issue #45 stays open and the row is not called audited.
+
+## 2026-08-31 — UI-GATE reviewable candidate and current-main refresh
+
+Issue #45 / draft PR #87 on `test/45-ui-gate`. Causal UI fixes are at
+`bbc7c81`; the reviewed current-main candidate is merge `d41613b`, which includes
+protected `origin/main` `0ed41dd`. No live/model request ran.
+
+- The real-server Playwright matrix covers all six PRD UI surfaces plus adjacent
+  authentication, Agents, Settings, and not-found states at `1280x800` and
+  `1440x900`. The explicit one-worker evidence run on `d41613b` passed 12/12 and
+  produced exactly 36 non-empty PNGs with the declared dimensions and a bounded
+  total of 3,229,473 bytes under `docs/ui-review/ui-gate/`.
+- Preserved REDs measured muted-copy contrast at 4.15:1 and 3.87:1, found 5px of
+  long-Agent document Y overflow at 1280x800, and exposed no-op Settings Discard,
+  incomplete Settings tab keyboard/relationships, inaccessible full Plane IDs,
+  and Project Group mentions enabled before initialization without a non-color
+  unavailable cue. The smallest page/CSS corrections made each causal assertion
+  green without changing API, persistence, dependency, runtime, or security scope.
+- Keyboard-modality assertions activate sidebar/recovery links, Contract filters,
+  and Plane nodes with Enter; Settings and drawer tabs use arrows/Home/End;
+  Escape closes the labelled non-modal drawer and restores opener focus. Named
+  internal panes own overflow, two 1,900-character unbroken group messages wrap,
+  and bounded DOM/API/log canary scans pass without echoing a matched value.
+- Web tests passed 20/20. Strict Web production and test-source typechecks passed.
+  Web production build transformed 41 modules and Server production build passed.
+  Adjacent two-viewport browser journeys passed 8/8. `git diff --check` passed.
+- The local Node harness is not green and is not reported as one: Windows
+  reproduced `spawn EFTYPE`, with 15/19 passing and the four process-spawn/server
+  cases failing. Hosted Node 22 run `33329417868` passed literal `npm run check`
+  in 2m54s on evidence commit `38ac907`; the post-current-main documentation and
+  evidence head still requires its own hosted result.
+- All 36 screenshots were reviewed against `docs/UI.jpeg`. No High/Medium visual
+  defect remained. `AUDIT.md` records the compact 25px desktop mention-chip target
+  exception, 1280x800 Create-form scroll depth, focused drawer capture position,
+  no connected in-app browser session, and no manual screen-reader claim.
+
+Candidate browser gate `B` is passed. Exact-final-head `C`, independent `U`, and
+protected-main `I` remain pending; this implementation-owner record is not an
+independent audit.
 ## 2026-08-31 — SEC-REVIEW part 4 review run; five High findings fixed
 
 Branch `fix/89-absolute-form-auth-bypass` from `main` at `0ed41dd`, for issue #89.

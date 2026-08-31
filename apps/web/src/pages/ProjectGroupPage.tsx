@@ -163,7 +163,7 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
             <ProjectGroupMentionButton
               key={agent.id}
               agentName={agent.name}
-              sending={sending}
+              sending={sending || !project}
               onActivate={() => insertMention(agent)}
             />
           ))}
