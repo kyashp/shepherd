@@ -140,7 +140,12 @@ test("the base compose profile publishes on loopback by default", {
     "docker",
     ["compose", "--env-file", path.join(repositoryRoot, ".env.example"),
      "--file", path.join(repositoryRoot, "docker-compose.yml"), "config", "--format", "json"],
-    { cwd: repositoryRoot, maxBuffer: 16 * 1024 * 1024 },
+    // The compose file declares `env_file: ${LAUNCHPAD_ENV_FILE:-.env}`, and a clean
+    // checkout has no `.env`. Point it at the shipped example so this asserts the
+    // shipped defaults rather than whatever the developer happens to have locally.
+    { cwd: repositoryRoot,
+      env: { ...process.env, LAUNCHPAD_ENV_FILE: path.join(repositoryRoot, ".env.example") },
+      maxBuffer: 16 * 1024 * 1024 },
   );
   const service = JSON.parse(stdout).services.launchpad;
   for (const published of service.ports ?? []) {
@@ -158,7 +163,10 @@ test("an operator can still opt in to a public bind", {
     "docker",
     ["compose", "--env-file", path.join(repositoryRoot, ".env.example"),
      "--file", path.join(repositoryRoot, "docker-compose.yml"), "config", "--format", "json"],
-    { cwd: repositoryRoot, env: { ...process.env, PUBLIC_BIND_ADDR: "0.0.0.0" }, maxBuffer: 16 * 1024 * 1024 },
+    { cwd: repositoryRoot,
+      env: { ...process.env, PUBLIC_BIND_ADDR: "0.0.0.0",
+             LAUNCHPAD_ENV_FILE: path.join(repositoryRoot, ".env.example") },
+      maxBuffer: 16 * 1024 * 1024 },
   );
   const service = JSON.parse(stdout).services.launchpad;
   assert.equal((service.ports ?? [])[0]?.host_ip, "0.0.0.0");
