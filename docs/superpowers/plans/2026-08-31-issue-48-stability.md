@@ -17,7 +17,7 @@
 - [x] Task 3: Recheck and causally isolate the historically sensitive service rows.
 - [x] Task 4: Run adjacent and full server verification on the revised candidate.
 - [x] Task 5: Commit the causal fixes and open the linked draft pull request.
-- [ ] Task 6: Run the formal five-consecutive-check campaign.
+- [x] Task 6: Run the formal five-consecutive-check campaign.
 - [ ] Task 7: Independent readiness review.
 
 ## Global constraints
