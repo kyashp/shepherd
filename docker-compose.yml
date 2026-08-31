@@ -15,6 +15,7 @@ services:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 3000
+      PUBLIC_BIND_ADDR: ${PUBLIC_BIND_ADDR:-127.0.0.1}
       APP_DATA_DIR: /app/data
       AGENT_WORKSPACE_ROOT: /app/workspaces
       CODEX_HOME: /app/codex-home

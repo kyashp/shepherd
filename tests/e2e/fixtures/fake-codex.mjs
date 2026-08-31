@@ -83,20 +83,24 @@ async function main() {
     prompt = await readBoundedStdin();
     threadId = `fixture-${createHash("sha256").update(workspace).digest("hex").slice(0, 16)}`;
   } else if (resumeIndex >= 0) {
-    threadId = argv[resumeIndex + 1];
-    prompt = argv[resumeIndex + 2];
+    if (argv[resumeIndex + 1] !== "--") {
+      fail("the resume operands require an end-of-options separator");
+      return;
+    }
+    threadId = argv[resumeIndex + 2];
+    prompt = argv[resumeIndex + 3];
   } else {
     prompt = argv.at(-1);
     threadId = `fixture-${createHash("sha256").update(workspace).digest("hex").slice(0, 16)}`;
   }
-  if (
-    !threadId ||
-    !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$/u.test(threadId) ||
-    typeof prompt !== "string" ||
-    prompt.trim().length === 0 ||
-    Buffer.byteLength(prompt, "utf8") > MAX_PROMPT_BYTES
-  ) {
-    fail("invalid thread or prompt");
+  const threadValid = typeof threadId === "string"
+    && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$/u.test(threadId);
+  const promptBytes = typeof prompt === "string" ? Buffer.byteLength(prompt, "utf8") : -1;
+  const promptValid = typeof prompt === "string"
+    && prompt.trim().length > 0
+    && promptBytes <= MAX_PROMPT_BYTES;
+  if (!threadValid || !promptValid) {
+    fail(`invalid thread or prompt (threadValid=${threadValid}, promptBytes=${promptBytes})`);
     return;
   }
 

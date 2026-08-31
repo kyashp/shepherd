@@ -29,6 +29,28 @@ async function reserveLoopbackPort() {
   return port;
 }
 
+export async function resolveExecutable(command, searchPath = "") {
+  if (typeof command !== "string" || command.length === 0 || command.includes("\0")) {
+    throw new Error("Executable is not available (ENOENT)");
+  }
+  const explicit = path.isAbsolute(command) || command.includes("/") || command.includes("\\");
+  const candidates = explicit
+    ? [command]
+    : searchPath
+        .split(path.delimiter)
+        .filter((directory) => path.isAbsolute(directory))
+        .map((directory) => path.join(directory, command));
+  for (const candidate of candidates) {
+    try {
+      await access(candidate, constants.X_OK);
+      return candidate;
+    } catch {
+      // Keep searching the bounded PATH allowlist.
+    }
+  }
+  throw new Error("Executable is not available (ENOENT)");
+}
+
 async function waitForHealth(baseURL, child, readOutput, readSpawnError) {
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
@@ -161,6 +183,7 @@ export async function startTestApp({
   const homeDirectory = path.join(runRoot, "home");
   const tempDirectory = path.join(runRoot, "tmp");
   let port;
+  let codexBin;
   const fakeCodex = path.join(repositoryRoot, "tests/e2e/fixtures/fake-codex.mjs");
   const fakeContainerEngine = path.join(
     repositoryRoot,
@@ -174,8 +197,11 @@ export async function startTestApp({
       mkdir(tempDirectory, { recursive: true, mode: 0o700 }),
     ]);
     port = await reserveLoopbackPort();
+    codexBin = await resolveExecutable(
+      liveLegacyConfig?.codexBin ?? fakeCodex,
+      process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin",
+    );
     await Promise.all([
-      access(liveLegacyConfig?.codexBin ?? fakeCodex, constants.X_OK),
       access(fakeContainerEngine, constants.X_OK),
       access(path.join(repositoryRoot, "apps/server/dist/index.js"), constants.R_OK),
       access(path.join(repositoryRoot, "apps/web/dist/index.html"), constants.R_OK),
@@ -204,7 +230,7 @@ export async function startTestApp({
     APP_DATA_DIR: dataDirectory,
     AGENT_WORKSPACE_ROOT: workspaceRoot,
     CODEX_HOME: codexHome,
-    CODEX_BIN: liveLegacyConfig?.codexBin ?? fakeCodex,
+    CODEX_BIN: codexBin,
     CODEX_SANDBOX_MODE: "workspace-write",
     CODEX_TIMEOUT_MS: liveLegacyConfig ? "180000" : "5000",
     CODEX_MAX_OUTPUT_BYTES: "65536",

@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./support/coverage-test.mjs";
 import { execFile } from "node:child_process";
 import { access, readFile } from "node:fs/promises";
 import path from "node:path";
@@ -70,6 +70,9 @@ test("live legacy Playground preserves a two-turn Codex session across restart",
     await expect(page.getByRole("radio", { name: /Generalist/u })).toBeChecked();
     await page.getByRole("button", { name: "Create Agent", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Live Baseline Agent" })).toBeVisible();
+    const shepherdRoute = page.getByRole("checkbox", { name: "Route through Shepherd" });
+    await expect(shepherdRoute).toBeChecked();
+    await shepherdRoute.uncheck();
 
     const agents = (await apiJson(request, app, "/api/agents")).agents;
     expect(agents).toHaveLength(1);

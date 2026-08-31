@@ -106,19 +106,36 @@ describe("Shepherd configuration", () => {
     expect(config.shepherdRoot).toBe("/app/state/data/shepherd");
   });
 
-  it("starts on any bind without a token and still carries one when configured", () => {
-    // The token is optional everywhere: an empty token disables the bearer check,
-    // so no bind requires configuration before the server will start.
+  it("allows tokenless loopback exposure and rejects tokenless public binds", () => {
     for (const environment of ["development", "test", "production"] as const) {
-      for (const host of ["0.0.0.0", "192.0.2.10", "127.0.0.1", "::"]) {
+      for (const host of ["127.0.0.1", "127.2.3.4", "localhost", "::1"]) {
         const config = loadConfig({ HOST: host, NODE_ENV: environment });
         expect(config.host).toBe(host);
         expect(config.authToken).toBe("");
       }
     }
 
-    // A genuine token is carried verbatim on any bind. Weakness is asserted
-    // separately, so this case keeps proving only what it is named for.
+    for (const host of ["0.0.0.0", "192.0.2.10", "::"]) {
+      expect(() => loadConfig({ HOST: host, NODE_ENV: "production" })).toThrow(
+        /APP_AUTH_TOKEN.*non-loopback/u,
+      );
+    }
+
+    expect(
+      loadConfig({
+        HOST: "0.0.0.0",
+        PUBLIC_BIND_ADDR: "127.0.0.1",
+        NODE_ENV: "production",
+      }).authToken,
+    ).toBe("");
+    expect(() =>
+      loadConfig({
+        HOST: "0.0.0.0",
+        PUBLIC_BIND_ADDR: "0.0.0.0",
+        NODE_ENV: "production",
+      }),
+    ).toThrow(/APP_AUTH_TOKEN.*non-loopback/u);
+
     expect(
       loadConfig({
         HOST: "0.0.0.0",

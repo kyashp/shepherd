@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { appendWithinDurableCapacity } from "./collection-capacity.js";
 import type {
   ProjectGroupMessage,
   ShepherdDatabase,
@@ -162,7 +163,7 @@ export const appendShepherdEvent = (
     candidateId: input.candidateId,
     details: boundedDetails(input.details),
   };
-  database.shepherd.events.push(event);
+  appendWithinDurableCapacity(database.shepherd.events, [event], "Shepherd event");
   database.shepherd.nextEventSequence = sequence + 1;
   return structuredClone(event);
 };
@@ -193,6 +194,10 @@ export const appendProjectGroupMessage = (
   message: ProjectGroupMessage,
 ): ProjectGroupMessage => {
   const persisted = structuredClone(message);
-  database.shepherd.groupMessages.push(persisted);
+  appendWithinDurableCapacity(
+    database.shepherd.groupMessages,
+    [persisted],
+    "Project Group message",
+  );
   return structuredClone(persisted);
 };

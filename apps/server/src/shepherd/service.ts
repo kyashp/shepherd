@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, realpath, rm } from "node:fs/promises";
 import path from "node:path";
+import { appendWithinDurableCapacity } from "../collection-capacity.js";
 import {
   appendProjectGroupMessage,
   appendShepherdEvent,
@@ -716,7 +717,9 @@ interface CandidateWork {
 
 function replaceById<T extends { id: string }>(collection: T[], value: T): void {
   const index = collection.findIndex((item) => item.id === value.id);
-  if (index === -1) collection.push(structuredClone(value));
+  if (index === -1) {
+    appendWithinDurableCapacity(collection, [structuredClone(value)], "Shepherd record");
+  }
   else collection[index] = structuredClone(value);
 }
 
@@ -1918,7 +1921,7 @@ export class ShepherdService {
       }
       return;
     }
-    database.shepherd.projects.push({
+    appendWithinDurableCapacity(database.shepherd.projects, [{
       id: project.projectId,
       displayName: "Authentication collision demo",
       repositoryPath: project.repositoryPath,
@@ -1927,7 +1930,7 @@ export class ShepherdService {
       activeMissionId: null,
       createdAt: timestamp,
       updatedAt: timestamp,
-    });
+    }], "Shepherd project");
   }
 
   async submitPrivateContractPrompt(
@@ -3395,8 +3398,8 @@ export class ShepherdService {
           verifiedAt: null,
           completedAt: null,
         };
-        database.shepherd.missions.push(mission);
-        database.shepherd.contracts.push(contract);
+        appendWithinDurableCapacity(database.shepherd.missions, [mission], "Shepherd Mission");
+        appendWithinDurableCapacity(database.shepherd.contracts, [contract], "Execution Contract");
         for (const message of draftMessages) {
           message.missionId = missionId;
           message.contractId = contractId;
@@ -4328,7 +4331,7 @@ export class ShepherdService {
         startedAt: null,
         completedAt: null,
       };
-      database.shepherd.missions.push(mission);
+      appendWithinDurableCapacity(database.shepherd.missions, [mission], "Shepherd Mission");
       const contracts = [
         this.makeContract({
           id: frontendContractId,
@@ -4353,7 +4356,7 @@ export class ShepherdService {
           createdAt,
         }),
       ];
-      database.shepherd.contracts.push(...contracts);
+      appendWithinDurableCapacity(database.shepherd.contracts, contracts, "Execution Contract");
       if (contractPromptRecords) {
         for (const record of [
           contractPromptRecords.frontend,
@@ -4693,7 +4696,7 @@ export class ShepherdService {
       plane.generalPromotionState = "promoting";
       plane.generalPromotionEvidence = structuredClone(evidence);
       if (!plane.verificationEvidenceIds.includes(evidence.id)) {
-        plane.verificationEvidenceIds.push(evidence.id);
+        appendWithinDurableCapacity(plane.verificationEvidenceIds, [evidence.id], "Plane evidence reference");
       }
       plane.updatedAt = promotingAt;
     });
@@ -5275,7 +5278,7 @@ export class ShepherdService {
     try {
       await this.store.mutate((database) => {
         this.assertMissionRunnable(database, prepared.missionId);
-        database.shepherd.planes.push(plane);
+        appendWithinDurableCapacity(database.shepherd.planes, [plane], "Plane");
         const persisted = database.shepherd.contracts.find(
           (item) => item.id === contractId,
         );
@@ -6013,7 +6016,7 @@ export class ShepherdService {
       );
       if (persistedPlane) {
         persistedPlane.state = "verified";
-        persistedPlane.verificationEvidenceIds.push(evidence.id);
+        appendWithinDurableCapacity(persistedPlane.verificationEvidenceIds, [evidence.id], "Plane evidence reference");
         persistedPlane.updatedAt = verifiedAt;
       }
       const persistedContract = database.shepherd.contracts.find(
@@ -6223,7 +6226,7 @@ export class ShepherdService {
     try {
       await this.store.mutate((database) => {
         this.assertMissionRunnable(database, prepared.missionId);
-        database.shepherd.planes.push(integration);
+        appendWithinDurableCapacity(database.shepherd.planes, [integration], "Plane");
       });
     } catch (error) {
       await prepared.planeManager.destroyPlane(integration).catch(() => undefined);
@@ -6354,13 +6357,13 @@ export class ShepherdService {
     const collisionAt = this.timestamp();
     await this.store.mutate((database) => {
       this.assertMissionRunnable(database, missionId);
-      database.shepherd.collisions.push(collision);
+      appendWithinDurableCapacity(database.shepherd.collisions, [collision], "semantic collision");
       const mission = database.shepherd.missions.find(
         (item) => item.id === missionId,
       );
       if (!mission) throw new Error("Mission disappeared during collision detection");
-      mission.collisionIds.push(collision.id);
-      mission.resolutionIds.push(collision.id);
+      appendWithinDurableCapacity(mission.collisionIds, [collision.id], "Mission collision reference");
+      appendWithinDurableCapacity(mission.resolutionIds, [collision.id], "Mission resolution reference");
       const persistedIntegration = database.shepherd.planes.find(
         (item) => item.id === integrationPlane.id,
       );
@@ -6621,13 +6624,13 @@ export class ShepherdService {
       try {
         await this.store.mutate((database) => {
           this.assertMissionRunnable(database, prepared.missionId);
-          database.shepherd.planes.push(plane);
-          database.shepherd.candidates.push(candidate);
+          appendWithinDurableCapacity(database.shepherd.planes, [plane], "Plane");
+          appendWithinDurableCapacity(database.shepherd.candidates, [candidate], "resolution candidate");
           const persistedCollision = database.shepherd.collisions.find(
             (item) => item.id === collision.id,
           );
           if (!persistedCollision) throw new Error("Collision disappeared");
-          persistedCollision.candidateIds.push(candidate.id);
+          appendWithinDurableCapacity(persistedCollision.candidateIds, [candidate.id], "collision candidate reference");
           persistedCollision.updatedAt = createdAt;
           this.recordEvent(database, {
             type: "candidate_created",
@@ -6886,7 +6889,7 @@ export class ShepherdService {
       candidate.failure = failure;
       candidate.updatedAt = completedAt;
       persistedPlane.state = candidatePassed ? "verified" : "failed";
-      persistedPlane.verificationEvidenceIds.push(evidence.id);
+      appendWithinDurableCapacity(persistedPlane.verificationEvidenceIds, [evidence.id], "Plane evidence reference");
       persistedPlane.updatedAt = completedAt;
       this.recordEvent(database, {
         type: candidatePassed ? "candidate_passed" : "candidate_failed",
@@ -7054,7 +7057,7 @@ export class ShepherdService {
         persisted.retryCount = 1;
         persisted.failure = null;
         persisted.updatedAt = retryAt;
-        database.shepherd.planes.push(retryPlane);
+        appendWithinDurableCapacity(database.shepherd.planes, [retryPlane], "Plane");
         this.recordEvent(database, {
           type: "candidate_retried",
           summary: "Started the candidate's single transient retry",
@@ -7215,8 +7218,10 @@ export class ShepherdService {
             promotion.verificationEvidence.id,
           )
         ) {
-          persistedPlane.verificationEvidenceIds.push(
-            promotion.verificationEvidence.id,
+          appendWithinDurableCapacity(
+            persistedPlane.verificationEvidenceIds,
+            [promotion.verificationEvidence.id],
+            "Plane evidence reference",
           );
           persistedPlane.updatedAt = failedAt;
         }
@@ -7286,8 +7291,10 @@ export class ShepherdService {
           promotion.verificationEvidence.id,
         )
       ) {
-        persistedPlane.verificationEvidenceIds.push(
-          promotion.verificationEvidence.id,
+        appendWithinDurableCapacity(
+          persistedPlane.verificationEvidenceIds,
+          [promotion.verificationEvidence.id],
+          "Plane evidence reference",
         );
       }
       persistedPlane.state = "verified";
@@ -7430,7 +7437,7 @@ export class ShepherdService {
           persistedCandidate.promotionEvidence = structuredClone(evidence);
           persistedCandidate.updatedAt = promotingAt;
           if (!persistedPlane.verificationEvidenceIds.includes(evidence.id)) {
-            persistedPlane.verificationEvidenceIds.push(evidence.id);
+            appendWithinDurableCapacity(persistedPlane.verificationEvidenceIds, [evidence.id], "Plane evidence reference");
           }
           persistedPlane.updatedAt = promotingAt;
         });

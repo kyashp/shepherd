@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
+import { isIP } from "node:net";
 import {
   chmod,
   link,
@@ -21,12 +22,24 @@ const verifierInstallationNoncePattern = /^[a-f0-9]{32}$/u;
 const runtimeInstanceIdPattern = /^[a-zA-Z0-9_.-]{1,48}$/u;
 const containerVolumeNamePattern = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$/u;
 
+export function isLoopbackHost(input: string): boolean {
+  const host = input.trim().toLowerCase().replace(/^\[|\]$/gu, "");
+  if (host === "localhost") return true;
+  const family = isIP(host);
+  if (family === 4) return host.split(".")[0] === "127";
+  if (family === 6) {
+    return host === "::1" || /^::ffff:127(?:\.|$)/u.test(host);
+  }
+  return false;
+}
+
 const booleanEnvironmentValue = z
   .enum(["true", "false"])
   .transform((value) => value === "true");
 
 const envSchema = z.object({
   HOST: z.string().trim().min(1).default("127.0.0.1"),
+  PUBLIC_BIND_ADDR: z.string().trim().min(1).optional(),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   LOG_LEVEL: z.string().default("info"),
   APP_DATA_DIR: z.string().default(path.resolve(".data")),
@@ -281,11 +294,11 @@ export function resolveContainerStateMount(input: {
 
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
   const env = envSchema.parse(environment);
-  // `APP_AUTH_TOKEN` is optional everywhere. An empty token disables the bearer
-  // check outright, so the server starts with no configuration on any bind. Set a
-  // token to require one; the request hook then enforces it on every `/api/`
-  // route. Setting one is still strongly advised for any non-loopback deployment.
   const authToken = env.APP_AUTH_TOKEN?.trim() ?? "";
+  const publicBindAddress = env.PUBLIC_BIND_ADDR ?? env.HOST;
+  if (!authToken && !isLoopbackHost(publicBindAddress)) {
+    throw new Error("APP_AUTH_TOKEN is required for a non-loopback public bind");
+  }
   const arkApiKey = env.ARK_API_KEY?.trim() ?? "";
   const arkModel = env.ARK_MODEL?.trim() ?? "";
   const defaultContainerUser =
@@ -319,6 +332,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
   });
   return {
     host: env.HOST,
+    publicBindAddress,
     port: env.PORT,
     logLevel: env.LOG_LEVEL,
     dataDirectory,

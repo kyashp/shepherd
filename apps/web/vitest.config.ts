@@ -14,5 +14,14 @@ export default defineConfig({
   test: {
     clearMocks: true,
     restoreMocks: true,
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["src/**/*.test.ts", "src/**/*.test.tsx", "src/types.ts"],
+      reporter: ["text-summary", "json"],
+      reportsDirectory: fileURLToPath(
+        new URL("../../.tmp/coverage/web-unit/", import.meta.url),
+      ),
+    },
   },
 });

@@ -72,7 +72,18 @@ npm --version
 docker info                    # or: podman info
 npm ci
 npm run check
+npm run test:coverage
+npm run test:terraform
+npm run test:shepherd:live:preflight
 ```
+
+`test:coverage` enforces at least 80% statements, branches, functions, and lines for
+both the Server and browser-owned Web source, and fails if a production source file
+is missing from the report. `test:terraform` uses installed Terraform when available
+or the pinned `hashicorp/terraform:1.9.8` image against a disposable module copy.
+`test:shepherd:live:preflight` builds the exact working tree, checks the non-root
+controller, named state volume, engine socket, Runtime image and live-test discovery,
+then cleans up without contacting Ark.
 
 For the reliable no-model judge flow, keep secrets only in the ignored `.env` and
 set:
@@ -189,6 +200,23 @@ This consumes real `ARK_MODEL` capacity and is not needed for UI inspection:
 
 The live Shepherd Mission/reviewer continuity acceptance remains `LIVE-01`; one
 legacy Playground run does not close it.
+
+### 5. Exact-tree live Shepherd gate
+
+First run the zero-spend preflight above. With the ignored environment file
+configured, the bounded external gate is:
+
+```bash
+npm run test:shepherd:live
+```
+
+This command is opt-in and must remain single-worker/no-retry. It sends
+repository-derived Contracts, prompts, and scoped source content to the configured
+Ark endpoint, so obtain authorization for that data transfer before running it in a
+managed or reviewed environment. A passing preflight proves local construction and
+isolation wiring only; it is not a substitute for the provider result. Record only
+bounded outcomes and never attach raw prompts, model output, credentials, session
+identifiers, or private paths.
 
 ## Recording a defect
 

@@ -14,5 +14,25 @@ export default defineConfig({
   test: {
     clearMocks: true,
     restoreMocks: true,
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.ts"],
+      exclude: [
+        "src/**/*.test.ts",
+        "src/**/*.integration.test.ts",
+        "src/**/test-fixtures/**",
+        "src/shepherd/auth-fixture.ts",
+      ],
+      reporter: ["text-summary", "json"],
+      reportsDirectory: fileURLToPath(
+        new URL("../../.tmp/coverage/server/", import.meta.url),
+      ),
+      thresholds: {
+        statements: 80,
+        branches: 80,
+        functions: 80,
+        lines: 80,
+      },
+    },
   },
 });

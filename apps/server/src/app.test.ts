@@ -785,6 +785,39 @@ describe("HTTP boundary", () => {
     await app.close();
   });
 
+  it("rejects hostile Host and Origin values before tokenless mutation handlers", async () => {
+    const app = await createApp(
+      loadConfig({ NODE_ENV: "test" }),
+      createAgentService(),
+      createShepherdService(),
+    );
+    const route = `/api/agents/${agentId}/start`;
+    for (const headers of [
+      { host: "attacker.example" },
+      { host: "localhost", origin: "https://attacker.example" },
+      { host: "localhost", origin: "null" },
+      { host: "localhost", origin: "http://127.0.0.1" },
+    ]) {
+      const denied = await app.inject({ method: "POST", url: route, headers });
+      expect(denied.statusCode, JSON.stringify(headers)).toBe(403);
+      expect(denied.json()).toEqual({ error: "Local API origin required" });
+    }
+
+    const sameOrigin = await app.inject({
+      method: "POST",
+      url: route,
+      headers: { host: "localhost", origin: "http://localhost" },
+    });
+    expect(sameOrigin.statusCode).toBe(200);
+    const commandLine = await app.inject({
+      method: "POST",
+      url: route,
+      headers: { host: "127.0.0.1:3000" },
+    });
+    expect(commandLine.statusCode).toBe(200);
+    await app.close();
+  });
+
   it("protects API routes spelled with a percent-encoded prefix", async () => {
     // The hook decides whether to authenticate from the RAW request target while
     // the router percent-decodes before matching, so any encoded spelling of the

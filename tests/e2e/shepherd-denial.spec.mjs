@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./support/coverage-test.mjs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { access, mkdir, writeFile } from "node:fs/promises";

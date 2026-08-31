@@ -170,4 +170,5 @@ test("an operator can still opt in to a public bind", {
   );
   const service = JSON.parse(stdout).services.launchpad;
   assert.equal((service.ports ?? [])[0]?.host_ip, "0.0.0.0");
+  assert.equal(service.environment.PUBLIC_BIND_ADDR, "0.0.0.0");
 });

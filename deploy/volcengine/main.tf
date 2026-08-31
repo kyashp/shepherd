@@ -28,25 +28,6 @@ locals {
     }
   ]
 
-  runtime_env = join("\n", [
-    "NODE_ENV=production",
-    "HOST=0.0.0.0",
-    "PORT=3000",
-    "PUBLIC_PORT=80",
-    "LOG_LEVEL=info",
-    "APP_AUTH_TOKEN=${var.app_auth_token}",
-    "ARK_API_KEY=${var.ark_api_key}",
-    "ARK_MODEL=${var.ark_model}",
-    "ARK_BASE_URL=${var.ark_base_url}",
-    "APP_DATA_DIR=/app/data",
-    "AGENT_WORKSPACE_ROOT=/app/workspaces",
-    "CODEX_HOME=/app/codex-home",
-    "CODEX_BIN=codex",
-    "CODEX_SANDBOX_MODE=workspace-write",
-    "CODEX_TIMEOUT_MS=600000",
-    "CODEX_MAX_OUTPUT_BYTES=2097152",
-    ""
-  ])
 }
 
 resource "volcenginecc_vpc_vpc" "launchpad" {
@@ -148,9 +129,8 @@ resource "volcenginecc_ecs_instance" "launchpad" {
   }
 
   user_data = base64encode(templatefile("${path.module}/cloud-init.yaml.tftpl", {
-    repository_url  = var.repository_url
-    repository_ref  = var.repository_ref
-    runtime_env_b64 = base64encode(local.runtime_env)
+    repository_url = var.repository_url
+    repository_ref = var.repository_ref
   }))
 
   tags = [

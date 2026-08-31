@@ -154,7 +154,11 @@ describe.skipIf(!liveEnabled)("Shepherd live SHEPHERD_MODEL advisory review", ()
       // This reviewer-only gate never starts the HTTP server. Preserve every real
       // provider/reviewer value while isolating it from an unrelated hosting bind
       // in the caller's environment. Production loadConfig validation is unchanged.
-      const config = loadConfig({ ...process.env, HOST: "127.0.0.1" });
+      const config = loadConfig({
+        ...process.env,
+        HOST: "127.0.0.1",
+        PUBLIC_BIND_ADDR: "127.0.0.1",
+      });
       // Fail loudly rather than silently passing an unconfigured no-op.
       expect(isShepherdModelReviewConfigured(config)).toBe(true);
 

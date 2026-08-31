@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./support/coverage-test.mjs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { AUTH_TOKEN, repositoryRoot, startTestApp } from "./support/test-app.mjs";

@@ -2472,6 +2472,10 @@ tbody tr:last-child td {
   background: #f7f6f2;
 }
 
+.form-footer .button {
+  scroll-margin-block-end: 1px;
+}
+
 /* Agent detail and legacy Playground */
 .agent-page {
   height: 100%;
