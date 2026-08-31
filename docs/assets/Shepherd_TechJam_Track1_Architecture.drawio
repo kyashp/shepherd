@@ -1,0 +1,474 @@
+<mxfile host="app.diagrams.net" agent="OpenAI Codex">
+  <diagram id="shepherd-techjam-track1" name="Shepherd — Track 1 Architecture">
+    <mxGraphModel dx="6032" dy="3084" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="4300" pageHeight="2140" background="#ffffff" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontColor=#111827;fontStyle=1;fontSize=29;" value="Shepherd: Multi-Agent Kernel Architecture" vertex="1">
+          <mxGeometry height="55" width="2620" x="40" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="tier-experience" parent="1" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=6 6;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;verticalAlign=top;align=left;fontStyle=1;fontSize=17;spacingTop=10;spacingLeft=10;fontColor=#111827;" value="1. EXPERIENCE + API BOUNDARY" vertex="1">
+          <mxGeometry height="1410" width="520" x="50" y="240" as="geometry" />
+        </mxCell>
+        <mxCell id="tier-control" parent="1" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=6 6;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;verticalAlign=top;align=left;fontStyle=1;fontSize=17;spacingTop=10;spacingLeft=10;fontColor=#111827;" value="2. SHEPHERD CONTROL PLANE" vertex="1">
+          <mxGeometry height="1410" width="650" x="590" y="240" as="geometry" />
+        </mxCell>
+        <mxCell id="tier-git" parent="1" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=6 6;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;verticalAlign=top;align=left;fontStyle=1;fontSize=17;spacingTop=10;spacingLeft=10;fontColor=#111827;" value="3. ISOLATED EXECUTION + TRUSTED GIT PLANES" vertex="1">
+          <mxGeometry height="1410" width="1040" x="1260" y="240" as="geometry" />
+        </mxCell>
+        <mxCell id="tier-verify" parent="1" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=6 6;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;verticalAlign=top;align=left;fontStyle=1;fontSize=17;spacingTop=10;spacingLeft=10;fontColor=#111827;" value="4. INDEPENDENT VERIFICATION + INTEGRATION" vertex="1">
+          <mxGeometry height="1410" width="720" x="2320" y="240" as="geometry" />
+        </mxCell>
+        <mxCell id="tier-resolve" parent="1" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=6 6;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;verticalAlign=top;align=left;fontStyle=1;fontSize=17;spacingTop=10;spacingLeft=10;fontColor=#111827;" value="5. SEMANTIC COLLISION + SPECULATIVE RESOLUTION" vertex="1">
+          <mxGeometry height="1410" width="650" x="3060" y="240" as="geometry" />
+        </mxCell>
+        <mxCell id="tier-promote" parent="1" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=6 6;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;verticalAlign=top;align=left;fontStyle=1;fontSize=17;spacingTop=10;spacingLeft=10;fontColor=#111827;" value="6. PROTECTED PROMOTION" vertex="1">
+          <mxGeometry height="1410" width="520" x="3730" y="240" as="geometry" />
+        </mxCell>
+        <mxCell id="tier-state" parent="1" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=6 6;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;verticalAlign=top;align=left;fontStyle=1;fontSize=17;spacingTop=10;spacingLeft=10;fontColor=#111827;" value="7. DURABLE STATE / AUDIT / RECOVERY — CROSS-CUTTING" vertex="1">
+          <mxGeometry height="345" width="4200" x="50" y="1670" as="geometry" />
+        </mxCell>
+        <mxCell id="human" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;Human operator&lt;/b&gt;&lt;div&gt;&lt;b&gt;&lt;br&gt;&lt;/b&gt;creates Agents, assigns work&lt;br&gt;may select only eligible verified candidate&lt;/div&gt;" vertex="1">
+          <mxGeometry height="92" width="160" x="100" y="320" as="geometry" />
+        </mxCell>
+        <mxCell id="react" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;React 19 SPA&lt;/b&gt;&lt;div&gt;&lt;b&gt;&lt;br&gt;&lt;/b&gt;/shepherd&amp;nbsp; /project-group&lt;br&gt;/agents&amp;nbsp; /settings&lt;/div&gt;" vertex="1">
+          <mxGeometry height="92" width="150" x="350" y="320" as="geometry" />
+        </mxCell>
+        <mxCell id="surfaces" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;Execution surfaces&lt;/b&gt;&lt;br&gt;&lt;br&gt;Mission composer, private Shepherd chat&lt;br&gt;Project Group @Agent pairing / targeting&lt;br&gt;timeline, evidence, Plane lineage&lt;br&gt;1.1 s state/event polling" vertex="1">
+          <mxGeometry height="135" width="240" x="190" y="490" as="geometry" />
+        </mxCell>
+        <mxCell id="fastify" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;Fastify trust boundary&lt;/b&gt;&lt;br&gt;&lt;br&gt;Optional bearer gate on decoded /api/** targets&lt;br&gt;Zod-bounded IDs, bodies, cursors, settings&lt;br&gt;typed errors + bounded generic 500&lt;br&gt;redacted DTOs, no prompts, host paths, raw logs, or session IDs" vertex="1">
+          <mxGeometry height="155" width="250" x="185" y="750" as="geometry" />
+        </mxCell>
+        <mxCell id="route" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;[1] Server-owned route decision&lt;/b&gt;&lt;br&gt;&lt;br&gt;Browser cannot submit paths, Git refs, plans,&lt;br&gt;verifier commands, or shell input." vertex="1">
+          <mxGeometry height="125" width="290" x="165" y="960" as="geometry" />
+        </mxCell>
+        <mxCell id="shepherd-api" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;Shepherd APIs&lt;/b&gt;&lt;br&gt;&lt;br&gt;Contract intake, state/detail/events&lt;br&gt;Project Group, cancel, human selection&lt;br&gt;settings, guarded reset" vertex="1">
+          <mxGeometry height="95" width="200" x="100" y="1187.5" as="geometry" />
+        </mxCell>
+        <mxCell id="legacy" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;Initial Baseline retained&lt;/b&gt;&lt;br&gt;&lt;br&gt;AgentService CRUD/lifecycle&lt;br&gt;Playground + one active Run&lt;br&gt;workspace persistence&lt;br&gt;resumable legacy Codex thread" vertex="1">
+          <mxGeometry height="95" width="200" x="320" y="1187.5" as="geometry" />
+        </mxCell>
+        <mxCell id="projection" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;Public evidence projection&lt;/b&gt;&lt;br&gt;&lt;br&gt;logical lifecycle, changed-file lists, short Git evidence&lt;br&gt;check status/duration, collision/candidate state&lt;br&gt;session-established boolean only" vertex="1">
+          <mxGeometry height="120" width="210" x="205" y="1400" as="geometry" />
+        </mxCell>
+        <mxCell id="intake" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;[2] Normalize + idempotently bind intake&lt;/b&gt;&lt;br&gt;&lt;br&gt;Bounded content, secret scan, serialized admission&lt;br&gt;message ID ↔ content fingerprint; mismatched reuse rejected&lt;br&gt;server selects the supported Mission shape" vertex="1">
+          <mxGeometry height="125" width="300" x="770" y="347.5" as="geometry" />
+        </mxCell>
+        <mxCell id="fixed" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;Fixed-auth Mission&lt;/b&gt;&lt;br&gt;&lt;br&gt;Frontend + Backend Agents&lt;br&gt;two incompatible recognized transports&lt;br&gt;two independent Contracts / one wave" vertex="1">
+          <mxGeometry height="105" width="200" x="690" y="590" as="geometry" />
+        </mxCell>
+        <mxCell id="general" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;Bounded general Mission&lt;/b&gt;&lt;br&gt;&lt;br&gt;Fail-closed clarification&lt;br&gt;1–8 declared artifacts + exact literal check&lt;br&gt;one Agent, one Project, one Contract" vertex="1">
+          <mxGeometry height="120" width="200" x="940" y="575" as="geometry" />
+        </mxCell>
+        <mxCell id="contracts" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;[3] Persist typed Contract authority&lt;/b&gt;&lt;br&gt;&lt;br&gt;objective, Agent, dependencies, canonical claim key/scope&lt;br&gt;Agent ∩ Contract authority; protected/forbidden paths win&lt;br&gt;immutable Mission base SHA, expected artifacts, trusted check profile&lt;br&gt;reserve Agent identities + persist Mission, Contracts, events atomically" vertex="1">
+          <mxGeometry height="155" width="330" x="750" y="805" as="geometry" />
+        </mxCell>
+        <mxCell id="scheduler" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;DAG scheduler + concurrency&lt;/b&gt;&lt;br&gt;&lt;br&gt;acyclic dependencies, stable maximal safe batch&lt;br&gt;Agent occupancy, Project mutation lock&lt;br&gt;Plane-capacity and timeout bounds" vertex="1">
+          <mxGeometry height="125" width="210" x="670" y="1117.5" as="geometry" />
+        </mxCell>
+        <mxCell id="state-events" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;Actor-gated state machine&lt;/b&gt;&lt;br&gt;&lt;br&gt;no agent_completed → verified edge&lt;br&gt;transition + bounded event in one mutation&lt;br&gt;durable-first cancellation before Runtime cancellation" vertex="1">
+          <mxGeometry height="120" width="210" x="940" y="1117.5" as="geometry" />
+        </mxCell>
+        <mxCell id="control-note" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#888888;strokeWidth=1;fillColor=#ffffff;fontSize=11;align=left;verticalAlign=middle;spacing=8;fontColor=#374151;" value="&lt;b&gt;Primary enforcement point&lt;/b&gt;&lt;br&gt;&lt;br&gt;ShepherdService owns intake, Projects, scheduling, execution identities, import, verification, collision, selection, promotion, materialization, cancellation, and restart reconciliation.&lt;br&gt;&lt;br&gt;It never trusts Agent reports and never lets the browser or Agent mutate protected Git." vertex="1">
+          <mxGeometry height="155" width="260" x="590" y="1495" as="geometry" />
+        </mxCell>
+        <mxCell id="managed-repo" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;Managed Project repository&lt;/b&gt;&lt;br&gt;&lt;br&gt;fixed auth fixture or per-Agent Project&lt;br&gt;server-owned general policy.json + check script&lt;br&gt;protected branch + immutable Mission base SHA" vertex="1">
+          <mxGeometry height="140" width="210" x="1420" y="340" as="geometry" />
+        </mxCell>
+        <mxCell id="plane-manager" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;PlaneManager + argv-only GitClient&lt;/b&gt;&lt;br&gt;&lt;br&gt;server-derived paths / branches / refs beneath sentinel roots&lt;br&gt;sanitized environment · no shell, hooks, credentials, or user refs&lt;br&gt;only component allowed to create worktrees or perform protected CAS" vertex="1">
+          <mxGeometry height="110" width="350" x="1900" y="320" as="geometry" />
+        </mxCell>
+        <mxCell id="contract-a" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;[4A] Contract Plane, Frontend&lt;/b&gt;&lt;br&gt;&lt;br&gt;worktree from identical Mission base SHA&lt;br&gt;authority-filtered Git-free export&lt;br&gt;no linked worktree or protected .git reaches Agent" vertex="1">
+          <mxGeometry height="120" width="250" x="1400" y="600" as="geometry" />
+        </mxCell>
+        <mxCell id="contract-b" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;[4B] Contract Plane, Backend&lt;/b&gt;&lt;br&gt;&lt;br&gt;worktree from identical Mission base SHA&lt;br&gt;authority-filtered Git-free export&lt;br&gt;independent execution and session identity" vertex="1">
+          <mxGeometry height="105" width="240" x="1895" y="600" as="geometry" />
+        </mxCell>
+        <mxCell id="runtime-boundary" parent="1" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=6 6;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;verticalAlign=top;align=left;fontStyle=1;fontSize=17;spacingTop=10;spacingLeft=10;fontColor=#111827;fontSize=13;strokeColor=#444444;" value="UNTRUSTED AGENT EXECUTION : ONE-USE ISOLATED RUNTIME PER CONTRACT" vertex="1">
+          <mxGeometry height="390" width="950" x="1305" y="750" as="geometry" />
+        </mxCell>
+        <mxCell id="runtime-a" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;[5A] Fresh Runtime A&lt;/b&gt;&lt;br&gt;&lt;br&gt;deterministic fixture or live Codex&lt;br&gt;fresh private CODEX_HOME, prompt on stdin&lt;br&gt;non-root, read-only root, dropped caps&lt;br&gt;limits + workspace-write sandbox" vertex="1">
+          <mxGeometry height="105" width="290" x="1380" y="885" as="geometry" />
+        </mxCell>
+        <mxCell id="runtime-b" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;[5B] Fresh Runtime B&lt;/b&gt;&lt;br&gt;&lt;br&gt;never-reused execution / container / session IDs&lt;br&gt;exactly one fresh thread required&lt;br&gt;raw thread discarded; SHA-256 fingerprint persists&lt;br&gt;Agent-authored files + result manifest" vertex="1">
+          <mxGeometry height="140" width="250" x="1890" y="850" as="geometry" />
+        </mxCell>
+        <mxCell id="engine" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;Docker / Colima / Podman&lt;/b&gt;&lt;br&gt;disposable local Runtime boundary" vertex="1">
+          <mxGeometry height="58" width="360" x="1340" y="1055" as="geometry" />
+        </mxCell>
+        <mxCell id="ark" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;Volcengine Ark Responses API&lt;/b&gt;&lt;br&gt;reachable only by live Agent control process" vertex="1">
+          <mxGeometry height="58" width="360" x="1830" y="1056" as="geometry" />
+        </mxCell>
+        <mxCell id="import" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;[6] Trusted import → authority-valid commit A + commit B&lt;/b&gt;&lt;br&gt;&lt;br&gt;detached no-follow staging at source commit; regular files only&lt;br&gt;reject symlinks, special files, root escapes, protected metadata, tree/size excess&lt;br&gt;derive actual diff → enforce normalized write/forbidden patterns → re-derive and compare&lt;br&gt;strict .shepherd/result.json schema + claim/evidence relevance; manifest then removed&lt;br&gt;rebuild trusted commits from immutable base; Agent commits and control metadata never survive" vertex="1">
+          <mxGeometry height="140" width="540" x="1505" y="1240" as="geometry" />
+        </mxCell>
+        <mxCell id="git-note" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#888888;strokeWidth=1;fillColor=#ffffff;fontSize=11;align=left;verticalAlign=middle;spacing=8;fontColor=#374151;" value="&lt;b&gt;Isolation invariant:&lt;/b&gt; Agents never receive protected Git, linked Plane worktrees, verifier storage, browser-selected paths, deployment credentials, or another Shepherd session." vertex="1">
+          <mxGeometry height="85" width="195" x="1260" y="1565" as="geometry" />
+        </mxCell>
+        <mxCell id="registry" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;TrustedCheckRegistry&lt;/b&gt;&lt;br&gt;&lt;br&gt;auth frontend / backend / project-security profiles&lt;br&gt;exact bounded general-content profile&lt;br&gt;server-owned argv only; Agent cannot select commands" vertex="1">
+          <mxGeometry height="140" width="290" x="2535" y="305" as="geometry" />
+        </mxCell>
+        <mxCell id="verifier-isolation" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;Verifier isolation contract&lt;/b&gt;&lt;br&gt;&lt;br&gt;one disposable container per check, no network&lt;br&gt;no Ark key, app token, Codex state, Docker socket, or unrelated env&lt;br&gt;read-only root + exact-commit mount CPU/memory/PID/time/output/tmpfs bounds" vertex="1">
+          <mxGeometry height="155" width="370" x="2495" y="563" as="geometry" />
+        </mxCell>
+        <mxCell id="verify" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;[7] Independent verification of exact trusted commits&lt;/b&gt;&lt;br&gt;&lt;br&gt;fresh Git-free snapshot of commit A / commit B&lt;br&gt;validate target, checks, path, ownership, and limits&lt;br&gt;untrusted code executes read-only; only verifier actor can certify&lt;br&gt;every mandatory check must have coherent passing evidence" vertex="1">
+          <mxGeometry height="140" width="360" x="2500" y="875" as="geometry" />
+        </mxCell>
+        <mxCell id="evidence" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;[8] Bounded redacted evidence + claim corroboration&lt;/b&gt;&lt;br&gt;&lt;br&gt;status, duration, short Git/check evidence; raw stdout/stderr withheld&lt;br&gt;trusted code derives observed auth transport or exact general literal&lt;br&gt;Agent-declared outcomes remain informational until corroborated" vertex="1">
+          <mxGeometry height="155" width="350" x="2505" y="1140" as="geometry" />
+        </mxCell>
+        <mxCell id="integration" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;[9] Integration Plane&lt;/b&gt;&lt;br&gt;&lt;br&gt;merge only verified Contract commits from Mission base&lt;br&gt;argv-only Git, textual conflicts abort safely" vertex="1">
+          <mxGeometry height="105" width="300" x="2530" y="1430" as="geometry" />
+        </mxCell>
+        <mxCell id="collision" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;SEMANTIC COLLISION: Git success is not system correctness&lt;/b&gt;&lt;br&gt;&lt;br&gt;different verified Contracts, same normalized key/scope, exclusive mode&lt;br&gt;unequal corroborated values, valid evidence, no dependency supersession&lt;div&gt;&lt;br&gt;&lt;b&gt;example: auth.transport: bearer-jwt ≠ http-only-session-cookie, for the below architecture&lt;/b&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="190" width="320" x="3225" y="325" as="geometry" />
+        </mxCell>
+        <mxCell id="strategies" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;[10] Two strategies from the same integration SHA&lt;/b&gt;&lt;br&gt;&lt;br&gt;make the left value true, make the right value true&lt;br&gt;independent Plane / execution / session identities&lt;br&gt;bounded authority across both source scopes" vertex="1">
+          <mxGeometry height="165" width="310" x="3230" y="595" as="geometry" />
+        </mxCell>
+        <mxCell id="candidate-cookie" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;[10A] Resolution Plane, COOKIE&lt;/b&gt;&lt;br&gt;&lt;br&gt;target: http-only-session-cookie&lt;br&gt;frontend + backend + project-security checks&lt;br&gt;verifier must corroborate exact persisted target" vertex="1">
+          <mxGeometry height="125" width="270" x="3090" y="837.5" as="geometry" />
+        </mxCell>
+        <mxCell id="candidate-bearer" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;[10B] Resolution Plane, BEARER&lt;/b&gt;&lt;br&gt;&lt;br&gt;target: bearer-jwt&lt;br&gt;same profiles, same immutable base&lt;br&gt;target substitution rejected" vertex="1">
+          <mxGeometry height="110" width="280" x="3370" y="845" as="geometry" />
+        </mxCell>
+        <mxCell id="winner" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;[11] Deterministic winner policy&lt;/b&gt;&lt;br&gt;&lt;br&gt;exactly one mandatory-pass candidate → select it&lt;br&gt;neither passes → no selection / attention_required&lt;br&gt;both pass → predeclared objective tie-breakers only&lt;br&gt;still tied → human may choose only an eligible verified candidate" vertex="1">
+          <mxGeometry height="135" width="310" x="3230" y="1150" as="geometry" />
+        </mxCell>
+        <mxCell id="attention" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#888888;strokeWidth=1;fillColor=#ffffff;fontSize=11;align=left;verticalAlign=middle;spacing=8;fontColor=#374151;" value="&lt;b&gt;Fail closed, preserve evidence&lt;/b&gt;&lt;br&gt;&lt;br&gt;tie, both fail, paused automation, unsafe result, retry exhausted&lt;br&gt;losing and failed Planes remain inspectable" vertex="1">
+          <mxGeometry height="95" width="250" x="3260" y="1380" as="geometry" />
+        </mxCell>
+        <mxCell id="advisory" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#888888;strokeWidth=1;fillColor=#ffffff;fontSize=11;align=left;verticalAlign=middle;spacing=8;fontColor=#374151;" value="Optional Ark model reviewer receives bounded trusted summaries only; degradation is explicit and its output cannot detect authoritatively, verify, select, or promote." vertex="1">
+          <mxGeometry height="85" width="190" x="3060" y="1565" as="geometry" />
+        </mxCell>
+        <mxCell id="final-gate" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;[12] PromotionGate: final independent gate&lt;/b&gt;&lt;br&gt;&lt;br&gt;re-read persisted selection + candidate/Plane identity&lt;br&gt;prove immutable candidate HEAD and clean finalized product diff&lt;br&gt;recheck actual-diff authority, fresh independent verification&lt;br&gt;selection must post-date verification&lt;br&gt;recheck expected protected HEAD; any mismatch stops non-green" vertex="1">
+          <mxGeometry height="145" width="335" x="3822.5" y="400" as="geometry" />
+        </mxCell>
+        <mxCell id="promotion-marker" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;Durable pre-CAS evidence&lt;/b&gt;&lt;br&gt;&lt;br&gt;persist passing evidence + promoting marker&lt;br&gt;cancellation now rejected&lt;br&gt;prove fast-forward ancestry" vertex="1">
+          <mxGeometry height="135" width="300" x="3840" y="780" as="geometry" />
+        </mxCell>
+        <mxCell id="cas" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;[13] Protected fast-forward CAS&lt;/b&gt;&lt;br&gt;&lt;br&gt;atomic update-ref &amp;lt;candidate&amp;gt; &amp;lt;expected&amp;gt;&lt;br&gt;checked-out index/worktree synchronization&lt;br&gt;rollback attempts have distinct evidence" vertex="1">
+          <mxGeometry height="110" width="250" x="3865" y="1055" as="geometry" />
+        </mxCell>
+        <mxCell id="protected" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;Completed protected state&lt;/b&gt;&lt;br&gt;&lt;br&gt;one selected future becomes canonical&lt;br&gt;new protected HEAD + resolved collision + events&lt;br&gt;losing Plane retained; unauthorized change denied" vertex="1">
+          <mxGeometry height="135" width="240" x="3870" y="1305" as="geometry" />
+        </mxCell>
+        <mxCell id="materialize" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#888888;strokeWidth=1;fillColor=#ffffff;fontSize=11;align=left;verticalAlign=middle;spacing=8;fontColor=#374151;" value="&lt;b&gt;General path only&lt;/b&gt;&lt;br&gt;copy exact verified declared artifacts to originating Agent workspace&lt;br&gt;with bounded no-follow operations after CAS" vertex="1">
+          <mxGeometry height="95" width="420" x="3780" y="1540" as="geometry" />
+        </mxCell>
+        <mxCell id="durable-bus" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;fontSize=11;" value="&lt;b&gt;DURABLE DECISION / EVIDENCE BUS: &lt;/b&gt;every trusted lifecycle, claim, Plane, verification, collision, selection, promotion marker, event, and failure becomes recoverable state" vertex="1">
+          <mxGeometry height="40" width="4100" x="100" y="1715" as="geometry" />
+        </mxCell>
+        <mxCell id="store" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;JsonStore — one process per data root&lt;/b&gt;&lt;br&gt;&lt;br&gt;serialized mutation queue, scrubbed clones&lt;br&gt;credential removal from all strings&lt;br&gt;complete schema + 64 MiB validation&lt;br&gt;memory advances only after durable publication" vertex="1">
+          <mxGeometry height="120" width="290" x="280" y="1852.5" as="geometry" />
+        </mxCell>
+        <mxCell id="database" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;launchpad.json v2&lt;/b&gt;&lt;br&gt;&lt;br&gt;Agents, Runs, Projects, Missions, Contracts, Planes&lt;br&gt;claims, collisions, candidates, verification/promotion evidence&lt;br&gt;events + Project Group messages + settings + monotonic cursor&lt;br&gt;state transition and event persist in the same mutation" vertex="1">
+          <mxGeometry height="140" width="370" x="910" y="1842.5" as="geometry" />
+        </mxCell>
+        <mxCell id="atomic" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;Crash-consistent publication + narrow journals&lt;/b&gt;&lt;br&gt;&lt;br&gt;exclusive temp → fsync → atomic rename → directory fsync&lt;br&gt;Mission verification journal&lt;br&gt;general Project create/delete/policy journals&lt;br&gt;post-CAS selected-candidate / general promotion markers" vertex="1">
+          <mxGeometry height="165" width="360" x="1620" y="1830" as="geometry" />
+        </mxCell>
+        <mxCell id="recovery" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;Startup reconciliation + durable-first cancellation&lt;/b&gt;&lt;br&gt;&lt;br&gt;validate sentinels, Project identity, protected ref/checkout/HEAD/index/cleanliness&lt;br&gt;remove only installation-owned Runtime/verifier artifacts&lt;br&gt;corroborate post-CAS state; ambiguous/external movement → attention evidence&lt;br&gt;artifact presence alone never means completed" vertex="1">
+          <mxGeometry height="165" width="380" x="2320" y="1830" as="geometry" />
+        </mxCell>
+        <mxCell id="limits" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;fontSize=12;align=center;verticalAlign=middle;spacing=7;fontColor=#111827;" value="&lt;b&gt;As-built boundary / reproducibility&lt;/b&gt;&lt;br&gt;&lt;br&gt;single-node, single-process transactional control plane, local Docker/Colima/Podman is the supported isolation profile&lt;br&gt;ordinary containers are PoC isolation, not hostile multi-tenant security, general planning is deliberately bounded&lt;br&gt;promotion advances managed repositories under SHEPHERD_ROOT, never this application source repository&lt;br&gt;&lt;b&gt;Starter Agent CRUD, lifecycle, Playground, persistence, and model execution remain intact.&lt;/b&gt;" vertex="1">
+          <mxGeometry height="205" width="440" x="3310" y="1790" as="geometry" />
+        </mxCell>
+        <mxCell id="e-human-react" edge="1" parent="1" source="human" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#c25c00;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="react" value="operate">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-react-surfaces" edge="1" parent="1" source="react" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#c25c00;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="surfaces" value="typed UI action">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-surfaces-fastify" edge="1" parent="1" source="surfaces" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#c25c00;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="fastify" value="HTTPS / JSON">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-fastify-route" edge="1" parent="1" source="fastify" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#c25c00;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="route" value="validated request">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-route-shepherd" edge="1" parent="1" source="route" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#1565c0;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="shepherd-api" value="Shepherd-managed">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-route-legacy" edge="1" parent="1" source="route" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#6b7280;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.75;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="legacy" value="direct Playground">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-shepherd-intake" edge="1" parent="1" source="shepherd-api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#1565c0;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="intake" value="bounded Contract request">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="200" y="1345" />
+              <mxPoint x="580" y="1345" />
+              <mxPoint x="580" y="410" />
+              <mxPoint x="630" y="410" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-projection-react" edge="1" parent="1" source="projection" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#6b7280;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;dashed=1;dashPattern=6 6;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="react" value="redacted state / events">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="30" y="1457.5" />
+              <mxPoint x="30" y="225" />
+              <mxPoint x="425" y="225" />
+              <mxPoint x="425" y="310" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-intake-fixed" edge="1" parent="1" source="intake" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#1565c0;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.28;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="fixed" value="fixed auth">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-intake-general" edge="1" parent="1" source="intake" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#1565c0;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.72;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="general" value="private general">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-fixed-contracts" edge="1" parent="1" source="fixed" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#1565c0;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.27;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="contracts" value="2 Contracts">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-general-contracts" edge="1" parent="1" source="general" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#1565c0;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.73;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="contracts" value="1 Contract">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-contracts-scheduler" edge="1" parent="1" source="contracts" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#1565c0;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.28;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="scheduler" value="runnable batch">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-contracts-state" edge="1" parent="1" source="contracts" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#6b7280;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;dashed=1;dashPattern=6 6;exitX=0.72;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="state-events" value="actor transitions">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-scheduler-plane" edge="1" parent="1" source="scheduler" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#1565c0;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=1;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="plane-manager" value="derive Planes from base SHA">
+          <mxGeometry relative="1" x="-0.0957" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="775" y="1305" />
+              <mxPoint x="1250.03" y="1305" />
+              <mxPoint x="1250.03" y="510.03" />
+              <mxPoint x="1780.03" y="510.03" />
+              <mxPoint x="1780.03" y="430.03" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-repo-plane" edge="1" parent="1" source="managed-repo" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#1565c0;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="plane-manager" value="managed Git">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-plane-a" edge="1" parent="1" source="plane-manager" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#1565c0;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="contract-a" value="Contract A">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1990.03" y="430.03" />
+              <mxPoint x="1990.03" y="530.03" />
+              <mxPoint x="1525" y="530.03" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-plane-b" edge="1" parent="1" source="plane-manager" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#1565c0;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.75;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="contract-b" value="Contract B">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-a-runtime" edge="1" parent="1" source="contract-a" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#1565c0;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="runtime-a" value="Git-free export">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-b-runtime" edge="1" parent="1" source="contract-b" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#1565c0;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="runtime-b" value="Git-free export">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-runtime-engine" edge="1" parent="1" source="runtime-a" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#00796b;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.483;exitY=0.979;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;exitPerimeter=0;" target="engine" value="container control">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-runtime-ark" edge="1" parent="1" source="runtime-b" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#00796b;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.474;exitY=0.979;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;exitPerimeter=0;" target="ark" value="model request">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-a-import" edge="1" parent="1" source="runtime-a" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#1565c0;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=1;exitY=0.5;exitDx=0;exitDy=0;jumpStyle=arc;jumpSize=10;" target="import" value="files + manifest">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1765.04" y="937.48" />
+              <mxPoint x="1765.04" y="1145" />
+              <mxPoint x="1630" y="1145" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-b-import" edge="1" parent="1" source="runtime-b" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#1565c0;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="import" value="files + manifest">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="2140" y="937.48" />
+              <mxPoint x="2240" y="937.48" />
+              <mxPoint x="2240" y="1145" />
+              <mxPoint x="1910" y="1145" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-import-verify" edge="1" parent="1" source="import" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#7b1fa2;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=1;exitY=0.5;exitDx=0;exitDy=0;jumpStyle=arc;jumpSize=10;" target="verify" value="trusted commits A + B">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="2310" y="1310" />
+              <mxPoint x="2310" y="950" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-registry-isolation" edge="1" parent="1" source="registry" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#7b1fa2;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="verifier-isolation" value="registry-owned argv">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-isolation-verify" edge="1" parent="1" source="verifier-isolation" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#7b1fa2;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="verify" value="isolated check">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-verify-evidence" edge="1" parent="1" source="verify" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#7b1fa2;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="evidence" value="mandatory evidence">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-evidence-integration" edge="1" parent="1" source="evidence" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#1565c0;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="integration" value="verified commits only">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-integration-collision" edge="1" parent="1" source="integration" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#c62828;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=1;exitY=0.5;exitDx=0;exitDy=0;jumpStyle=arc;jumpSize=10;" target="collision" value="clean Git merge + claims">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="2830" y="1485" />
+              <mxPoint x="3050" y="1485" />
+              <mxPoint x="3050" y="430" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-collision-strategy" edge="1" parent="1" source="collision" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#c62828;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="strategies" value="durable collision">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-strategy-cookie" edge="1" parent="1" source="strategies" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#c62828;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.28;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="candidate-cookie" value="cookie future">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-strategy-bearer" edge="1" parent="1" source="strategies" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#c62828;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.72;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="candidate-bearer" value="bearer future">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-cookie-winner" edge="1" parent="1" source="candidate-cookie" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#7b1fa2;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.3;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="winner" value="ex. PASS evidence">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-bearer-winner" edge="1" parent="1" source="candidate-bearer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#7b1fa2;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.7;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="winner" value="ex. FAIL evidence">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-winner-attention" edge="1" parent="1" source="winner" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#c62828;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;dashed=1;dashPattern=6 6;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="attention" value="tie / none / paused">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-winner-gate" edge="1" parent="1" source="winner" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#2e7d32;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=1;exitY=0.45;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="final-gate" value="eligible selected candidate">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="3720" y="1241.25" />
+              <mxPoint x="3720" y="605" />
+              <mxPoint x="3770" y="605" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-gate-marker" edge="1" parent="1" source="final-gate" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#2e7d32;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="promotion-marker" value="fresh PASS + expected HEAD">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-marker-cas" edge="1" parent="1" source="promotion-marker" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#2e7d32;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="cas" value="promoting marker">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-cas-protected" edge="1" parent="1" source="cas" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#2e7d32;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="protected" value="atomic promotion">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-protected-materialize" edge="1" parent="1" source="protected" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#1565c0;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="materialize" value="verified artifacts only">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-state-bus" edge="1" parent="1" source="state-events" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#6b7280;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;dashed=1;dashPattern=6 6;entryX=0.231;entryY=0.065;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;entryPerimeter=0;" target="durable-bus" value="lifecycle + event">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1050" y="1715" />
+              <mxPoint x="1047.12" y="1715" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-import-bus" edge="1" parent="1" source="import" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#6b7280;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;dashed=1;dashPattern=6 6;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.4;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="durable-bus" value="Plane + commit evidence">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1775" y="1658" />
+              <mxPoint x="1740" y="1658" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-integration-bus" edge="1" parent="1" source="integration" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#6b7280;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;dashed=1;dashPattern=6 6;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.629;entryY=0.125;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;entryPerimeter=0;" target="durable-bus" value="verification + integration">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="2680.03" y="1715.03" />
+              <mxPoint x="2678.93" y="1715.03" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-winner-bus" edge="1" parent="1" source="attention" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#6b7280;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;dashed=1;dashPattern=6 6;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.801;entryY=-0.063;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;entryPerimeter=0;" target="durable-bus" value="collision + selection">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="3385" y="1570" />
+              <mxPoint x="3384.12" y="1570" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-promotion-bus" edge="1" parent="1" source="materialize" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#6b7280;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;dashed=1;dashPattern=6 6;entryX=0.95;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="durable-bus" value="promotion / failure">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="3990" y="1710" />
+              <mxPoint x="3995.01" y="1710" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-bus-store" edge="1" parent="1" source="durable-bus" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#6b7280;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;dashed=1;dashPattern=6 6;exitX=0.08;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="store" value="serialized mutation">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-store-db" edge="1" parent="1" source="store" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#6b7280;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;dashed=1;dashPattern=6 6;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="database" value="validated state">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-db-atomic" edge="1" parent="1" source="database" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#6b7280;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;dashed=1;dashPattern=6 6;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="atomic" value="publish">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-atomic-recovery" edge="1" parent="1" source="atomic" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#6b7280;endArrow=block;endFill=1;startArrow=none;startFill=1;labelBackgroundColor=#ffffff;fontSize=11;fontColor=#111827;dashed=1;dashPattern=6 6;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;jumpStyle=arc;jumpSize=10;" target="recovery" value="restart evidence">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="gwQtop6wSxK2cAJTCmu5-2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=6 6;strokeColor=#666666;strokeWidth=1.5;fillColor=#ffffff;verticalAlign=top;align=left;fontStyle=1;fontSize=17;spacingTop=10;spacingLeft=10;fontColor=#111827;dashed=0;fontSize=14;" value="REQUEST / CONTROL FLOW LEGEND" vertex="1">
+          <mxGeometry height="335" width="335" x="50" y="2040" as="geometry" />
+        </mxCell>
+        <mxCell id="gwQtop6wSxK2cAJTCmu5-3" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#c25c00;endArrow=block;endFill=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="100" y="2198" as="sourcePoint" />
+            <mxPoint x="185" y="2198" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="gwQtop6wSxK2cAJTCmu5-4" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontColor=#111827;fontSize=12;" value="User / API control" vertex="1">
+          <mxGeometry height="36" width="335" x="200" y="2180" as="geometry" />
+        </mxCell>
+        <mxCell id="gwQtop6wSxK2cAJTCmu5-5" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#1565c0;endArrow=block;endFill=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="100" y="2098" as="sourcePoint" />
+            <mxPoint x="185" y="2098" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="gwQtop6wSxK2cAJTCmu5-6" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontColor=#111827;fontSize=12;" value="Contracts + artifacts" vertex="1">
+          <mxGeometry height="36" width="335" x="200" y="2080" as="geometry" />
+        </mxCell>
+        <mxCell id="gwQtop6wSxK2cAJTCmu5-7" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#7b1fa2;endArrow=block;endFill=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="100" y="2298" as="sourcePoint" />
+            <mxPoint x="185" y="2298" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="gwQtop6wSxK2cAJTCmu5-8" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontColor=#111827;fontSize=12;" value="Independent verification" vertex="1">
+          <mxGeometry height="36" width="335" x="200" y="2280" as="geometry" />
+        </mxCell>
+        <mxCell id="gwQtop6wSxK2cAJTCmu5-9" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#c62828;endArrow=block;endFill=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="100" y="2248" as="sourcePoint" />
+            <mxPoint x="185" y="2248" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="gwQtop6wSxK2cAJTCmu5-10" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontColor=#111827;fontSize=12;" value="Collision + resolution" vertex="1">
+          <mxGeometry height="36" width="335" x="200" y="2230" as="geometry" />
+        </mxCell>
+        <mxCell id="gwQtop6wSxK2cAJTCmu5-11" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#2e7d32;endArrow=block;endFill=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="100" y="2148" as="sourcePoint" />
+            <mxPoint x="185" y="2148" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="gwQtop6wSxK2cAJTCmu5-12" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontColor=#111827;fontSize=12;" value="Protected promotion / CAS" vertex="1">
+          <mxGeometry height="36" width="335" x="200" y="2130" as="geometry" />
+        </mxCell>
+        <mxCell id="gwQtop6wSxK2cAJTCmu5-13" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#6b7280;endArrow=block;endFill=1;dashed=1;dashPattern=6 6;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="100" y="2348" as="sourcePoint" />
+            <mxPoint x="185" y="2348" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="gwQtop6wSxK2cAJTCmu5-14" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontColor=#111827;fontSize=12;" value="Polling / persistence / recovery" vertex="1">
+          <mxGeometry height="36" width="335" x="200" y="2330" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
