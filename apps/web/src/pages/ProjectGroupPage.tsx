@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { flushSync } from "react-dom";
 import { api } from "../api";
 import { Link } from "../router";
 import { useShepherdPolling } from "../shepherd-hooks";
@@ -62,18 +63,18 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
   const insertMention = (agent: Agent) => {
     if (sending) return;
     const nextContent = prependProjectGroupMentionWithinLimit(agent.name, agent.id, content);
-    if (nextContent === null) {
-      setComposerError("Mention would exceed the 2,000-character message limit.");
-    } else {
-      setComposerError(null);
-      setContent(nextContent);
-    }
-    window.requestAnimationFrame(() => {
-      const composer = messageComposer.current;
-      if (!composer) return;
-      composer.focus();
-      composer.setSelectionRange(composer.value.length, composer.value.length);
+    flushSync(() => {
+      if (nextContent === null) {
+        setComposerError("Mention would exceed the 2,000-character message limit.");
+      } else {
+        setComposerError(null);
+        setContent(nextContent);
+      }
     });
+    const composer = messageComposer.current;
+    if (!composer) return;
+    composer.focus();
+    composer.setSelectionRange(composer.value.length, composer.value.length);
   };
 
   const refreshMessages = useCallback(async () => {

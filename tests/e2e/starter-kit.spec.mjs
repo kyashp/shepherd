@@ -42,7 +42,11 @@ async function apiJson(request, route) {
 }
 
 async function runStatus(request, runId) {
-  return (await apiJson(request, `/api/runs/${encodeURIComponent(runId)}`)).run.status;
+  const { run } = await apiJson(request, `/api/runs/${encodeURIComponent(runId)}`);
+  if (run.status === "failed") {
+    throw new Error(`Direct Playground run failed: ${run.error ?? "unknown error"}`);
+  }
+  return run.status;
 }
 
 async function assertNoDocumentOverflow(page) {
@@ -155,6 +159,9 @@ test("legacy Playground persists an Agent, artifacts, session, and runs across r
 
   await expect(page.getByRole("heading", { name: AGENT_NAME, exact: true })).toBeVisible();
   await expect(page.getByText("Generalist", { exact: true }).first()).toBeVisible();
+  const shepherdRoute = page.getByRole("checkbox", { name: "Route through Shepherd" });
+  await expect(shepherdRoute).toBeChecked();
+  await shepherdRoute.uncheck();
   const agentList = await apiJson(request, "/api/agents");
   expect(agentList.agents).toHaveLength(1);
   const agentId = agentList.agents[0].id;
@@ -254,6 +261,9 @@ test("legacy Playground persists an Agent, artifacts, session, and runs across r
   const startAgent = page.getByRole("button", { name: "Start", exact: true });
   await tabTo(page, startAgent, "Start");
   await page.keyboard.press("Enter");
+  const restartedShepherdRoute = page.getByRole("checkbox", { name: "Route through Shepherd" });
+  await expect(restartedShepherdRoute).toBeChecked();
+  await restartedShepherdRoute.uncheck();
   await expect(page.getByText("Playground ready", { exact: true })).toBeVisible();
   await expect(startAgent).not.toBeVisible();
   await capture(page, testInfo, "09-server-restarted");

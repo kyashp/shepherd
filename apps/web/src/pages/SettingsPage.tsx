@@ -243,13 +243,13 @@ export function SettingsPage({ system }: { system: SystemInfo | null }) {
           {tab === "execution" ? (
             <>
               <SettingRow label="Contract timeout" description="Maximum execution time for one contract before Shepherd fails it closed.">
-                <label className="number-control"><input type="number" min={1} max={3600} step={1} value={draft.contractTimeoutMs / 1_000} onChange={(event) => setDraft({ ...draft, contractTimeoutMs: Math.round(Number(event.target.value) * 1_000) })} /><span>seconds</span></label>
+                <label className="number-control"><input aria-label="Contract timeout in seconds" type="number" min={1} max={3600} step={1} value={draft.contractTimeoutMs / 1_000} onChange={(event) => setDraft({ ...draft, contractTimeoutMs: Math.round(Number(event.target.value) * 1_000) })} /><span>seconds</span></label>
               </SettingRow>
               <SettingRow label="Candidate timeout" description="Maximum execution time for one speculative resolution candidate.">
-                <label className="number-control"><input type="number" min={1} max={3600} step={1} value={draft.candidateTimeoutMs / 1_000} onChange={(event) => setDraft({ ...draft, candidateTimeoutMs: Math.round(Number(event.target.value) * 1_000) })} /><span>seconds</span></label>
+                <label className="number-control"><input aria-label="Candidate timeout in seconds" type="number" min={1} max={3600} step={1} value={draft.candidateTimeoutMs / 1_000} onChange={(event) => setDraft({ ...draft, candidateTimeoutMs: Math.round(Number(event.target.value) * 1_000) })} /><span>seconds</span></label>
               </SettingRow>
               <SettingRow label="Maximum parallel Planes" description="Bound the number of isolated Agent execution Planes admitted concurrently.">
-                <input className="small-number" type="number" min={2} max={16} step={1} value={draft.maxConcurrentPlanes} onChange={(event) => setDraft({ ...draft, maxConcurrentPlanes: Number(event.target.value) })} />
+                <input aria-label="Maximum parallel Planes" className="small-number" type="number" min={2} max={16} step={1} value={draft.maxConcurrentPlanes} onChange={(event) => setDraft({ ...draft, maxConcurrentPlanes: Number(event.target.value) })} />
               </SettingRow>
               <SettingRow label="Automatic resolution" description="Automatically select and promote the objectively eligible candidate. Off still verifies both futures, then pauses before selection and promotion.">
                 <Toggle checked={draft.autoResolution} onChange={(autoResolution) => setDraft({ ...draft, autoResolution })} label="Automatic resolution" />

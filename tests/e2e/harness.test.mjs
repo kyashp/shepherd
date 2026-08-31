@@ -205,7 +205,7 @@ test("fake Codex fixture implements bounded deterministic version, run, and resu
 
     const first = await execFileAsync(
       fakeCodex,
-      ["exec", "--json", "--sandbox", "workspace-write", "--skip-git-repo-check", "-C", workspace, "first"],
+      ["exec", "--json", "--sandbox", "workspace-write", "--skip-git-repo-check", "-C", workspace, "--", "first"],
       { encoding: "utf8" },
     );
     const firstEvents = first.stdout.trim().split("\n").map((line) => JSON.parse(line));
@@ -219,7 +219,7 @@ test("fake Codex fixture implements bounded deterministic version, run, and resu
 
     const resumed = await execFileAsync(
       fakeCodex,
-      ["exec", "--json", "--sandbox", "workspace-write", "--skip-git-repo-check", "-C", workspace, "resume", threadId, "again"],
+      ["exec", "--json", "--sandbox", "workspace-write", "--skip-git-repo-check", "-C", workspace, "resume", "--", threadId, "again"],
       { encoding: "utf8" },
     );
     const resumedEvents = resumed.stdout.trim().split("\n").map((line) => JSON.parse(line));

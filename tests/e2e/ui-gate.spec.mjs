@@ -363,6 +363,9 @@ test("covers the clean shell, authentication, Agents, Settings, and not-found st
   const initial = await settingsTabState(keyboardTablist);
   await page.keyboard.press("ArrowRight");
   const afterArrowRight = await settingsTabState(keyboardTablist);
+  await expect(page.getByRole("spinbutton", { name: "Contract timeout in seconds" })).toBeVisible();
+  await expect(page.getByRole("spinbutton", { name: "Candidate timeout in seconds" })).toBeVisible();
+  await expect(page.getByRole("spinbutton", { name: "Maximum parallel Planes" })).toBeVisible();
   await page.keyboard.press("End");
   const afterEnd = await settingsTabState(keyboardTablist);
   await page.keyboard.press("Home");
