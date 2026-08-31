@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:test-driven-development` for each behavior change and `superpowers:verification-before-completion` before commits, pushes, pull-request updates, or completion claims. Execute the tasks in order and keep every observed command result in the issue evidence packet.
 
-**Goal:** Remove the two reproduced sources of suite instability, recheck the previously recorded service rows without weakening them, and produce a trustworthy five-run `npm run check` campaign for GitHub issue #48.
+**Goal:** Remove the reproduced sources of suite instability, recheck the previously recorded service rows without weakening them, and produce a trustworthy five-run `npm run check` campaign for GitHub issue #48.
 
-**Architecture:** Keep the fixes at their causal boundaries. Fixture Git commands receive a deliberately curated child-process environment so an enclosing hook cannot redirect them. Verification-snapshot tests synchronize through the service's existing fault-checkpoint seam after the owned snapshot has been removed, rather than consuming OS file watchers. No product behavior, public API, UI, dependency, retry count, assertion strength, or timeout changes.
+**Architecture:** Keep the fixes at their causal boundaries. Fixture Git commands receive a deliberately curated child-process environment so an enclosing hook cannot redirect them. Verification-snapshot tests synchronize through the service's existing fault-checkpoint seam after the owned snapshot has been removed, rather than consuming OS file watchers. Scheduler overlap is proven directly at the shared bounded-batch primitive instead of through a full Git-backed Mission. The candidate-cleanup fixture establishes the executor's shared private root through its public preflight before concurrent runs, isolating the cleanup phase that the test claims to exercise. No product behavior, public API, UI, dependency, retry count, assertion strength, or timeout changes.
 
 **Tech stack:** TypeScript, Node.js, npm workspaces, Vitest 4, Git, GitHub Actions.
 
@@ -16,7 +16,7 @@
 - [x] Task 2: Replace snapshot-removal file watchers with a lifecycle checkpoint.
 - [x] Task 3: Recheck and causally isolate the historically sensitive service rows.
 - [x] Task 4: Run adjacent and full server verification on the revised candidate.
-- [ ] Task 5: Commit the causal fixes and open the linked draft pull request.
+- [x] Task 5: Commit the causal fixes and open the linked draft pull request.
 - [ ] Task 6: Run the formal five-consecutive-check campaign.
 - [ ] Task 7: Independent readiness review.
 
@@ -264,6 +264,29 @@ Inspect the complete diff and confirm:
 - all temporary repositories and snapshots remain test-owned.
 
 Run `npm audit` and record the observed result before committing.
+
+### Step 3: Isolate candidate cleanup from first-use root adoption
+
+The normal pre-push server gate exposed one more representative-load failure in
+`keeps candidate cleanup failures bounded and prevents promotion`: all candidates
+were failed and promotion remained blocked, but none retained the expected
+sanitized Runtime cleanup message. The row passed alone, indicating a scheduling
+race rather than a deterministic assertion mismatch.
+
+The live executor prepares and validates one shared private-home root inside every
+candidate `run()`. This routed fixture bypassed the production executor recovery /
+startup path, so concurrent first-use candidates could race sentinel adoption and
+fail before `runner.run` registered their private homes as cleanup-fault targets.
+Initialize that shared boundary through the executor's public `preflight()` before
+candidate scheduling and assert exactly one preflight occurred. Do not change
+sentinel production code, cleanup injection, failure assertions, or the test
+timeout.
+
+Preserve the observed RED/GREEN evidence:
+
+- RED: the new preflight-count invariant observed `0` before fixture initialization.
+- GREEN: the exact row 10/10, the executor file 72/72, production and test
+  typechecks, and the full server suite with 845 passed / 3 skipped.
 
 ---
 
