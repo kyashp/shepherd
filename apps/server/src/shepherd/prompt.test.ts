@@ -113,6 +113,9 @@ describe("Shepherd execution prompt envelopes", () => {
     expect(envelope.executionRules.join(" ")).toContain(
       "never invent an evidence-only path",
     );
+    expect(envelope.executionRules.join(" ")).toContain(
+      "write exactly one schema-valid .shepherd/result.json manifest before returning",
+    );
     expect(envelope.executionRules.join(" ")).toContain("Do not claim success");
     expect(envelope.executionRules.join(" ")).toContain(".git/**");
   });

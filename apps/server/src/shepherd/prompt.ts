@@ -102,6 +102,7 @@ const contractExecutionRules = [
   ...commonExecutionRules,
   "For each semantic claim, evidence.path must be the corresponding changed expected artifact path; never invent an evidence-only path or cite context/control-plane files.",
   "The only permitted .shepherd/** write is the required .shepherd/result.json manifest.",
+  "Do not finish with analysis, an explanation, or a proposed patch: modify every required expected artifact, run the supplied trusted acceptance checks, and write exactly one schema-valid .shepherd/result.json manifest before returning.",
 ] as const;
 
 const resolutionExecutionRules = [
