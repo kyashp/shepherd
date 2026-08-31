@@ -497,6 +497,11 @@ export class GitClient {
       "--porcelain=v1",
       "-z",
       "--untracked-files=all",
+      // Ignore rules are agent-controlled: a committed .gitignore made files
+      // invisible here, so a Plane holding them was reported clean and they were
+      // carried into verification snapshots and re-exported into later execution
+      // workspaces without any authority check ever seeing them.
+      "--ignored=matching",
     ]);
     const tokens = result.stdout.split("\0");
     const changed = new Set<string>();
@@ -548,7 +553,9 @@ export class GitClient {
     const others = await this.inDirectory(directory, [
       "ls-files",
       "--others",
-      "--exclude-standard",
+      // Deliberately NOT --exclude-standard. Authority must be evaluated on every
+      // path an Agent wrote, and an Agent can write the .gitignore that would
+      // otherwise hide its own output from every check in the lifecycle.
       "-z",
       "--",
     ]);

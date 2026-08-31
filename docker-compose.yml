@@ -20,7 +20,12 @@ services:
       CODEX_HOME: /app/codex-home
       CODEX_SANDBOX_MODE: ${CODEX_SANDBOX_MODE:-workspace-write}
     ports:
-      - "${PUBLIC_PORT:-3000}:3000"
+      # Loopback by default, matching docker-compose.state-volume.yml. The
+      # documented quickstart runs this file with APP_AUTH_TOKEN empty, and an
+      # unprefixed port would publish prompt-driven command execution on every
+      # interface with authentication disabled. Publish elsewhere only together
+      # with a real APP_AUTH_TOKEN.
+      - "${PUBLIC_BIND_ADDR:-127.0.0.1}:${PUBLIC_PORT:-3000}:3000"
     volumes:
       - ./data:/app/data
       - ./workspaces:/app/workspaces

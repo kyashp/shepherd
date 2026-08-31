@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { promisify } from "node:util";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -92,4 +94,80 @@ test("Compose resolution accepts a genuine token", {
     path.join(repositoryRoot, "docker-compose.yml"),
   );
   assert.equal(status, "ok");
+});
+
+const execFileAsync = promisify(execFile);
+
+// The module-level tests above import the checker directly, so they cannot see
+// whether its CLI entry point actually runs. It is guarded by a main-module
+// comparison, and that guard is where a silent no-op hides.
+test("the checker CLI refuses an empty token from a directory whose name needs escaping", async () => {
+  const parent = await mkdtemp(path.join(os.tmpdir(), "ecs-cli-"));
+  temporaryDirectories.push(parent);
+  // A space, a hash and a non-ASCII character all percent-encode in a file URL.
+  const awkward = path.join(parent, "My Deploy Repo #1 \u00e9");
+  await mkdir(path.join(awkward, "scripts"), { recursive: true });
+  const { readFile, copyFile } = await import("node:fs/promises");
+  for (const name of ["check-deploy-auth-token.mjs"]) {
+    await copyFile(path.join(repositoryRoot, "scripts", name), path.join(awkward, "scripts", name));
+  }
+  await writeFile(
+    path.join(awkward, "docker-compose.yml"),
+    await readFile(path.join(repositoryRoot, "docker-compose.yml"), "utf8"),
+  );
+  const envFile = path.join(awkward, ".env.production");
+  await writeFile(envFile, "ARK_API_KEY=k\nARK_MODEL=m\nAPP_AUTH_TOKEN=\n", "utf8");
+
+  let code = 0;
+  let stderr = "";
+  try {
+    await execFileAsync(process.execPath, [path.join(awkward, "scripts", "check-deploy-auth-token.mjs"), envFile], { cwd: awkward });
+  } catch (error) {
+    code = error.code ?? 1;
+    stderr = String(error.stderr ?? "");
+  }
+  assert.notEqual(code, 0, "the CLI must refuse, not silently succeed");
+  assert.match(stderr, /APP_AUTH_TOKEN/u);
+});
+
+// The documented quickstart is `docker compose up --build` against this file, with
+// APP_AUTH_TOKEN empty by default. If the port publishes on every interface, that
+// quickstart exposes prompt-driven command execution unauthenticated.
+test("the base compose profile publishes on loopback by default", {
+  skip: composeAvailable ? false : "docker compose unavailable",
+}, async () => {
+  const { stdout } = await execFileAsync(
+    "docker",
+    ["compose", "--env-file", path.join(repositoryRoot, ".env.example"),
+     "--file", path.join(repositoryRoot, "docker-compose.yml"), "config", "--format", "json"],
+    // The compose file declares `env_file: ${LAUNCHPAD_ENV_FILE:-.env}`, and a clean
+    // checkout has no `.env`. Point it at the shipped example so this asserts the
+    // shipped defaults rather than whatever the developer happens to have locally.
+    { cwd: repositoryRoot,
+      env: { ...process.env, LAUNCHPAD_ENV_FILE: path.join(repositoryRoot, ".env.example") },
+      maxBuffer: 16 * 1024 * 1024 },
+  );
+  const service = JSON.parse(stdout).services.launchpad;
+  for (const published of service.ports ?? []) {
+    assert.equal(published.host_ip, "127.0.0.1",
+      `published port ${published.target} must default to loopback, got ${published.host_ip ?? "<all interfaces>"}`);
+  }
+  assert.ok((service.ports ?? []).length > 0, "expected a published port to assert on");
+});
+
+// The sibling profile already does this; the base one must not be the soft path.
+test("an operator can still opt in to a public bind", {
+  skip: composeAvailable ? false : "docker compose unavailable",
+}, async () => {
+  const { stdout } = await execFileAsync(
+    "docker",
+    ["compose", "--env-file", path.join(repositoryRoot, ".env.example"),
+     "--file", path.join(repositoryRoot, "docker-compose.yml"), "config", "--format", "json"],
+    { cwd: repositoryRoot,
+      env: { ...process.env, PUBLIC_BIND_ADDR: "0.0.0.0",
+             LAUNCHPAD_ENV_FILE: path.join(repositoryRoot, ".env.example") },
+      maxBuffer: 16 * 1024 * 1024 },
+  );
+  const service = JSON.parse(stdout).services.launchpad;
+  assert.equal((service.ports ?? [])[0]?.host_ip, "0.0.0.0");
 });

@@ -1,6 +1,7 @@
 import { access, mkdir, mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { connect } from "node:net";
 import { describe, expect, it, vi } from "vitest";
 import {
   createApp,
@@ -819,6 +820,50 @@ describe("HTTP boundary", () => {
     expect(allowed.statusCode).toBe(200);
     await app.close();
   });
+
+  it("protects API routes requested in absolute form", async () => {
+    // HTTP/1.1 permits an absolute-form request target, and `request.url` is then the
+    // whole URI, which does not start with "/api/". A prefix test on it skips the hook
+    // while the router still matches the path component.
+    //
+    // This must go over a real socket: `app.inject` normalizes the target, so it
+    // cannot express this request at all and reports a false pass.
+    const app = await createApp(
+      loadConfig({ NODE_ENV: "test", APP_AUTH_TOKEN: "a-strong-bounded-test-token" }),
+      service,
+      createShepherdService(),
+    );
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    const address = app.server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    const statusFor = async (target: string): Promise<number> =>
+      await new Promise((resolve, reject) => {
+        const socket = connect(port, "127.0.0.1", () => {
+          socket.write(
+            `GET ${target} HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nConnection: close\r\n\r\n`,
+          );
+        });
+        let received = "";
+        socket.on("data", (chunk) => (received += chunk.toString("utf8")));
+        socket.on("error", reject);
+        socket.on("close", () =>
+          resolve(Number(received.split("\r\n")[0]?.split(" ")[1] ?? 0)),
+        );
+      });
+
+    try {
+      expect(await statusFor("/api/system")).toBe(401);
+      for (const target of [
+        `http://127.0.0.1:${port}/api/system`,
+        `http://127.0.0.1:${port}/api/shepherd/state`,
+        `http://127.0.0.1:${port}/api/agents`,
+      ]) {
+        expect(await statusFor(target), target).toBe(401);
+      }
+    } finally {
+      await app.close();
+    }
+  }, 30_000);
 
   it("preserves Fastify client error status codes", async () => {
     const app = await createApp(loadConfig({ NODE_ENV: "test" }), service);

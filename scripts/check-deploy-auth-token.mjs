@@ -8,6 +8,7 @@
 // interpolation, and every divergence is a chance either to approve a token the
 // container never receives or to reject one it would have accepted.
 import { execFile } from "node:child_process";
+import { realpath } from "node:fs/promises";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -51,7 +52,19 @@ const MESSAGES = {
   unreadable: (f) => [`Could not resolve APP_AUTH_TOKEN through docker compose for ${f}.`],
 };
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Comparing `import.meta.url` against "file://" + a raw path is not sound: a space,
+// `#` or any non-ASCII character percent-encodes in the URL, and on macOS the
+// filesystem reports names in NFD while an argument is typically NFC — so even a
+// correctly built file URL can compare unequal. Either way the guard silently
+// becomes a no-op that exits 0 and lets an unauthenticated deploy through.
+// Resolving both sides through the filesystem removes encoding and normalization
+// from the comparison entirely.
+const invokedPath = process.argv[1];
+const thisFile = await realpath(import.meta.filename).catch(() => null);
+const invokedFile = invokedPath
+  ? await realpath(invokedPath).catch(() => null)
+  : null;
+if (thisFile !== null && thisFile === invokedFile) {
   const envFile = process.argv[2];
   if (!envFile) {
     process.stderr.write("usage: check-deploy-auth-token.mjs <env-file>\n");

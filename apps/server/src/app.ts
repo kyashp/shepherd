@@ -887,21 +887,30 @@ export async function createApp(
   });
 
   app.addHook("onRequest", async (request, reply) => {
-    // Decide from the decoded path, not the raw target. Fastify percent-decodes
-    // static segments before route matching, so testing the raw URL let any encoded
-    // spelling of the prefix — `/%61pi/...` — skip this hook while the router still
-    // resolved the request to the real handler. Anything that does not decode is
-    // treated as protected rather than exempt.
+    // Decide from the parsed, decoded PATH, never from the raw request target.
+    // Two distinct bypasses came from testing the raw string: Fastify percent-decodes
+    // static segments before route matching, so `/%61pi/...` skipped the hook; and
+    // HTTP/1.1 permits an absolute-form target, so `http://host/api/...` does not
+    // start with "/api/" at all while the router still matches the path component.
+    // Parsing against a base handles origin-form, absolute-form and
+    // protocol-relative targets uniformly. Anything that fails to parse or decode is
+    // treated as protected, never exempt.
+    let routedPath: string;
     let routedUrl: string;
     try {
+      routedPath = decodeURIComponent(
+        new URL(request.url, "http://localhost").pathname,
+      );
       routedUrl = decodeURIComponent(request.url);
     } catch {
-      // An undecodable target is treated as protected, never exempt.
+      routedPath = "/api/";
       routedUrl = "/api/";
     }
     if (
       !config.authToken ||
-      !routedUrl.startsWith("/api/") ||
+      !routedPath.startsWith("/api/") ||
+      // Exemptions stay exact-match on the whole target, so a query string or a
+      // non-origin-form spelling of a public route still fails closed.
       routedUrl === "/api/health" ||
       routedUrl === "/api/auth"
     ) {

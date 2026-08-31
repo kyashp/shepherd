@@ -71,6 +71,70 @@ protected `origin/main` `0ed41dd`. No live/model request ran.
 Candidate browser gate `B` is passed. Exact-final-head `C`, independent `U`, and
 protected-main `I` remain pending; this implementation-owner record is not an
 independent audit.
+## 2026-08-31 — SEC-REVIEW part 4 review run; five High findings fixed
+
+Branch `fix/89-absolute-form-auth-bypass` from `main` at `0ed41dd`, for issue #89.
+No live or model call ran.
+
+**What kind of review this was.** Seven adversarial lenses were run over the whole
+trust boundary, each with fresh context, each instructed to break the system rather
+than confirm it, and each told that much of the security-relevant code was written by
+a prior agent already found defective three times. Every High and Medium was then put
+to a separate verifier whose default was to refute it. **19 findings were confirmed
+and 0 were refuted.** These reviewers are not a different party from the author, and
+this entry does not claim they are; issue #89's acceptance asks for review by someone
+other than the author of the code under review, and whether this satisfies that is
+the maintainer's call, not the author's.
+
+Five High findings are fixed here. Each is filed in `FIXES.md` with its reproduction.
+
+- **`SEC-02`** — the bearer hook was bypassed by an absolute-form request target.
+  `GET http://host/api/system` returned 200 unauthenticated on every route including
+  the destructive reset, reproduced over a raw socket against the real `createApp`.
+  The `SEC-01` correction decoded the raw target but still tested the raw string, so
+  it closed percent-encoded spellings and left this one open. The hook now decides
+  from the parsed, decoded pathname. **The first regression test written for this
+  used `app.inject`, which normalizes the target and cannot express the attack; it
+  reported a false pass.** The test goes over a real socket.
+- **`SEC-03`** — the deploy guard was silently inert. Its CLI entry point was gated
+  on `import.meta.url === "file://" + process.argv[1]`, which is not a sound
+  comparison: a space, `#` or non-ASCII percent-encodes, and macOS reports filenames
+  in NFD against an NFC argument. From a directory named `My Deploy Repo #1 é` the
+  guard body never ran and the deploy proceeded with an empty token. Both sides are
+  now resolved through the filesystem. A first correction using `pathToFileURL` still
+  failed on NFD and was caught by the new spawning test.
+- **`SEC-04`** — the prompt, and on the resume path a stored thread id, reached the
+  Codex CLI as unseparated positionals on the same argv as `--sandbox`, so a prompt
+  beginning with `-` parsed as an option. The repository already applies the `--`
+  discipline to every Git invocation; the legacy runner was the one path missing it.
+- **`SEC-05`** — mandatory promotion re-verification ran against the live Plane
+  worktree rather than the commit being promoted, because the snapshot fast path
+  copied any worktree `git status` called clean, and that test plus every authority
+  query are ignore-blind. Ignore rules are agent-controlled, so files under a
+  committed `.gitignore` were invisible to every check yet present in the verified
+  tree. Two corrections, each sufficient alone and kept together: the snapshot always
+  materializes the exact commit, and the authority queries are ignore-aware.
+  Reverting both reproduces; reverting either alone does not.
+- **`SEC-06`** — the carried `OPS-06` High. The base compose profile published on
+  every interface while the token defaults to empty and the quickstart says nothing
+  else is needed to start. The published address now defaults to loopback with an
+  explicit `PUBLIC_BIND_ADDR` opt-in, mirroring the state-volume profile which
+  already did this. An earlier decision on this row rejected pinning to loopback
+  because it would remove intended reachability; that was right about pinning and
+  wrong about the remedy, and the defaulted variable keeps the reachability as an
+  opt-in while making only the default safe. The existing deploy guard is left
+  unchanged rather than made conditional, so no existing control is relaxed.
+
+**Observed.** `npm run typecheck` passed; `app`, `config`, `codex-runner` and
+`container-codex-runner` 88/88; the Git/Plane promotion integration suite 28/28;
+`plane-manager`, `promotion-gate`, `failure-matrix` and `authority` 52/52; script
+tests 7/7 plus launcher 5/5; web 20/20; both production builds passed. Every fix was
+mutation-checked against the defect it closes.
+
+**Not fixed here, and still open on #89:** unbounded retention on durable
+collections; CSRF on the tokenless default, materially reduced by `SEC-06` but not
+eliminated; credentials in ECS instance user-data and Terraform state; and four Low
+findings. Part 5 is therefore incomplete and the `SEC-REVIEW` row stays `PARTIAL`.
 
 ## 2026-08-31 — `TST-26`: the recovery-process failures were a defect, not host speed
 

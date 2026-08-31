@@ -43,10 +43,14 @@ export function buildCodexArgs(
     args.push("-");
     return args;
   }
+  // End-of-options separator before any attacker-influenced positional. Without it
+  // a prompt beginning with `-` is parsed by the Codex CLI as an option, on the same
+  // argv that carries `--sandbox`. The Git client already applies this discipline to
+  // every invocation; the legacy runner was the one path missing it.
   if (request.threadId) {
-    args.push("resume", request.threadId, request.prompt);
+    args.push("resume", "--", request.threadId, request.prompt);
   } else {
-    args.push(request.prompt);
+    args.push("--", request.prompt);
   }
   return args;
 }

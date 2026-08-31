@@ -159,8 +159,13 @@ ARK_MODEL=ep-your-endpoint-id
 ```
 
 `APP_AUTH_TOKEN` is optional and empty by default, so nothing else is needed to
-start. Set 24+ random URL-safe characters to require a bearer credential on every
-API route; do that for any deployment reachable beyond your own machine.
+start. The container profile publishes on `127.0.0.1` by default, so the quickstart
+is not reachable from the network and a tokenless start is safe.
+
+To expose it beyond this machine, set `PUBLIC_BIND_ADDR` (for example `0.0.0.0`) and
+set `APP_AUTH_TOKEN` to 24+ random URL-safe characters **in the same change**. The
+API performs prompt-triggered command and file execution, so an exposed instance
+without a token hands that to anyone who can reach the port.
 
 Start the application:
 
@@ -258,8 +263,10 @@ curl -H "Authorization: Bearer $APP_AUTH_TOKEN" http://127.0.0.1/api/system
 docker compose --env-file .env.production ps
 ```
 
-Deploy updates with `git pull --ff-only` and rerun the same script. Allow inbound
-HTTP only from the event network, SSH only from administrator addresses, and
+This profile is meant to be reachable, so set `PUBLIC_BIND_ADDR=0.0.0.0` in
+`.env.production` alongside `APP_AUTH_TOKEN`; the deploy script refuses to start
+without a valid token. Deploy updates with `git pull --ff-only` and rerun the same
+script. Allow inbound HTTP only from the event network, SSH only from administrator addresses, and
 outbound HTTPS only where required. Add HTTPS before sending the shared bearer token
 over an untrusted network. `docker compose --env-file .env.production down` stops
 the service without deleting Agent data.

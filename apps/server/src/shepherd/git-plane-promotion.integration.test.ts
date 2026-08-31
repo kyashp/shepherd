@@ -786,6 +786,38 @@ describe("GitClient and PlaneManager integration", () => {
       });
       await expect(access(emptyMetadataSnapshot)).rejects.toThrow();
       expect(new Set(usedPaths).size).toBe(3);
+
+      // A Git-ignored file is invisible to `git status`, so the Plane reports clean
+      // and the snapshot fast path would byte-copy the live worktree — handing the
+      // mandatory checks a strict superset of the tree actually being promoted. The
+      // snapshot must contain exactly the commit tree.
+      // The .gitignore must itself be committed, or `git status` reports the Plane
+      // dirty and the fast path is skipped — which is why an uncommitted-file test
+      // cannot reach this bug.
+      await writeFile(path.join(plane.worktreePath, ".gitignore"), "payload/\n", "utf8");
+      await fixtureGit(plane.worktreePath, ["add", "--", ".gitignore"]);
+      await fixtureGit(plane.worktreePath, ["commit", "-m", "ignore payload"]);
+      const ignoredHead = (await fixtureGit(plane.worktreePath, ["rev-parse", "HEAD"])).trim();
+      await mkdir(path.join(plane.worktreePath, "payload"), { recursive: true });
+      await writeFile(
+        path.join(plane.worktreePath, "payload", "unverified.ts"),
+        "never committed, never authority-checked\n",
+        "utf8",
+      );
+      let ignoredSnapshot = "";
+      await fixture.manager.withVerificationSnapshot(ignoredHead, async (snapshot) => {
+        ignoredSnapshot = snapshot.path;
+        await expect(
+          access(path.join(snapshot.path, "payload", "unverified.ts")),
+        ).rejects.toThrow();
+        expect(await readFile(path.join(snapshot.path, "candidate.ts"), "utf8")).toBe(
+          "committed\n",
+        );
+      });
+      await expect(access(ignoredSnapshot)).rejects.toThrow();
+      await rm(path.join(plane.worktreePath, "payload"), { recursive: true, force: true });
+      await rm(path.join(plane.worktreePath, ".gitignore"), { force: true });
+
       await fixture.manager.resetManagedPlanes();
     } finally {
       await destroyFixture(fixture);
