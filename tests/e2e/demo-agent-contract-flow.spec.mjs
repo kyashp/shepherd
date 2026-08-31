@@ -115,7 +115,7 @@ test("user-created Agents receive visible typed contracts and produce competing 
   await page.getByRole("link", { name: /My Frontend Agent/u }).click();
   await expect(page.getByLabel("Route through Shepherd")).toBeChecked();
   const frontendPrompt =
-    "Implement the browser authentication client using the conventions and interfaces already present in your assigned workspace.";
+    "Complete the customer portal authentication client using the repository’s existing conventions and interfaces. Keep the implementation and tests within the frontend-owned files.";
   await page.getByLabel("Message My Frontend Agent").fill(frontendPrompt);
   const waitingResponse = page.waitForResponse((response) =>
     response.request().method() === "POST" && /\/api\/shepherd\/agents\/[^/]+\/contracts$/u.test(response.url()),
@@ -141,7 +141,7 @@ test("user-created Agents receive visible typed contracts and produce competing 
   const backendRoute = page.getByLabel("Route through Shepherd");
   await expect(backendRoute).toBeChecked();
   const backendPrompt =
-    "Implement the authentication service using the deployment conventions and interfaces already present in your assigned workspace.";
+    "Complete the API authentication middleware using the repository’s existing deployment conventions and interfaces. Keep the implementation and tests within the backend-owned files.";
   await page.getByLabel("Message My Backend Agent").fill(backendPrompt);
   const acceptedResponse = page.waitForResponse((response) =>
     response.request().method() === "POST" && /\/api\/shepherd\/agents\/[^/]+\/contracts$/u.test(response.url()),

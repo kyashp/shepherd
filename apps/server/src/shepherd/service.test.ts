@@ -1701,9 +1701,9 @@ describe("Shepherd deterministic walking skeleton", () => {
       verifier: new HostTrustedFixtureVerifier(),
     });
     const frontendPrompt =
-      "Implement the browser authentication client using the conventions and interfaces already present in your assigned workspace.";
+      "Complete the customer portal authentication client using the repository’s existing conventions and interfaces. Keep the implementation and tests within the frontend-owned files.";
     const backendPrompt =
-      "Implement the authentication service using the deployment conventions and interfaces already present in your assigned workspace.";
+      "Complete the API authentication middleware using the repository’s existing deployment conventions and interfaces. Keep the implementation and tests within the backend-owned files.";
 
     await expect(service.submitPrivateContractPrompt({
       agentId: frontendAgent.id,

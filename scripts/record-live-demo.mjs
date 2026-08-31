@@ -27,14 +27,22 @@ const execFileAsync = promisify(execFile);
 const scriptPath = fileURLToPath(import.meta.url);
 const scriptDirectory = path.dirname(scriptPath);
 const repositoryRoot = path.resolve(scriptDirectory, "..");
-const envPath = path.join(repositoryRoot, ".env");
+const envPath = process.env.LIVE_DEMO_ENV_FILE
+  ? path.resolve(process.env.LIVE_DEMO_ENV_FILE)
+  : path.join(repositoryRoot, ".env");
 const stateRoot = path.join(repositoryRoot, ".tmp", "live-demo-recording-state");
-const artifactRoot = path.join(repositoryRoot, ".tmp", "demo-recordings", "live");
+const artifactRoot = path.join(
+  repositoryRoot,
+  ".tmp",
+  "demo-recordings",
+  "realistic-support-portal",
+  "live",
+);
 const stateSentinel = path.join(stateRoot, ".live-demo-state-root");
 const artifactSentinel = path.join(artifactRoot, ".live-demo-artifact-root");
 const stateSentinelValue = "Shepherd live demo recording state\n";
 const artifactSentinelValue = "Shepherd live demo recording artifacts\n";
-const videoPath = path.join(artifactRoot, "shepherd-live-demo.webm");
+const videoPath = path.join(artifactRoot, "northstar-support-portal-live-1080p.webm");
 const manifestPath = path.join(artifactRoot, "chapters.json");
 const manifestMarkdownPath = path.join(artifactRoot, "CHAPTERS.md");
 const authorizationRoot = path.join(repositoryRoot, ".tmp", "demo-recordings", ".live-demo-run-guards");
@@ -47,10 +55,13 @@ const consumeAuthorizationOnly = process.argv.slice(2).includes("--consume-autho
 const runIdPattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/u;
 
 const frontendPrompt =
-  "Implement the browser authentication client using the conventions and interfaces already present in your assigned workspace.";
+  "Complete the customer portal authentication client using the repository’s existing conventions and interfaces. Keep the implementation and tests within the frontend-owned files.";
 
 const backendPrompt =
-  "Implement the authentication service using the deployment conventions and interfaces already present in your assigned workspace.";
+  "Complete the API authentication middleware using the repository’s existing deployment conventions and interfaces. Keep the implementation and tests within the backend-owned files.";
+
+const frontendAgentName = "Customer Portal Frontend";
+const backendAgentName = "Support API Backend";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -610,6 +621,28 @@ async function pause(ms) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function humanClick(locator, { before = 900, after = 1_500 } = {}) {
+  await locator.scrollIntoViewIfNeeded();
+  await pause(before);
+  await locator.click();
+  await pause(after);
+}
+
+async function humanType(locator, value, delay = 32) {
+  await locator.scrollIntoViewIfNeeded();
+  await locator.focus();
+  await pause(600);
+  await locator.fill("");
+  await locator.pressSequentially(value, { delay });
+  await pause(900);
+}
+
+async function humanReload(page) {
+  await pause(900);
+  await page.reload({ waitUntil: "networkidle" });
+  await pause(1_800);
+}
+
 function chapterRecorder(startedAt) {
   const chapters = [];
   return {
@@ -624,12 +657,17 @@ function chapterRecorder(startedAt) {
   };
 }
 
-async function createAgent(page, name, preset) {
-  await page.getByRole("link", { name: "Create Agent", exact: true }).first().click();
+async function createAgent(page, name, preset, description) {
+  await humanClick(page.getByRole("link", { name: "Create Agent", exact: true }).first());
   await waitForVisible(page.getByRole("heading", { name: "Create Agent", exact: true }));
-  await page.getByLabel("Agent name").fill(name);
-  await page.getByRole("radio", { name: new RegExp(preset, "u") }).locator("..").click();
-  await page.getByRole("button", { name: "Create Agent", exact: true }).click();
+  await pause(1_200);
+  await humanType(page.getByLabel("Agent name"), name, 55);
+  await humanType(page.getByLabel("Description"), description, 24);
+  await humanClick(page.getByRole("radio", { name: new RegExp(preset, "u") }).locator(".."));
+  await humanClick(page.getByRole("button", { name: "Create Agent", exact: true }), {
+    before: 1_200,
+    after: 2_000,
+  });
   await waitForVisible(page.getByRole("heading", { name, exact: true }));
   await waitForVisible(page.getByText("Shepherd route ready", { exact: true }));
 }
@@ -638,12 +676,14 @@ async function sendManagedPrompt(page, agentName, prompt) {
   const composer = page.getByLabel(`Message ${agentName}`);
   await waitForVisible(composer);
   assert(await page.getByLabel("Route through Shepherd").isChecked(), "Agent was not routed through Shepherd by default");
-  await composer.fill(prompt);
+  await humanType(composer, prompt, 24);
   const responsePromise = page.waitForResponse(
     (response) => response.request().method() === "POST" && /\/api\/shepherd\/agents\/[^/]+\/contracts$/u.test(response.url()),
     { timeout: 30_000 },
   );
+  await pause(1_000);
   await composer.press("Enter");
+  await pause(1_500);
   const response = await responsePromise;
   const body = await response.json();
   assert([201, 202].includes(response.status()), "Managed Contract intake failed");
@@ -654,7 +694,7 @@ async function sendManagedPrompt(page, agentName, prompt) {
 
 async function clickFilter(page, name) {
   const button = page.getByRole("button", { name, exact: true });
-  await button.click();
+  await humanClick(button, { before: 650, after: 1_000 });
   assert((await button.getAttribute("aria-pressed")) === "true", `The ${name} event filter did not activate`);
 }
 
@@ -692,26 +732,36 @@ async function recordBrowserJourney(baseURL, authToken) {
     chapter.mark("Live Runtime and trusted-kernel configuration", "Settings visibly reports Live execution; the server preflight independently proved the container Runtime and model reviewer are configured.");
     await pause(8_000);
 
-    await createAgent(page, "Frontend Auth Agent", "Frontend");
+    await createAgent(
+      page,
+      frontendAgentName,
+      "Frontend",
+      "Owns the Northstar customer portal authentication experience.",
+    );
     await assertNoDocumentOverflow(page);
     chapter.mark("Create the bounded Frontend Agent", "User-created Frontend Agent is ready and routed through Shepherd by default.");
     await pause(5_000);
 
-    await createAgent(page, "Backend Auth Agent", "Backend");
+    await createAgent(
+      page,
+      backendAgentName,
+      "Backend",
+      "Owns authentication at the horizontally scaled support API boundary.",
+    );
     await assertNoDocumentOverflow(page);
     chapter.mark("Create the bounded Backend Agent", "User-created Backend Agent is ready with a separate authority preset.");
     await pause(5_000);
 
-    await page.getByRole("link", { name: /Frontend Auth Agent/u }).click();
-    const frontendResult = await sendManagedPrompt(page, "Frontend Auth Agent", frontendPrompt);
+    await humanClick(page.getByRole("link", { name: new RegExp(frontendAgentName, "u") }));
+    const frontendResult = await sendManagedPrompt(page, frontendAgentName, frontendPrompt);
     assert(frontendResult.status === "awaiting_peer", "The first implicit-context Contract was not held for its peer");
     await waitForVisible(page.locator(".shepherd-contract-status").last());
     await assertNoDocumentOverflow(page);
     chapter.mark("Neutral Frontend request becomes a typed Contract draft", "The user asks for secure browser authentication without prescribing cookies or JWT; Shepherd validates and holds the bounded request.");
     await pause(8_000);
 
-    await page.getByRole("link", { name: /Backend Auth Agent/u }).click();
-    const backendResult = await sendManagedPrompt(page, "Backend Auth Agent", backendPrompt);
+    await humanClick(page.getByRole("link", { name: new RegExp(backendAgentName, "u") }));
+    const backendResult = await sendManagedPrompt(page, backendAgentName, backendPrompt);
     assert(backendResult.status === "accepted" && typeof backendResult.missionId === "string", "The peer request did not atomically start a Mission");
     missionId = backendResult.missionId;
     await waitForVisible(page.locator(".shepherd-contract-status").last());
@@ -719,24 +769,51 @@ async function recordBrowserJourney(baseURL, authToken) {
     chapter.mark("Neutral Backend request atomically starts one Mission", "Neither request specifies a transport; each Agent must infer a locally reasonable choice from its scoped context.");
     await pause(8_000);
 
-    await page.getByRole("link", { name: /^Shepherd/u }).click();
+    await humanClick(page.getByRole("link", { name: /^Project Group/u }));
+    await waitForVisible(page.getByRole("heading", { name: "Project Group", exact: true }));
+    await assertNoDocumentOverflow(page);
+    chapter.mark("One live Project Group binds the two independent requests", "The human intent, Shepherd, and both specialist Agents are now visible in one durable project conversation.");
+    await pause(8_000);
+
+    await humanClick(page.getByRole("link", { name: /^Shepherd/u }));
     await waitForVisible(page.getByRole("heading", { name: "Shepherd", exact: true }));
     await waitForVisible(page.getByText("Kernel online", { exact: true }));
     await assertNoDocumentOverflow(page);
     chapter.mark("Live execution begins in isolated Contract Planes", "The live timeline and Plane tree expose two independently executing, authority-bounded Agent futures.");
     await pause(8_000);
 
-    await waitForState(
+    const plannedSnapshot = await waitForState(
       baseURL,
       authToken,
       missionId,
       ({ contracts, planes }) => contracts.length === 2 && planes.filter((item) => item.kind === "contract").length === 2,
       "two live Contract Planes",
     );
-    await page.reload({ waitUntil: "networkidle" });
+    await humanReload(page);
     await assertNoDocumentOverflow(page);
     chapter.mark("Two live Contract executions are durable", "Both Contracts and their isolated Planes are persisted while the models work; self-report alone cannot mark either verified.");
     await pause(8_000);
+
+    await clickFilter(page, "Contracts");
+    const frontendContract = plannedSnapshot.entities.contracts.find((item) => item.title.toLowerCase().includes("frontend"));
+    const backendContract = plannedSnapshot.entities.contracts.find((item) => item.title.toLowerCase().includes("backend"));
+    assert(frontendContract && backendContract, "The two production Contracts were not persisted");
+    for (const [contract, title, evidence] of [
+      [frontendContract, "Inspect the complete Customer Portal execution Contract", "The original natural request is bound to the Frontend Agent, its scoped conventions, authority, expected artifact, semantic claim key, and trusted acceptance profile."],
+      [backendContract, "Inspect the complete Support API execution Contract", "The Backend Agent receives a separate deployment context and write boundary; no transport value was supplied by the user."],
+    ]) {
+      const event = plannedSnapshot.entities.events.find((item) => item.type === "contract_created" && item.contractId === contract.id);
+      assert(event, "A Contract creation event is missing");
+      const card = page.locator("article.event-card").filter({ hasText: event.summary });
+      await waitForVisible(card);
+      await humanClick(card.getByText("View evidence", { exact: true }), { before: 800, after: 1_500 });
+      await waitForVisible(card.getByLabel("Agent execution contract"));
+      await assertNoDocumentOverflow(page);
+      chapter.mark(title, evidence);
+      await pause(10_000);
+      await humanClick(card.getByText("View evidence", { exact: true }), { before: 700, after: 1_000 });
+    }
+    await clickFilter(page, "All");
 
     const collisionSnapshot = await waitForState(
       baseURL,
@@ -745,7 +822,7 @@ async function recordBrowserJourney(baseURL, authToken) {
       ({ contracts, collisions }) => contracts.length === 2 && contracts.every((item) => item.state === "verified") && collisions.length === 1,
       "independent Contract verification and semantic collision",
     );
-    await page.reload({ waitUntil: "networkidle" });
+    await humanReload(page);
     await clickFilter(page, "Verification");
     await waitForVisible(page.locator("article.event-card").filter({ hasText: "Verification passed" }).first());
     await assertNoDocumentOverflow(page);
@@ -780,7 +857,7 @@ async function recordBrowserJourney(baseURL, authToken) {
       ({ candidates, planes }) => candidates.length === 2 && planes.filter((item) => item.kind === "resolution").length === 2,
       "two same-base Resolution Planes",
     );
-    await page.reload({ waitUntil: "networkidle" });
+    await humanReload(page);
     await clickFilter(page, "Resolution");
     const collision = page.locator(".tree-collision");
     await waitForVisible(collision);
@@ -797,7 +874,7 @@ async function recordBrowserJourney(baseURL, authToken) {
       "verified selection and protected promotion",
     );
     finalSnapshot = completed.state;
-    await page.reload({ waitUntil: "networkidle" });
+    await humanReload(page);
     await clickFilter(page, "Resolution");
     const { entities } = completed;
     const selected = entities.candidates.find((item) => item.selectionState === "selected");
@@ -805,7 +882,7 @@ async function recordBrowserJourney(baseURL, authToken) {
     assert(selected && rejected, "Live resolution did not produce selected and rejected candidates");
     const selectedButton = page.locator("button.tree-node").filter({ hasText: selected.targetValue });
     await selectedButton.scrollIntoViewIfNeeded();
-    await selectedButton.click();
+    await humanClick(selectedButton, { before: 900, after: 1_500 });
     const drawer = page.getByRole("dialog");
     await waitForVisible(drawer);
     await assertNoDocumentOverflow(page);
@@ -813,7 +890,7 @@ async function recordBrowserJourney(baseURL, authToken) {
     await pause(10_000);
 
     const promotionTab = drawer.getByRole("tab", { name: "Final promotion re-verification" });
-    if (await promotionTab.isVisible()) await promotionTab.click();
+    if (await promotionTab.isVisible()) await humanClick(promotionTab, { before: 900, after: 1_200 });
     await pause(8_000);
     await page.keyboard.press("Escape");
     await clickFilter(page, "All");
@@ -824,6 +901,18 @@ async function recordBrowserJourney(baseURL, authToken) {
     await promotionCard.scrollIntoViewIfNeeded();
     await assertNoDocumentOverflow(page);
     chapter.mark("Expected-HEAD protected promotion and completed Mission", "Only the independently reverified future advances the protected branch; the complete causal evidence remains inspectable.");
+    await pause(12_000);
+
+    await humanClick(page.getByRole("link", { name: /^Project Group/u }));
+    await waitForVisible(page.getByRole("heading", { name: "Project Group", exact: true }));
+    await assertNoDocumentOverflow(page);
+    chapter.mark("Project Group reports the completed production decision", "The human receives the verified collision, selected resolution, and protected promotion outcome in the shared project history.");
+    await pause(10_000);
+
+    await humanClick(page.getByRole("link", { name: /^Shepherd/u }));
+    await waitForVisible(page.getByRole("heading", { name: "Shepherd", exact: true }));
+    await assertNoDocumentOverflow(page);
+    chapter.mark("Final live Shepherd overview", "Contracts, isolated Planes, semantic collision, competing futures, independent evidence, and protected promotion remain visible together.");
     await pause(12_000);
     journeyCompleted = true;
   } finally {
@@ -1011,7 +1100,7 @@ function timestamp(seconds) {
 async function writeManifest(chapters, evidence, video) {
   const manifest = {
     schemaVersion: 1,
-    title: "Shepherd live implicit-context authentication demo",
+    title: "Shepherd live Northstar Customer Support Portal demo",
     recordedAt: new Date().toISOString(),
     commit: await gitCommit(),
     executionMode: "live",

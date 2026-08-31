@@ -18,9 +18,9 @@ const VIDEO_PATH = path.join(ARTIFACT_DIRECTORY, "shepherd-deterministic-master-
 const CHAPTER_PATH = path.join(ARTIFACT_DIRECTORY, "chapters.json");
 const FRAME_DIRECTORY = path.join(ARTIFACT_DIRECTORY, "chapter-screenshots");
 const FRONTEND_PROMPT =
-  "Implement the browser authentication client using the conventions and interfaces already present in your assigned workspace.";
+  "Complete the customer portal authentication client using the repository’s existing conventions and interfaces. Keep the implementation and tests within the frontend-owned files.";
 const BACKEND_PROMPT =
-  "Implement the authentication service using the deployment conventions and interfaces already present in your assigned workspace.";
+  "Complete the API authentication middleware using the repository’s existing deployment conventions and interfaces. Keep the implementation and tests within the backend-owned files.";
 const RECORDING_CANARY = "DETERMINISTIC-RECORDING-CANARY-MUST-NOT-LEAK";
 const RECORDING_PAUSE_SCALE = process.env.DEMO_RECORDING_FAST === "true" ? 0.01 : 1;
 
