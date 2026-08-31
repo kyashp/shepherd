@@ -36,8 +36,9 @@ const testRoot = path.join(repositoryRoot, ".tmp", "shepherd-tests");
 const rootSentinel = path.join(testRoot, ".service-container-test-root");
 const rootSentinelValue = "shepherd service container tests only\n";
 const caseSentinelValue = "shepherd service container case\n";
-const containerEngine = "docker";
-const runtimeImage = "volc-agent-runtime:local";
+const containerEngine = process.env.CONTAINER_ENGINE ?? "docker";
+const runtimeImage =
+  process.env.CONTAINER_RUNTIME_IMAGE ?? "volc-agent-runtime:local";
 const containerUser =
   typeof process.getuid === "function" && typeof process.getgid === "function"
     ? `${process.getuid()}:${process.getgid()}`
@@ -136,10 +137,51 @@ async function commandOutput(
   return result.stdout.trim();
 }
 
+function containerClientEnvironment(): NodeJS.ProcessEnv {
+  return {
+    PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin",
+    LANG: "C",
+    LC_ALL: "C",
+    ...(process.env.HOME ? { HOME: process.env.HOME } : {}),
+    ...(process.env.XDG_CONFIG_HOME
+      ? { XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME }
+      : {}),
+    ...(process.env.XDG_RUNTIME_DIR
+      ? { XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR }
+      : {}),
+    ...(process.env.DOCKER_CONFIG
+      ? { DOCKER_CONFIG: process.env.DOCKER_CONFIG }
+      : {}),
+    ...(process.env.DOCKER_CONTEXT
+      ? { DOCKER_CONTEXT: process.env.DOCKER_CONTEXT }
+      : {}),
+    ...(process.env.DOCKER_HOST
+      ? { DOCKER_HOST: process.env.DOCKER_HOST }
+      : {}),
+    ...(process.env.DOCKER_TLS_VERIFY
+      ? { DOCKER_TLS_VERIFY: process.env.DOCKER_TLS_VERIFY }
+      : {}),
+    ...(process.env.DOCKER_CERT_PATH
+      ? { DOCKER_CERT_PATH: process.env.DOCKER_CERT_PATH }
+      : {}),
+  };
+}
+
+async function containerCommandOutput(args: readonly string[]): Promise<string> {
+  const result = await execFileAsync(containerEngine, [...args], {
+    cwd: repositoryRoot,
+    env: containerClientEnvironment(),
+    encoding: "utf8",
+    timeout: 10_000,
+    maxBuffer: 262_144,
+  });
+  return result.stdout.trim();
+}
+
 async function containerRuntimeAvailable(): Promise<boolean> {
   try {
-    await commandOutput(containerEngine, ["version", "--format", "{{.Server.Version}}"]);
-    await commandOutput(containerEngine, ["image", "inspect", runtimeImage]);
+    await containerCommandOutput(["version", "--format", "{{.Server.Version}}"]);
+    await containerCommandOutput(["image", "inspect", runtimeImage]);
     return true;
   } catch {
     return false;
@@ -174,7 +216,11 @@ class RecordingContainerVerifier extends ContainerVerifier {
   }
 }
 
-const hasContainerRuntime = await containerRuntimeAvailable();
+const requireContainerRuntime =
+  process.env.SHEPHERD_REQUIRE_CONTAINER_TESTS === "true";
+const hasContainerRuntime = requireContainerRuntime
+  ? await containerRuntimeAvailable()
+  : false;
 
 beforeAll(async () => {
   await ensureTestRoot();
@@ -187,9 +233,16 @@ afterEach(async () => {
   }
 });
 
-describe.skipIf(!hasContainerRuntime)(
+describe.skipIf(!requireContainerRuntime)(
   "Shepherd deterministic Mission with the real container verifier",
   () => {
+    beforeAll(() => {
+      expect(
+        hasContainerRuntime,
+        `SHEPHERD_REQUIRE_CONTAINER_TESTS requires ${containerEngine} and ${runtimeImage}`,
+      ).toBe(true);
+    });
+
     it(
       "verifies contracts and candidates, resolves the collision, and promotes only the cookie winner",
       async () => {
@@ -373,7 +426,7 @@ describe.skipIf(!hasContainerRuntime)(
           verifier.records.map((record) => record.request.targetId),
         );
         for (const targetId of verificationTargetIds) {
-          const remainingContainers = await commandOutput(containerEngine, [
+          const remainingContainers = await containerCommandOutput([
             "ps",
             "-a",
             "--filter",

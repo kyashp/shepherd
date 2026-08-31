@@ -338,6 +338,7 @@ npm run test:coverage
 npm run test:e2e:install
 npm run test:e2e:harness
 npm run test:terraform
+npm run test:shepherd:container
 npm run test:shepherd:live:preflight
 npm audit --json
 ```
@@ -353,6 +354,10 @@ npm audit --json
   `playwright.config.ts`.
 - `npm run test:terraform` validates a disposable Terraform module using local
   Terraform or the pinned `hashicorp/terraform:1.9.8` image.
+- `npm run test:shepherd:container` requires the configured container engine and
+  Runtime image, then runs the deterministic Mission through the real independent
+  verifier. The local PoC launcher builds the default `volc-agent-runtime:local`
+  image; this gate fails instead of skipping when either prerequisite is absent.
 - `npm run test:shepherd:live:preflight` builds and inspects the exact-tree live
   Runtime boundary without contacting Ark.
 
