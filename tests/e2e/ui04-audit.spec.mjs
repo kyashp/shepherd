@@ -5,6 +5,7 @@ import { AUTH_TOKEN, repositoryRoot, startTestApp } from "./support/test-app.mjs
 
 let app;
 test.beforeAll(async () => { app = await startTestApp(); });
+test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: "wait" }); });
 test.afterAll(async () => { await app?.stop(); });
 
 test("promotion surfaces distinguish candidate and final evidence", async ({ page, request }, testInfo) => {
