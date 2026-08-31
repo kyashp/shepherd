@@ -21,7 +21,6 @@ import net from "node:net";
 import path from "node:path";
 import { parseEnv, promisify } from "node:util";
 import { fileURLToPath } from "node:url";
-import { chromium } from "playwright";
 
 const execFileAsync = promisify(execFile);
 const scriptPath = fileURLToPath(import.meta.url);
@@ -36,19 +35,21 @@ const artifactRoot = path.join(
   ".tmp",
   "demo-recordings",
   "realistic-support-portal",
-  "live",
+  "live-hq",
 );
 const stateSentinel = path.join(stateRoot, ".live-demo-state-root");
 const artifactSentinel = path.join(artifactRoot, ".live-demo-artifact-root");
 const stateSentinelValue = "Shepherd live demo recording state\n";
 const artifactSentinelValue = "Shepherd live demo recording artifacts\n";
-const videoPath = path.join(artifactRoot, "northstar-support-portal-live-1080p.webm");
+const videoPath = path.join(artifactRoot, "northstar-support-portal-live-hq-1080p.webm");
 const manifestPath = path.join(artifactRoot, "chapters.json");
 const manifestMarkdownPath = path.join(artifactRoot, "CHAPTERS.md");
 const authorizationRoot = path.join(repositoryRoot, ".tmp", "demo-recordings", ".live-demo-run-guards");
 const serverOutputLimit = 16_384;
 const runtimeInstanceId = "shepherd-live-recording";
 const viewport = { width: 1_920, height: 1_080 };
+const targetFrameRate = 30;
+const targetBitrateMbps = 12;
 const preflightOnly = process.argv.slice(2).includes("--preflight-only");
 const authorizeOnly = process.argv.slice(2).includes("--authorize-only");
 const consumeAuthorizationOnly = process.argv.slice(2).includes("--consume-authorization-only");
@@ -62,6 +63,35 @@ const backendPrompt =
 
 const frontendAgentName = "Customer Portal Frontend";
 const backendAgentName = "Support API Backend";
+
+let chromiumType;
+
+function replaceExactlyOnce(source, original, replacement, label) {
+  const first = source.indexOf(original);
+  assert(first >= 0 && source.indexOf(original, first + original.length) === -1, `${label} is not uniquely patchable`);
+  return source.slice(0, first) + replacement + source.slice(first + original.length);
+}
+
+async function loadHighQualityChromium() {
+  if (chromiumType) return chromiumType;
+  const bundlePath = path.join(repositoryRoot, "node_modules", "playwright-core", "lib", "coreBundle.js");
+  const metadata = await lstat(bundlePath);
+  assert(metadata.isFile() && !metadata.isSymbolicLink(), "Playwright recorder bundle is not a regular file");
+  const original = await readFile(bundlePath, "utf8");
+  const defaultEncoder = "-an -r ${fps} -c:v vp8 -qmin 0 -qmax 50 -crf 8 -deadline realtime -speed 8 -b:v 1M -threads 1";
+  const highQualityEncoder = "-an -r ${fps} -c:v vp8 -qmin 0 -qmax 24 -crf 4 -deadline good -speed 2 -b:v 12M -minrate 10M -maxrate 16M -bufsize 24M -threads 4";
+  let patched = replaceExactlyOnce(original, defaultEncoder, highQualityEncoder, "Playwright encoder configuration");
+  patched = replaceExactlyOnce(patched, "fps = 25;", `fps = ${targetFrameRate};`, "Playwright frame rate");
+  patched = replaceExactlyOnce(patched, "quality: quality ?? 90", "quality: quality ?? 100", "Playwright screencast quality");
+  await writeFile(bundlePath, patched, "utf8");
+  try {
+    ({ chromium: chromiumType } = await import("playwright"));
+  } finally {
+    await writeFile(bundlePath, original, "utf8");
+  }
+  assert(chromiumType, "Playwright Chromium did not load");
+  return chromiumType;
+}
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -245,6 +275,7 @@ async function preflightDependencies() {
     timeout: 15_000,
     maxBuffer: 262_144,
   });
+  const chromium = await loadHighQualityChromium();
   const browser = await chromium.launch({ headless: true, env: processEnvironment() });
   await browser.close();
   return liveEnvironment;
@@ -621,26 +652,68 @@ async function pause(ms) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function humanClick(locator, { before = 900, after = 1_500 } = {}) {
-  await locator.scrollIntoViewIfNeeded();
+async function installRecordingCursor(page) {
+  await page.evaluate(() => {
+    document.getElementById("shepherd-recording-cursor")?.remove();
+    const cursor = document.createElement("div");
+    cursor.id = "shepherd-recording-cursor";
+    cursor.setAttribute("aria-hidden", "true");
+    Object.assign(cursor.style, {
+      position: "fixed",
+      left: "0",
+      top: "0",
+      width: "28px",
+      height: "36px",
+      zIndex: "2147483647",
+      pointerEvents: "none",
+      transform: "translate3d(42px, 42px, 0)",
+      transformOrigin: "4px 4px",
+      transition: "transform 650ms cubic-bezier(0.22, 1, 0.36, 1)",
+      background: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='36' viewBox='0 0 28 36'%3E%3Cpath d='M3 2.5v25.2l6.4-6.1 4.5 11.4 5.2-2.1-4.5-11.2h9.1L3 2.5Z' fill='white' stroke='%23181715' stroke-width='1.8' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat`,
+      filter: "drop-shadow(0 1px 1px rgba(0,0,0,.22))",
+    });
+    document.body.append(cursor);
+  });
+}
+
+async function smoothCursorTo(page, locator, duration = 650) {
+  await locator.evaluate((element) => element.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" }));
+  await pause(700);
+  const box = await locator.boundingBox();
+  assert(box && box.width > 0 && box.height > 0, "Recording target has no visible bounds");
+  const x = box.x + Math.min(Math.max(box.width * 0.5, 8), box.width - 4);
+  const y = box.y + Math.min(Math.max(box.height * 0.5, 8), box.height - 4);
+  await page.evaluate(({ x: nextX, y: nextY, durationMs }) => {
+    const cursor = document.getElementById("shepherd-recording-cursor");
+    if (!cursor) throw new Error("Recording cursor is missing");
+    cursor.style.transitionDuration = `${durationMs}ms`;
+    cursor.style.transform = `translate3d(${nextX}px, ${nextY}px, 0)`;
+  }, { x, y, durationMs: duration });
+  await page.mouse.move(x, y, { steps: 28 });
+  await pause(duration + 180);
+}
+
+async function humanClick(page, locator, { before = 650, after = 1_650 } = {}) {
+  await smoothCursorTo(page, locator);
   await pause(before);
+  await page.evaluate(() => {
+    const cursor = document.getElementById("shepherd-recording-cursor");
+    if (cursor) cursor.style.transform += " scale(.82)";
+  });
+  await pause(120);
   await locator.click();
+  await page.evaluate(() => {
+    const cursor = document.getElementById("shepherd-recording-cursor");
+    if (cursor) cursor.style.transform = cursor.style.transform.replace(" scale(0.82)", "").replace(" scale(.82)", "");
+  });
   await pause(after);
 }
 
-async function humanType(locator, value, delay = 32) {
-  await locator.scrollIntoViewIfNeeded();
-  await locator.focus();
-  await pause(600);
+async function humanType(page, locator, value, delay = 32) {
+  await humanClick(page, locator, { before: 350, after: 550 });
   await locator.fill("");
   await locator.pressSequentially(value, { delay });
-  await pause(900);
-}
-
-async function humanReload(page) {
-  await pause(900);
-  await page.reload({ waitUntil: "networkidle" });
-  await pause(1_800);
+  await pause(1_250);
 }
 
 function chapterRecorder(startedAt) {
@@ -658,15 +731,18 @@ function chapterRecorder(startedAt) {
 }
 
 async function createAgent(page, name, preset, description) {
-  await humanClick(page.getByRole("link", { name: "Create Agent", exact: true }).first());
-  await waitForVisible(page.getByRole("heading", { name: "Create Agent", exact: true }));
-  await pause(1_200);
-  await humanType(page.getByLabel("Agent name"), name, 55);
-  await humanType(page.getByLabel("Description"), description, 24);
-  await humanClick(page.getByRole("radio", { name: new RegExp(preset, "u") }).locator(".."));
-  await humanClick(page.getByRole("button", { name: "Create Agent", exact: true }), {
-    before: 1_200,
+  await humanClick(page, page.getByRole("link", { name: "Create Agent", exact: true }).first(), {
+    before: 750,
     after: 2_000,
+  });
+  await waitForVisible(page.getByRole("heading", { name: "Create Agent", exact: true }));
+  await pause(1_800);
+  await humanType(page, page.getByLabel("Agent name"), name, 70);
+  await humanType(page, page.getByLabel("Description"), description, 35);
+  await humanClick(page, page.getByRole("radio", { name: new RegExp(preset, "u") }).locator(".."));
+  await humanClick(page, page.getByRole("button", { name: "Create Agent", exact: true }), {
+    before: 1_200,
+    after: 2_500,
   });
   await waitForVisible(page.getByRole("heading", { name, exact: true }));
   await waitForVisible(page.getByText("Shepherd route ready", { exact: true }));
@@ -676,7 +752,7 @@ async function sendManagedPrompt(page, agentName, prompt) {
   const composer = page.getByLabel(`Message ${agentName}`);
   await waitForVisible(composer);
   assert(await page.getByLabel("Route through Shepherd").isChecked(), "Agent was not routed through Shepherd by default");
-  await humanType(composer, prompt, 24);
+  await humanType(page, composer, prompt, 31);
   const responsePromise = page.waitForResponse(
     (response) => response.request().method() === "POST" && /\/api\/shepherd\/agents\/[^/]+\/contracts$/u.test(response.url()),
     { timeout: 30_000 },
@@ -694,13 +770,14 @@ async function sendManagedPrompt(page, agentName, prompt) {
 
 async function clickFilter(page, name) {
   const button = page.getByRole("button", { name, exact: true });
-  await humanClick(button, { before: 650, after: 1_000 });
+  await humanClick(page, button, { before: 650, after: 1_000 });
   assert((await button.getAttribute("aria-pressed")) === "true", `The ${name} event filter did not activate`);
 }
 
 async function recordBrowserJourney(baseURL, authToken) {
   const rawVideoRoot = path.join(artifactRoot, "raw");
   await mkdir(rawVideoRoot, { recursive: true, mode: 0o700 });
+  const chromium = await loadHighQualityChromium();
   const browser = await chromium.launch({
     headless: true,
     env: processEnvironment(),
@@ -725,12 +802,12 @@ async function recordBrowserJourney(baseURL, authToken) {
   let finalSnapshot;
   let journeyCompleted = false;
   try {
-    await page.goto(`${baseURL}/settings`, { waitUntil: "networkidle" });
-    await waitForVisible(page.getByRole("heading", { name: "Settings", exact: true }));
-    await waitForVisible(page.getByText("Live", { exact: true }));
+    await page.goto(`${baseURL}/shepherd`, { waitUntil: "networkidle" });
+    await waitForVisible(page.getByRole("heading", { name: "Shepherd", exact: true }));
+    await waitForVisible(page.getByText("Kernel online", { exact: true }));
+    await installRecordingCursor(page);
     await assertNoDocumentOverflow(page);
-    chapter.mark("Live Runtime and trusted-kernel configuration", "Settings visibly reports Live execution; the server preflight independently proved the container Runtime and model reviewer are configured.");
-    await pause(8_000);
+    await pause(3_500);
 
     await createAgent(
       page,
@@ -752,7 +829,7 @@ async function recordBrowserJourney(baseURL, authToken) {
     chapter.mark("Create the bounded Backend Agent", "User-created Backend Agent is ready with a separate authority preset.");
     await pause(5_000);
 
-    await humanClick(page.getByRole("link", { name: new RegExp(frontendAgentName, "u") }));
+    await humanClick(page, page.getByRole("link", { name: new RegExp(frontendAgentName, "u") }));
     const frontendResult = await sendManagedPrompt(page, frontendAgentName, frontendPrompt);
     assert(frontendResult.status === "awaiting_peer", "The first implicit-context Contract was not held for its peer");
     await waitForVisible(page.locator(".shepherd-contract-status").last());
@@ -760,7 +837,7 @@ async function recordBrowserJourney(baseURL, authToken) {
     chapter.mark("Neutral Frontend request becomes a typed Contract draft", "The user asks for secure browser authentication without prescribing cookies or JWT; Shepherd validates and holds the bounded request.");
     await pause(8_000);
 
-    await humanClick(page.getByRole("link", { name: new RegExp(backendAgentName, "u") }));
+    await humanClick(page, page.getByRole("link", { name: new RegExp(backendAgentName, "u") }));
     const backendResult = await sendManagedPrompt(page, backendAgentName, backendPrompt);
     assert(backendResult.status === "accepted" && typeof backendResult.missionId === "string", "The peer request did not atomically start a Mission");
     missionId = backendResult.missionId;
@@ -769,13 +846,13 @@ async function recordBrowserJourney(baseURL, authToken) {
     chapter.mark("Neutral Backend request atomically starts one Mission", "Neither request specifies a transport; each Agent must infer a locally reasonable choice from its scoped context.");
     await pause(8_000);
 
-    await humanClick(page.getByRole("link", { name: /^Project Group/u }));
+    await humanClick(page, page.getByRole("link", { name: /^Project Group/u }));
     await waitForVisible(page.getByRole("heading", { name: "Project Group", exact: true }));
     await assertNoDocumentOverflow(page);
     chapter.mark("One live Project Group binds the two independent requests", "The human intent, Shepherd, and both specialist Agents are now visible in one durable project conversation.");
     await pause(8_000);
 
-    await humanClick(page.getByRole("link", { name: /^Shepherd/u }));
+    await humanClick(page, page.getByRole("link", { name: /^Shepherd/u }));
     await waitForVisible(page.getByRole("heading", { name: "Shepherd", exact: true }));
     await waitForVisible(page.getByText("Kernel online", { exact: true }));
     await assertNoDocumentOverflow(page);
@@ -789,7 +866,7 @@ async function recordBrowserJourney(baseURL, authToken) {
       ({ contracts, planes }) => contracts.length === 2 && planes.filter((item) => item.kind === "contract").length === 2,
       "two live Contract Planes",
     );
-    await humanReload(page);
+    await pause(1_800);
     await assertNoDocumentOverflow(page);
     chapter.mark("Two live Contract executions are durable", "Both Contracts and their isolated Planes are persisted while the models work; self-report alone cannot mark either verified.");
     await pause(8_000);
@@ -806,14 +883,16 @@ async function recordBrowserJourney(baseURL, authToken) {
       assert(event, "A Contract creation event is missing");
       const card = page.locator("article.event-card").filter({ hasText: event.summary });
       await waitForVisible(card);
-      await humanClick(card.getByText("View evidence", { exact: true }), { before: 800, after: 1_500 });
+      await humanClick(page, card.getByText("View evidence", { exact: true }), { before: 800, after: 1_500 });
       await waitForVisible(card.getByLabel("Agent execution contract"));
       await assertNoDocumentOverflow(page);
       chapter.mark(title, evidence);
       await pause(10_000);
-      await humanClick(card.getByText("View evidence", { exact: true }), { before: 700, after: 1_000 });
+      await humanClick(page, card.getByText("View evidence", { exact: true }), { before: 700, after: 1_000 });
     }
     await clickFilter(page, "All");
+    chapter.mark("Genuine live-model execution remains visible", "The UI continues polling real Runtime state while both model-backed Contract Planes execute; no deterministic result is injected into the browser.");
+    await pause(5_000);
 
     const collisionSnapshot = await waitForState(
       baseURL,
@@ -822,7 +901,7 @@ async function recordBrowserJourney(baseURL, authToken) {
       ({ contracts, collisions }) => contracts.length === 2 && contracts.every((item) => item.state === "verified") && collisions.length === 1,
       "independent Contract verification and semantic collision",
     );
-    await humanReload(page);
+    await pause(1_800);
     await clickFilter(page, "Verification");
     await waitForVisible(page.locator("article.event-card").filter({ hasText: "Verification passed" }).first());
     await assertNoDocumentOverflow(page);
@@ -835,7 +914,7 @@ async function recordBrowserJourney(baseURL, authToken) {
     await clickFilter(page, "All");
     const reviewCard = page.locator("article.event-card").filter({ hasText: reviewEvent.summary });
     await waitForVisible(reviewCard);
-    await reviewCard.scrollIntoViewIfNeeded();
+    await smoothCursorTo(page, reviewCard, 850);
     await assertNoDocumentOverflow(page);
     chapter.mark("Bounded advisory Shepherd model review", "The Shepherd model reviews cross-Contract meaning, but its bounded advisory output cannot verify Agents, select a winner, or promote code.");
     await pause(8_000);
@@ -845,7 +924,7 @@ async function recordBrowserJourney(baseURL, authToken) {
     assert(collisionEvent, "Collision event was not persisted");
     const collisionCard = page.locator("article.event-card").filter({ hasText: collisionEvent.summary });
     await waitForVisible(collisionCard);
-    await collisionCard.getByText("View evidence", { exact: true }).click();
+    await humanClick(page, collisionCard.getByText("View evidence", { exact: true }), { before: 700, after: 1_300 });
     await assertNoDocumentOverflow(page);
     chapter.mark("Semantic collision that Git cannot detect", "Both Agents passed and changed different files, yet their corroborated auth.transport claims are mutually exclusive.");
     await pause(10_000);
@@ -857,11 +936,13 @@ async function recordBrowserJourney(baseURL, authToken) {
       ({ candidates, planes }) => candidates.length === 2 && planes.filter((item) => item.kind === "resolution").length === 2,
       "two same-base Resolution Planes",
     );
-    await humanReload(page);
+    await pause(1_800);
     await clickFilter(page, "Resolution");
     const collision = page.locator(".tree-collision");
     await waitForVisible(collision);
-    if ((await collision.getAttribute("open")) === null) await collision.locator("summary").click();
+    if ((await collision.getAttribute("open")) === null) {
+      await humanClick(page, collision.locator("summary"), { before: 650, after: 1_200 });
+    }
     await assertNoDocumentOverflow(page);
     chapter.mark("Competing futures from one immutable integration commit", "Cookie and bearer Resolution Planes compete from the exact same base and face the same project invariant.");
     await pause(10_000);
@@ -874,15 +955,14 @@ async function recordBrowserJourney(baseURL, authToken) {
       "verified selection and protected promotion",
     );
     finalSnapshot = completed.state;
-    await humanReload(page);
+    await pause(1_800);
     await clickFilter(page, "Resolution");
     const { entities } = completed;
     const selected = entities.candidates.find((item) => item.selectionState === "selected");
     const rejected = entities.candidates.find((item) => item.selectionState === "rejected");
     assert(selected && rejected, "Live resolution did not produce selected and rejected candidates");
     const selectedButton = page.locator("button.tree-node").filter({ hasText: selected.targetValue });
-    await selectedButton.scrollIntoViewIfNeeded();
-    await humanClick(selectedButton, { before: 900, after: 1_500 });
+    await humanClick(page, selectedButton, { before: 900, after: 1_500 });
     const drawer = page.getByRole("dialog");
     await waitForVisible(drawer);
     await assertNoDocumentOverflow(page);
@@ -890,7 +970,7 @@ async function recordBrowserJourney(baseURL, authToken) {
     await pause(10_000);
 
     const promotionTab = drawer.getByRole("tab", { name: "Final promotion re-verification" });
-    if (await promotionTab.isVisible()) await humanClick(promotionTab, { before: 900, after: 1_200 });
+    if (await promotionTab.isVisible()) await humanClick(page, promotionTab, { before: 900, after: 1_200 });
     await pause(8_000);
     await page.keyboard.press("Escape");
     await clickFilter(page, "All");
@@ -898,18 +978,18 @@ async function recordBrowserJourney(baseURL, authToken) {
     assert(promotionEvent, "Protected promotion event was not persisted");
     const promotionCard = page.locator("article.event-card").filter({ hasText: promotionEvent.summary });
     await waitForVisible(promotionCard);
-    await promotionCard.scrollIntoViewIfNeeded();
+    await smoothCursorTo(page, promotionCard, 850);
     await assertNoDocumentOverflow(page);
     chapter.mark("Expected-HEAD protected promotion and completed Mission", "Only the independently reverified future advances the protected branch; the complete causal evidence remains inspectable.");
     await pause(12_000);
 
-    await humanClick(page.getByRole("link", { name: /^Project Group/u }));
+    await humanClick(page, page.getByRole("link", { name: /^Project Group/u }));
     await waitForVisible(page.getByRole("heading", { name: "Project Group", exact: true }));
     await assertNoDocumentOverflow(page);
     chapter.mark("Project Group reports the completed production decision", "The human receives the verified collision, selected resolution, and protected promotion outcome in the shared project history.");
     await pause(10_000);
 
-    await humanClick(page.getByRole("link", { name: /^Shepherd/u }));
+    await humanClick(page, page.getByRole("link", { name: /^Shepherd/u }));
     await waitForVisible(page.getByRole("heading", { name: "Shepherd", exact: true }));
     await assertNoDocumentOverflow(page);
     chapter.mark("Final live Shepherd overview", "Contracts, isolated Planes, semantic collision, competing futures, independent evidence, and protected promotion remain visible together.");
@@ -1039,19 +1119,26 @@ async function validateVideo(chapters) {
   const durationSeconds = Number(durationMatch[1]) * 3_600 + Number(durationMatch[2]) * 60 + Number(durationMatch[3]);
   const width = Number(dimensionMatch[1]);
   const height = Number(dimensionMatch[2]);
+  const videoMetadata = await stat(videoPath);
+  const averageBitrateMbps = videoMetadata.size * 8 / durationSeconds / 1_000_000;
   assert(width === viewport.width && height === viewport.height, "Recorded video is not 1920x1080");
   assert(Math.abs(width / height - 16 / 9) < 0.001, "Recorded video is not 16:9");
   assert(durationSeconds >= 60, "Recorded live demo is too short to contain the paced evidence tour");
+  assert(averageBitrateMbps >= 8, "Recorded live demo did not meet the high-bitrate quality floor");
 
   const frameRoot = path.join(artifactRoot, "frames");
   await mkdir(frameRoot, { recursive: true, mode: 0o700 });
   const requestedFrames = [
-    ["live-status", "Live Runtime and trusted-kernel configuration"],
-    ["contracts", "Two live Contract executions are durable"],
+    ["frontend-agent", "Create the bounded Frontend Agent"],
+    ["backend-agent", "Create the bounded Backend Agent"],
     ["live-execution", "Live execution begins in isolated Contract Planes"],
+    ["frontend-contract", "Inspect the complete Customer Portal execution Contract"],
+    ["backend-contract", "Inspect the complete Support API execution Contract"],
+    ["verification", "Credential-free independent verification"],
     ["collision", "Semantic collision that Git cannot detect"],
     ["candidates", "Competing futures from one immutable integration commit"],
     ["promotion", "Expected-HEAD protected promotion and completed Mission"],
+    ["project-group", "Project Group reports the completed production decision"],
   ];
   const frames = [];
   for (const [name, title] of requestedFrames) {
@@ -1070,6 +1157,10 @@ async function validateVideo(chapters) {
     width,
     height,
     aspectRatio: "16:9",
+    frameRate: targetFrameRate,
+    targetBitrateMbps,
+    averageBitrateMbps: Number(averageBitrateMbps.toFixed(3)),
+    fileSizeBytes: videoMetadata.size,
     durationSeconds,
     sha256: await sha256(videoPath),
     fullDecodePassed: true,
@@ -1100,12 +1191,20 @@ function timestamp(seconds) {
 async function writeManifest(chapters, evidence, video) {
   const manifest = {
     schemaVersion: 1,
-    title: "Shepherd live Northstar Customer Support Portal demo",
+    title: "Shepherd live Northstar Customer Support Portal high-quality demo",
     recordedAt: new Date().toISOString(),
     commit: await gitCommit(),
     executionMode: "live",
     runtimeProvider: "container",
     demoMode: true,
+    capture: {
+      sourceFrameQuality: 100,
+      frameRate: targetFrameRate,
+      targetBitrateMbps,
+      encoder: "VP8 good deadline, speed 2",
+      visibleRecordingCursor: true,
+      productUiModified: false,
+    },
     modelUse: "Five expected requests: four isolated Agent/Candidate turns plus one bounded Shepherd semantic review. Worst case is seven because each of the two candidates may use its single built-in transient retry; the recorder itself initiates no retries.",
     video: {
       file: path.basename(videoPath),
