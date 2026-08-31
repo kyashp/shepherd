@@ -129,3 +129,37 @@ test("the checker CLI refuses an empty token from a directory whose name needs e
   assert.notEqual(code, 0, "the CLI must refuse, not silently succeed");
   assert.match(stderr, /APP_AUTH_TOKEN/u);
 });
+
+// The documented quickstart is `docker compose up --build` against this file, with
+// APP_AUTH_TOKEN empty by default. If the port publishes on every interface, that
+// quickstart exposes prompt-driven command execution unauthenticated.
+test("the base compose profile publishes on loopback by default", {
+  skip: composeAvailable ? false : "docker compose unavailable",
+}, async () => {
+  const { stdout } = await execFileAsync(
+    "docker",
+    ["compose", "--env-file", path.join(repositoryRoot, ".env.example"),
+     "--file", path.join(repositoryRoot, "docker-compose.yml"), "config", "--format", "json"],
+    { cwd: repositoryRoot, maxBuffer: 16 * 1024 * 1024 },
+  );
+  const service = JSON.parse(stdout).services.launchpad;
+  for (const published of service.ports ?? []) {
+    assert.equal(published.host_ip, "127.0.0.1",
+      `published port ${published.target} must default to loopback, got ${published.host_ip ?? "<all interfaces>"}`);
+  }
+  assert.ok((service.ports ?? []).length > 0, "expected a published port to assert on");
+});
+
+// The sibling profile already does this; the base one must not be the soft path.
+test("an operator can still opt in to a public bind", {
+  skip: composeAvailable ? false : "docker compose unavailable",
+}, async () => {
+  const { stdout } = await execFileAsync(
+    "docker",
+    ["compose", "--env-file", path.join(repositoryRoot, ".env.example"),
+     "--file", path.join(repositoryRoot, "docker-compose.yml"), "config", "--format", "json"],
+    { cwd: repositoryRoot, env: { ...process.env, PUBLIC_BIND_ADDR: "0.0.0.0" }, maxBuffer: 16 * 1024 * 1024 },
+  );
+  const service = JSON.parse(stdout).services.launchpad;
+  assert.equal((service.ports ?? [])[0]?.host_ip, "0.0.0.0");
+});
