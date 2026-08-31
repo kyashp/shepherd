@@ -40,12 +40,14 @@ that limitation is explicit.
   recovery path. Concurrent first-use candidates can therefore race private-root
   sentinel adoption and fail before `runner.run` registers their private homes as
   cleanup-fault targets. The row then measures setup adoption instead of cleanup.
-- **Correction/status:** **RESOLVED CANDIDATE** at `69d82b4` on PR #93. Call the
+- **Correction/status:** **RESOLVED + INTEGRATED** at protected-main merge `b05a4aa`
+  via PR #93; causal correction `69d82b4`. Call the
   public executor preflight once and assert it occurred before candidate scheduling;
   cleanup injection, timeout, and failure/no-promotion assertions are unchanged.
   The exact row passed 10/10, executor file 72/72, full Server 845/3 skipped before
   rebase, and the formal current-main campaign passed five literal gates at
-  `10c95da`. Integration audit remains pending.
+  `10c95da`. Exact-main local check passed Server 846/3 skipped plus all adjacent
+  gates, and protected-main workflow `33353622211` passed. Not independently audited.
 
 ### `TST-29` — PERF-01 overlap proof spends its budget on full Mission setup
 
@@ -56,13 +58,15 @@ that limitation is explicit.
   five-second row builds a complete Git-backed Mission before reaching that
   boundary. Under suite pressure the setup consumes the timing budget even when
   candidate scheduling is correct.
-- **Correction/status:** **RESOLVED CANDIDATE** at `f3a9dc0` on PR #93. Move the
+- **Correction/status:** **RESOLVED + INTEGRATED** at protected-main merge `b05a4aa`
+  via PR #93; causal correction `f3a9dc0`. Move the
   existing byte-equivalent `allSettledBounded` primitive to the canonical scheduler
   module and prove two-start-before-release, completion-after-release, limit-one,
   rejection, and input-order behavior directly. Adjacent 30-second real-Plane tests
   retain completed-Mission, selection, promotion, and `promotion_completed`
   coverage. No product timeout/concurrency/retry changed. Formal campaign 5/5 at
-  `10c95da`; integration audit remains pending.
+  `10c95da`; exact-main local check passed Server 846/3 skipped plus all adjacent
+  gates, and protected-main workflow `33353622211` passed. Not independently audited.
 
 ### `TST-28` — F-03 snapshot cleanup is observed through OS file watchers
 
@@ -72,13 +76,16 @@ that limitation is explicit.
   service-owned lifecycle boundary. Under full-suite contention it can miss the
   removal or contribute descriptor pressure even though the snapshot owner's
   `finally` is correct.
-- **Correction/status:** **RESOLVED CANDIDATE** at `682d7d9` on PR #93. The existing
+- **Correction/status:** **RESOLVED + INTEGRATED** at protected-main merge `b05a4aa`
+  via PR #93; causal correction `682d7d9`. The existing
   optional fault-checkpoint seam emits one exact
   `contract_verification_snapshot_removed` checkpoint only after owned cleanup
   settles; both F-03 variants await the matching Mission/Contract checkpoint and
   still require `lstat -> ENOENT`. A failing observer cannot mask the primary
   verifier error. Both rows passed five consecutive focused repetitions and the
-  formal campaign passed 5/5 at `10c95da`; integration audit remains pending.
+  formal campaign passed 5/5 at `10c95da`. Exact-main local check passed Server
+  846/3 skipped plus all adjacent gates, and protected-main workflow `33353622211`
+  passed. Not independently audited.
 
 ### `TST-27` — Fixture Git inherits outer repository selector variables
 
@@ -88,12 +95,15 @@ that limitation is explicit.
 - **Failure contract:** `git -C` does not override explicit repository selectors.
   Raw `execFile("git", ...)` inherited the enclosing hook/session environment, so
   a nested test could mutate the wrong index before asserting its repository.
-- **Correction/status:** **RESOLVED CANDIDATE** at `682d7d9` on PR #93. Fixture Git
+- **Correction/status:** **RESOLVED + INTEGRATED** at protected-main merge `b05a4aa`
+  via PR #93; causal correction `682d7d9`. Fixture Git
   receives only PATH plus fixed locale/noninteractive/no-config values, never ambient
   selector variables, and destructive fixture setup first proves the selected
   repository's real top level. The hostile-selector/decoy regression passed, the
   normal pre-push gate no longer redirected staging, and the formal campaign passed
-  5/5 at `10c95da`. Integration audit remains pending.
+  5/5 at `10c95da`. Exact-main local check passed Server 846/3 skipped plus all
+  adjacent gates, and protected-main workflow `33353622211` passed. Not independently
+  audited.
 
 ### `CRUD-01` — Clarification drafts permanently block Agent deletion
 

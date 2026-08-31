@@ -7,6 +7,29 @@ Branch and phase statements remain true only for the commit named in their entry
 Use [`TASKS.md`](TASKS.md) for the current repository snapshot, defects,
 pending checks, and workflow.
 
+## 2026-08-31 — STABILITY protected-main integration closeout
+
+Issue [#48](https://github.com/kyashp/shepherd/issues/48) implementation and
+evidence [PR #93](https://github.com/kyashp/shepherd/pull/93) merged to protected
+`main` as `b05a4aad10d0c4c0e9f7d54fed2cdd5c779c16b0`. Its parents are the
+frozen integrated base `a2a464d6be697ab949b254944b81c355a9be5403` and final
+evidence head `ec015b6414b56df297a83489004edae441243483`; `git diff` between
+the merge tree and that second parent is empty.
+
+A fresh detached worktree whose HEAD and `origin/main` were both exact `b05a4aa`
+ran one literal `npm run check` with no environment, worker, timeout, or retry
+override. It exited 0: all four production/test-source typechecks passed;
+launcher/deploy passed 12/12; Server passed 846 with three unchanged documented
+opt-in skips in 140.70s; Web passed 20/20; and both production builds passed. No
+warning, live/model request, product/UI mutation, or tracked-file change occurred.
+
+The merge-triggered protected-main workflow run
+[`33353622211`](https://github.com/kyashp/shepherd/actions/runs/33353622211)
+also completed successfully on exact `b05a4aa`; its `Node 22 / npm run check`
+job ran for 3m40s. Together with the immutable five-run candidate campaign at
+`10c95da`, this establishes both issue gates `C` and `I`. This is an integration
+verification record, not a claim of a separate independent audit.
+
 ## 2026-08-31 — STABILITY candidate passed five consecutive literal gates
 
 Issue [#48](https://github.com/kyashp/shepherd/issues/48), draft
