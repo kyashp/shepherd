@@ -44,7 +44,19 @@ async function main() {
     await run("npm", [
       "run", "test", "-w", "@launchpad/server", "--",
       "--coverage", "--reporter=dot", "--silent=passed-only",
-    ]);
+    ], {
+      SHEPHERD_REQUIRE_REAL_VERIFIER_CONTAINER_PROOF: "false",
+      SHEPHERD_SKIP_REAL_VERIFIER_SECURITY_PROOF: "true",
+    });
+    await run("npm", [
+      "run", "test", "-w", "@launchpad/server", "--",
+      "src/shepherd/verifier.container.test.ts",
+      "-t", "independent verifier real container",
+      "--maxWorkers=1", "--reporter=dot", "--silent=passed-only",
+    ], {
+      SHEPHERD_REQUIRE_REAL_VERIFIER_CONTAINER_PROOF: "true",
+      SHEPHERD_SKIP_REAL_VERIFIER_SECURITY_PROOF: "false",
+    });
     await run("npm", ["run", "test", "-w", "@launchpad/web"]);
     await run("npm", ["run", "build", "-w", "@launchpad/web"], {
       VITE_COVERAGE: "true",

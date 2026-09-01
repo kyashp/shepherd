@@ -617,9 +617,31 @@ async function containerRuntimeAvailable(): Promise<boolean> {
   }
 }
 
+const skipRealContainerSecurityProof =
+  process.env.SHEPHERD_SKIP_REAL_VERIFIER_SECURITY_PROOF === "true";
+const requireRealContainerProof =
+  process.env.SHEPHERD_REQUIRE_REAL_VERIFIER_CONTAINER_PROOF === "true";
+
+if (skipRealContainerSecurityProof && requireRealContainerProof) {
+  throw new Error(
+    "Real verifier container security proof cannot be both skipped and required",
+  );
+}
+
 const hasContainerRuntime = await containerRuntimeAvailable();
 
-describe.skipIf(!hasContainerRuntime)("independent verifier real container", () => {
+describe.skipIf(
+  !hasContainerRuntime && !requireRealContainerProof,
+)("independent verifier real container", () => {
+  beforeAll(() => {
+    if (requireRealContainerProof) {
+      expect(
+        hasContainerRuntime,
+        `SHEPHERD_REQUIRE_REAL_VERIFIER_CONTAINER_PROOF requires ${containerEngine} and ${runtimeImage}`,
+      ).toBe(true);
+    }
+  });
+
   it("removes only interrupted containers owned by the restarted verifier", async () => {
     const fixture = await createPlaneFixture();
     const ownerId = "recovery-" + randomUUID().replaceAll("-", "").slice(0, 16);
@@ -706,7 +728,7 @@ describe.skipIf(!hasContainerRuntime)("independent verifier real container", () 
     }
   }, 20_000);
 
-  it("proves cleared secrets, no network, and a read-only candidate mount", async () => {
+  it.skipIf(skipRealContainerSecurityProof)("proves cleared secrets, no network, and a read-only candidate mount", async () => {
     const fixture = await createPlaneFixture();
     try {
       const registry = new TrustedCheckRegistry([
