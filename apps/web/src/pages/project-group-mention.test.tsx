@@ -2,12 +2,20 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { parseProjectGroupMessage } from "../../../server/src/shepherd/group-routing.js";
-import { InitializeProjectGroupButton, ProjectGroupMentionButton } from "./ProjectGroupPage.js";
 import {
+  InitializeProjectGroupButton,
+  ProjectGroupMentionButton,
+  projectGroupMessagesMatch,
+  resolveProjectGroupMessageRefresh,
+} from "./ProjectGroupPage.js";
+import {
+  filterProjectGroupMentionTargets,
+  findProjectGroupMentionCandidates,
   MAX_PROJECT_GROUP_MESSAGE_LENGTH,
   formatProjectGroupMention,
   prependProjectGroupMention,
   prependProjectGroupMentionWithinLimit,
+  replaceProjectGroupMentionQuery,
 } from "./project-group-mention.js";
 
 describe("formatProjectGroupMention", () => {
@@ -86,6 +94,95 @@ describe("prependProjectGroupMention", () => {
     expect(
       prependProjectGroupMentionWithinLimit("Frontend Agent", "agent-frontend", `${exactDraft}x`),
     ).toBeNull();
+  });
+});
+
+describe("typed Project Group mentions", () => {
+  const agents = [
+    { id: "agent-frontend", name: "Frontend Agent", role: "Frontend" as const, status: "ready" as const, currentContractId: null },
+    { id: "agent-backend", name: "Backend Agent", role: "Backend" as const, status: "ready" as const, currentContractId: null },
+    { id: "agent-general", name: "Generalist", role: "Generalist" as const, status: "ready" as const, currentContractId: null },
+  ];
+
+  it("shows every callable Agent after a leading at-sign and filters a partial name prefix", () => {
+    expect(findProjectGroupMentionCandidates("@", 1, agents)).toEqual([agents[0], agents[1]]);
+    expect(findProjectGroupMentionCandidates("@f", 2, agents)).toEqual([agents[0]]);
+  });
+
+  it("filters typed mentions by visible Agent name rather than an opaque matching ID", () => {
+    const opaqueIdMatch = { id: "f-random-uuid", name: "Group Frontend", role: "Frontend" as const, status: "ready" as const, currentContractId: null };
+    expect(findProjectGroupMentionCandidates("@F", 2, [...agents, opaqueIdMatch])).toEqual([agents[0]]);
+  });
+
+  it("keeps only ready uncontracted Frontend and Backend Agents callable", () => {
+    const unsetContract = { ...agents[0], id: "agent-unset-contract", name: "Unset Contract", currentContractId: undefined };
+    expect(filterProjectGroupMentionTargets([
+      agents[0],
+      agents[1],
+      unsetContract,
+      agents[2],
+      { ...agents[0], id: "agent-verification", name: "Verification", role: "Verification" as const },
+      { ...agents[0], id: "agent-stopped", name: "Stopped", status: "stopped" as const },
+      { ...agents[0], id: "agent-busy", name: "Busy", status: "busy" as const },
+      { ...agents[0], id: "agent-error", name: "Error", status: "error" as const },
+      { ...agents[0], id: "agent-contracted", name: "Contracted", currentContractId: "contract-1" },
+    ])).toEqual([agents[0], agents[1], unsetContract]);
+  });
+
+  it("replaces the active leading partial mention with parser-safe syntax and retains the draft", () => {
+    expect(replaceProjectGroupMentionQuery("@F finish the form", 2, agents[0])).toEqual({
+      content: '@"Frontend Agent" finish the form',
+      selectionStart: '@"Frontend Agent" '.length,
+    });
+  });
+
+  it("accepts an exact-length expanded mention and rejects one character over the composer limit", () => {
+    const formattedMention = '@"Frontend Agent" ';
+    const exactDraft = "x".repeat(MAX_PROJECT_GROUP_MESSAGE_LENGTH - formattedMention.length);
+    expect(replaceProjectGroupMentionQuery(`@F ${exactDraft}`, 2, agents[0])).toEqual({
+      content: `${formattedMention}${exactDraft}`,
+      selectionStart: formattedMention.length,
+    });
+    expect(replaceProjectGroupMentionQuery(`@F ${exactDraft}x`, 2, agents[0])).toBeNull();
+  });
+
+  it("does not suggest an Agent mention outside the leading routing directive", () => {
+    expect(findProjectGroupMentionCandidates("Ask @F for help", 6, agents)).toEqual([]);
+  });
+});
+
+describe("Project Group message refresh", () => {
+  const message = {
+    id: "group-message",
+    projectId: "auth-demo",
+    missionId: null,
+    senderType: "human" as const,
+    senderId: null,
+    content: "use a bearer JWT",
+    targetAgentId: "agent-backend",
+    contractId: null,
+    createdAt: "2026-09-01T00:00:00.000Z",
+  };
+
+  it("treats a same-ID message with a completed Contract binding as a changed snapshot", () => {
+    expect(projectGroupMessagesMatch([message], [{ ...message, contractId: "contract-backend" }])).toBe(false);
+  });
+
+  it("consumes a send-follow request even when the fetched snapshot is unchanged", () => {
+    const currentMessages = [message];
+    const afterSend = resolveProjectGroupMessageRefresh(currentMessages, [message], {
+      pinnedToMessageEnd: false,
+      followAfterSend: true,
+    });
+    expect(afterSend.messages).toBe(currentMessages);
+    expect(afterSend.shouldFollowMessageEnd).toBe(true);
+
+    const laterAppend = resolveProjectGroupMessageRefresh(
+      [message],
+      [...[message], { ...message, id: "other-message" }],
+      { pinnedToMessageEnd: false, followAfterSend: false },
+    );
+    expect(laterAppend.shouldFollowMessageEnd).toBe(false);
   });
 });
 

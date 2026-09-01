@@ -586,12 +586,20 @@ test("covers Project Group initialization, recovery, pending sends, and persiste
   await assertSafeUiGateSurface(page.locator(".group-chat-panel"));
   await assertNoSensitiveCanaries({ page });
 
+  const manualScroll = await messagesPane.evaluate((element) => {
+    element.scrollTop = 0;
+    return { scrollTop: element.scrollTop, scrollHeight: element.scrollHeight, clientHeight: element.clientHeight };
+  });
+  expect(manualScroll.scrollHeight).toBeGreaterThan(manualScroll.clientHeight + 1);
+  expect(manualScroll.scrollTop).toBe(0);
+
   const subsequentPoll = page.waitForResponse((response) =>
     response.request().method() === "GET"
       && /\/group-messages\?/u.test(response.url())
       && response.status() === 200,
   );
   await subsequentPoll;
+  await expect.poll(() => messagesPane.evaluate((element) => element.scrollTop)).toBe(0);
   for (const [index, content] of LONG_GROUP_MESSAGES.entries()) {
     const messagesAfterPoll = await request.get(
       `${app.baseURL}/api/shepherd/projects/auth-demo/group-messages`,

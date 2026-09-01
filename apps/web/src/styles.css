@@ -2166,6 +2166,42 @@ label small {
   padding: 8px 12px 9px;
   border-width: 1px 0 0;
   border-radius: 0;
+  position: relative;
+}
+
+.group-mention-suggestions {
+  position: absolute;
+  right: 12px;
+  bottom: calc(100% - 1px);
+  left: 12px;
+  max-height: 140px;
+  overflow-y: auto;
+  border: 1px solid #ded9f3;
+  border-radius: 8px 8px 0 0;
+  background: #f9f8f4;
+  box-shadow: 0 -5px 14px rgba(57, 49, 100, 0.1);
+}
+
+.chat-composer > .group-mention-suggestions {
+  display: block;
+}
+
+.group-mention-suggestions button {
+  width: 100%;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 0;
+  display: block;
+  color: #5e4ab7;
+  background: transparent;
+  font-size: 9px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.group-mention-suggestions button[aria-selected="true"],
+.group-mention-suggestions button:hover {
+  background: #f0edfa;
 }
 
 /* Agents overview */
