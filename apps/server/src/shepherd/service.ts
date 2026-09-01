@@ -6240,7 +6240,7 @@ export class ShepherdService {
         ),
       );
     }
-    void Promise.allSettled(cancellationTasks);
+    await Promise.allSettled(cancellationTasks);
     throw new ContractVerificationInfrastructureError();
   }
 

@@ -75,7 +75,10 @@ async function makeCaseRoot(): Promise<string> {
 
 async function removeServiceCaseRoot(
   root: string,
-  hooks: { beforeEntryChmod?: (entry: string) => Promise<void> } = {},
+  hooks: {
+    beforeDirectoryRealpath?: (entry: string) => Promise<void>;
+    beforeEntryChmod?: (entry: string) => Promise<void>;
+  } = {},
 ): Promise<void> {
   let rootStat: Awaited<ReturnType<typeof lstat>>;
   try {
@@ -116,7 +119,14 @@ async function removeServiceCaseRoot(
         throw error;
       }
       if (entryStat.isDirectory() && !entryStat.isSymbolicLink()) {
-        const canonicalEntry = await realpath(entry);
+        await hooks.beforeDirectoryRealpath?.(entry);
+        let canonicalEntry: string;
+        try {
+          canonicalEntry = await realpath(entry);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+          throw error;
+        }
         if (
           canonicalEntry !== entry ||
           !canonicalEntry.startsWith(canonicalRoot + path.sep)
@@ -586,6 +596,69 @@ class BlockingExecutor implements ShepherdExecutor {
     this.rejectors.delete(executionId);
     reject(new Error("Synthetic execution cancellation"));
     return true;
+  }
+}
+
+class DelayedCancellationExecutor extends DeterministicFixtureExecutor {
+  readonly cancellationStarted: Promise<void>;
+  private markCancellationStarted!: () => void;
+  private readonly cancellationReleased: Promise<void>;
+  private releaseCancellation!: () => void;
+  private started = false;
+
+  constructor() {
+    super();
+    this.cancellationStarted = new Promise<void>((resolve) => {
+      this.markCancellationStarted = resolve;
+    });
+    this.cancellationReleased = new Promise<void>((resolve) => {
+      this.releaseCancellation = resolve;
+    });
+  }
+
+  override async cancel(executionId: string): Promise<boolean> {
+    if (!this.started) {
+      this.started = true;
+      this.markCancellationStarted();
+    }
+    await this.cancellationReleased;
+    return await super.cancel(executionId);
+  }
+
+  release(): void {
+    this.releaseCancellation();
+  }
+
+  hasStartedCancellation(): boolean {
+    return this.started;
+  }
+}
+
+class TerminalMutationInMemoryStore extends JsonStore {
+  private bypassCount = 0;
+
+  constructor(
+    storePath: string,
+    private readonly shouldBypassPersistence: () => boolean,
+  ) {
+    super(storePath);
+  }
+
+  override async mutate<T>(
+    mutation: (database: Database) => T | Promise<T>,
+  ): Promise<T> {
+    if (!this.shouldBypassPersistence()) {
+      return await super.mutate(mutation);
+    }
+    this.bypassCount += 1;
+    if (this.bypassCount > 1) {
+      throw new Error("Unexpected mutation after Runtime cancellation started");
+    }
+    return await mutation(this.snapshot());
+  }
+
+  bypassedMutationCount(): number {
+    return this.bypassCount;
   }
 }
 
@@ -2307,6 +2380,27 @@ describe("Shepherd deterministic walking skeleton", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("tolerates a managed directory disappearing after cleanup lstat and before realpath", async () => {
+    const caseRoot = await makeCaseRoot();
+    const disappearingDirectory = path.join(
+      caseRoot,
+      "managed",
+      "planes",
+      ".trusted-verification",
+      "verify-finished",
+    );
+    await mkdir(disappearingDirectory, { recursive: true });
+    await expect(
+      removeServiceCaseRoot(caseRoot, {
+        beforeDirectoryRealpath: async (entry) => {
+          if (entry === disappearingDirectory) {
+            await rm(disappearingDirectory, { recursive: true });
+          }
+        },
+      }),
+    ).resolves.toBeUndefined();
+  });
+
   it("refuses to clean a root outside its allocated test fixture", async () => {
     const externalRoot = await mkdtemp(path.join(repositoryTestRoot, "external-"));
     await writeFile(path.join(externalRoot, "preserve.txt"), "preserve\n", "utf8");
@@ -3466,6 +3560,56 @@ describe("Shepherd deterministic walking skeleton", () => {
       expect(detailAfterRelease?.planes.every((plane) => plane.kind === "contract"))
         .toBe(true);
     } finally {
+      verifier.releaseSibling();
+      await Promise.allSettled([run, verifier.siblingExited]);
+    }
+  }, 30_000);
+
+  it("waits for Runtime cancellation before reporting Contract verification infrastructure failure", async () => {
+    const caseRoot = await makeCaseRoot();
+    const executor = new DelayedCancellationExecutor();
+    const store = new TerminalMutationInMemoryStore(
+      path.join(caseRoot, "state.json"),
+      () => executor.hasStartedCancellation(),
+    );
+    await store.initialize();
+    const verifier = new OneContractThrowingVerifier();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      executor,
+      verifier,
+    });
+    const run = service.runDeterministicDemo();
+    let runSettled = false;
+    const runOutcome = run.then(
+      (value) => {
+        runSettled = true;
+        return { status: "fulfilled" as const, value };
+      },
+      (reason: unknown) => {
+        runSettled = true;
+        return { status: "rejected" as const, reason };
+      },
+    );
+
+    try {
+      await executor.cancellationStarted;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(runSettled).toBe(false);
+
+      executor.release();
+      const outcome = await runOutcome;
+      expect(outcome).toMatchObject({
+        status: "rejected",
+        reason: {
+          message: "Contract independent verification infrastructure failed",
+        },
+      });
+      expect(store.bypassedMutationCount()).toBe(1);
+    } finally {
+      executor.release();
       verifier.releaseSibling();
       await Promise.allSettled([run, verifier.siblingExited]);
     }
