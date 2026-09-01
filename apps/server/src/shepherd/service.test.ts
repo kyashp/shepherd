@@ -589,6 +589,69 @@ class BlockingExecutor implements ShepherdExecutor {
   }
 }
 
+class DelayedCancellationExecutor extends DeterministicFixtureExecutor {
+  readonly cancellationStarted: Promise<void>;
+  private markCancellationStarted!: () => void;
+  private readonly cancellationReleased: Promise<void>;
+  private releaseCancellation!: () => void;
+  private started = false;
+
+  constructor() {
+    super();
+    this.cancellationStarted = new Promise<void>((resolve) => {
+      this.markCancellationStarted = resolve;
+    });
+    this.cancellationReleased = new Promise<void>((resolve) => {
+      this.releaseCancellation = resolve;
+    });
+  }
+
+  override async cancel(executionId: string): Promise<boolean> {
+    if (!this.started) {
+      this.started = true;
+      this.markCancellationStarted();
+    }
+    await this.cancellationReleased;
+    return await super.cancel(executionId);
+  }
+
+  release(): void {
+    this.releaseCancellation();
+  }
+
+  hasStartedCancellation(): boolean {
+    return this.started;
+  }
+}
+
+class TerminalMutationInMemoryStore extends JsonStore {
+  private bypassCount = 0;
+
+  constructor(
+    storePath: string,
+    private readonly shouldBypassPersistence: () => boolean,
+  ) {
+    super(storePath);
+  }
+
+  override async mutate<T>(
+    mutation: (database: Database) => T | Promise<T>,
+  ): Promise<T> {
+    if (!this.shouldBypassPersistence()) {
+      return await super.mutate(mutation);
+    }
+    this.bypassCount += 1;
+    if (this.bypassCount > 1) {
+      throw new Error("Unexpected mutation after Runtime cancellation started");
+    }
+    return await mutation(this.snapshot());
+  }
+
+  bypassedMutationCount(): number {
+    return this.bypassCount;
+  }
+}
+
 class BlockingVerifier implements ShepherdIndependentVerifier {
   readonly targetIds: string[] = [];
   readonly cancelledIds: string[] = [];
@@ -3466,6 +3529,56 @@ describe("Shepherd deterministic walking skeleton", () => {
       expect(detailAfterRelease?.planes.every((plane) => plane.kind === "contract"))
         .toBe(true);
     } finally {
+      verifier.releaseSibling();
+      await Promise.allSettled([run, verifier.siblingExited]);
+    }
+  }, 30_000);
+
+  it("waits for Runtime cancellation before reporting Contract verification infrastructure failure", async () => {
+    const caseRoot = await makeCaseRoot();
+    const executor = new DelayedCancellationExecutor();
+    const store = new TerminalMutationInMemoryStore(
+      path.join(caseRoot, "state.json"),
+      () => executor.hasStartedCancellation(),
+    );
+    await store.initialize();
+    const verifier = new OneContractThrowingVerifier();
+    const service = new ShepherdService({
+      store,
+      managedRoot: path.join(caseRoot, "managed"),
+      agentWorkspaceRoot: path.join(caseRoot, "agent-workspaces"),
+      executor,
+      verifier,
+    });
+    const run = service.runDeterministicDemo();
+    let runSettled = false;
+    const runOutcome = run.then(
+      (value) => {
+        runSettled = true;
+        return { status: "fulfilled" as const, value };
+      },
+      (reason: unknown) => {
+        runSettled = true;
+        return { status: "rejected" as const, reason };
+      },
+    );
+
+    try {
+      await executor.cancellationStarted;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(runSettled).toBe(false);
+
+      executor.release();
+      const outcome = await runOutcome;
+      expect(outcome).toMatchObject({
+        status: "rejected",
+        reason: {
+          message: "Contract independent verification infrastructure failed",
+        },
+      });
+      expect(store.bypassedMutationCount()).toBe(1);
+    } finally {
+      executor.release();
       verifier.releaseSibling();
       await Promise.allSettled([run, verifier.siblingExited]);
     }

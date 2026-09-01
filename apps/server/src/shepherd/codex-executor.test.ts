@@ -591,6 +591,73 @@ describe("CodexShepherdExecutor", () => {
     });
   });
 
+  it("does not resolve cancellation until the Runtime execution is fully quiescent", async () => {
+    const test = await environment();
+    const runner = new FakeContainerRunner();
+    let markRunEntered!: () => void;
+    const runEntered = new Promise<void>((resolve) => {
+      markRunEntered = resolve;
+    });
+    let releaseRun!: () => void;
+    const runReleased = new Promise<void>((resolve) => {
+      releaseRun = resolve;
+    });
+    let markCancellationForwarded!: () => void;
+    const cancellationForwarded = new Promise<void>((resolve) => {
+      markCancellationForwarded = resolve;
+    });
+    runner.run = async (request) => {
+      if (!isFreshEphemeralRunnerRequest(request)) {
+        throw new Error("Expected a fresh ephemeral request");
+      }
+      runner.requests.push(request);
+      runner.privateHomes.push(request.codexHome);
+      markRunEntered();
+      await runReleased;
+      throw new RunCancelledError();
+    };
+    runner.cancel = async () => {
+      markCancellationForwarded();
+      return true;
+    };
+    const executor = new CodexShepherdExecutor(test.config, OWNER, runner);
+    const run = executor.run(executionRequest(test.workspace));
+    const runOutcome = run.then(
+      (value) => ({ status: "fulfilled" as const, value }),
+      (reason: unknown) => ({ status: "rejected" as const, reason }),
+    );
+
+    await runEntered;
+    let cancellationSettled = false;
+    const cancellation = executor.cancel("plane-execution-1").finally(() => {
+      cancellationSettled = true;
+    });
+    try {
+      await cancellationForwarded;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+
+      expect(cancellationSettled).toBe(false);
+      await expect(executor.reconcileInterrupted()).rejects.toThrow(
+        "Cannot reconcile Shepherd Runtime while executions are active",
+      );
+
+      releaseRun();
+      await expect(cancellation).resolves.toBe(true);
+      const outcome = await runOutcome;
+      expect(outcome).toMatchObject({
+        status: "rejected",
+        reason: { name: "RunCancelledError", message: "Run cancelled" },
+      });
+      await expect(executor.reconcileInterrupted()).resolves.toBe(0);
+      await expect(stat(runner.privateHomes[0]!)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    } finally {
+      releaseRun();
+      await Promise.allSettled([cancellation, run]);
+    }
+  });
+
   it.each([
     { primary: "success" as const, expectedKind: "execution" as const },
     { primary: "cancelled" as const, expectedKind: "cancelled" as const },

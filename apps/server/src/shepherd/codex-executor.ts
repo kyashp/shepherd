@@ -204,6 +204,8 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
 
   private readonly activeExecutionIds = new Set<string>();
   private readonly cancellationRequests = new Set<string>();
+  private readonly executionCompletions = new Map<string, Promise<void>>();
+  private readonly resolveExecutionCompletions = new Map<string, () => void>();
   private readonly usedExecutionFingerprints = new Set<string>();
   private readonly usedSessionFingerprints = new Set<string>();
   private successfulPreflight: Promise<void> | null = null;
@@ -732,6 +734,15 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
       throw new Error("Shepherd execution identity was already used");
     }
     this.usedExecutionFingerprints.add(executionFingerprint);
+    let resolveExecutionCompletion!: () => void;
+    const executionCompletion = new Promise<void>((resolve) => {
+      resolveExecutionCompletion = resolve;
+    });
+    this.executionCompletions.set(request.executionId, executionCompletion);
+    this.resolveExecutionCompletions.set(
+      request.executionId,
+      resolveExecutionCompletion,
+    );
     this.activeExecutionIds.add(request.executionId);
 
     let privateHome: string | null = null;
@@ -803,28 +814,40 @@ export class CodexShepherdExecutor implements ShepherdExecutor {
       primaryFailed = true;
       throw error;
     } finally {
-      this.activeExecutionIds.delete(request.executionId);
       this.cancellationRequests.delete(request.executionId);
-      if (privateHome) {
-        try {
-          await rm(privateHome, { recursive: true, force: true });
-        } catch {
-          if (!primaryFailed) {
-            throw new RuntimeExecutionError("execution");
+      try {
+        if (privateHome) {
+          try {
+            await rm(privateHome, { recursive: true, force: true });
+          } catch {
+            if (!primaryFailed) {
+              throw new RuntimeExecutionError("execution");
+            }
           }
         }
+      } finally {
+        this.activeExecutionIds.delete(request.executionId);
+        this.executionCompletions.delete(request.executionId);
+        this.resolveExecutionCompletions.get(request.executionId)?.();
+        this.resolveExecutionCompletions.delete(request.executionId);
       }
     }
   }
 
   async cancel(executionId: string): Promise<boolean> {
-    if (!this.activeExecutionIds.has(executionId)) return false;
+    const executionCompletion = this.executionCompletions.get(executionId);
+    if (!this.activeExecutionIds.has(executionId) || !executionCompletion) {
+      return false;
+    }
     this.cancellationRequests.add(executionId);
+    let cancellationFailure: Error | null = null;
     try {
       await this.runner.cancel(executionId);
     } catch (error) {
-      throw safeRuntimeError(error);
+      cancellationFailure = safeRuntimeError(error);
     }
+    await executionCompletion;
+    if (cancellationFailure) throw cancellationFailure;
     return true;
   }
 }
