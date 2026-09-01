@@ -61,6 +61,17 @@ async function assertNoDocumentOverflow(page, expectedViewport) {
   }
 }
 
+async function assertNoPanelOverflow(page) {
+  const geometry = await page.locator(".group-chat-panel").evaluate((element) => ({
+    scrollWidth: element.scrollWidth,
+    clientWidth: element.clientWidth,
+    scrollHeight: element.scrollHeight,
+    clientHeight: element.clientHeight,
+  }));
+  expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth);
+  expect(geometry.scrollHeight).toBeLessThanOrEqual(geometry.clientHeight);
+}
+
 async function captureEvidence(page, expectedViewport, name) {
   const screenshotDirectory = path.join(
     repositoryRoot,
@@ -94,6 +105,10 @@ test("Project Group initializes safely, pairs bounded requests, and reports veri
   await createAgent(page, "Group Frontend", "Frontend");
   await createAgent(page, "Group Backend", "Backend");
   await createAgent(page, "Frontend Agent", "Frontend");
+  for (let index = 1; index <= 5; index += 1) {
+    await createAgent(page, `Eligible Agent ${index}`, "Frontend");
+  }
+  await createAgent(page, "General Agent", "Generalist");
 
   await page.getByRole("link", { name: /Project Group/u }).click();
   await expect(page.getByRole("button", { name: "Initialize Project Group", exact: true })).toBeVisible();
@@ -109,15 +124,53 @@ test("Project Group initializes safely, pairs bounded requests, and reports veri
   await composer.fill("@");
   const mentionSuggestions = page.getByRole("listbox", { name: "Agent mentions" });
   await expect(mentionSuggestions).toBeVisible();
-  await expect(mentionSuggestions.getByRole("option")).toHaveCount(3);
+  await expect(composer).toHaveAttribute("aria-autocomplete", "list");
+  await expect(mentionSuggestions.getByRole("option")).toHaveCount(8);
+  await expect(page.getByLabel("Available mention targets").getByRole("button", { name: "@General Agent" })).toHaveCount(0);
+  const listGeometry = await mentionSuggestions.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+    display: getComputedStyle(element).display,
+    optionRects: [...element.querySelectorAll('[role="option"]')].slice(0, 2).map((option) => option.getBoundingClientRect().toJSON()),
+  }));
+  expect(listGeometry.display).toBe("block");
+  expect(listGeometry.scrollHeight).toBeGreaterThan(listGeometry.clientHeight);
+  expect(listGeometry.optionRects[1].top).toBeGreaterThanOrEqual(listGeometry.optionRects[0].bottom);
+  await assertNoPanelOverflow(page);
+  await assertNoDocumentOverflow(page, expectedViewport);
+  for (let index = 0; index < 6; index += 1) await composer.press("ArrowDown");
+  const activeOption = mentionSuggestions.getByRole("option", { selected: true });
+  const activeGeometry = await activeOption.evaluate((option) => {
+    const list = option.parentElement;
+    const optionRect = option.getBoundingClientRect();
+    const listRect = list?.getBoundingClientRect();
+    return { optionTop: optionRect.top, optionBottom: optionRect.bottom, listTop: listRect?.top, listBottom: listRect?.bottom };
+  });
+  expect(activeGeometry.optionTop).toBeGreaterThanOrEqual(activeGeometry.listTop);
+  expect(activeGeometry.optionBottom).toBeLessThanOrEqual(activeGeometry.listBottom);
+  await composer.press("Escape");
+  await expect(mentionSuggestions).toHaveCount(0);
+  await expect(composer).toHaveValue("@");
+  await composer.fill("@x");
+  await composer.fill("@");
+  const mentionOptions = mentionSuggestions.getByRole("option");
+  const firstMentionName = (await mentionOptions.nth(0).textContent()).slice(1);
   await composer.press("ArrowDown");
-  await composer.press("Enter");
-  await expect(composer).toHaveValue('@"Group Backend" ');
+  await expect(mentionOptions.nth(1)).toHaveAttribute("aria-selected", "true");
+  await composer.press("ArrowUp");
+  await expect(mentionOptions.nth(0)).toHaveAttribute("aria-selected", "true");
+  await composer.press("Tab");
+  await expect(composer).toHaveValue(`@"${firstMentionName}" `);
   await composer.fill("@F");
   await expect(mentionSuggestions.getByRole("option", { name: "Frontend Agent" })).toBeVisible();
   await expect(mentionSuggestions.getByRole("option")).toHaveCount(1);
   await mentionSuggestions.getByRole("option", { name: "Frontend Agent" }).click();
   await expect(composer).toHaveValue('@"Frontend Agent" ');
+  const overflowDraft = "x".repeat(2_000);
+  await composer.fill(overflowDraft);
+  await page.getByLabel("Available mention targets").getByRole("button", { name: "@Frontend Agent" }).click();
+  await expect(composer).toHaveValue(overflowDraft);
+  await expect(page.getByText("Mention would exceed the 2,000-character message limit.", { exact: true })).toBeVisible();
   await composer.fill("");
   await composer.fill("Preserve this draft");
   await page.getByLabel("Available mention targets").getByRole("button", { name: /Group Frontend/u }).click();

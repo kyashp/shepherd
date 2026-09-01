@@ -7,6 +7,7 @@ import type { Agent, ProjectGroupMessage } from "../types";
 import { EmptyState, ErrorState, Icon, LoadingPanel, PageHeader, Spinner, StatePill, formatTime, shortId } from "../ui";
 import {
   MAX_PROJECT_GROUP_MESSAGE_LENGTH,
+  filterProjectGroupMentionTargets,
   findProjectGroupMentionCandidates,
   prependProjectGroupMentionWithinLimit,
   replaceProjectGroupMentionQuery,
@@ -109,18 +110,20 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
   const [mentionDismissed, setMentionDismissed] = useState(false);
   const messagesPane = useRef<HTMLDivElement>(null);
   const messageEnd = useRef<HTMLDivElement>(null);
+  const mentionSuggestions = useRef<HTMLDivElement>(null);
   const messageComposer = useRef<HTMLTextAreaElement>(null);
   const inFlight = useRef(false);
   const scrollToMessageEndOnChange = useRef(true);
   const scrollAfterSend = useRef(false);
 
+  const callableAgents = useMemo(() => filterProjectGroupMentionTargets(agents), [agents]);
   const mentionCandidates = useMemo(
-    () => findProjectGroupMentionCandidates(content, mentionCursor, agents),
-    [agents, content, mentionCursor],
+    () => findProjectGroupMentionCandidates(content, mentionCursor, callableAgents),
+    [callableAgents, content, mentionCursor],
   );
   const showMentionSuggestions = Boolean(project) && !sending && !mentionDismissed && mentionCandidates.length > 0;
 
-  const insertMention = (agent: Agent) => {
+  const insertMention = (agent: ProjectGroupMentionTarget) => {
     if (sending) return;
     const nextContent = prependProjectGroupMentionWithinLimit(agent.name, agent.id, content);
     flushSync(() => {
@@ -191,9 +194,19 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
     setMentionActiveIndex(0);
   }, [content, mentionCursor]);
 
+  useEffect(() => {
+    if (!showMentionSuggestions) return;
+    mentionSuggestions.current
+      ?.querySelector<HTMLElement>('[role="option"][aria-selected="true"]')
+      ?.scrollIntoView({ block: "nearest" });
+  }, [mentionActiveIndex, mentionCandidates, showMentionSuggestions]);
+
   const selectMention = (agent: ProjectGroupMentionTarget) => {
     const next = replaceProjectGroupMentionQuery(content, mentionCursor, agent);
-    if (!next) return;
+    if (!next) {
+      setComposerError("Mention would exceed the 2,000-character message limit.");
+      return;
+    }
     flushSync(() => {
       setContent(next.content);
       setMentionCursor(next.selectionStart);
@@ -262,7 +275,7 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
       <section className="group-chat-panel" aria-label="Project Group conversation">
         <div className="group-members" aria-label="Available mention targets">
           <span>Route directly:</span>
-          {agents.map((agent) => (
+          {callableAgents.map((agent) => (
             <ProjectGroupMentionButton
               key={agent.id}
               agentName={agent.name}
@@ -322,6 +335,7 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
               setComposerError(null);
             }}
             onSelect={(event) => setMentionCursor(event.currentTarget.selectionStart)}
+            onKeyUp={(event) => setMentionCursor(event.currentTarget.selectionStart)}
             onKeyDown={(event) => {
               if (showMentionSuggestions) {
                 if (event.key === "ArrowDown") {
@@ -355,12 +369,13 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
             disabled={!project || sending}
             maxLength={MAX_PROJECT_GROUP_MESSAGE_LENGTH}
             aria-describedby={composerError ? "group-message-error" : undefined}
+            aria-autocomplete="list"
             aria-controls={showMentionSuggestions ? MENTION_SUGGESTIONS_ID : undefined}
             aria-expanded={showMentionSuggestions}
             aria-activedescendant={showMentionSuggestions ? `${MENTION_SUGGESTIONS_ID}-${mentionActiveIndex}` : undefined}
           />
           {showMentionSuggestions ? (
-            <div className="group-mention-suggestions" id={MENTION_SUGGESTIONS_ID} role="listbox" aria-label="Agent mentions">
+            <div ref={mentionSuggestions} className="group-mention-suggestions" id={MENTION_SUGGESTIONS_ID} role="listbox" aria-label="Agent mentions">
               {mentionCandidates.map((agent, index) => (
                 <button
                   id={`${MENTION_SUGGESTIONS_ID}-${index}`}

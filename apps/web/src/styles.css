@@ -2182,6 +2182,10 @@ label small {
   box-shadow: 0 -5px 14px rgba(57, 49, 100, 0.1);
 }
 
+.chat-composer > .group-mention-suggestions {
+  display: block;
+}
+
 .group-mention-suggestions button {
   width: 100%;
   min-height: 30px;

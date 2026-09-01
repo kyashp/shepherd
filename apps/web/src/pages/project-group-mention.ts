@@ -1,13 +1,12 @@
+import type { Agent } from "../types";
+
 const SIMPLE_AGENT_NAME = /^[\p{L}\p{N}_.-]+$/u;
 const MESSAGE_SPACING = /[\t\p{Zs}]+/gu;
 const FORBIDDEN_CONTROL_CHARACTER = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/u;
 const MAX_AGENT_KEY_LENGTH = 128;
 export const MAX_PROJECT_GROUP_MESSAGE_LENGTH = 2_000;
 
-export interface ProjectGroupMentionTarget {
-  id: string;
-  name: string;
-}
+export type ProjectGroupMentionTarget = Pick<Agent, "id" | "name" | "role" | "status" | "currentContractId">;
 
 interface MentionQuery {
   end: number;
@@ -57,6 +56,18 @@ export function prependProjectGroupMentionWithinLimit(
   return content.length <= MAX_PROJECT_GROUP_MESSAGE_LENGTH ? content : null;
 }
 
+export function isProjectGroupMentionTarget(agent: ProjectGroupMentionTarget): boolean {
+  return (agent.role === "Frontend" || agent.role === "Backend")
+    && agent.status === "ready"
+    && (agent.currentContractId === null || agent.currentContractId === undefined);
+}
+
+export function filterProjectGroupMentionTargets(
+  agents: readonly ProjectGroupMentionTarget[],
+): ProjectGroupMentionTarget[] {
+  return agents.filter(isProjectGroupMentionTarget);
+}
+
 export function findProjectGroupMentionCandidates(
   content: string,
   selectionStart: number,
@@ -64,8 +75,9 @@ export function findProjectGroupMentionCandidates(
 ): ProjectGroupMentionTarget[] {
   const mention = leadingMentionQuery(content, selectionStart);
   if (!mention) return [];
-  if (!mention.query) return [...agents];
-  return agents.filter((agent) =>
+  const callableAgents = filterProjectGroupMentionTargets(agents);
+  if (!mention.query) return callableAgents;
+  return callableAgents.filter((agent) =>
     agent.name.normalize("NFKC").toLocaleLowerCase("en-US").startsWith(mention.query),
   );
 }
@@ -78,8 +90,10 @@ export function replaceProjectGroupMentionQuery(
   const mention = leadingMentionQuery(content, selectionStart);
   if (!mention) return null;
   const replacement = `${formatProjectGroupMention(agent.name, agent.id)} `;
+  const nextContent = `${replacement}${content.slice(mention.end).replace(/^\s/u, "")}`;
+  if (nextContent.length > MAX_PROJECT_GROUP_MESSAGE_LENGTH) return null;
   return {
-    content: `${replacement}${content.slice(mention.end).replace(/^\s/u, "")}`,
+    content: nextContent,
     selectionStart: replacement.length,
   };
 }
