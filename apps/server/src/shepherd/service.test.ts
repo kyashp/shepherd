@@ -75,7 +75,10 @@ async function makeCaseRoot(): Promise<string> {
 
 async function removeServiceCaseRoot(
   root: string,
-  hooks: { beforeEntryChmod?: (entry: string) => Promise<void> } = {},
+  hooks: {
+    beforeDirectoryRealpath?: (entry: string) => Promise<void>;
+    beforeEntryChmod?: (entry: string) => Promise<void>;
+  } = {},
 ): Promise<void> {
   let rootStat: Awaited<ReturnType<typeof lstat>>;
   try {
@@ -116,7 +119,14 @@ async function removeServiceCaseRoot(
         throw error;
       }
       if (entryStat.isDirectory() && !entryStat.isSymbolicLink()) {
-        const canonicalEntry = await realpath(entry);
+        await hooks.beforeDirectoryRealpath?.(entry);
+        let canonicalEntry: string;
+        try {
+          canonicalEntry = await realpath(entry);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+          throw error;
+        }
         if (
           canonicalEntry !== entry ||
           !canonicalEntry.startsWith(canonicalRoot + path.sep)
@@ -2365,6 +2375,27 @@ describe("Shepherd deterministic walking skeleton", () => {
       removeServiceCaseRoot(caseRoot, {
         beforeEntryChmod: async (entry) => {
           if (entry === disappearingFile) await rm(disappearingFile);
+        },
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("tolerates a managed directory disappearing after cleanup lstat and before realpath", async () => {
+    const caseRoot = await makeCaseRoot();
+    const disappearingDirectory = path.join(
+      caseRoot,
+      "managed",
+      "planes",
+      ".trusted-verification",
+      "verify-finished",
+    );
+    await mkdir(disappearingDirectory, { recursive: true });
+    await expect(
+      removeServiceCaseRoot(caseRoot, {
+        beforeDirectoryRealpath: async (entry) => {
+          if (entry === disappearingDirectory) {
+            await rm(disappearingDirectory, { recursive: true });
+          }
         },
       }),
     ).resolves.toBeUndefined();
