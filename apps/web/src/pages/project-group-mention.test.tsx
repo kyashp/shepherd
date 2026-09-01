@@ -4,10 +4,12 @@ import { describe, expect, it } from "vitest";
 import { parseProjectGroupMessage } from "../../../server/src/shepherd/group-routing.js";
 import { InitializeProjectGroupButton, ProjectGroupMentionButton } from "./ProjectGroupPage.js";
 import {
+  findProjectGroupMentionCandidates,
   MAX_PROJECT_GROUP_MESSAGE_LENGTH,
   formatProjectGroupMention,
   prependProjectGroupMention,
   prependProjectGroupMentionWithinLimit,
+  replaceProjectGroupMentionQuery,
 } from "./project-group-mention.js";
 
 describe("formatProjectGroupMention", () => {
@@ -86,6 +88,30 @@ describe("prependProjectGroupMention", () => {
     expect(
       prependProjectGroupMentionWithinLimit("Frontend Agent", "agent-frontend", `${exactDraft}x`),
     ).toBeNull();
+  });
+});
+
+describe("typed Project Group mentions", () => {
+  const agents = [
+    { id: "agent-frontend", name: "Frontend Agent" },
+    { id: "agent-backend", name: "Backend Agent" },
+    { id: "agent-general", name: "Generalist" },
+  ];
+
+  it("shows every Agent after a leading at-sign and filters a partial name prefix", () => {
+    expect(findProjectGroupMentionCandidates("@", 1, agents)).toEqual(agents);
+    expect(findProjectGroupMentionCandidates("@f", 2, agents)).toEqual([agents[0]]);
+  });
+
+  it("replaces the active leading partial mention with parser-safe syntax and retains the draft", () => {
+    expect(replaceProjectGroupMentionQuery("@F finish the form", 2, agents[0])).toEqual({
+      content: '@"Frontend Agent" finish the form',
+      selectionStart: '@"Frontend Agent" '.length,
+    });
+  });
+
+  it("does not suggest an Agent mention outside the leading routing directive", () => {
+    expect(findProjectGroupMentionCandidates("Ask @F for help", 6, agents)).toEqual([]);
   });
 });
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { flushSync } from "react-dom";
 import { api } from "../api";
 import { Link } from "../router";
@@ -7,8 +7,25 @@ import type { Agent, ProjectGroupMessage } from "../types";
 import { EmptyState, ErrorState, Icon, LoadingPanel, PageHeader, Spinner, StatePill, formatTime, shortId } from "../ui";
 import {
   MAX_PROJECT_GROUP_MESSAGE_LENGTH,
+  findProjectGroupMentionCandidates,
   prependProjectGroupMentionWithinLimit,
+  replaceProjectGroupMentionQuery,
+  type ProjectGroupMentionTarget,
 } from "./project-group-mention";
+
+const MENTION_SUGGESTIONS_ID = "group-message-mention-suggestions";
+const SCROLL_PINNED_TOLERANCE = 24;
+
+function isPinnedToMessageEnd(element: HTMLElement): boolean {
+  return element.scrollHeight - element.scrollTop - element.clientHeight <= SCROLL_PINNED_TOLERANCE;
+}
+
+function messagesMatch(
+  current: readonly ProjectGroupMessage[],
+  next: readonly ProjectGroupMessage[],
+): boolean {
+  return current.length === next.length && current.every((message, index) => message.id === next[index]?.id);
+}
 
 function senderName(message: ProjectGroupMessage, agents: Agent[]): string {
   if (message.senderType === "human") return "You";
@@ -56,9 +73,21 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
   const [composerError, setComposerError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [initializing, setInitializing] = useState(false);
+  const [mentionCursor, setMentionCursor] = useState(0);
+  const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
+  const [mentionDismissed, setMentionDismissed] = useState(false);
+  const messagesPane = useRef<HTMLDivElement>(null);
   const messageEnd = useRef<HTMLDivElement>(null);
   const messageComposer = useRef<HTMLTextAreaElement>(null);
   const inFlight = useRef(false);
+  const scrollToMessageEndOnChange = useRef(true);
+  const scrollAfterSend = useRef(false);
+
+  const mentionCandidates = useMemo(
+    () => findProjectGroupMentionCandidates(content, mentionCursor, agents),
+    [agents, content, mentionCursor],
+  );
+  const showMentionSuggestions = Boolean(project) && !sending && !mentionDismissed && mentionCandidates.length > 0;
 
   const insertMention = (agent: Agent) => {
     if (sending) return;
@@ -69,6 +98,8 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
       } else {
         setComposerError(null);
         setContent(nextContent);
+        setMentionCursor(nextContent.length);
+        setMentionDismissed(false);
       }
     });
     const composer = messageComposer.current;
@@ -82,7 +113,15 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
     inFlight.current = true;
     try {
       const result = await api.groupMessages(project.id);
-      setMessages(result.messages);
+      const pinnedToMessageEnd = messagesPane.current
+        ? isPinnedToMessageEnd(messagesPane.current)
+        : true;
+      setMessages((current) => {
+        if (messagesMatch(current, result.messages)) return current;
+        scrollToMessageEndOnChange.current = scrollAfterSend.current || current.length === 0 || pinnedToMessageEnd;
+        scrollAfterSend.current = false;
+        return result.messages;
+      });
       setMessageError(null);
     } catch (reason) {
       setMessageError(reason instanceof Error ? reason.message : "Project Group is unavailable");
@@ -103,9 +142,30 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
     return () => window.clearInterval(interval);
   }, [project, refreshMessages]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (!scrollToMessageEndOnChange.current) return;
     messageEnd.current?.scrollIntoView({ block: "nearest" });
+    scrollToMessageEndOnChange.current = false;
   }, [messages]);
+
+  useEffect(() => {
+    setMentionActiveIndex(0);
+  }, [content, mentionCursor]);
+
+  const selectMention = (agent: ProjectGroupMentionTarget) => {
+    const next = replaceProjectGroupMentionQuery(content, mentionCursor, agent);
+    if (!next) return;
+    flushSync(() => {
+      setContent(next.content);
+      setMentionCursor(next.selectionStart);
+      setMentionDismissed(true);
+      setComposerError(null);
+    });
+    const composer = messageComposer.current;
+    if (!composer) return;
+    composer.focus();
+    composer.setSelectionRange(next.selectionStart, next.selectionStart);
+  };
 
   const initializeGroup = async () => {
     if (initializing) return;
@@ -139,6 +199,9 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
         ...(nextContent.startsWith("@") ? { assignmentPreset: "auth-demo-contract" as const } : {}),
       });
       setContent("");
+      setMentionCursor(0);
+      setMentionDismissed(false);
+      scrollAfterSend.current = true;
       await Promise.all([refreshMessages(), refreshState()]);
     } catch (reason) {
       setMessageError(reason instanceof Error ? reason.message : "Message could not be routed");
@@ -172,7 +235,7 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
         {messageError ? (
           <div className="reconnect-banner" role="status">{messageError} · retrying automatically</div>
         ) : null}
-        <div className="group-messages" aria-live="polite">
+        <div className="group-messages" ref={messagesPane} aria-live="polite">
           {messagesLoading && messages.length === 0 ? <LoadingPanel label="Loading real group messages…" /> : null}
           {!messagesLoading && sortedMessages.length === 0 ? (
             <EmptyState
@@ -215,9 +278,35 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
             value={content}
             onChange={(event) => {
               setContent(event.target.value);
+              setMentionCursor(event.target.selectionStart);
+              setMentionDismissed(false);
               setComposerError(null);
             }}
+            onSelect={(event) => setMentionCursor(event.currentTarget.selectionStart)}
             onKeyDown={(event) => {
+              if (showMentionSuggestions) {
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  setMentionActiveIndex((current) => Math.min(current + 1, mentionCandidates.length - 1));
+                  return;
+                }
+                if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setMentionActiveIndex((current) => Math.max(current - 1, 0));
+                  return;
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setMentionDismissed(true);
+                  return;
+                }
+                if (event.key === "Enter" || event.key === "Tab") {
+                  event.preventDefault();
+                  const agent = mentionCandidates[mentionActiveIndex];
+                  if (agent) selectMention(agent);
+                  return;
+                }
+              }
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
                 event.currentTarget.form?.requestSubmit();
@@ -227,7 +316,27 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
             disabled={!project || sending}
             maxLength={MAX_PROJECT_GROUP_MESSAGE_LENGTH}
             aria-describedby={composerError ? "group-message-error" : undefined}
+            aria-controls={showMentionSuggestions ? MENTION_SUGGESTIONS_ID : undefined}
+            aria-expanded={showMentionSuggestions}
+            aria-activedescendant={showMentionSuggestions ? `${MENTION_SUGGESTIONS_ID}-${mentionActiveIndex}` : undefined}
           />
+          {showMentionSuggestions ? (
+            <div className="group-mention-suggestions" id={MENTION_SUGGESTIONS_ID} role="listbox" aria-label="Agent mentions">
+              {mentionCandidates.map((agent, index) => (
+                <button
+                  id={`${MENTION_SUGGESTIONS_ID}-${index}`}
+                  key={agent.id}
+                  type="button"
+                  role="option"
+                  aria-selected={index === mentionActiveIndex}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => selectMention(agent)}
+                >
+                  @{agent.name}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <div>
             <span id={composerError ? "group-message-error" : undefined} role={composerError ? "status" : undefined}>
               {composerError ?? "Unmentioned → Shepherd · @AgentName → targeted contract"}

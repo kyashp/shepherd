@@ -93,6 +93,7 @@ test("Project Group initializes safely, pairs bounded requests, and reports veri
   await unlock(page);
   await createAgent(page, "Group Frontend", "Frontend");
   await createAgent(page, "Group Backend", "Backend");
+  await createAgent(page, "Frontend Agent", "Frontend");
 
   await page.getByRole("link", { name: /Project Group/u }).click();
   await expect(page.getByRole("button", { name: "Initialize Project Group", exact: true })).toBeVisible();
@@ -105,6 +106,17 @@ test("Project Group initializes safely, pairs bounded requests, and reports veri
   expect((await shepherdState(request)).missions).toHaveLength(0);
 
   const composer = page.getByLabel("Message Project Group");
+  await composer.fill("@");
+  const mentionSuggestions = page.getByRole("listbox", { name: "Agent mentions" });
+  await expect(mentionSuggestions).toBeVisible();
+  await expect(mentionSuggestions.getByRole("option")).toHaveCount(3);
+  await composer.fill("@F");
+  await expect(mentionSuggestions.getByRole("option", { name: "Frontend Agent" })).toBeVisible();
+  await expect(mentionSuggestions.getByRole("option")).toHaveCount(1);
+  await composer.press("ArrowDown");
+  await composer.press("Enter");
+  await expect(composer).toHaveValue('@"Frontend Agent" ');
+  await composer.fill("");
   await composer.fill("Preserve this draft");
   await page.getByLabel("Available mention targets").getByRole("button", { name: /Group Frontend/u }).click();
   await expect(composer).toHaveValue('@"Group Frontend" Preserve this draft');
