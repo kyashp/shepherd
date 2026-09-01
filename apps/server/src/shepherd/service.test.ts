@@ -77,6 +77,7 @@ async function removeServiceCaseRoot(
   root: string,
   hooks: {
     beforeDirectoryRealpath?: (entry: string) => Promise<void>;
+    beforeDirectoryReaddir?: (entry: string) => Promise<void>;
     beforeEntryChmod?: (entry: string) => Promise<void>;
   } = {},
 ): Promise<void> {
@@ -107,9 +108,35 @@ async function removeServiceCaseRoot(
     throw new Error("Service test cleanup sentinel mismatch");
   }
 
-  const makeDeletable = async (directory: string): Promise<void> => {
-    await chmod(directory, 0o700);
-    for (const name of await readdir(directory)) {
+  const makeDeletable = async (
+    directory: string,
+    missingDescendantIsExpected: boolean,
+  ): Promise<void> => {
+    try {
+      await chmod(directory, 0o700);
+    } catch (error) {
+      if (
+        missingDescendantIsExpected &&
+        (error as NodeJS.ErrnoException).code === "ENOENT"
+      ) {
+        return;
+      }
+      throw error;
+    }
+    await hooks.beforeDirectoryReaddir?.(directory);
+    let names: string[];
+    try {
+      names = await readdir(directory);
+    } catch (error) {
+      if (
+        missingDescendantIsExpected &&
+        (error as NodeJS.ErrnoException).code === "ENOENT"
+      ) {
+        return;
+      }
+      throw error;
+    }
+    for (const name of names) {
       const entry = path.join(directory, name);
       let entryStat: Awaited<ReturnType<typeof lstat>>;
       try {
@@ -133,7 +160,7 @@ async function removeServiceCaseRoot(
         ) {
           throw new Error("Service test cleanup encountered an escaping directory");
         }
-        await makeDeletable(entry);
+        await makeDeletable(entry, true);
       } else if (!entryStat.isSymbolicLink()) {
         await hooks.beforeEntryChmod?.(entry);
         try {
@@ -146,7 +173,7 @@ async function removeServiceCaseRoot(
     }
   };
 
-  await makeDeletable(canonicalRoot);
+  await makeDeletable(canonicalRoot, false);
   await rm(canonicalRoot, { recursive: true, force: false });
 }
 
@@ -2399,6 +2426,33 @@ describe("Shepherd deterministic walking skeleton", () => {
         },
       }),
     ).resolves.toBeUndefined();
+  });
+
+  it("tolerates a trusted verification directory disappearing after it is accepted and before its entries are listed", async () => {
+    const caseRoot = await makeCaseRoot();
+    const disappearingDirectory = path.join(
+      caseRoot,
+      "managed",
+      "planes",
+      ".trusted-verification",
+      "verify-finished",
+      "checks",
+    );
+    await mkdir(disappearingDirectory, { recursive: true });
+    let removedBeforeReaddir = false;
+
+    await expect(
+      removeServiceCaseRoot(caseRoot, {
+        beforeDirectoryReaddir: async (entry) => {
+          if (entry === disappearingDirectory) {
+            removedBeforeReaddir = true;
+            await rm(disappearingDirectory, { recursive: true });
+          }
+        },
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(removedBeforeReaddir).toBe(true);
   });
 
   it("refuses to clean a root outside its allocated test fixture", async () => {
