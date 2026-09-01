@@ -439,6 +439,8 @@ describe.skipIf(!liveEnabled)("Shepherd live Codex Runtime gate", () => {
             maxTimeoutMs: config.shepherdVerificationTimeoutMs,
             maxOutputBytes: config.codexMaxOutputBytes,
             sensitiveValues: [config.arkApiKey, config.authToken],
+            stateRoot: config.containerStateRoot,
+            stateVolume: config.containerStateVolume,
           });
           verifiers.push(verifier);
           const store = new JsonStore(statePath, {
