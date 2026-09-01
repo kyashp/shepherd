@@ -66,8 +66,7 @@ export function findProjectGroupMentionCandidates(
   if (!mention) return [];
   if (!mention.query) return [...agents];
   return agents.filter((agent) =>
-    agent.name.normalize("NFKC").toLocaleLowerCase("en-US").startsWith(mention.query)
-      || agent.id.normalize("NFKC").toLocaleLowerCase("en-US").startsWith(mention.query),
+    agent.name.normalize("NFKC").toLocaleLowerCase("en-US").startsWith(mention.query),
   );
 }
 

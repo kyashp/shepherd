@@ -108,6 +108,11 @@ describe("typed Project Group mentions", () => {
     expect(findProjectGroupMentionCandidates("@f", 2, agents)).toEqual([agents[0]]);
   });
 
+  it("filters typed mentions by visible Agent name rather than an opaque matching ID", () => {
+    const opaqueIdMatch = { id: "f-random-uuid", name: "Group Frontend" };
+    expect(findProjectGroupMentionCandidates("@F", 2, [...agents, opaqueIdMatch])).toEqual([agents[0]]);
+  });
+
   it("replaces the active leading partial mention with parser-safe syntax and retains the draft", () => {
     expect(replaceProjectGroupMentionQuery("@F finish the form", 2, agents[0])).toEqual({
       content: '@"Frontend Agent" finish the form',
