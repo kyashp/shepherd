@@ -2,7 +2,12 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { parseProjectGroupMessage } from "../../../server/src/shepherd/group-routing.js";
-import { InitializeProjectGroupButton, ProjectGroupMentionButton } from "./ProjectGroupPage.js";
+import {
+  InitializeProjectGroupButton,
+  ProjectGroupMentionButton,
+  projectGroupMessagesMatch,
+  resolveProjectGroupMessageRefresh,
+} from "./ProjectGroupPage.js";
 import {
   findProjectGroupMentionCandidates,
   MAX_PROJECT_GROUP_MESSAGE_LENGTH,
@@ -112,6 +117,41 @@ describe("typed Project Group mentions", () => {
 
   it("does not suggest an Agent mention outside the leading routing directive", () => {
     expect(findProjectGroupMentionCandidates("Ask @F for help", 6, agents)).toEqual([]);
+  });
+});
+
+describe("Project Group message refresh", () => {
+  const message = {
+    id: "group-message",
+    projectId: "auth-demo",
+    missionId: null,
+    senderType: "human" as const,
+    senderId: null,
+    content: "use a bearer JWT",
+    targetAgentId: "agent-backend",
+    contractId: null,
+    createdAt: "2026-09-01T00:00:00.000Z",
+  };
+
+  it("treats a same-ID message with a completed Contract binding as a changed snapshot", () => {
+    expect(projectGroupMessagesMatch([message], [{ ...message, contractId: "contract-backend" }])).toBe(false);
+  });
+
+  it("consumes a send-follow request even when the fetched snapshot is unchanged", () => {
+    const currentMessages = [message];
+    const afterSend = resolveProjectGroupMessageRefresh(currentMessages, [message], {
+      pinnedToMessageEnd: false,
+      followAfterSend: true,
+    });
+    expect(afterSend.messages).toBe(currentMessages);
+    expect(afterSend.shouldFollowMessageEnd).toBe(true);
+
+    const laterAppend = resolveProjectGroupMessageRefresh(
+      [message],
+      [...[message], { ...message, id: "other-message" }],
+      { pinnedToMessageEnd: false, followAfterSend: false },
+    );
+    expect(laterAppend.shouldFollowMessageEnd).toBe(false);
   });
 });
 

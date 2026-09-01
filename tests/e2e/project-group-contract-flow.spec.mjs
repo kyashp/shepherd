@@ -110,11 +110,13 @@ test("Project Group initializes safely, pairs bounded requests, and reports veri
   const mentionSuggestions = page.getByRole("listbox", { name: "Agent mentions" });
   await expect(mentionSuggestions).toBeVisible();
   await expect(mentionSuggestions.getByRole("option")).toHaveCount(3);
+  await composer.press("ArrowDown");
+  await composer.press("Enter");
+  await expect(composer).toHaveValue('@"Group Backend" ');
   await composer.fill("@F");
   await expect(mentionSuggestions.getByRole("option", { name: "Frontend Agent" })).toBeVisible();
   await expect(mentionSuggestions.getByRole("option")).toHaveCount(1);
-  await composer.press("ArrowDown");
-  await composer.press("Enter");
+  await mentionSuggestions.getByRole("option", { name: "Frontend Agent" }).click();
   await expect(composer).toHaveValue('@"Frontend Agent" ');
   await composer.fill("");
   await composer.fill("Preserve this draft");

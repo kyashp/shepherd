@@ -20,11 +20,42 @@ function isPinnedToMessageEnd(element: HTMLElement): boolean {
   return element.scrollHeight - element.scrollTop - element.clientHeight <= SCROLL_PINNED_TOLERANCE;
 }
 
-function messagesMatch(
+function projectGroupMessageSnapshot(message: ProjectGroupMessage): string {
+  return JSON.stringify([
+    message.id,
+    message.projectId,
+    message.missionId,
+    message.senderType,
+    message.senderId,
+    message.content,
+    message.targetAgentId,
+    message.contractId,
+    message.contractAssignment ?? null,
+    message.createdAt,
+  ]);
+}
+
+export function projectGroupMessagesMatch(
   current: readonly ProjectGroupMessage[],
   next: readonly ProjectGroupMessage[],
 ): boolean {
-  return current.length === next.length && current.every((message, index) => message.id === next[index]?.id);
+  return current.length === next.length && current.every((message, index) => {
+    const candidate = next[index];
+    return candidate !== undefined && projectGroupMessageSnapshot(message) === projectGroupMessageSnapshot(candidate);
+  });
+}
+
+export function resolveProjectGroupMessageRefresh(
+  current: ProjectGroupMessage[],
+  next: ProjectGroupMessage[],
+  options: { pinnedToMessageEnd: boolean; followAfterSend: boolean },
+): { messages: ProjectGroupMessage[]; shouldFollowMessageEnd: boolean } {
+  const changed = !projectGroupMessagesMatch(current, next);
+  return {
+    messages: changed ? next : current,
+    shouldFollowMessageEnd: options.followAfterSend
+      || (changed && (current.length === 0 || options.pinnedToMessageEnd)),
+  };
 }
 
 function senderName(message: ProjectGroupMessage, agents: Agent[]): string {
@@ -116,12 +147,20 @@ export function ProjectGroupPage({ agents }: { agents: Agent[] }) {
       const pinnedToMessageEnd = messagesPane.current
         ? isPinnedToMessageEnd(messagesPane.current)
         : true;
+      const followAfterSend = scrollAfterSend.current;
+      scrollAfterSend.current = false;
       setMessages((current) => {
-        if (messagesMatch(current, result.messages)) return current;
-        scrollToMessageEndOnChange.current = scrollAfterSend.current || current.length === 0 || pinnedToMessageEnd;
-        scrollAfterSend.current = false;
-        return result.messages;
+        const refresh = resolveProjectGroupMessageRefresh(current, result.messages, {
+          pinnedToMessageEnd,
+          followAfterSend,
+        });
+        if (refresh.messages === current) return current;
+        scrollToMessageEndOnChange.current = refresh.shouldFollowMessageEnd;
+        return refresh.messages;
       });
+      if (followAfterSend) {
+        window.requestAnimationFrame(() => messageEnd.current?.scrollIntoView({ block: "nearest" }));
+      }
       setMessageError(null);
     } catch (reason) {
       setMessageError(reason instanceof Error ? reason.message : "Project Group is unavailable");
